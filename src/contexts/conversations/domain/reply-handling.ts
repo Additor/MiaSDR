@@ -81,17 +81,17 @@ export interface ReplyTypeChangeCheck {
 }
 
 /**
- * The lock a record gets when a person moves it to `target`, by any path: Change type, their own pick, or accepting an
+ * The lock a conversation gets when a person moves it to `target`, by any path: Change type, their own pick, or accepting an
  * AI pick. The lock follows the Existing customer group: any move into it locks (any of its types, or the group alone),
- * a move inside it keeps the lock, and a move out of it unlocks. `records_locked_ck` keeps a locked record in that group.
+ * a move inside it keeps the lock, and a move out of it unlocks. `conversations_locked_ck` keeps a locked conversation in that group.
  */
 export function lockAfterPersonMove(target: { groupKey: string }): boolean {
   return target.groupKey === CUSTOMER_GROUP;
 }
 
 /**
- * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo gives back
- * exactly that. A pick stored before the field existed falls back to the group: a record in the
+ * The lock a conversation had before a pick applied, kept in the pick's `response.previousLocked` so undo gives back
+ * exactly that. A pick stored before the field existed falls back to the group: a conversation in the
  * Existing customer group was locked.
  */
 export function lockBeforePick(response: unknown, previousGroupKey: string | null): boolean {
@@ -99,7 +99,7 @@ export function lockBeforePick(response: unknown, previousGroupKey: string | nul
 }
 
 /**
- * What a person's type change needs to be true. Returns the lock flag the record gets afterwards
+ * What a person's type change needs to be true. Returns the lock flag the conversation gets afterwards
  * (`lockAfterPersonMove`). Leaving the locked group needs the person's confirmation.
  */
 export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {

@@ -7,7 +7,7 @@ async function staleThread(page: Parameters<typeof signInAdmin>[0], key: string)
   await deliverInbound(page.request, { mailbox: sent.mailbox.emailAddress, fromEmail: lead.email, fromName: "Nora Quist", subject: `Re: ${sent.subject}`, bodyText: "Also, do you integrate with HubSpot?", inReplyTo: sent.rfcMessageId });
   await makeInboxSyncDue();
   await tick(page.request, 3);
-  const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+  const [row] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
   return row.id as string;
 }
 
@@ -38,7 +38,7 @@ test.describe("the conversation page", () => {
     await signInAdmin(page);
     const lead = { email: "omar@s45b.test", firstName: "Omar", lastName: "Reyes", title: "COO", company: "S45B Co" };
     await seedReply(page.request, { key: "s45b", mailbox: "sdr-s45b@e2e-corp.test", lead, reply: { bodyText: "Let's book a call next week." } });
-    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    const [row] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
     await page.goto(`/inbox/${row.id}`);
     const main = page.locator("#main-content");
     const line = main.getByTestId("type-line");
@@ -88,7 +88,7 @@ test.describe("the conversation page", () => {
     await signInAdmin(page);
     const lead = { email: "ida@s45e.test", firstName: "Ida", lastName: "Holm", title: "VP Sales", company: "S45E Co" };
     await seedReply(page.request, { key: "s45e", mailbox: "sdr-s45e@e2e-corp.test", lead, reply: { bodyText: "Let's book a call next week." } });
-    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    const [row] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
     await page.goto(`/inbox/${row.id}`);
     const panel = page.getByTestId("reply-panel");
     await expect(panel.getByTestId("draft-status")).toHaveText("Awaiting review");
@@ -110,7 +110,7 @@ test.describe("the conversation page", () => {
     await signInAdmin(page);
     const lead = { email: "rui@s45d.test", firstName: "Rui", lastName: "Alves", title: "CTO", company: "S45D Co" };
     await seedReply(page.request, { key: "s45d", mailbox: "sdr-s45d@e2e-corp.test", lead, reply: { bodyText: "Please stop emailing me." } });
-    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    const [row] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
     await page.goto(`/inbox/${row.id}`);
     const decision = page.getByTestId("type-decision");
     await expect(decision).toContainText("Possible stop request.");
@@ -144,7 +144,7 @@ test.describe("the conversation page", () => {
     await signInAdmin(page);
     const lead = { email: "lea@s45f.test", firstName: "Lea", lastName: "Brandt", title: "CEO", company: "S45F Co" };
     await seedReply(page.request, { key: "s45f", mailbox: "sdr-s45f@e2e-corp.test", lead, reply: { bodyText: "Not now, maybe next year." } });
-    const [row] = await sql()`select c.id, p.id as person_id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    const [row] = await sql()`select c.id, p.id as person_id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
     await page.goto(`/inbox/${row.id}`);
     const line = page.getByTestId("type-line");
     await expect(line.getByTestId("type-name")).toHaveText("Not now · Not interested");
@@ -171,7 +171,7 @@ test.describe("the conversation page", () => {
     await signInAdmin(page);
     const lead = { email: "pia@s45c.test", firstName: "Pia", lastName: "Lund", title: "CISO", company: "S45C Co" };
     await seedReply(page.request, { key: "s45c", mailbox: "sdr-s45c@e2e-corp.test", lead, reply: { bodyText: "Send the security questionnaire when you can." } });
-    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    const [row] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
     await page.goto(`/inbox/${row.id}`);
     const panel = page.getByTestId("reply-panel");
     const decision = page.getByTestId("type-decision");

@@ -8,7 +8,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
   const { sql, modules, fixture, mail, one, count } = useReplyKit();
 
   const answer = (f: ReplyFixture, key: string, confidence = 0.95) => {
-    f.ai!.classifyWith = () => ({ subcategoryKey: key, confidence, reason: "Forced." });
+    f.ai!.classifyWith = () => ({ replyTypeKey: key, confidence, reason: "Forced." });
   };
   /**
    * Ingests one reply, applies `prepare` (the organization's reply types exist from the first reply on), and runs the AI
@@ -21,14 +21,14 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
     await f.run();
   }
   const pickRow = (f: ReplyFixture) => one("select status, rules, response, applied_reply_type_id from reply_type_picks where organization_id = $1", [f.org]);
-  const recordRow = (f: ReplyFixture) => one("select workflow_state, group_key, reply_type_id from records where organization_id = $1", [f.org]);
+  const conversationRow = (f: ReplyFixture) => one("select workflow_state, group_key, reply_type_id from conversations where organization_id = $1", [f.org]);
 
   describe("a pick at or above the floor applies at once", () => {
     it("with a draft: the pick applies, snapshots the rules, and the draft keeps the record open", async () => {
       const f = await fixture();
       await pickOn(f);
       expect(await pickRow(f)).toMatchObject({ status: "auto_applied", rules: { replyDraft: true, followUps: "continue" } });
-      expect(await recordRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "interested" });
+      expect(await conversationRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "interested" });
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
 
@@ -37,7 +37,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       answer(f, "not_required_right_now");
       await pickOn(f, "Not right now, thanks.");
       expect(await pickRow(f)).toMatchObject({ status: "auto_applied", rules: { replyDraft: false, followUps: "stop" } });
-      expect(await recordRow(f)).toMatchObject({ workflow_state: "idle", group_key: "not_interested" });
+      expect(await conversationRow(f)).toMatchObject({ workflow_state: "idle", group_key: "not_interested" });
       expect(await count("drafts", f.org)).toBe(0);
     });
 
@@ -58,7 +58,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       const pick = await pickRow(f);
       expect(pick).toMatchObject({ status: "auto_applied" });
       expect(pick.response).toMatchObject({ stopRequested: true, holdReason: null });
-      expect(await recordRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "interested" });
+      expect(await conversationRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "interested" });
       expect(await count("drafts", f.org)).toBe(0);
       expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
     });
@@ -71,7 +71,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       const pick = await pickRow(f);
       expect(pick).toMatchObject({ status: "proposed", rules: { replyDraft: false, followUps: "stop" } });
       expect(pick.response).toMatchObject({ holdReason: "stop_request", stopRequested: true });
-      expect(await recordRow(f)).toMatchObject({ workflow_state: "action_required", group_key: null });
+      expect(await conversationRow(f)).toMatchObject({ workflow_state: "action_required", group_key: null });
       expect(await count("drafts", f.org)).toBe(0);
       expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
     });
@@ -83,17 +83,17 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       expect((await pickRow(f)).response).toMatchObject({ stopRequested: true });
       const handling = await import("../../../application/reply-handling");
       const deps = (await import("../../../infrastructure/reply-handling-composition")).replyHandlingDeps();
-      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+      const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
       const other = await one("select id from reply_types where organization_id = $1 and key = 'other'", [f.org]);
       // Off the thread first: the held AI pick stays at the old version, so the person's pick below is a new row.
-      await handling.changeReplyType(deps, f.actor, record.id, { groupKey: "other", replyTypeId: other.id, expectedContextVersion: record.context_version });
-      const conv = await one("select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = $1", [f.org]);
-      const first = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: f.user });
+      await handling.changeReplyType(deps, f.actor, conversation.id, { groupKey: "other", replyTypeId: other.id, expectedContextVersion: conversation.context_version });
+      const conv = await one("select c.id, r.context_version from threads c join conversations r on r.id = c.conversation_id where c.organization_id = $1", [f.org]);
+      const first = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: f.user });
       expect(first.draftQueued).toBe(false);
-      const again = await one("select r.context_version from records r where r.organization_id = $1", [f.org]);
-      const second = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "meeting_requested", expectedContextVersion: again.context_version, actorUserId: f.user });
+      const again = await one("select r.context_version from conversations r where r.organization_id = $1", [f.org]);
+      const second = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: conv.id, replyTypeKey: "meeting_requested", expectedContextVersion: again.context_version, actorUserId: f.user });
       expect(second.draftQueued).toBe(false);
-      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id, "correct");
+      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, conversation.id, "correct");
       const demo = await one("select id from reply_types where organization_id = $1 and key = 'demo_request'", [f.org]);
       expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome.replyDraft).toBe("Reply draft: none, because they asked to stop.");
     });
@@ -122,12 +122,12 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       answer(f, "demo_request", 0.99);
       await modules.composition.ingestInbound(mail(f));
       const [customer] = await sql`select id from reply_types where organization_id = ${f.org} and system_role = 'customer'`;
-      await sql`update records set group_key = 'customer', reply_type_id = ${customer.id}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
+      await sql`update conversations set group_key = 'customer', reply_type_id = ${customer.id}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
       await f.run();
       const pick = await pickRow(f);
       expect(pick).toMatchObject({ status: "proposed" });
       expect(pick.response).toMatchObject({ holdReason: "protected_customer" });
-      expect(await recordRow(f)).toMatchObject({ group_key: "customer", reply_type_id: customer.id });
+      expect(await conversationRow(f)).toMatchObject({ group_key: "customer", reply_type_id: customer.id });
       expect(await count("drafts", f.org)).toBe(0);
     });
   });
@@ -141,7 +141,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       const spy = vi.spyOn(jobs, "loadClassifyContext").mockImplementation(async (org, messageId) => {
         const ctx = await load(org, messageId);
         const [customer] = await sql`select id from reply_types where organization_id = ${f.org} and system_role = 'customer'`;
-        await sql`update records set group_key = 'customer', reply_type_id = ${customer.id}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
+        await sql`update conversations set group_key = 'customer', reply_type_id = ${customer.id}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
         return ctx;
       });
       try {
@@ -152,27 +152,27 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       const pick = await pickRow(f);
       expect(pick).toMatchObject({ status: "proposed", applied_reply_type_id: null });
       expect(pick.response).toMatchObject({ holdReason: "protected_customer" });
-      expect(await recordRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "customer" });
+      expect(await conversationRow(f)).toMatchObject({ workflow_state: "action_required", group_key: "customer" });
       expect(await count("drafts", f.org)).toBe(0);
       expect(await one("select event_type from events where organization_id = $1 and event_type like 'reply_type_pick.%'", [f.org])).toMatchObject({ event_type: "reply_type_pick.proposed" });
     });
   });
 
   describe("the customer lock on a person's pick, undo and detach", () => {
-    /** The record locked on `typeId` of the customer group, as a person's type change leaves it. */
+    /** The conversation locked on `typeId` of the customer group, as a person's type change leaves it. */
     const lockOn = (f: ReplyFixture, typeId: string) =>
-      sql`update records set group_key = 'customer', reply_type_id = ${typeId}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
+      sql`update conversations set group_key = 'customer', reply_type_id = ${typeId}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
     const customerType = async (f: ReplyFixture) => (await sql`select id from reply_types where organization_id = ${f.org} and system_role = 'customer'`)[0].id as string;
     /** A second type in the customer group, without a role. */
     const renewalType = async (f: ReplyFixture) =>
       (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, sort_order)
                  select organization_id, reply_type_set_id, 'customer', 'renewal', 'Renewal', 99 from reply_types where organization_id = ${f.org} and system_role = 'customer' returning id`)[0].id as string;
     const pickRequest = async (f: ReplyFixture, replyTypeKey: string | null) => {
-      const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = ${f.org}`;
-      return modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey, expectedContextVersion: conv.context_version, actorUserId: f.user });
+      const [conv] = await sql`select c.id, r.context_version from threads c join conversations r on r.id = c.conversation_id where c.organization_id = ${f.org}`;
+      return modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: conv.id, replyTypeKey, expectedContextVersion: conv.context_version, actorUserId: f.user });
     };
     const handling = async () => (await import("../../../infrastructure/drizzle-reply-handling-store")).drizzleReplyHandlingStore;
-    const lockRow = (f: ReplyFixture) => one("select group_key, reply_type_id, reply_type_locked from records where organization_id = $1", [f.org]);
+    const lockRow = (f: ReplyFixture) => one("select group_key, reply_type_id, reply_type_locked from conversations where organization_id = $1", [f.org]);
 
     it("accepting a protected_customer hold moves the locked customer out and unlocks", async () => {
       const f = await fixture();

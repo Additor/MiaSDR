@@ -112,7 +112,7 @@ export function excerpt(text: string, max = EXCERPT_CHARS): string {
 export function appLinks(ctx: ToolOutputContext) {
   const at = (path: string) => `${ctx.appUrl}${path}`;
   return {
-    conversation: (conversationId: string) => at(`/inbox/${conversationId}`),
+    thread: (threadId: string) => at(`/inbox/${threadId}`),
     campaign: (campaignId: string) => at(`/campaigns/${campaignId}`),
     deal: (dealId: string) => at(`/crm/deals/${dealId}`),
     /** A table opens inside its workbook. */

@@ -66,7 +66,7 @@ export function AfterReplyPanel({ view }: { view: AfterReplyView }) {
                     {view.inProgress.map((run) => (
                       <TableRow key={run.runId}>
                         <TableCell className="font-medium">
-                          <Link href={`/inbox/${run.conversationId}`} className="underline-offset-4 focus-ring hover:underline">
+                          <Link href={`/inbox/${run.threadId}`} className="underline-offset-4 focus-ring hover:underline">
                             {run.personName ?? "Unnamed lead"}
                           </Link>
                         </TableCell>

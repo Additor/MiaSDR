@@ -84,15 +84,15 @@ describeDb("onboarding store", () => {
     try {
       const [{ id: person }] = await sql`insert into people (organization_id, email) values (${a}, ${`rp-${tag}@onb.test`}) returning id`;
       const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${a}, ${person}, ${pipeline}) returning id`;
-      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${a}, ${record}, 'email', 'a@sender.test') returning id`;
-      const [{ id: other }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${a}, ${record}, 'email', 'a@sender.test', 'second') returning id`;
+      const [{ id: record }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${a}, ${person}, ${pipeline}) returning id`;
+      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${a}, ${record}, 'email', 'a@sender.test') returning id`;
+      const [{ id: other }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${a}, ${record}, 'email', 'a@sender.test', 'second') returning id`;
       const ids = await sql<{ id: string; subject: string }[]>`
-        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, status)
-        values (${a}, ${record}, ${conversation}, 0, 'email', 'One', 'awaiting_review'),
-               (${a}, ${record}, ${conversation}, 0, 'email', 'Two', 'sent'),
+        insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject, status)
+        values (${a}, ${record}, ${thread}, 0, 'email', 'One', 'awaiting_review'),
+               (${a}, ${record}, ${thread}, 0, 'email', 'Two', 'sent'),
                (${a}, ${record}, ${other}, 0, 'email', 'Three', 'sent'),
-               (${a}, ${record}, ${conversation}, 0, 'email', 'Four', 'discarded')
+               (${a}, ${record}, ${thread}, 0, 'email', 'Four', 'discarded')
         returning id, subject`;
       const draft = (subject: string) => ids.find((d) => d.subject === subject)!.id;
       const [{ id: token }] = await sql`insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes) values (${a}, ${user}, 'pat', 'T', ${`h-${tag}`}, 'abcd', ${["mcp:read"]}) returning id`;

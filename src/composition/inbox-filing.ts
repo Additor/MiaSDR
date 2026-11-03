@@ -1,5 +1,5 @@
 import { receiveInbound, receiveInboundLinkedIn } from "@/contexts/conversations/infrastructure/composition";
-import { followUpStop, stopOutreachOnUnfiledEmailTx } from "@/contexts/conversations/after-reply/infrastructure/sequence-stop";
+import { followUpStop, stopOutreachOnUnfiledEmailTx } from "@/contexts/conversations/after-reply/infrastructure/follow-up-stop";
 import type { FollowUpStop, InboxFiling, PersonTimeline } from "@/contexts/outreach/application/inbound-ports";
 import { suppressionListDeps, unsubscribeDeps } from "@/contexts/outreach/infrastructure/composition";
 import { enrollmentRestoreDeps } from "@/contexts/outreach/infrastructure/restore-composition";

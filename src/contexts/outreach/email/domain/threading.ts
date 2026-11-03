@@ -1,14 +1,14 @@
 export interface PriorSend {
   subject: string | null;
   rfcMessageId: string | null;
-  threadId: string | null;
+  providerThreadId: string | null;
 }
 
 export interface Threading {
   subject: string;
   inReplyTo: string | null;
   references: string[];
-  threadId: string | null;
+  providerThreadId: string | null;
 }
 
 /**
@@ -19,15 +19,15 @@ export interface Threading {
  */
 export function resolveThreading(renderedSubject: string, priorSent: PriorSend[]): Threading {
   if (renderedSubject.trim() !== "") {
-    return { subject: renderedSubject, inReplyTo: null, references: [], threadId: null };
+    return { subject: renderedSubject, inReplyTo: null, references: [], providerThreadId: null };
   }
   const anchor = [...priorSent].reverse().find((s) => (s.subject ?? "").trim() !== "");
-  if (!anchor) return { subject: "", inReplyTo: null, references: [], threadId: null };
+  if (!anchor) return { subject: "", inReplyTo: null, references: [], providerThreadId: null };
   const base = (anchor.subject ?? "").trim();
   return {
     subject: /^re:\s/i.test(base) ? base : `Re: ${base}`,
     inReplyTo: anchor.rfcMessageId,
     references: priorSent.map((s) => s.rfcMessageId).filter((id): id is string => Boolean(id)),
-    threadId: anchor.threadId,
+    providerThreadId: anchor.providerThreadId,
   };
 }

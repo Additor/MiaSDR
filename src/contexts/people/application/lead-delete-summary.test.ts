@@ -6,11 +6,11 @@ const kept = (reason: BlockReason, n: number, from = 0) => Array.from({ length: 
 
 describe("summarizeDelete", () => {
   it("counts the kept leads per reason, in the order of the per-lead reasons, with a line each", () => {
-    const summary = summarizeDelete({ deleted: 7, blocked: [...kept("try_again", 2), ...kept("has_sends", 1), ...kept("linked_records", 3)] });
+    const summary = summarizeDelete({ deleted: 7, blocked: [...kept("try_again", 2), ...kept("has_sends", 1), ...kept("linked_conversations", 3)] });
     expect(summary.deleted).toBe(7);
     expect(summary.kept).toEqual([
       { reason: "has_sends", count: 1, line: "1 lead already got messages." },
-      { reason: "linked_records", count: 3, line: "3 leads have history, such as replies or conversations." },
+      { reason: "linked_conversations", count: 3, line: "3 leads have history, such as replies or conversations." },
       { reason: "try_again", count: 2, line: "2 leads were busy with another change. Try again." },
     ]);
   });

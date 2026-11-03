@@ -11,7 +11,7 @@ describe("deleteQualification", () => {
     expect(q.detail).toMatch(/No message was sent/);
   });
 
-  it.each(["has_sends", "in_active_campaign", "linked_records"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
+  it.each(["has_sends", "in_active_campaign", "linked_conversations"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
     const q = deleteQualification(reason);
     expect(q.canDelete).toBe(false);
     expect(q.summary).toBe("This lead cannot be deleted.");

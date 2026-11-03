@@ -105,7 +105,7 @@ export function useReplyKit() {
     const detail = await f.run();
     return { ...result, input, detail };
   }
-  const panel = async (f: Fx, conversationId: string) => (await modules.mgmt.getReplyPanel(f.replyDeps, f.actor, conversationId))!;
+  const panel = async (f: Fx, threadId: string) => (await modules.mgmt.getReplyPanel(f.replyDeps, f.actor, threadId))!;
   const sendKey = () => `key-${Math.random().toString(36).slice(2)}`;
 
   return { sql, modules, fixture, mail, one, count, receive, panel, sendKey };

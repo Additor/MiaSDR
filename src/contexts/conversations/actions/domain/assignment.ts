@@ -1,7 +1,7 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 
 /**
- * Who handles the replies of a reply-handling record. Pure rules; the store reads the locked row and the membership and
+ * Who handles the replies of a reply-handling conversation. Pure rules; the store reads the locked row and the membership and
  * applies the plan. The assignee is a member of the organization or nobody. It is not the deal's owner and not a task's
  * assignee.
  */
@@ -19,13 +19,13 @@ export const ASSIGNED_EVENT = "assignee.changed";
 
 export interface AssigneeCandidate {
   userId: string;
-  /** True while the user is still a member of the record's organization. */
+  /** True while the user is still a member of the conversation's organization. */
   isMember: boolean;
 }
 
 /**
  * The first candidate who is still a member. Candidates arrive newest first: the creators of the person's campaigns, newest
- * enrollment first. A creator who left is skipped, not a reason to leave the record unassigned.
+ * enrollment first. A creator who left is skipped, not a reason to leave the conversation unassigned.
  */
 export function pickAssignee(candidates: readonly AssigneeCandidate[]): string | null {
   return candidates.find((c) => c.isMember)?.userId ?? null;

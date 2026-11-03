@@ -89,7 +89,7 @@ export async function checkedOutput<T extends Record<string, unknown>>(tool: Pic
 export interface ToolHooks {
   /** Counts the call in a bucket; the seconds to wait when the token is over its limit, else null. */
   take: (bucket: McpRateBucket) => Promise<number | null>;
-  record: (entry: McpToolCallEntry) => Promise<void>;
+  conversation: (entry: McpToolCallEntry) => Promise<void>;
   now: () => number;
 }
 
@@ -167,7 +167,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
           logMcp(error.code === "rate_limited" ? "rate limited" : "agent action refused", { code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId });
         }
         await hooks
-          .record({
+          .conversation({
             organizationId: principal.organizationId,
             tokenId: principal.tokenId,
             tool: tool.name,

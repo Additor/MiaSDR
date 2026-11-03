@@ -81,9 +81,9 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
         actions={
           <>
             <Suspense fallback={null}>
-              {fromActions ? <NextQueueLink recordId={thread.recordId} view={actionsView} actor={actor} /> : <NextUnreadLink currentId={thread.conversationId} params={listParams} actor={actor} />}
+              {fromActions ? <NextQueueLink conversationId={thread.conversationId} view={actionsView} actor={actor} /> : <NextUnreadLink currentId={thread.threadId} params={listParams} actor={actor} />}
             </Suspense>
-            <MarkRead id={thread.conversationId} unread={thread.unreadCount} />
+            <MarkRead id={thread.threadId} unread={thread.unreadCount} />
           </>
         }
       />
@@ -102,16 +102,16 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
               <div className="grid gap-2">
                 {latest && <MessageCard message={latest} channel={thread.channel} person={person} />}
                 <Suspense fallback={<Skeleton className="h-6 w-2/3" />}>
-                  <TypeLine actor={actor} conversationId={thread.conversationId} channel={thread.channel} recordId={thread.recordId} queue={fromActions ? { view: actionsView } : undefined} />
+                  <TypeLine actor={actor} threadId={thread.threadId} channel={thread.channel} conversationId={thread.conversationId} queue={fromActions ? { view: actionsView } : undefined} />
                 </Suspense>
               </div>
 
               <div data-slot="reply-draft">
                 <Suspense fallback={<Skeleton className="h-48 w-full" />}>
                   {thread.channel === "linkedin" ? (
-                    <LinkedInReplyPanel conversationId={thread.conversationId} recordId={thread.recordId} actor={actor} />
+                    <LinkedInReplyPanel threadId={thread.threadId} conversationId={thread.conversationId} actor={actor} />
                   ) : (
-                    <ReplyPanel conversationId={thread.conversationId} actor={actor} queue={fromActions ? { recordId: thread.recordId, view: actionsView } : undefined} />
+                    <ReplyPanel threadId={thread.threadId} actor={actor} queue={fromActions ? { conversationId: thread.conversationId, view: actionsView } : undefined} />
                   )}
                 </Suspense>
               </div>
@@ -120,16 +120,16 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
               <Suspense fallback={<Skeleton className="h-20 w-full" />}>
                 <NextStep
                   actor={actor}
-                  conversationId={thread.conversationId}
+                  threadId={thread.threadId}
                   channel={thread.channel}
-                  recordId={thread.recordId}
+                  conversationId={thread.conversationId}
                   queue={fromActions ? { view: actionsView } : undefined}
                   stopOnLoad={query.stop === "1"}
                 />
               </Suspense>
 
               <Suspense fallback={null}>
-                <ThreadFollowUps actor={actor} recordId={thread.recordId} personId={person.id} />
+                <ThreadFollowUps actor={actor} conversationId={thread.conversationId} personId={person.id} />
               </Suspense>
 
               {/* Newest first, each folded to one line, so History stays near the reply. A line opens the message in place. */}
@@ -146,13 +146,13 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
               )}
 
               <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-                <ThreadHistory actor={actor} conversationId={thread.conversationId} recordId={thread.recordId} personId={person.id} />
+                <ThreadHistory actor={actor} threadId={thread.threadId} conversationId={thread.conversationId} personId={person.id} />
               </Suspense>
             </div>
           }
           aside={
             <Suspense fallback={<ThreadSideSkeleton />}>
-              <ThreadSide actor={actor} conversationId={thread.conversationId} recordId={thread.recordId} personId={person.id} />
+              <ThreadSide actor={actor} threadId={thread.threadId} conversationId={thread.conversationId} personId={person.id} />
             </Suspense>
           }
         />

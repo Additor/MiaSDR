@@ -26,7 +26,7 @@ export class FakeReplyAi implements ReplyAi {
     const latest = [...input.thread].reverse().find((e) => e.direction === "inbound");
     const text = `${latest?.subject ?? ""}\n${latest?.text ?? ""}`.toLowerCase();
     const has = (key: string) => input.taxonomy.some((t) => t.key === key);
-    const pick = (key: string, confidence: number, reason: string): ClassifyOutput => ({ subcategoryKey: has(key) ? key : input.taxonomy[0].key, confidence, reason });
+    const pick = (key: string, confidence: number, reason: string): ClassifyOutput => ({ replyTypeKey: has(key) ? key : input.taxonomy[0].key, confidence, reason });
     if (/unsubscribe|stop (emailing|contacting)|remove me|do not contact/.test(text)) return { output: pick("do_not_contact", 0.97, "The sender asks us to stop.") };
     if (/out of (the )?office|on vacation|auto-?reply/.test(text)) return { output: pick("out_of_office", 0.95, "An out-of-office notice.") };
     if (/demo/.test(text)) return { output: pick("demo_request", 0.92, "The sender asks for a demo.") };

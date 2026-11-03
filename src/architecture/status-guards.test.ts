@@ -44,18 +44,18 @@ const GUARDED: Rule[] = [
     guard: /(eq|inArray)\(campaignEnrollments\.status|status in \$\{|status = '/,
   },
   {
-    table: "sequence_runs",
-    drizzle: /\.update\(sequenceRuns\)/g,
-    raw: /update (?:sequence_runs|\$\{sequenceRuns\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
+    table: "follow_up_runs",
+    drizzle: /\.update\(followUpRuns\)/g,
+    raw: /update (?:follow_up_runs|\$\{followUpRuns\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
     guard: /runMayBecome\(/,
-    target: { binding: "sequenceRuns", helpers: ["runMayBecome"] },
+    target: { binding: "followUpRuns", helpers: ["runMayBecome"] },
   },
   {
-    table: "sequence_step_runs",
-    drizzle: /\.update\(sequenceStepRuns\)/g,
-    raw: /update (?:sequence_step_runs|\$\{sequenceStepRuns\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
+    table: "follow_up_step_runs",
+    drizzle: /\.update\(followUpStepRuns\)/g,
+    raw: /update (?:follow_up_step_runs|\$\{followUpStepRuns\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
     guard: /stepMayBecome\(/,
-    target: { binding: "sequenceStepRuns", helpers: ["stepMayBecome", "heldStep"] },
+    target: { binding: "followUpStepRuns", helpers: ["stepMayBecome", "heldStep"] },
   },
   {
     table: "mailboxes",
@@ -151,21 +151,21 @@ describe("status guards", () => {
 });
 
 describe("status guard scan catches a guard on the wrong row", () => {
-  const steps = GUARDED.find((r) => r.table === "sequence_step_runs")!;
+  const steps = GUARDED.find((r) => r.table === "follow_up_step_runs")!;
   const lines = (text: string) => unguardedWrites({ ...steps, drizzle: new RegExp(steps.drizzle), raw: new RegExp(steps.raw) }, text);
 
   it("a raw update guarded only on another alias, or on its own alias", () => {
-    expect(lines("await db.execute(sql`with pick as (select id from x) update ${sequenceStepRuns} u set status = 'drafting' from pick where ${u.id} = pick.id and ${r.status} = 'active'`);")).toEqual([1]);
-    expect(lines("await db.execute(sql`with pick as (select id from x) update ${sequenceStepRuns} u set status = 'drafting' from pick where ${u.id} = pick.id and ${u.status} in ${sqlValues(CLAIMABLE)}`);")).toEqual([]);
-    expect(lines("await db.execute(sql`update sequence_step_runs set status = 'failed' where id in (select id from sequence_step_runs where status = 'drafting')`);")).toEqual([1]);
-    expect(lines("await db.execute(sql`update sequence_step_runs set status = 'failed' where status = 'drafting'`);")).toEqual([]);
+    expect(lines("await db.execute(sql`with pick as (select id from x) update ${followUpStepRuns} u set status = 'drafting' from pick where ${u.id} = pick.id and ${r.status} = 'active'`);")).toEqual([1]);
+    expect(lines("await db.execute(sql`with pick as (select id from x) update ${followUpStepRuns} u set status = 'drafting' from pick where ${u.id} = pick.id and ${u.status} in ${sqlValues(CLAIMABLE)}`);")).toEqual([]);
+    expect(lines("await db.execute(sql`update follow_up_step_runs set status = 'failed' where id in (select id from follow_up_step_runs where status = 'drafting')`);")).toEqual([1]);
+    expect(lines("await db.execute(sql`update follow_up_step_runs set status = 'failed' where status = 'drafting'`);")).toEqual([]);
   });
 
   it("a Drizzle update guarded only inside a subquery, or on the written row", () => {
     expect(
-      lines("await tx.update(sequenceStepRuns).set({ status: \"cancelled\" }).where(inArray(sequenceStepRuns.id, tx.select({ id: sequenceStepRuns.id }).from(sequenceStepRuns).where(eq(sequenceStepRuns.status, \"scheduled\"))));"),
+      lines("await tx.update(followUpStepRuns).set({ status: \"cancelled\" }).where(inArray(followUpStepRuns.id, tx.select({ id: followUpStepRuns.id }).from(followUpStepRuns).where(eq(followUpStepRuns.status, \"scheduled\"))));"),
     ).toEqual([1]);
-    expect(lines("await tx.update(sequenceStepRuns).set({ status: \"cancelled\" }).where(and(eq(sequenceStepRuns.id, id), stepMayBecome(\"cancelled\")));")).toEqual([]);
-    expect(lines("await tx.update(sequenceStepRuns).set({ status: \"cancelled\" }).where(and(eq(sequenceStepRuns.runId, id), eq(sequenceRuns.status, \"active\")));")).toEqual([1]);
+    expect(lines("await tx.update(followUpStepRuns).set({ status: \"cancelled\" }).where(and(eq(followUpStepRuns.id, id), stepMayBecome(\"cancelled\")));")).toEqual([]);
+    expect(lines("await tx.update(followUpStepRuns).set({ status: \"cancelled\" }).where(and(eq(followUpStepRuns.runId, id), eq(followUpRuns.status, \"active\")));")).toEqual([1]);
   });
 });

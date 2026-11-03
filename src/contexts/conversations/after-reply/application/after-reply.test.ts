@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { getCampaignAfterReply, getFollowUpStopTypes, saveCampaignAfterReply, type AfterReplyDeps } from "./after-reply";
-import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView, StopReplyTypeRow } from "./sequence-ports";
+import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView, StopReplyTypeRow } from "./follow-up-ports";
 
 const NOW = new Date("2026-10-16T09:00:00Z");
 const actor: Actor = { userId: "u1", organizationId: "org", role: "member" };
 
 const step = (position: number, over: Partial<StepView> = {}): StepView => ({
   id: `s${position}`,
-  sequenceVersionId: "v1",
+  followUpVersionId: "v1",
   position,
   stepType: position === 1 ? "reply" : "follow_up",
   name: position === 1 ? "Reply to their answer" : "Follow-up",
@@ -22,7 +22,7 @@ const step = (position: number, over: Partial<StepView> = {}): StepView => ({
 
 const raw = (position: number) => ({ name: position === 1 ? "Reply" : "Nudge", delayMinutes: position === 1 ? 0 : 1440, subjectTemplate: null, bodyTemplate: null, aiInstructions: "Do it", knowledgeTags: [] });
 
-const run = (over: Partial<FlowRunRow> = {}): FlowRunRow => ({ runId: "r1", recordId: "rec1", conversationId: "conv1", personName: "Sam", status: "active", currentStep: 2, totalSteps: 3, nextDueAt: NOW, versionNumber: 1, ...over });
+const run = (over: Partial<FlowRunRow> = {}): FlowRunRow => ({ runId: "r1", conversationId: "rec1", threadId: "conv1", personName: "Sam", status: "active", currentStep: 2, totalSteps: 3, nextDueAt: NOW, versionNumber: 1, ...over });
 
 const stopType = (over: Partial<StopReplyTypeRow> & Pick<StopReplyTypeRow, "id" | "name" | "groupKey">): StopReplyTypeRow => ({ key: over.id, systemRole: null, sortOrder: 0, ...over });
 

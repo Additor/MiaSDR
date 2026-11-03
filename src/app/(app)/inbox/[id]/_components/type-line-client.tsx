@@ -19,11 +19,11 @@ import { ChangeTypeButton, type TypeOption } from "./change-type-button";
 import { openStopContacting, type StopTarget } from "./stop-contacting";
 
 export interface TypeLineProps {
-  recordId: string;
   conversationId: string;
+  threadId: string;
   contextVersion: number;
   personName: string;
-  /** The record's reply type, or null before anything picked one. */
+  /** The conversation's reply type, or null before anything picked one. */
   type: { name: string; group: string | null; rules: string | null; source: string | null; locked: boolean } | null;
   currentReplyTypeId: string | null;
   types: TypeOption[];
@@ -78,8 +78,8 @@ export function TypeLineClient(props: TypeLineProps) {
   const changeType = (variant: "link" | "outline" | "default") =>
     !props.closed && (
       <ChangeTypeButton
-        recordId={props.recordId}
         conversationId={props.conversationId}
+        threadId={props.threadId}
         personName={props.personName}
         contextVersion={props.contextVersion}
         currentReplyTypeId={props.currentReplyTypeId}
@@ -163,7 +163,7 @@ export function TypeLineClient(props: TypeLineProps) {
                 touch
                 disabled={busy}
                 // Accept retires the open draft, so the editor's unsaved edits are saved first.
-                onClick={() => void decide(() => afterSavingEdits(() => runApiAction(callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }))), "AI pick accepted.")}
+                onClick={() => void decide(() => afterSavingEdits(() => runApiAction(callApi(`/api/inbox/${props.threadId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }))), "AI pick accepted.")}
               >
                 {busy ? "Accepting…" : decision.holdReason === "protected_customer" ? "Accept and unlock" : "Accept"}
               </Button>

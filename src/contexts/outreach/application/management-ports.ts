@@ -49,7 +49,7 @@ export interface EnrollmentRow {
   enrollmentId: string;
   personId: string;
   /** The Inbox conversation of a lead that replied, or null. */
-  inboxConversationId: string | null;
+  inboxThreadId: string | null;
   personName: string | null;
   email: string | null;
   status: string;

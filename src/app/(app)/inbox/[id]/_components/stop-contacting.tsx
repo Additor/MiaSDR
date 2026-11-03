@@ -14,8 +14,8 @@ import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 export { onOpenStopContacting, openStopContacting } from "./open-stop-contacting";
 
 export interface StopTarget {
-  recordId: string;
   conversationId: string;
+  threadId: string;
   channel: string;
   personId: string;
   personName: string;
@@ -53,7 +53,7 @@ export function useStopScope(target: StopTarget) {
 
   /** Stops contact as chosen and says what happened. Call `ready` first; throws when the server refuses. */
   async function stop(): Promise<string> {
-    orThrow(await runApiAction(scope === "everywhere" ? callApi(`/api/people/${target.personId}/dnc`, "POST", { enabled: true, reason: reason.trim() }) : callApi(`/api/inbox/${target.conversationId}/suppress`, "POST")));
+    orThrow(await runApiAction(scope === "everywhere" ? callApi(`/api/people/${target.personId}/dnc`, "POST", { enabled: true, reason: reason.trim() }) : callApi(`/api/inbox/${target.threadId}/suppress`, "POST")));
     return scope === "everywhere" ? `Marked ${target.personName} do not contact.` : `Added ${target.email} to the suppression list.`;
   }
 
@@ -62,16 +62,16 @@ export function useStopScope(target: StopTarget) {
       {canSuppress && (
         <RadioGroup value={scope} onValueChange={(v) => setScope(v as Scope)}>
           <Field orientation="horizontal">
-            <RadioGroupItem value="everywhere" id={`stop-${target.recordId}-everywhere`} />
+            <RadioGroupItem value="everywhere" id={`stop-${target.conversationId}-everywhere`} />
             <FieldContent>
-              <FieldLabel htmlFor={`stop-${target.recordId}-everywhere`}>Every channel</FieldLabel>
+              <FieldLabel htmlFor={`stop-${target.conversationId}-everywhere`}>Every channel</FieldLabel>
               <FieldDescription>{EVERYWHERE}</FieldDescription>
             </FieldContent>
           </Field>
           <Field orientation="horizontal">
-            <RadioGroupItem value="address" id={`stop-${target.recordId}-address`} />
+            <RadioGroupItem value="address" id={`stop-${target.conversationId}-address`} />
             <FieldContent>
-              <FieldLabel htmlFor={`stop-${target.recordId}-address`} className="break-all">
+              <FieldLabel htmlFor={`stop-${target.conversationId}-address`} className="break-all">
                 Only {target.email}
               </FieldLabel>
               <FieldDescription>{ADDRESS}</FieldDescription>
@@ -81,9 +81,9 @@ export function useStopScope(target: StopTarget) {
       )}
       {scope === "everywhere" && (
         <Field>
-          <FieldLabel htmlFor={`stop-reason-${target.recordId}`}>Reason</FieldLabel>
+          <FieldLabel htmlFor={`stop-reason-${target.conversationId}`}>Reason</FieldLabel>
           <Input
-            id={`stop-reason-${target.recordId}`}
+            id={`stop-reason-${target.conversationId}`}
             value={reason}
             maxLength={500}
             placeholder="Asked to stop, competitor, wrong person"

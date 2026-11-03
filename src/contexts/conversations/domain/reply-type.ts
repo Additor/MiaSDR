@@ -72,9 +72,9 @@ export interface ReplyTypeFacts {
   channel: string | null;
   /** The AI's confidence. Null when a person picks the type. */
   confidence: number | null;
-  /** The record is locked to its current group (`records.reply_type_locked`). */
+  /** The conversation is locked to its current group (`conversations.reply_type_locked`). */
   locked: boolean;
-  /** The record's type before this pick, or null when it has none. Its group decides the customer lock hold. */
+  /** The conversation's type before this pick, or null when it has none. Its group decides the customer lock hold. */
   currentType: { groupKey: string | null } | null;
 }
 
@@ -90,7 +90,7 @@ export interface ReplyTypeDecision {
 }
 
 /**
- * What applying `type` means for one reply. An AI pick waits for a person when the record is locked as Existing customer
+ * What applying `type` means for one reply. An AI pick waits for a person when the conversation is locked as Existing customer
  * and the pick moves it out, when it is the stop request type, or when its confidence is under
  * `AI_PICK_CONFIDENCE_FLOOR`. Every other AI pick applies at once, and a person corrects a wrong one with Change type or
  * Undo. A person's pick never waits. A stop request gets no draft and stops follow-ups, and follow-ups only apply to email
@@ -121,8 +121,8 @@ export interface TypeChangeOutcome {
 }
 
 /**
- * The two ways Change type moves a record. `correct` is a person's pick for the latest reply, which queues a draft when
- * the type writes one. `off_thread` changes the record's type for something that happened elsewhere and writes no draft.
+ * The two ways Change type moves a conversation. `correct` is a person's pick for the latest reply, which queues a draft when
+ * the type writes one. `off_thread` changes the conversation's type for something that happened elsewhere and writes no draft.
  */
 export const TYPE_CHANGE_PATHS = ["correct", "off_thread"] as const;
 export type TypeChangePath = (typeof TYPE_CHANGE_PATHS)[number];

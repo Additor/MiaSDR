@@ -262,7 +262,7 @@ describeDb("MCP actions that cannot be undone", () => {
     const args = { kind: "delete_contact", personId: id };
     const seen = await preview(args);
     expect(seen.structured.refusals).toEqual([]);
-    expect(seen.structured.erases).toMatchObject({ conversations: 1, messages: 1 });
+    expect(seen.structured.erases).toMatchObject({ threads: 1, messages: 1 });
     expect(seen.structured.effect).toContain("1 conversations with 1 messages");
     await sql`insert into notes (organization_id, person_id, body) values (${org.organizationId}, ${id}, 'New note')`;
     expect(codeOf(await apply(args, seen.structured.actionToken as string))).toBe("action_token_stale");
@@ -271,7 +271,7 @@ describeDb("MCP actions that cannot be undone", () => {
 
     done(await apply(args, await tokenOf(args)));
     expect(await exists("people", id)).toBe(false);
-    expect(await sql`select 1 from records where person_id = ${id}`).toHaveLength(0);
+    expect(await sql`select 1 from conversations where person_id = ${id}`).toHaveLength(0);
     const [audit] = await sql<{ meta: { lifecycle: string; via?: { tokenId: string } } }[]>`select meta from audit_log where organization_id = ${org.organizationId} and action = 'person.deleted' and entity_id = ${id}`;
     expect(audit.meta).toMatchObject({ lifecycle: "contact", via: { tokenId: agent.tokenId } });
   });

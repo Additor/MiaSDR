@@ -4,17 +4,17 @@ import { classificationJsonSchema, classificationSchema, draftSchema, LINKEDIN_D
 describe("closed classification schema", () => {
   const schema = classificationSchema(["demo_request", "other"]);
   it("accepts a listed key and trims the reason", () => {
-    expect(schema.parse({ subcategoryKey: "demo_request", confidence: 0.5, reason: "  ok  " })).toEqual({ subcategoryKey: "demo_request", confidence: 0.5, reason: "ok" });
+    expect(schema.parse({ replyTypeKey: "demo_request", confidence: 0.5, reason: "  ok  " })).toEqual({ replyTypeKey: "demo_request", confidence: 0.5, reason: "ok" });
   });
   it("rejects unknown keys, extra fields and out-of-range confidence", () => {
-    expect(schema.safeParse({ subcategoryKey: "send_money", confidence: 1, reason: "x" }).success).toBe(false);
-    expect(schema.safeParse({ subcategoryKey: "other", confidence: 1, reason: "x", action: "send" }).success).toBe(false);
-    expect(schema.safeParse({ subcategoryKey: "other", confidence: 1.2, reason: "x" }).success).toBe(false);
-    expect(schema.safeParse({ subcategoryKey: "other", confidence: Number.NaN, reason: "x" }).success).toBe(false);
+    expect(schema.safeParse({ replyTypeKey: "send_money", confidence: 1, reason: "x" }).success).toBe(false);
+    expect(schema.safeParse({ replyTypeKey: "other", confidence: 1, reason: "x", action: "send" }).success).toBe(false);
+    expect(schema.safeParse({ replyTypeKey: "other", confidence: 1.2, reason: "x" }).success).toBe(false);
+    expect(schema.safeParse({ replyTypeKey: "other", confidence: Number.NaN, reason: "x" }).success).toBe(false);
   });
   it("sends the provider an enum of exactly the allowed keys and no range keywords", () => {
     const json = classificationJsonSchema(["a", "b"]);
-    expect(json.properties.subcategoryKey.enum).toEqual(["a", "b"]);
+    expect(json.properties.replyTypeKey.enum).toEqual(["a", "b"]);
     expect(JSON.stringify(json)).not.toMatch(/minimum|maximum|minLength|maxLength/);
   });
   it("requires a body for a draft", () => {

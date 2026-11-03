@@ -84,43 +84,43 @@ describeDb("contact delete", () => {
   async function full(o: Org, label: string, opts: { companyId?: string | null } = {}) {
     const t = `${o.tag}-${label}`;
     const { person, email } = await bare(o, label, opts);
-    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
+    const record = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
     const box = `me-${t}@x.test`;
-    const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${o.org}, ${record}, 'email', ${box}) returning id`);
+    const thread = await one(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${o.org}, ${record}, 'email', ${box}) returning id`);
     const inbound = await one(sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${o.org}, ${conversation}, 'email', ${box}, 'inbound', ${`in-${t}`}, 'hello', now()) returning id`);
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      values (${o.org}, ${thread}, 'email', ${box}, 'inbound', ${`in-${t}`}, 'hello', now()) returning id`);
     const outbound = await one(sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${o.org}, ${conversation}, 'email', ${box}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
-    await sql`update records set latest_inbound_message_id = ${inbound} where id = ${record}`;
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      values (${o.org}, ${thread}, 'email', ${box}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
+    await sql`update conversations set latest_inbound_message_id = ${inbound} where id = ${record}`;
     await one(sql`
-      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
+      insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
       values (${o.org}, ${record}, ${inbound}, 0, ${o.sub}, ${o.sub}, ${o.sub}, 0.9) returning id`);
     await sql`insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, completed_at) values (${o.org}, 'classification', 'succeeded', 'message', ${inbound}, ${`job-c-${t}`}, now())`;
     const draft = await one(sql`
-      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
-      values (${o.org}, ${record}, ${conversation}, ${inbound}, 0, 'email') returning id`);
+      insert into drafts (organization_id, conversation_id, thread_id, reply_for_message_id, expected_context_version, channel)
+      values (${o.org}, ${record}, ${thread}, ${inbound}, 0, 'email') returning id`);
     const attempt = await one(sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa-${t}`}, ${o.actors.member.userId}, 'prepared') returning id`);
     await sql`update send_attempts set status = 'sent' where id = ${attempt}`;
-    const sequence = await one(sql`insert into sequences (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
-    const version = await one(sql`insert into sequence_versions (organization_id, sequence_id, version) values (${o.org}, ${sequence}, 1) returning id`);
+    const sequence = await one(sql`insert into follow_up_flows (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
+    const version = await one(sql`insert into follow_up_versions (organization_id, flow_id, version) values (${o.org}, ${sequence}, 1) returning id`);
     const step = await one(sql`
-      insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+      insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${o.org}, ${version}, 1, 'reply', 'Step 1', 0, 'Write a short note.') returning id`);
-    await sql`update sequence_versions set status = 'published', published_at = now() where id = ${version}`;
+    await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${version}`;
     const run = await one(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-      values (${o.org}, ${record}, ${conversation}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
+      insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
+      values (${o.org}, ${record}, ${thread}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
     await sql`
-      insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
+      insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
-    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
+    await sql`insert into events (organization_id, person_id, conversation_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
-    await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
+    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
-    await sql`insert into tasks (organization_id, person_id, record_id, name) values (${o.org}, ${person}, ${record}, 'call')`;
+    await sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${o.org}, ${person}, ${record}, 'call')`;
     await sql`insert into contact_policies (organization_id, person_id, do_not_contact, reason, source, set_at) values (${o.org}, ${person}, true, 'asked', 'human', now())`;
     await sql`
       insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason, status, resolved_person_id, resolved_at)
@@ -134,7 +134,7 @@ describeDb("contact delete", () => {
     }
     const won = await closedDeal(o, person, "won", `${label} renewal`);
     const lost = await closedDeal(o, person, "lost", `${label} pilot`);
-    return { person, email, record, conversation, inbound, won, lost };
+    return { person, email, record, thread, inbound, won, lost };
   }
 
   async function closedDeal(o: Org, personId: string, kind: "won" | "lost", title: string) {
@@ -150,18 +150,18 @@ describeDb("contact delete", () => {
 
   /** Rows that point at the person, per table the delete clears. */
   async function rowsOf(o: Org, person: string) {
-    const recs = sql`(select id from records where person_id = ${person})`;
-    const convs = sql`(select id from conversations where record_id in ${recs})`;
+    const recs = sql`(select id from conversations where person_id = ${person})`;
+    const convs = sql`(select id from threads where conversation_id in ${recs})`;
     const [row] = await sql`
       select
         (select count(*) from people where id = ${person})::int as people,
-        (select count(*) from records where person_id = ${person})::int as records,
-        (select count(*) from conversations where id in ${convs})::int as conversations,
-        (select count(*) from messages where conversation_id in ${convs})::int as messages,
-        (select count(*) from reply_type_picks where record_id in ${recs})::int as classifications,
-        (select count(*) from drafts where record_id in ${recs})::int as drafts,
-        (select count(*) from sequence_runs where record_id in ${recs})::int as sequence_runs,
-        (select count(*) from events where person_id = ${person} or record_id in ${recs})::int as events,
+        (select count(*) from conversations where person_id = ${person})::int as conversations,
+        (select count(*) from threads where id in ${convs})::int as threads,
+        (select count(*) from messages where thread_id in ${convs})::int as messages,
+        (select count(*) from reply_type_picks where conversation_id in ${recs})::int as classifications,
+        (select count(*) from drafts where conversation_id in ${recs})::int as drafts,
+        (select count(*) from follow_up_runs where conversation_id in ${recs})::int as follow_up_runs,
+        (select count(*) from events where person_id = ${person} or conversation_id in ${recs})::int as events,
         (select count(*) from contact_policies where person_id = ${person})::int as policies,
         (select count(*) from notes where person_id = ${person})::int as notes,
         (select count(*) from tasks where person_id = ${person})::int as tasks,
@@ -177,7 +177,7 @@ describeDb("contact delete", () => {
     notes: preview.counts.notes,
     tasks: preview.counts.tasks,
     events: preview.counts.events,
-    conversations: preview.counts.conversations,
+    threads: preview.counts.threads,
     messages: preview.counts.messages,
     sends: preview.counts.sends,
   });
@@ -208,7 +208,7 @@ describeDb("contact delete", () => {
     const preview = await app.previewContactDelete(deps, o.actors.admin, target.person);
     expect(preview).toEqual({
       person: { id: target.person, fullName: "target", email: target.email, linkedinUrl: null, doNotContact: true },
-      counts: { deals: { won: 1, lost: 1, wonTitles: ["target renewal"] }, notes: 2, tasks: 1, events: preview.counts.events, conversations: 1, messages: 2, campaigns: 1, sends: 2 },
+      counts: { deals: { won: 1, lost: 1, wonTitles: ["target renewal"] }, notes: 2, tasks: 1, events: preview.counts.events, threads: 1, messages: 2, campaigns: 1, sends: 2 },
       blockers: [],
       suppressionKept: true,
       linkedinOnlyBlock: false,

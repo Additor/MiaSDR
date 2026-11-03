@@ -10,7 +10,7 @@ import { archiveCondition, checkedStatusChange, statusMarks, stepsStillEditable 
 import type { CampaignStatus } from "../../domain/campaign";
 import { retriesUsed } from "../../domain/enrollment-list";
 import { filteredScope, sentCount, tabCounts } from "../../infrastructure/enrollment-list-sql";
-import { inboxConversationsOfPeople } from "../../infrastructure/inbox-thread-lookup";
+import { inboxThreadsOfPeople } from "../../infrastructure/inbox-thread-lookup";
 import { dailyInviteLimit, linkedinRules, profileUrlFor, type LinkedInStep } from "../domain/linkedin";
 import { parseMemberUrl } from "../domain/linkedin-identity";
 import { buildVariables } from "../../domain/variables";
@@ -307,7 +307,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     const labels = new Map(columns.map((c) => [c.key, c.name]));
     const cross = await drizzleCrossCampaignNotices.leadContext(organizationId, id, [...new Set(rows.map((r) => r.personId))]);
     const repliedPeople = [...new Set(rows.filter((r) => r.status === "replied").map((r) => r.personId))];
-    const inboxThreads = await inboxConversationsOfPeople(organizationId, "linkedin", repliedPeople);
+    const inboxThreads = await inboxThreadsOfPeople(organizationId, "linkedin", repliedPeople);
     const [counts, sent] = await Promise.all([tabCounts(organizationId, id, query.campaignStatus), sentCount(organizationId, id)]);
     return {
       total,
@@ -320,7 +320,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
         return {
           ...rest,
           personId,
-          inboxConversationId: inboxThreads.get(personId) ?? null,
+          inboxThreadId: inboxThreads.get(personId) ?? null,
           personName: personName ?? firstName,
           profileUrl: profileUrl ?? (slug ? profileUrlFor(slug) : null),
           variables: buildVariables({ firstName, lastName, fullName: personName, title, phone, email, companyName, companyDomain, linkedinUrl, raw, companyLinkedinUrl, companyRaw, custom, mergeFields }, labels),

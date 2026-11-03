@@ -157,7 +157,7 @@ LinkedIn can still restrict an account for how it is used, and these limits cann
 
 ## Actions no one can undo
 
-Agents complete campaigns and delete records only when all of these hold:
+Agents complete campaigns and delete conversations only when all of these hold:
 
 1. The server allows it. `MCP_IRREVERSIBLE_ENABLED=false` refuses it for the whole install.
 2. An owner or admin sets a daily limit above 0 under Settings, Organization, Agents can spend and delete.

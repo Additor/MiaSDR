@@ -5,14 +5,14 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 
 /**
  * A conversion (the real `createDealFromLead`) racing the writers that meet it on one person, on two connections:
- *   (a) reply ingest for a person without a record, holding the advisory lock while the conversion starts;
- *   (b) ingest holding the person's record, on its way to the advisory lock while the conversion waits for the record;
- *   (c) `suppressEmail` (enrollments before records) for a person with a record, a run and a live enrollment;
+ *   (a) reply ingest for a person without a conversation, holding the advisory lock while the conversion starts;
+ *   (b) ingest holding the person's conversation, on its way to the advisory lock while the conversion waits for the conversation;
+ *   (c) `suppressEmail` (enrollments before conversations) for a person with a conversation, a run and a live enrollment;
  *   (d) ingest of a thread filed under person A with person B's address, racing a conversion of B;
  *   (e) `markSent` in flight.
  * Every writer is the real code: `ingestInbound`, `createSuppressionStore(...).suppressEmail`, `drizzleOutreachStore.markSent`.
  * A third connection holds one row or lock (a "gate") to stop a writer at a chosen statement; (c) pauses the conversion in
- * process at its enrollment step instead, because a lock wait of the conversion after it holds the person's records is bounded
+ * process at its enrollment step instead, because a lock wait of the conversion after it holds the person's conversations is bounded
  * by the 300 ms held-lock timeout on purpose. No case may lose state: the other writer always commits, and where Postgres has
  * to pick a victim the conversion gives way and its one retry succeeds.
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.
@@ -22,7 +22,7 @@ describeDb("conversion races", () => {
   let deals: typeof import("../../application/deals");
   let composition: typeof import("@/composition/deals");
   let leadsApp: typeof import("@/contexts/people/application/convert-to-contact");
-  let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
+  let threads: typeof import("@/contexts/conversations/infrastructure/composition");
   let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
   let outreachStore: typeof import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
 
@@ -31,7 +31,7 @@ describeDb("conversion races", () => {
     deals = await import("../../application/deals");
     composition = await import("@/composition/deals");
     leadsApp = await import("@/contexts/people/application/convert-to-contact");
-    conversations = await import("@/contexts/conversations/infrastructure/composition");
+    threads = await import("@/contexts/conversations/infrastructure/composition");
     const outreach = await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store");
     suppression = await (await import("@/test-support/suppression")).suppressionStore();
     outreachStore = outreach.drizzleOutreachStore;
@@ -56,9 +56,9 @@ describeDb("conversion races", () => {
     // The gate holds the enrollment, so the ingest stops at its reply stop, after the advisory lock.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from campaign_enrollments where id = ${enrollment} for update`);
     const input = f.mail({ from: { email, name: "Ann" } });
-    const ingest = settle(conversations.ingestInbound(input));
+    const ingest = settle(threads.ingestInbound(input));
     await waitForLockWaiters(kit.sql, 1);
-    expect(await kit.count("records", f.org, `person_id = '${personId}'`)).toBe(0);
+    expect(await kit.count("conversations", f.org, `person_id = '${personId}'`)).toBe(0);
     const conversion = convert(f, personId);
     await waitForLockWaiters(kit.sql, 2);
     await gate.release();
@@ -78,13 +78,13 @@ describeDb("conversion races", () => {
     const first = await f.ingest();
     const enrollment = await f.enrollment(await f.campaign(), first.personId, "active");
     const [{ id: draftId }] = await kit.sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, status, request)
-      values (${f.org}, ${first.recordId}, ${first.conversationId}, 0, 'email', 'awaiting_review', '{}'::jsonb) returning id`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, status, request)
+      values (${f.org}, ${first.conversationId}, ${first.threadId}, 0, 'email', 'awaiting_review', '{}'::jsonb) returning id`;
     const retries = lockRetryStats.retries;
     // The gate holds an open draft, so the ingest stops at its stale-draft update, holding the record and not yet the advisory lock.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from drafts where id = ${draftId} for update`);
     const input = f.mail({ from: first.input.from, providerThreadId: first.input.providerThreadId });
-    const ingest = settle(conversations.ingestInbound(input));
+    const ingest = settle(threads.ingestInbound(input));
     await waitForLockWaiters(kit.sql, 1);
     const conversion = convert(f, first.personId);
     await waitForLockWaiters(kit.sql, 2);
@@ -105,10 +105,10 @@ describeDb("conversion races", () => {
     await f.emailedBy(lead.personId);
     await f.cycle();
     const live = await f.enrollment(await f.campaign(), lead.personId, "active");
-    expect(await kit.count("sequence_runs", f.org, "status = 'active'")).toBe(1);
+    expect(await kit.count("follow_up_runs", f.org, "status = 'active'")).toBe(1);
     const retries = lockRetryStats.retries;
 
-    // The conversion stops in process before its enrollment step, holding the record, the advisory lock and the people row.
+    // The conversion stops in process before its enrollment step, holding the conversation, the advisory lock and the people row.
     let paused!: () => void;
     const reachedStop = new Promise<void>((resolve) => (paused = resolve));
     let resume!: () => void;
@@ -140,7 +140,7 @@ describeDb("conversion races", () => {
     // No lost state: the address is suppressed, the enrollment stopped by the suppression, the run ended, the person a contact with a deal.
     expect(await kit.count("suppression_list", f.org, `email = '${lead.input.from.email.toLowerCase()}'`)).toBe(1);
     expect((await kit.one("select status, stop_reason from campaign_enrollments where id = $1", [live])).status).toBe("suppressed");
-    expect(await kit.count("sequence_runs", f.org, "status in ('active', 'paused')")).toBe(0);
+    expect(await kit.count("follow_up_runs", f.org, "status in ('active', 'paused')")).toBe(0);
     expect(await lifecycle(lead.personId)).toBe("contact");
     expect(await kit.count("deals", f.org, `person_id = '${lead.personId}'`)).toBe(1);
   }, 60_000);
@@ -151,18 +151,18 @@ describeDb("conversion races", () => {
     const b = await f.ingest();
     await f.emailedBy(b.personId);
     await f.cycle();
-    expect(await kit.count("sequence_runs", f.org, `status = 'active' and record_id = '${b.recordId}'`)).toBe(1);
+    expect(await kit.count("follow_up_runs", f.org, `status = 'active' and conversation_id = '${b.conversationId}'`)).toBe(1);
     const bLive = await f.enrollment(await f.campaign(), b.personId, "active");
     const retries = lockRetryStats.retries;
     // The gate holds B's live enrollment: the ingest stops at the reply stop, holding A's record and both advisory locks.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from campaign_enrollments where id = ${bLive} for update`);
     const input = f.mail({ providerThreadId: a.input.providerThreadId, from: b.input.from });
-    const ingest = settle(conversations.ingestInbound(input));
+    const ingest = settle(threads.ingestInbound(input));
     await waitForLockWaiters(kit.sql, 1);
     // The conversion of B locks B's record and waits for B's advisory lock.
     const conversion = convert(f, b.personId);
     await waitForLockWaiters(kit.sql, 2);
-    // The ingest goes on to end B's run and asks for B's record: a cycle that the conversion breaks by giving way.
+    // The ingest goes on to end B's run and asks for B's conversation: a cycle that the conversion breaks by giving way.
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
     expect(sqlState(ingested.error)).toBeNull();
@@ -171,7 +171,7 @@ describeDb("conversion races", () => {
     expect(lockRetryStats.retries - retries).toBeLessThanOrEqual(1);
     expect(await inboundCount(f, input.providerMessageId)).toBe(1);
     expect((await kit.one("select status from campaign_enrollments where id = $1", [bLive])).status).toBe("replied");
-    expect(await kit.count("sequence_runs", f.org, `status in ('active', 'paused') and record_id = '${b.recordId}'`)).toBe(0);
+    expect(await kit.count("follow_up_runs", f.org, `status in ('active', 'paused') and conversation_id = '${b.conversationId}'`)).toBe(0);
     expect(await lifecycle(b.personId)).toBe("contact");
     expect(await lifecycle(a.personId)).toBe("lead");
   }, 60_000);
@@ -198,7 +198,7 @@ describeDb("conversion races", () => {
         for (const item of items.filter((_, i) => i % 4 === lane)) await run(item).catch((error: unknown) => errors.push(error));
         return errors;
       });
-    const sendErrors = lanes(rows, ({ claim }) => outreachStore.markSent(claim as never, { providerMessageId: `pm-${Math.random()}`, threadId: "t" }, new Date()));
+    const sendErrors = lanes(rows, ({ claim }) => outreachStore.markSent(claim as never, { providerMessageId: `pm-${Math.random()}`, providerThreadId: "t" }, new Date()));
     const convertErrors = lanes([...rows].reverse(), ({ personId }) => deals.createDealFromLead(composition.dealsDeps(), f.owner, personId));
     const errors = (await Promise.all([...sendErrors, ...convertErrors])).flat();
     expect(errors.map(sqlState)).not.toContain("40P01");

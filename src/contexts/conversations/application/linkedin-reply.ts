@@ -52,9 +52,9 @@ function replay(attempt: AttemptRow): LinkedInReplyResult {
 /** `aiOff` says what stops AI and how to turn it on, worded for the reader's role. Null when AI is on. */
 export type LinkedInReplyPanelView = LinkedInReplyPanel & { canGenerate: boolean; aiOff: string | null };
 
-export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Actor, conversationId: string): Promise<LinkedInReplyPanelView | null> {
-  if (!isUuid(conversationId)) throw new NotFoundError("Conversation not found");
-  const panel = await deps.store.panel(actor.organizationId, conversationId, deps.now());
+export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Actor, threadId: string): Promise<LinkedInReplyPanelView | null> {
+  if (!isUuid(threadId)) throw new NotFoundError("Conversation not found");
+  const panel = await deps.store.panel(actor.organizationId, threadId, deps.now());
   if (!panel) return null;
   const status: AiStatus = deps.aiStatus ? await deps.aiStatus(actor.organizationId) : { state: "no_key" };
   return { ...panel, canGenerate: aiIsOn(status) && !panel.markedDone, aiOff: aiOffMessage(status, isOwnerOrAdmin(actor.role) ? "admin" : "member") };
@@ -63,10 +63,10 @@ export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Acto
 export async function sendLinkedInReply(
   deps: LinkedInReplySendDeps,
   actor: Actor,
-  conversationId: string,
+  threadId: string,
   input: { text?: string; idempotencyKey: string; draftId?: string; revision?: number },
 ): Promise<LinkedInReplyResult> {
-  if (!isUuid(conversationId)) throw new NotFoundError("Conversation not found");
+  if (!isUuid(threadId)) throw new NotFoundError("Conversation not found");
   const key = input.idempotencyKey.trim();
   if (key.length < 8 || key.length > 200) throw new ValidationError("An idempotency key of 8 to 200 characters is required.");
   // An agent sends a saved draft; a person types or edits the text they send.
@@ -80,7 +80,7 @@ export async function sendLinkedInReply(
   const now = deps.now();
   const begun = await deps.store.begin({
     organizationId: actor.organizationId,
-    conversationId,
+    threadId,
     text: input.text,
     idempotencyKey: key,
     actorUserId: actor.userId,

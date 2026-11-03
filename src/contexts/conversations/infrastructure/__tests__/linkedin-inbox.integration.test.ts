@@ -59,8 +59,8 @@ describeDb("master inbox, LinkedIn", () => {
 
     const [person] = await sql`select * from people where id = ${result.personId}`;
     expect(person).toMatchObject({ linkedin_slug: input.counterparty.slug, full_name: "Ada Lovelace", first_name: "Ada", last_name: "Lovelace", source: "inbound", email: null, lifecycle: "lead", converted_at: null });
-    const [conversation] = await sql`select * from conversations where id = ${result.conversationId}`;
-    expect(conversation).toMatchObject({ channel: "linkedin", account_ref: f.account, provider_thread_id: input.providerThreadId, provider_contact_id: input.counterparty.providerId });
+    const [thread] = await sql`select * from threads where id = ${result.threadId}`;
+    expect(thread).toMatchObject({ channel: "linkedin", account_ref: f.account, provider_thread_id: input.providerThreadId, provider_contact_id: input.counterparty.providerId });
     const [stored] = await sql`select * from messages where id = ${result.messageId}`;
     expect(stored).toMatchObject({
       channel: "linkedin",
@@ -71,8 +71,8 @@ describeDb("master inbox, LinkedIn", () => {
       to_address: "Jo Owner",
       body_text: "Sounds good",
     });
-    const [record] = await sql`select * from records where person_id = ${result.personId}`;
-    expect(record).toMatchObject({ workflow_state: "action_required", active_channel: "linkedin", latest_inbound_message_id: result.messageId });
+    const [conversation] = await sql`select * from conversations where person_id = ${result.personId}`;
+    expect(conversation).toMatchObject({ workflow_state: "action_required", active_channel: "linkedin", latest_inbound_message_id: result.messageId });
   });
 
   it("stores a redelivered message once, even when delivered concurrently", async () => {
@@ -94,12 +94,12 @@ describeDb("master inbox, LinkedIn", () => {
     const a = await composition.ingestInboundLinkedInMessage(message(f, { counterparty: who, providerThreadId: "T1", receivedAt: new Date("2026-10-14T10:00:00Z") }));
     const b = await composition.ingestInboundLinkedInMessage(message(f, { counterparty: who, providerThreadId: "T1", receivedAt: new Date("2026-10-14T11:00:00Z") }));
     const c = await composition.ingestInboundLinkedInMessage(message(f, { counterparty: who, providerThreadId: "T2" }));
-    expect(b.conversationId).toBe(a.conversationId);
-    expect(c.conversationId).not.toBe(a.conversationId);
-    // The same person: found again by the profile slug, so there is still one record.
+    expect(b.threadId).toBe(a.threadId);
+    expect(c.threadId).not.toBe(a.threadId);
+    // The same person: found again by the profile slug, so there is still one conversation.
     expect(new Set([a.personId, b.personId, c.personId]).size).toBe(1);
     expect(await count("people", f.org)).toBe(1);
-    expect(await count("conversations", f.org)).toBe(2);
+    expect(await count("threads", f.org)).toBe(2);
   });
 
   it("puts the message under the lead the caller names, and matches an existing lead by slug", async () => {
@@ -137,11 +137,11 @@ describeDb("master inbox, LinkedIn", () => {
     expect((await inbox.listInbox(deps, f.actor, { query: "tuesday" })).total).toBe(1);
     expect((await inbox.listInbox(deps, f.actor, { query: "ada" })).total).toBe(1);
 
-    const thread = await inbox.getThread(deps, f.actor, first.conversationId);
+    const thread = await inbox.getThread(deps, f.actor, first.threadId);
     expect(thread).toMatchObject({ channel: "linkedin", accountLabel: "Jo Owner" });
     expect(thread.person.linkedinUrl).toMatch(/^https:\/\/www\.linkedin\.com\/in\/ada-/);
     expect(thread.messages.map((m) => [m.direction, m.from, m.to, m.bodyText])).toEqual([["inbound", "Ada Lovelace", "Jo Owner", "Can we talk Tuesday?"]]);
-    expect(await inbox.markConversationRead(deps, f.actor, first.conversationId)).toEqual({ changed: 1 });
+    expect(await inbox.markThreadRead(deps, f.actor, first.threadId)).toEqual({ changed: 1 });
   });
 
   it("shows the invitation note and messages we sent in the same thread, in time order", async () => {
@@ -153,7 +153,7 @@ describeDb("master inbox, LinkedIn", () => {
       insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at)
       values (${f.org}, ${enrollment}, 1, 'linkedin', 'sent', ${f.account}, 'Hi Ada, let us connect', '2026-10-14T08:00:00Z'),
              (${f.org}, ${enrollment}, 2, 'linkedin', 'sent', ${f.account}, 'Glad we connected', '2026-10-14T11:00:00Z')`;
-    const thread = await inbox.getThread(composition.inboxDeps(), f.actor, reply.conversationId);
+    const thread = await inbox.getThread(composition.inboxDeps(), f.actor, reply.threadId);
     expect(thread.messages.map((m) => [m.direction, m.source, m.bodyText])).toEqual([
       ["outbound", "sequence", "Hi Ada, let us connect"],
       ["outbound", "sequence", "Glad we connected"],

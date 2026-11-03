@@ -78,10 +78,10 @@ describe("action queue domain", () => {
   });
 
   it("round-trips a cursor with microsecond precision and rejects anything else", () => {
-    const cursor = { sortKey: "2026-10-14 10:00:00.123456+00", recordId: ID };
+    const cursor = { sortKey: "2026-10-14 10:00:00.123456+00", conversationId: ID };
     expect(decodeQueueCursor(encodeQueueCursor(cursor))).toEqual(cursor);
     expect(() => decodeQueueCursor("nope")).toThrow(ValidationError);
-    expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["'; drop table records;--", ID])).toString("base64url"))).toThrow(ValidationError);
+    expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["'; drop table conversations;--", ID])).toString("base64url"))).toThrow(ValidationError);
     expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", "x"])).toString("base64url"))).toThrow(ValidationError);
     // A cursor from the newest-first order has two elements. Continuing it in the oldest-first order would skip or repeat items.
     expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", ID])).toString("base64url"))).toThrow(/Reload the queue/);
@@ -155,17 +155,17 @@ describe("work totals", () => {
 });
 
 describe("next queue item", () => {
-  const items = ["a", "b", "c", "d"].map((recordId) => ({ recordId }));
+  const items = ["a", "b", "c", "d"].map((conversationId) => ({ conversationId }));
 
   it("takes the first candidate that is not the open item", () => {
-    expect(pickNextQueueItem(items, "a")).toEqual({ recordId: "b" });
-    expect(pickNextQueueItem(items, "c")).toEqual({ recordId: "a" });
-    expect(pickNextQueueItem(items, "handled")).toEqual({ recordId: "a" });
+    expect(pickNextQueueItem(items, "a")).toEqual({ conversationId: "b" });
+    expect(pickNextQueueItem(items, "c")).toEqual({ conversationId: "a" });
+    expect(pickNextQueueItem(items, "handled")).toEqual({ conversationId: "a" });
   });
 
   it("answers null when nothing else waits", () => {
     expect(pickNextQueueItem([], "a")).toBeNull();
-    expect(pickNextQueueItem([{ recordId: "a" }], "a")).toBeNull();
+    expect(pickNextQueueItem([{ conversationId: "a" }], "a")).toBeNull();
   });
 
   it("searches the groups below the item, then the ones above, then its own", () => {

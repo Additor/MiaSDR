@@ -53,8 +53,8 @@ describeDb("deals context", () => {
   async function snapshot(f: DealsOrg, personId: string) {
     const person = await kit.one("select lifecycle, converted_at from people where id = $1", [personId]);
     const enrollments = await kit.sql`select id, status, stop_reason from campaign_enrollments where person_id = ${personId} order by id`;
-    const runs = await kit.sql`select r.id, r.status from sequence_runs r join records rec on rec.id = r.record_id where rec.person_id = ${personId} order by r.id`;
-    const drafts = await kit.sql`select d.id, d.status from drafts d join records rec on rec.id = d.record_id where rec.person_id = ${personId} order by d.id`;
+    const runs = await kit.sql`select r.id, r.status from follow_up_runs r join conversations rec on rec.id = r.conversation_id where rec.person_id = ${personId} order by r.id`;
+    const drafts = await kit.sql`select d.id, d.status from drafts d join conversations rec on rec.id = d.conversation_id where rec.person_id = ${personId} order by d.id`;
     const events = await kit.count("events", f.org, `person_id = '${personId}' and (event_type like 'deal.%' or event_type = 'lifecycle.converted')`);
     const dealRows = await kit.count("deals", f.org, `person_id = '${personId}'`);
     return { person, enrollments: [...enrollments], runs: [...runs], drafts: [...drafts], events, deals: dealRows };
@@ -79,15 +79,15 @@ describeDb("deals context", () => {
       expect(after.enrollments.filter((e) => e.status === "cancelled" && e.stop_reason === "converted").map((e) => e.id).sort()).toEqual([lead.live, lead.pending].sort());
       expect(after.enrollments.find((e) => e.id === lead.repliedEnrollmentId)?.status).toBe("replied");
       expect(after.runs.map((r) => r.status)).toEqual(["interrupted"]);
-      expect(await kit.count("drafts", f.org, `record_id = '${lead.recordId}' and status = 'stale' and error = 'The follow-up sequence ended.'`)).toBe(result.stopped.drafts);
+      expect(await kit.count("drafts", f.org, `conversation_id = '${lead.conversationId}' and status = 'stale' and error = 'The follow-up sequence ended.'`)).toBe(result.stopped.drafts);
 
       const deal = await kit.one("select * from deals where id = $1", [result.dealId]);
       expect(deal).toMatchObject({ person_id: lead.personId, stage_kind: "open", owner_user_id: f.owner.userId, currency: "EUR", source_enrollment_id: lead.repliedEnrollmentId, version: 0, closed_at: null });
       expect(Number(deal.amount_minor)).toBe(120000);
       expect(new Date(deal.stage_changed_at).getTime()).toBe(new Date(deal.created_at).getTime());
-      const events = await kit.sql`select event_type, actor_type, actor_user_id, record_id, meta from events where person_id = ${lead.personId} and (event_type like 'deal.%' or event_type = 'lifecycle.converted') order by created_at, event_type`;
+      const events = await kit.sql`select event_type, actor_type, actor_user_id, conversation_id, meta from events where person_id = ${lead.personId} and (event_type like 'deal.%' or event_type = 'lifecycle.converted') order by created_at, event_type`;
       expect(events.map((e) => e.event_type).sort()).toEqual(["deal.created", "lifecycle.converted"]);
-      expect(events.every((e) => e.actor_type === "human" && e.actor_user_id === f.owner.userId && e.record_id === null)).toBe(true);
+      expect(events.every((e) => e.actor_type === "human" && e.actor_user_id === f.owner.userId && e.conversation_id === null)).toBe(true);
       expect(events.find((e) => e.event_type === "deal.created")?.meta).toMatchObject({ dealId: result.dealId, stopped: result.stopped });
 
       // The stage list was created by the first write; the deal sits in the first open stage.
@@ -227,7 +227,7 @@ describeDb("deals context", () => {
       await deals.moveDealStage(deps(), f.owner, dealId, { stageId: by("Proposal"), expectedVersion: 2 });
       await deals.updateDeal(deps(), f.owner, dealId, { expectedVersion: 3, title: "Renamed" });
       const kinds = await kit.sql`select event_type from events where person_id = ${personId} and event_type like 'deal.%' order by created_at`;
-      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.stage_moved", "deal.stage_moved", "deal.stage_moved", "deal.updated"]);
+      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.type_changed", "deal.type_changed", "deal.type_changed", "deal.updated"]);
     });
 
     it("deletes only an open deal, and the person stays a contact", async () => {
@@ -431,7 +431,7 @@ describeDb("deals context", () => {
       const held = await f.ingest();
       const b = await f.person({ name: "Bob" });
       const before = lockRetryStats.retries;
-      // A 200 ms lock timeout stands in for the 5 s one, so the held record times out twice without a 10 s wait.
+      // A 200 ms lock timeout stands in for the 5 s one, so the held conversation times out twice without a 10 s wait.
       const quick = composition.dealsDeps({
         uow: {
           run: (fn, options) =>
@@ -441,8 +441,8 @@ describeDb("deals context", () => {
             }),
         },
       });
-      // Another transaction holds the record of `held` for both attempts.
-      const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from records where id = ${held.recordId} for update`);
+      // Another transaction holds the conversation of `held` for both attempts.
+      const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from conversations where id = ${held.conversationId} for update`);
       const result = await deals.createDealsFromLeads(quick, f.member, [a, contact, held.personId, "00000000-0000-4000-8000-000000000001", b]).finally(() => gate.release());
       expect(result.created.map((c) => c.personId)).toEqual([a, b]);
       expect(result.skipped).toEqual([

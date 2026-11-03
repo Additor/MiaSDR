@@ -15,8 +15,8 @@ export type ReplyChannel = "email" | "linkedin";
 export const REPLY_TEXT_MAX: Record<ReplyChannel, number> = { email: MANUAL_BODY_MAX, linkedin: MAX_LINKEDIN_REPLY };
 
 const WORDS = {
-  email: { conversation: "an email", place: "thread", check: "the mailbox" },
-  linkedin: { conversation: "a LinkedIn", place: "chat", check: "LinkedIn" },
+  email: { thread: "an email", place: "thread", check: "the mailbox" },
+  linkedin: { thread: "a LinkedIn", place: "chat", check: "LinkedIn" },
 } as const;
 
 /** What a refusal's sentence may name besides the channel: the draft status, or the reason a draft went stale. */
@@ -29,7 +29,7 @@ type Detail = { status?: string; staleReason?: string | null };
  */
 export const REPLY_REFUSALS = {
   handling_closed: { error: ConflictError, text: () => "Reply handling is marked done. Reopen it to reply." },
-  wrong_channel: { error: ConflictError, text: (channel: ReplyChannel) => `This is not ${WORDS[channel].conversation} conversation.` },
+  wrong_channel: { error: ConflictError, text: (channel: ReplyChannel) => `This is not ${WORDS[channel].thread} conversation.` },
   conversation_closed: { error: ConflictError, text: () => "This conversation is closed." },
   no_email_address: { error: ConflictError, text: () => "This person has no email address." },
   no_chat: { error: ConflictError, text: () => "There is no LinkedIn chat for this conversation yet." },
@@ -79,12 +79,12 @@ export function replyRefusal(reason: ReplyRefusalReason, channel: ReplyChannel, 
   return new row.error(row.text(channel, detail));
 }
 
-/** What a draft writer returns, with nothing written, when reply handling is marked done under its record lock. */
+/** What a draft writer returns, with nothing written, when reply handling is marked done under its conversation lock. */
 export const HANDLING_CLOSED = "handling_closed" as const;
 
-/** A person marked reply handling done (`records.workflow_state = 'closed'`). Reopen, or a new inbound message, opens it again. */
-export function checkRecordOpen(record: { workflowState: string }, channel: ReplyChannel): void {
-  if (record.workflowState === "closed") throw replyRefusal("handling_closed", channel);
+/** A person marked reply handling done (`conversations.workflow_state = 'closed'`). Reopen, or a new inbound message, opens it again. */
+export function checkConversationOpen(conversation: { workflowState: string }, channel: ReplyChannel): void {
+  if (conversation.workflowState === "closed") throw replyRefusal("handling_closed", channel);
 }
 
 /**
@@ -92,17 +92,17 @@ export function checkRecordOpen(record: { workflowState: string }, channel: Repl
  * the person's email address or the LinkedIn chat of a LinkedIn account.
  */
 export function checkThreadWritable(
-  conversation: { channel: string; status: string; email?: string | null; chat?: string | null; accountRef?: string | null },
+  thread: { channel: string; status: string; email?: string | null; chat?: string | null; accountRef?: string | null },
   channel: ReplyChannel,
 ): void {
-  if (conversation.channel !== channel) throw replyRefusal("wrong_channel", channel);
-  if (conversation.status !== "active") throw replyRefusal("conversation_closed", channel);
+  if (thread.channel !== channel) throw replyRefusal("wrong_channel", channel);
+  if (thread.status !== "active") throw replyRefusal("conversation_closed", channel);
   if (channel === "email") {
-    if (!conversation.email) throw replyRefusal("no_email_address", channel);
+    if (!thread.email) throw replyRefusal("no_email_address", channel);
     return;
   }
-  if (!conversation.chat) throw replyRefusal("no_chat", channel);
-  if (!isUuid(conversation.accountRef)) throw replyRefusal("no_account", channel);
+  if (!thread.chat) throw replyRefusal("no_chat", channel);
+  if (!isUuid(thread.accountRef)) throw replyRefusal("no_account", channel);
 }
 
 /**

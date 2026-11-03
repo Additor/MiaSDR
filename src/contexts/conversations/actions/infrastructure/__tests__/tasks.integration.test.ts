@@ -48,8 +48,8 @@ describeDb("tasks, note ownership and the important flag", () => {
       receivedAt: new Date("2026-10-14T10:00:00Z"),
       autoReply: false,
     });
-    const [record] = await sql`select id from records where person_id = ${result.personId}`;
-    return { id, admin, ann, bob, recordId: record.id as string, messageId: result.messageId, conversationId: result.conversationId };
+    const [conversation] = await sql`select id from conversations where person_id = ${result.personId}`;
+    return { id, admin, ann, bob, conversationId: conversation.id as string, messageId: result.messageId, threadId: result.threadId };
   }
 
   beforeAll(async () => {
@@ -67,24 +67,24 @@ describeDb("tasks, note ownership and the important flag", () => {
 
   it("creates a task for the record's person, assigned and due at the end of the local day", async () => {
     const w = await org();
-    const { id } = await tasks.createTask(deps, w.ann, w.recordId, { name: " Call Lena ", dueDay: "2026-10-20", timeZone: "Asia/Seoul", assigneeId: w.bob.userId });
+    const { id } = await tasks.createTask(deps, w.ann, w.conversationId, { name: " Call Lena ", dueDay: "2026-10-20", timeZone: "Asia/Seoul", assigneeId: w.bob.userId });
     const [row] = await sql`select * from tasks where id = ${id}`;
     expect(row).toMatchObject({ name: "Call Lena", assigned_to: w.bob.userId, created_by: w.ann.userId, is_completed: false });
     expect(new Date(row.due_at).toISOString()).toBe("2026-10-20T14:59:59.000Z");
-    const [record] = await sql`select person_id from records where id = ${w.recordId}`;
-    expect(row.person_id).toBe(record.person_id);
+    const [conversation] = await sql`select person_id from conversations where id = ${w.conversationId}`;
+    expect(row.person_id).toBe(conversation.person_id);
   });
 
   it("rejects an assignee from another organization and a record from another organization", async () => {
     const a = await org();
     const b = await org();
-    await expect(tasks.createTask(deps, a.ann, a.recordId, { name: "x", assigneeId: b.ann.userId })).rejects.toBeInstanceOf(ValidationError);
-    await expect(tasks.createTask(deps, a.ann, b.recordId, { name: "x" })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(tasks.createTask(deps, a.ann, a.conversationId, { name: "x", assigneeId: b.ann.userId })).rejects.toBeInstanceOf(ValidationError);
+    await expect(tasks.createTask(deps, a.ann, b.conversationId, { name: "x" })).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("lets a member change tasks they created or hold and keeps others out; an admin changes any", async () => {
     const w = await org();
-    const { id } = await tasks.createTask(deps, w.ann, w.recordId, { name: "Mine", assigneeId: w.ann.userId });
+    const { id } = await tasks.createTask(deps, w.ann, w.conversationId, { name: "Mine", assigneeId: w.ann.userId });
     await expect(tasks.setTaskCompleted(deps, w.bob, id, true)).rejects.toBeInstanceOf(ForbiddenError);
     await expect(tasks.deleteTask(deps, w.bob, id)).rejects.toBeInstanceOf(ForbiddenError);
     await tasks.updateTask(deps, w.ann, id, { assigneeId: w.bob.userId });
@@ -104,7 +104,7 @@ describeDb("tasks, note ownership and the important flag", () => {
   it("answers 404 for another organization's task", async () => {
     const a = await org();
     const b = await org();
-    const { id } = await tasks.createTask(deps, a.ann, a.recordId, { name: "Private" });
+    const { id } = await tasks.createTask(deps, a.ann, a.conversationId, { name: "Private" });
     await expect(tasks.setTaskCompleted(deps, b.admin, id, true)).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.deleteTask(deps, b.admin, id)).rejects.toBeInstanceOf(NotFoundError);
     expect(await tasks.listTasks(deps, b.admin, { state: "all" })).toEqual([]);
@@ -112,21 +112,21 @@ describeDb("tasks, note ownership and the important flag", () => {
 
   it("lists open tasks overdue first, completed last, and filters by assignee and state", async () => {
     const w = await org();
-    const late = (await tasks.createTask(deps, w.ann, w.recordId, { name: "late", dueDay: "2026-01-02", assigneeId: w.ann.userId })).id;
-    const soon = (await tasks.createTask(deps, w.ann, w.recordId, { name: "soon", dueDay: "2026-12-01", assigneeId: w.bob.userId })).id;
-    const none = (await tasks.createTask(deps, w.ann, w.recordId, { name: "none", assigneeId: w.ann.userId })).id;
-    const done = (await tasks.createTask(deps, w.ann, w.recordId, { name: "done", dueDay: "2026-01-01", assigneeId: w.ann.userId })).id;
+    const late = (await tasks.createTask(deps, w.ann, w.conversationId, { name: "late", dueDay: "2026-01-02", assigneeId: w.ann.userId })).id;
+    const soon = (await tasks.createTask(deps, w.ann, w.conversationId, { name: "soon", dueDay: "2026-12-01", assigneeId: w.bob.userId })).id;
+    const none = (await tasks.createTask(deps, w.ann, w.conversationId, { name: "none", assigneeId: w.ann.userId })).id;
+    const done = (await tasks.createTask(deps, w.ann, w.conversationId, { name: "done", dueDay: "2026-01-01", assigneeId: w.ann.userId })).id;
     await tasks.setTaskCompleted(deps, w.ann, done, true);
     expect((await tasks.listTasks(deps, w.ann, { state: "all" })).map((t) => t.id)).toEqual([late, soon, none, done]);
     expect((await tasks.listTasks(deps, w.ann, { state: "open" })).map((t) => t.id)).toEqual([late, soon, none]);
     expect((await tasks.listTasks(deps, w.ann, { state: "open", mine: true })).map((t) => t.id)).toEqual([late, none]);
     expect((await tasks.listTasks(deps, w.ann, { state: "completed" })).map((t) => t.id)).toEqual([done]);
-    expect((await tasks.listTasks(deps, w.ann, { state: "all", recordId: w.recordId })).length).toBe(4);
+    expect((await tasks.listTasks(deps, w.ann, { state: "all", conversationId: w.conversationId })).length).toBe(4);
   });
 
   it("clears a due date and reassigns to nobody", async () => {
     const w = await org();
-    const { id } = await tasks.createTask(deps, w.ann, w.recordId, { name: "t", dueDay: "2026-10-20", assigneeId: w.ann.userId });
+    const { id } = await tasks.createTask(deps, w.ann, w.conversationId, { name: "t", dueDay: "2026-10-20", assigneeId: w.ann.userId });
     await tasks.updateTask(deps, w.ann, id, { dueDay: null, assigneeId: null });
     const [row] = await sql`select due_at, assigned_to from tasks where id = ${id}`;
     expect(row).toMatchObject({ due_at: null, assigned_to: null });
@@ -134,86 +134,86 @@ describeDb("tasks, note ownership and the important flag", () => {
 
   it("limits note edits and deletes to the author or an admin", async () => {
     const w = await org();
-    const { id } = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "first" });
-    await expect(tasks.editNote(deps, w.bob, w.recordId, id, { body: "hijack" })).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(tasks.assertCanDeleteNote(deps, w.bob, w.recordId, id)).rejects.toBeInstanceOf(ForbiddenError);
-    await tasks.editNote(deps, w.ann, w.recordId, id, { title: " T ", body: " second " });
+    const { id } = await replies.addConversationNote(replyHandlingDeps, w.ann, w.conversationId, { body: "first" });
+    await expect(tasks.editNote(deps, w.bob, w.conversationId, id, { body: "hijack" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(tasks.assertCanDeleteNote(deps, w.bob, w.conversationId, id)).rejects.toBeInstanceOf(ForbiddenError);
+    await tasks.editNote(deps, w.ann, w.conversationId, id, { title: " T ", body: " second " });
     const [row] = await sql`select title, body from notes where id = ${id}`;
     expect(row).toEqual({ title: "T", body: "second" });
-    await tasks.editNote(deps, w.admin, w.recordId, id, { body: "admin edit" });
-    await tasks.assertCanDeleteNote(deps, w.admin, w.recordId, id);
-    await expect(tasks.editNote(deps, w.ann, w.recordId, id, { body: "  " })).rejects.toBeInstanceOf(ValidationError);
+    await tasks.editNote(deps, w.admin, w.conversationId, id, { body: "admin edit" });
+    await tasks.assertCanDeleteNote(deps, w.admin, w.conversationId, id);
+    await expect(tasks.editNote(deps, w.ann, w.conversationId, id, { body: "  " })).rejects.toBeInstanceOf(ValidationError);
   });
 
-  async function personWithoutRecord(organizationId: string) {
+  async function personWithoutConversation(organizationId: string) {
     const [{ id }] = await sql`insert into people (organization_id, email, full_name) values (${organizationId}, ${`norec-${uniqueKey()}@acme.test`}, 'Nora Norecord') returning id`;
-    expect((await sql`select 1 from records where person_id = ${id}`).length).toBe(0);
+    expect((await sql`select 1 from conversations where person_id = ${id}`).length).toBe(0);
     return id as string;
   }
 
-  it("adds, edits and deletes a note on a person with no reply record, stored with a null record_id", async () => {
+  it("adds, edits and deletes a note on a person with no reply record, stored with a null conversation_id", async () => {
     const w = await org();
-    const personId = await personWithoutRecord(w.id);
-    const { id } = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { title: " Call ", body: " Wants pricing " });
-    const [row] = await sql`select person_id, record_id, title, body, created_by from notes where id = ${id}`;
-    expect(row).toEqual({ person_id: personId, record_id: null, title: "Call", body: "Wants pricing", created_by: w.ann.userId });
+    const personId = await personWithoutConversation(w.id);
+    const { id } = await replies.addConversationNote(replyHandlingDeps, w.ann, { personId }, { title: " Call ", body: " Wants pricing " });
+    const [row] = await sql`select person_id, conversation_id, title, body, created_by from notes where id = ${id}`;
+    expect(row).toEqual({ person_id: personId, conversation_id: null, title: "Call", body: "Wants pricing", created_by: w.ann.userId });
 
     await expect(tasks.editNote(deps, w.bob, { personId }, id, { body: "hijack" })).rejects.toBeInstanceOf(ForbiddenError);
     await tasks.editNote(deps, w.ann, { personId }, id, { body: " edited " });
-    expect((await sql`select body, record_id from notes where id = ${id}`)[0]).toEqual({ body: "edited", record_id: null });
+    expect((await sql`select body, conversation_id from notes where id = ${id}`)[0]).toEqual({ body: "edited", conversation_id: null });
 
     const listed = await tasks.listPersonNotes(deps, w.ann, personId);
-    expect(listed.map((n) => [n.id, n.recordId, n.authorName])).toEqual([[id, null, "ann"]]);
+    expect(listed.map((n) => [n.id, n.conversationId, n.authorName])).toEqual([[id, null, "ann"]]);
 
     await expect(tasks.assertCanDeleteNote(deps, w.bob, { personId }, id)).rejects.toBeInstanceOf(ForbiddenError);
     await tasks.assertCanDeleteNote(deps, w.ann, { personId }, id);
-    await replies.deleteRecordNote(replyHandlingDeps, w.ann, { personId }, id);
+    await replies.deleteConversationNote(replyHandlingDeps, w.ann, { personId }, id);
     expect((await sql`select 1 from notes where id = ${id}`).length).toBe(0);
-    await expect(replies.deleteRecordNote(replyHandlingDeps, w.ann, { personId }, id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(replies.deleteConversationNote(replyHandlingDeps, w.ann, { personId }, id)).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("adds and completes a task on a person with no reply record, stored with a null record_id", async () => {
+  it("adds and completes a task on a person with no reply record, stored with a null conversation_id", async () => {
     const w = await org();
-    const personId = await personWithoutRecord(w.id);
+    const personId = await personWithoutConversation(w.id);
     const { id } = await tasks.createTask(deps, w.ann, { personId }, { name: "Send the deck", dueDay: "2026-10-20", timeZone: "UTC", assigneeId: w.bob.userId });
-    const [row] = await sql`select person_id, record_id, assigned_to from tasks where id = ${id}`;
-    expect(row).toEqual({ person_id: personId, record_id: null, assigned_to: w.bob.userId });
+    const [row] = await sql`select person_id, conversation_id, assigned_to from tasks where id = ${id}`;
+    expect(row).toEqual({ person_id: personId, conversation_id: null, assigned_to: w.bob.userId });
     await tasks.setTaskCompleted(deps, w.bob, id, true);
     expect((await sql`select is_completed from tasks where id = ${id}`)[0].is_completed).toBe(true);
-    expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => [t.id, t.recordId, t.isCompleted])).toEqual([[id, null, true]]);
+    expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => [t.id, t.conversationId, t.isCompleted])).toEqual([[id, null, true]]);
   });
 
   it("lists by person every note and task, record-bound ones included, and edits a record-bound note through the person", async () => {
     const w = await org();
-    const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
-    const onPerson = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
-    expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id).sort()).toEqual([onRecord.id, onPerson.id].sort());
-    // The record scope still finds only the record's own notes.
-    await expect(tasks.editNote(deps, w.ann, w.recordId, onPerson.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
-    await tasks.editNote(deps, w.ann, { personId }, onRecord.id, { body: "edited through the person" });
-    expect((await sql`select body, record_id from notes where id = ${onRecord.id}`)[0]).toEqual({ body: "edited through the person", record_id: w.recordId });
+    const [{ person_id: personId }] = await sql`select person_id from conversations where id = ${w.conversationId}`;
+    const onConversation = await replies.addConversationNote(replyHandlingDeps, w.ann, w.conversationId, { body: "on the record" });
+    const onPerson = await replies.addConversationNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
+    expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id).sort()).toEqual([onConversation.id, onPerson.id].sort());
+    // The conversation scope still finds only the conversation's own notes.
+    await expect(tasks.editNote(deps, w.ann, w.conversationId, onPerson.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
+    await tasks.editNote(deps, w.ann, { personId }, onConversation.id, { body: "edited through the person" });
+    expect((await sql`select body, conversation_id from notes where id = ${onConversation.id}`)[0]).toEqual({ body: "edited through the person", conversation_id: w.conversationId });
 
-    const recordTask = await tasks.createTask(deps, w.ann, w.recordId, { name: "record task" });
+    const conversationTask = await tasks.createTask(deps, w.ann, w.conversationId, { name: "record task" });
     const personTask = await tasks.createTask(deps, w.ann, { personId }, { name: "person task" });
-    expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => t.id).sort()).toEqual([recordTask.id, personTask.id].sort());
-    expect((await tasks.listTasks(deps, w.ann, { state: "all", recordId: w.recordId })).map((t) => t.id)).toEqual([recordTask.id]);
+    expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => t.id).sort()).toEqual([conversationTask.id, personTask.id].sort());
+    expect((await tasks.listTasks(deps, w.ann, { state: "all", conversationId: w.conversationId })).map((t) => t.id)).toEqual([conversationTask.id]);
   });
 
   it("answers 404 for another organization's person in every person-scoped call", async () => {
     const a = await org();
     const b = await org();
-    const personId = await personWithoutRecord(a.id);
-    const note = await replies.addRecordNote(replyHandlingDeps, a.ann, { personId }, { body: "private" });
-    await expect(replies.addRecordNote(replyHandlingDeps, b.ann, { personId }, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
+    const personId = await personWithoutConversation(a.id);
+    const note = await replies.addConversationNote(replyHandlingDeps, a.ann, { personId }, { body: "private" });
+    await expect(replies.addConversationNote(replyHandlingDeps, b.ann, { personId }, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.createTask(deps, b.ann, { personId }, { name: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.listTasks(deps, b.ann, { personId })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.listPersonNotes(deps, b.ann, personId)).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.editNote(deps, b.admin, { personId }, note.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.assertCanDeleteNote(deps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(replies.deleteRecordNote(replyHandlingDeps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(replies.deleteConversationNote(replyHandlingDeps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
     // Another person of the same organization does not reach the note either.
-    const other = await personWithoutRecord(a.id);
+    const other = await personWithoutConversation(a.id);
     await expect(tasks.editNote(deps, a.ann, { personId: other }, note.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
   });
 
@@ -227,10 +227,10 @@ describeDb("tasks, note ownership and the important flag", () => {
     await tasks.setMessageImportant(deps, w.ann, w.messageId, true);
     const listed = await listInbox(inbox, w.ann, { view: "important" });
     expect(listed.total).toBe(1);
-    expect(listed.rows[0]).toMatchObject({ conversationId: w.conversationId, hasImportant: true });
+    expect(listed.rows[0]).toMatchObject({ threadId: w.threadId, hasImportant: true });
     expect((await listInbox(inbox, other.ann, { view: "important" })).total).toBe(0);
-    const thread = await getThread(inbox, w.ann, w.conversationId);
-    expect(thread.recordId).toBe(w.recordId);
+    const thread = await getThread(inbox, w.ann, w.threadId);
+    expect(thread.conversationId).toBe(w.conversationId);
     expect(thread.messages.find((m) => m.id === w.messageId)?.important).toBe(true);
     await tasks.setMessageImportant(deps, w.ann, w.messageId, false);
     expect((await listInbox(inbox, w.ann, { view: "important" })).total).toBe(0);

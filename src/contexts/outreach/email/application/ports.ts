@@ -41,19 +41,19 @@ export interface OutgoingEmail {
   rfcMessageId: string;
   inReplyTo: string | null;
   references: string[];
-  threadId: string | null;
+  providerThreadId: string | null;
   /** The HTTPS endpoint a mail client POSTs to (RFC 8058), not the confirmation page. */
   listUnsubscribeUrl: string;
 }
 
 export interface SentEmail {
   providerMessageId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
 }
 
 export interface InboundEmail {
   providerMessageId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
   rfcMessageId: string | null;
   inReplyTo: string | null;
   references: string[];

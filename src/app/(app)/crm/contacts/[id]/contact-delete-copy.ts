@@ -9,7 +9,7 @@ export interface DeleteCounts {
   notes: number;
   tasks: number;
   events: number;
-  conversations: number;
+  threads: number;
   messages: number;
   campaigns: number;
   sends: number;
@@ -63,7 +63,7 @@ export function countLines(counts: DeleteCounts): string[] {
   if (counts.notes > 0) lines.push(count(counts.notes, "note", "notes"));
   if (counts.tasks > 0) lines.push(count(counts.tasks, "task", "tasks"));
   if (counts.events > 0) lines.push(count(counts.events, "history line", "history lines"));
-  if (counts.conversations > 0) lines.push(`${count(counts.conversations, "conversation", "conversations")} with ${count(counts.messages, "message", "messages")}`);
+  if (counts.threads > 0) lines.push(`${count(counts.threads, "conversation", "threads")} with ${count(counts.messages, "message", "messages")}`);
   if (counts.sends > 0) lines.push(`${count(counts.sends, "campaign send", "campaign sends")} in ${count(counts.campaigns, "campaign", "campaigns")}. Campaign reports drop them.`);
   return lines;
 }
@@ -104,7 +104,7 @@ export function expectedQuery(counts: DeleteCounts): string {
     notes: String(counts.notes),
     tasks: String(counts.tasks),
     events: String(counts.events),
-    conversations: String(counts.conversations),
+    threads: String(counts.threads),
     messages: String(counts.messages),
     sends: String(counts.sends),
   });

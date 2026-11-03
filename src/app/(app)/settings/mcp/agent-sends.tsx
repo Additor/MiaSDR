@@ -15,7 +15,7 @@ import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 export interface AgentSendsData {
-  sends: Array<{ attemptId: string; conversationId: string; channel: "email" | "linkedin"; status: string; tokenName: string; userName: string; createdAt: string }>;
+  sends: Array<{ attemptId: string; threadId: string; channel: "email" | "linkedin"; status: string; tokenName: string; userName: string; createdAt: string }>;
   campaigns: Array<{ campaignId: string; name: string; channel: string; status: string; tokenName: string; enrolledByAgents: number }>;
   running: number;
   today: { replies: number; enrolls: number; busiestUser: number; busiestMailbox: number };
@@ -80,7 +80,7 @@ export function AgentSends({ data }: { data: AgentSendsData }) {
               <span className="text-muted-foreground">
                 {send.userName}, {send.tokenName}
               </span>
-              <Link href={`/inbox/${send.conversationId}`} className="underline underline-offset-2">
+              <Link href={`/inbox/${send.threadId}`} className="underline underline-offset-2">
                 Conversation
               </Link>
               <Time value={send.createdAt} className="ml-auto text-muted-foreground" />

@@ -2,7 +2,7 @@
 // The API stores delays in minutes. The form shows days unless a stored delay only fits hours or minutes.
 
 import { AFTER_REPLY_MODE_LABELS } from "@/contexts/conversations/after-reply/domain/after-reply";
-import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/sequences";
+import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/follow-ups";
 import { formatCount } from "@/shared/format-number";
 
 export const MAX_FOLLOW_UP_STEPS = MAX_STEPS;
@@ -137,7 +137,7 @@ export function earlierVersionNote(count: number): string | null {
 }
 
 /** The ids of `FIXED_STOP_RULES` that `FIXED_STOPS_LINE` names. A test fails when the rules change and the line does not. */
-export const FIXED_STOPS_LINE_COVERS = ["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"] as const;
+export const FIXED_STOPS_LINE_COVERS = ["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "conversation_closed", "converted"] as const;
 
 /** The fixed stop rules in one muted line, under the reply types that stop follow-ups. */
 export const FIXED_STOPS_LINE =

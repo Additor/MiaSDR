@@ -86,10 +86,10 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
   if (lead.person.lifecycle !== "contact") redirect(`/leads/${id}`);
 
   const deps = dealsDeps();
-  const [summaries, people, conversation, dialog, activities, deletion] = await Promise.all([
+  const [summaries, people, thread, dialog, activities, deletion] = await Promise.all([
     dealSummaryForPeople(deps, actor, [id]),
     deps.people.summaries(actor.organizationId, [id]),
-    personReplyHandling.activeConversationOfPerson(actor.organizationId, id),
+    personReplyHandling.activeThreadOfPerson(actor.organizationId, id),
     dealDialogData(actor),
     readLeadActivity(leadActivityDeps(), actor.organizationId, [lead.person]),
     previewContactDelete(contactDeleteDeps, actor, id).catch((error: unknown) => {
@@ -158,8 +158,8 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
                 currentUserId={dialog.currentUserId}
                 stages={dialog.stages}
               />
-              {conversation && (
-                <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline" })}>
+              {thread && (
+                <Link href={`/inbox/${thread.threadId}`} className={buttonVariants({ variant: "outline" })}>
                   Open conversation
                 </Link>
               )}

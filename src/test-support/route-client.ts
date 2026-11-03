@@ -275,13 +275,13 @@ export async function createWorld(databaseUrl: string): Promise<World> {
 export const seedErrors: Record<string, string> = {};
 
 export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
-  sequence_steps: { position: 1, step_type: "reply", delay_minutes: 0 },
+  follow_up_steps: { position: 1, step_type: "reply", delay_minutes: 0 },
   ai_jobs: { kind: "classification", entity_type: "message" },
   contact_policies: { do_not_contact: false, source: null, set_at: null, cleared_at: null },
   // The message must be inbound (cross-row validator); parentForce shapes the message the foreign key walk seeds.
   reply_type_picks: { confidence: 0.5, parentForce: { messages: { direction: "inbound" } } },
   campaign_senders: { seedFrom: { mailbox_id: "mailboxes.id" } },
-  notes: { seedFrom: { record_id: "records.id", person_id: "records.person_id" } },
+  notes: { seedFrom: { conversation_id: "conversations.id", person_id: "conversations.person_id" } },
   // enrollment_id and step_number became nullable (test sends), so the seeder no longer follows the foreign key by itself.
   sends: { step_number: 1, seedFrom: { enrollment_id: "campaign_enrollments.id" } },
   grid_provider_credentials: { encryption_version: "v1", encrypted_payload: "v1:seed" },
@@ -303,8 +303,8 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
     after: (tx, row) =>
       tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${row.organization_id as string}, ${row.id as string}, ${row.latest_version as number}, 'seeded')`,
   },
-  // The classification validator wants the message to belong to the classification's record. The foreign key walk
-  // seeds an unrelated record, so point record_id at the record of the seeded message's conversation.
+  // The classification validator wants the message to belong to the classification's conversation. The foreign key walk
+  // seeds an unrelated conversation, so point conversation_id at the conversation of the seeded message's conversation.
   // Positions are unique per organization (checked at commit), so each seeded stage goes after the last one.
   deal_stages: {
     before: async (sql, values) => {
@@ -314,8 +314,8 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
   },
   reply_type_picks: {
     before: async (sql, values) => {
-      const [row] = await sql`select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${values.message_id as string}`;
-      if (row) values.record_id = row.record_id;
+      const [row] = await sql`select c.conversation_id from messages m join threads c on c.id = m.thread_id where m.id = ${values.message_id as string}`;
+      if (row) values.conversation_id = row.conversation_id;
     },
   },
   // `token_hash` is unique, so each seeded token gets its own.
@@ -443,8 +443,8 @@ function rowSeeder(sql: postgres.Sql, usersByOrg: Record<string, string>) {
     const parentForce = (values.parentForce as Record<string, Record<string, unknown>> | undefined) ?? {};
     delete values.parentForce;
 
-    // Foreign keys that overlap (messages has one on (conversation_id, organization_id) and one on
-    // (conversation_id, channel, account_ref)) must point at the same parent row. Process the widest key first
+    // Foreign keys that overlap (messages has one on (thread_id, organization_id) and one on
+    // (thread_id, channel, account_ref)) must point at the same parent row. Process the widest key first
     // and let later keys reuse the row that already filled one of their columns.
     const parentRowOfColumn = new Map<string, { table: string; row: Record<string, unknown> }>();
     const orderedFks = [...fks].sort((a, b) => b.cols.length - a.cols.length || a.cols.join().localeCompare(b.cols.join()) || a.parent.localeCompare(b.parent));

@@ -7,7 +7,7 @@ test.describe("send, reply and stop", () => {
   test("a sent step, then a reply, stops the lead's campaign steps", async ({ page }) => {
     await signInAdmin(page);
     await ensureMailbox(page.request, MAILBOX, "Sam Five");
-    // The first inbox sync only records where the mailbox is. Mail that arrives later is picked up.
+    // The first inbox sync only conversations where the mailbox is. Mail that arrives later is picked up.
     await tick(page.request);
     await importLeads(page.request, [LEAD]);
 

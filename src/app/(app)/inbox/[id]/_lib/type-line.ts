@@ -46,10 +46,10 @@ export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop"; pick
 export function typeDecision<T extends PickFacts>(
   pick: T | undefined,
   reach: { doNotContact: boolean; suppressed: boolean; channel: string },
-  record: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean },
+  conversation: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean },
 ): TypeDecision<T> {
   const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
-  if (record.stopReviewOpen && !stopped) return { kind: "stop", pick: pick?.latest ? pick : null };
+  if (conversation.stopReviewOpen && !stopped) return { kind: "stop", pick: pick?.latest ? pick : null };
   if (!pick || !pick.latest) return null;
   if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: "held", pick };
   return null;
@@ -72,7 +72,7 @@ export function rulesSummary(rules: Pick<TypeRules, "replyDraft" | "followUps">)
   return `${rules.replyDraft ? "Draft" : "No draft"} · ${rules.followUps === "continue" ? "Follow-ups keep going" : "Follow-ups stop"}`;
 }
 
-/** The reply panel's line when no draft exists because the record's type writes none. Null when the type writes one. */
+/** The reply panel's line when no draft exists because the conversation's type writes none. Null when the type writes one. */
 export function noDraftReason(type: { name: string | null; rules: Pick<TypeRules, "replyDraft"> | null } | null): string | null {
   if (!type?.rules || type.rules.replyDraft || !type.name) return null;
   return `No draft: ${type.name} replies get none.`;
@@ -93,10 +93,10 @@ export function undoMessage(result: { draftsRetired: number; runEnded: boolean; 
   return `AI pick undone. It ${list}.`;
 }
 
-/** What the reply panel says when no draft is open, read from the record behind the thread. */
+/** What the reply panel says when no draft is open, read from the conversation behind the thread. */
 export function draftState(
   detail: {
-    record: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
+    conversation: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
     replyTypePicks: readonly PickFacts[];
     policy: { doNotContact: boolean } | null;
     suppressed: boolean;
@@ -104,9 +104,9 @@ export function draftState(
   channel: string,
 ): { noDraft: string | null; drafting: boolean; decisionWaiting: boolean } {
   return {
-    noDraft: noDraftReason({ name: detail.record.replyTypeName, rules: detail.record.replyTypeRules }),
-    drafting: detail.record.draftJobPending,
-    decisionWaiting: typeDecision(latestPick(detail.replyTypePicks), { doNotContact: detail.policy?.doNotContact === true, suppressed: detail.suppressed, channel }, detail.record) !== null,
+    noDraft: noDraftReason({ name: detail.conversation.replyTypeName, rules: detail.conversation.replyTypeRules }),
+    drafting: detail.conversation.draftJobPending,
+    decisionWaiting: typeDecision(latestPick(detail.replyTypePicks), { doNotContact: detail.policy?.doNotContact === true, suppressed: detail.suppressed, channel }, detail.conversation) !== null,
   };
 }
 

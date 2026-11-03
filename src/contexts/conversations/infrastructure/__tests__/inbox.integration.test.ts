@@ -63,9 +63,9 @@ describeDb("master inbox", () => {
     expect(pipeline.is_default).toBe(true);
     expect(await count("reply_handling_settings", f.org)).toBe(1);
     expect(await count("reply_types", f.org)).toBeGreaterThan(10);
-    const [record] = await sql`select * from records where organization_id = ${f.org}`;
-    expect(record).toMatchObject({ workflow_state: "action_required", active_channel: "email", context_version: 1 });
-    expect(record.latest_inbound_message_id).toBe(result.messageId);
+    const [conversation] = await sql`select * from conversations where organization_id = ${f.org}`;
+    expect(conversation).toMatchObject({ workflow_state: "action_required", active_channel: "email", context_version: 1 });
+    expect(conversation.latest_inbound_message_id).toBe(result.messageId);
     const [message] = await sql`select * from messages where organization_id = ${f.org}`;
     expect(message.idempotency_key).toMatch(/^gmail:me-.*@corp\.test:msg-\d+$/);
     expect(message.direction).toBe("inbound");
@@ -78,12 +78,12 @@ describeDb("master inbox", () => {
     const second = await composition.ingestInbound(input);
     const [a, b] = await Promise.all([composition.ingestInbound(input), composition.ingestInbound(input)]);
     expect(first.status).toBe("created");
-    for (const r of [second, a, b]) expect(r).toMatchObject({ status: "duplicate", messageId: first.messageId, conversationId: first.conversationId });
+    for (const r of [second, a, b]) expect(r).toMatchObject({ status: "duplicate", messageId: first.messageId, threadId: first.threadId });
     expect(await count("messages", f.org)).toBe(1);
     expect(await count("people", f.org)).toBe(1);
-    expect(await count("conversations", f.org)).toBe(1);
-    const [record] = await sql`select context_version from records where organization_id = ${f.org}`;
-    expect(record.context_version).toBe(1);
+    expect(await count("threads", f.org)).toBe(1);
+    const [conversation] = await sql`select context_version from conversations where organization_id = ${f.org}`;
+    expect(conversation.context_version).toBe(1);
   });
 
   it("concurrent first messages create one default pipeline and one person", async () => {
@@ -92,7 +92,7 @@ describeDb("master inbox", () => {
     await Promise.all([1, 2, 3, 4].map(() => composition.ingestInbound(mail(f, { from: sender }))));
     expect(await count("reply_type_sets", f.org)).toBe(1);
     expect(await count("people", f.org)).toBe(1);
-    expect(await count("records", f.org)).toBe(1);
+    expect(await count("conversations", f.org)).toBe(1);
     expect(await count("messages", f.org)).toBe(4);
   });
 
@@ -123,13 +123,13 @@ describeDb("master inbox", () => {
     const a = await composition.ingestInbound(mail(f, { from, providerThreadId: "T1", receivedAt: new Date("2026-10-14T10:00:00Z") }));
     const b = await composition.ingestInbound(mail(f, { from, providerThreadId: "T1", receivedAt: new Date("2026-10-14T11:00:00Z") }));
     const c = await composition.ingestInbound(mail(f, { from, providerThreadId: "T2" }));
-    expect(b.conversationId).toBe(a.conversationId);
-    expect(c.conversationId).not.toBe(a.conversationId);
-    expect(await count("records", f.org)).toBe(1);
-    expect(await count("conversations", f.org)).toBe(2);
+    expect(b.threadId).toBe(a.threadId);
+    expect(c.threadId).not.toBe(a.threadId);
+    expect(await count("conversations", f.org)).toBe(1);
+    expect(await count("threads", f.org)).toBe(2);
     // The same thread id on another mailbox is a different conversation.
     const other = await composition.ingestInbound(mail({ ...f, mailbox: "other-" + f.mailbox }, { from, providerThreadId: "T1" }));
-    expect(other.conversationId).not.toBe(a.conversationId);
+    expect(other.threadId).not.toBe(a.threadId);
   });
 
   it("an older message arriving late does not move the latest inbound pointer back", async () => {
@@ -137,16 +137,16 @@ describeDb("master inbox", () => {
     const from = { email: "late@acme.test", name: null };
     const newer = await composition.ingestInbound(mail(f, { from, providerThreadId: "L", receivedAt: new Date("2026-10-14T12:00:00Z") }));
     await composition.ingestInbound(mail(f, { from, providerThreadId: "L", receivedAt: new Date("2026-10-14T09:00:00Z") }));
-    const [record] = await sql`select latest_inbound_message_id, last_inbound_at from records where organization_id = ${f.org}`;
-    expect(record.latest_inbound_message_id).toBe(newer.messageId);
-    expect(record.last_inbound_at).toEqual(new Date("2026-10-14T12:00:00Z"));
+    const [conversation] = await sql`select latest_inbound_message_id, last_inbound_at from conversations where organization_id = ${f.org}`;
+    expect(conversation.latest_inbound_message_id).toBe(newer.messageId);
+    expect(conversation.last_inbound_at).toEqual(new Date("2026-10-14T12:00:00Z"));
   });
 
   it("stores an auto-reply flagged and leaves the record state alone", async () => {
     const f = await fixture();
     const result = await composition.ingestInbound(mail(f, { autoReply: true, subject: "Automatic reply: Hi" }));
-    const [record] = await sql`select workflow_state, context_version, last_inbound_at, latest_inbound_message_id from records where organization_id = ${f.org}`;
-    expect(record).toMatchObject({ workflow_state: "unclassified", context_version: 0, last_inbound_at: null, latest_inbound_message_id: null });
+    const [conversation] = await sql`select workflow_state, context_version, last_inbound_at, latest_inbound_message_id from conversations where organization_id = ${f.org}`;
+    expect(conversation).toMatchObject({ workflow_state: "unclassified", context_version: 0, last_inbound_at: null, latest_inbound_message_id: null });
     // Machine mail leaves the All view (bundled into Automated) and does not count as unread.
     expect((await inbox.listInbox(composition.inboxDeps(), f.actor, {})).total).toBe(0);
     const list = await inbox.listInbox(composition.inboxDeps(), f.actor, { view: "automated" });
@@ -164,15 +164,15 @@ describeDb("master inbox", () => {
     const bySubject = Object.fromEntries(list.rows.map((r) => [r.subject, r]));
     expect(bySubject["Delivery Status Notification (Failure)"]).toMatchObject({ autoReply: true, possibleBounce: true });
     expect(bySubject["Out of office"]).toMatchObject({ autoReply: true, possibleBounce: false });
-    const thread = await inbox.getThread(composition.inboxDeps(), f.actor, bySubject["Delivery Status Notification (Failure)"].conversationId);
+    const thread = await inbox.getThread(composition.inboxDeps(), f.actor, bySubject["Delivery Status Notification (Failure)"].threadId);
     expect(thread.messages[0]).toMatchObject({ autoReply: true, possibleBounce: true });
   });
 
   it("falls back to a placeholder body and the message id as thread id", async () => {
     const f = await fixture();
     const result = await composition.ingestInbound(mail(f, { bodyText: "  \n", providerThreadId: "" , providerMessageId: "solo-1" }));
-    const [conversation] = await sql`select provider_thread_id from conversations where id = ${result.conversationId}`;
-    expect(conversation.provider_thread_id).toBe("solo-1");
+    const [thread] = await sql`select provider_thread_id from threads where id = ${result.threadId}`;
+    expect(thread.provider_thread_id).toBe("solo-1");
     expect((await sql`select body_text from messages where id = ${result.messageId}`)[0].body_text).toBe("(no text content)");
   });
 
@@ -199,7 +199,7 @@ describeDb("master inbox", () => {
       expect((await inbox.listInbox(deps, f.actor, { query: "ANN@" })).rows).toHaveLength(1);
       expect((await inbox.listInbox(deps, f.actor, { query: "%" })).rows).toHaveLength(0);
 
-      await inbox.markConversationRead(deps, f.actor, bob.conversationId);
+      await inbox.markThreadRead(deps, f.actor, bob.threadId);
       const unread = await inbox.listInbox(deps, f.actor, { view: "unread" });
       expect(unread.rows.map((r) => r.personName)).toEqual(["Ann Old"]);
       expect((await inbox.listInbox(deps, f.actor, { page: 2 })).rows).toHaveLength(0);
@@ -208,12 +208,12 @@ describeDb("master inbox", () => {
     it("marks a conversation read once and rejects another organization's conversation", async () => {
       const f = await fixture();
       const other = await fixture();
-      const { conversationId } = await composition.ingestInbound(mail(f));
+      const { threadId } = await composition.ingestInbound(mail(f));
       const deps = composition.inboxDeps();
-      expect(await inbox.markConversationRead(deps, f.actor, conversationId)).toEqual({ changed: 1 });
-      expect(await inbox.markConversationRead(deps, f.actor, conversationId)).toEqual({ changed: 0 });
-      await expect(inbox.markConversationRead(deps, other.actor, conversationId)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(inbox.getThread(deps, other.actor, conversationId)).rejects.toBeInstanceOf(NotFoundError);
+      expect(await inbox.markThreadRead(deps, f.actor, threadId)).toEqual({ changed: 1 });
+      expect(await inbox.markThreadRead(deps, f.actor, threadId)).toEqual({ changed: 0 });
+      await expect(inbox.markThreadRead(deps, other.actor, threadId)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(inbox.getThread(deps, other.actor, threadId)).rejects.toBeInstanceOf(NotFoundError);
       await expect(inbox.getThread(deps, f.actor, "not-a-uuid")).rejects.toBeInstanceOf(NotFoundError);
     });
 
@@ -231,7 +231,7 @@ describeDb("master inbox", () => {
       const reply = await composition.ingestInbound(
         mail(f, { from: { email: "seq@acme.test", name: null }, providerThreadId: "SEQ", receivedAt: new Date("2026-10-14T09:00:00Z"), bodyText: "Tell me more" }),
       );
-      const thread = await inbox.getThread(composition.inboxDeps(), f.actor, reply.conversationId);
+      const thread = await inbox.getThread(composition.inboxDeps(), f.actor, reply.threadId);
       expect(thread.person).toMatchObject({ id: person, name: "Seq Lead", email: "seq@acme.test" });
       expect(thread.messages.map((m) => [m.direction, m.source, m.bodyText])).toEqual([
         ["outbound", "sequence", "Opening pitch"],

@@ -4,7 +4,7 @@ import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composi
 import { withActor } from "@/app/_lib/api";
 
 /**
- * `replyTypeKey: null` accepts the AI's held pick. A key overrides it. `expectedContextVersion` is the record version the person
+ * `replyTypeKey: null` accepts the AI's held pick. A key overrides it. `expectedContextVersion` is the conversation version the person
  * saw; a mismatch answers 409. Either is recorded as a person's pick. Accepting a held stop request answers 409 with
  * `code: "stop_review"`: the client opens Stop contacting instead. No pick marks the person do not contact.
  */

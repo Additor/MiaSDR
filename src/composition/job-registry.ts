@@ -1,6 +1,6 @@
 import { gridJobs } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { conversationJobs } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { sequenceJobs } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
+import { followUpJobs } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
 import { emailJobs } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinJobs } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { maintenanceJobs } from "@/platform/jobs/maintenance";
@@ -11,5 +11,5 @@ import { organizationTimeZones } from "@/contexts/tenancy/infrastructure/drizzle
 
 /** The composition point for background work: each bounded context contributes its jobs here. */
 export function registeredJobs(): Job[] {
-  return [...emailJobs(inboxFiling, followUps), ...linkedinJobs(inboxFiling), ...conversationJobs(), ...sequenceJobs(), ...gridJobs(), ...maintenanceJobs({ steps: rolloverSteps(), zones: organizationTimeZones })];
+  return [...emailJobs(inboxFiling, followUps), ...linkedinJobs(inboxFiling), ...conversationJobs(), ...followUpJobs(), ...gridJobs(), ...maintenanceJobs({ steps: rolloverSteps(), zones: organizationTimeZones })];
 }

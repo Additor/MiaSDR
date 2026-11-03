@@ -1,19 +1,19 @@
 import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { messages, notes, people, records, tasks, users } from "@/platform/db/schema";
+import { messages, notes, people, conversations, tasks, users } from "@/platform/db/schema";
 import type { NoteScope, TaskRow, TaskStore } from "../application/tasks-ports";
 
 const assignee = users;
 
 const columns = {
   id: tasks.id,
-  recordId: tasks.recordId,
+  conversationId: tasks.conversationId,
   personId: tasks.personId,
   personName: sql<string | null>`coalesce(${people.fullName}, ${people.firstName}, ${people.email})`,
   personLifecycle: people.lifecycle,
-  // The same pick as `activeConversationOfPerson`: the record's active channel first.
-  conversationId: sql<string | null>`(
-    select c.id from conversations c join records r on r.id = c.record_id and r.organization_id = c.organization_id
+  // The same pick as `activeThreadOfPerson`: the conversation's active channel first.
+  threadId: sql<string | null>`(
+    select c.id from threads c join conversations r on r.id = c.conversation_id and r.organization_id = c.organization_id
     where r.person_id = ${tasks.personId} and r.organization_id = ${tasks.organizationId}
     order by (c.channel = r.active_channel) desc nulls last, c.updated_at desc, c.id limit 1)`,
   name: tasks.name,
@@ -28,10 +28,10 @@ const columns = {
 };
 
 /**
- * A record scope matches that record's rows; a person scope matches the person's rows that `personNotes` lists.
+ * A conversation scope matches that conversation's rows; a person scope matches the person's rows that `personNotes` lists.
  */
 const noteScopeWhere = (scope: NoteScope) =>
-  scope.recordId !== undefined ? eq(notes.recordId, scope.recordId) : eq(notes.personId, scope.personId);
+  scope.conversationId !== undefined ? eq(notes.conversationId, scope.conversationId) : eq(notes.personId, scope.personId);
 
 function select(where: SQL | undefined) {
   return db
@@ -48,7 +48,7 @@ export const drizzleTaskStore: TaskStore = {
       eq(tasks.organizationId, organizationId),
       filter.state === "open" ? eq(tasks.isCompleted, false) : filter.state === "completed" ? eq(tasks.isCompleted, true) : undefined,
       filter.assigneeId ? eq(tasks.assignedTo, filter.assigneeId) : undefined,
-      filter.recordId ? eq(tasks.recordId, filter.recordId) : undefined,
+      filter.conversationId ? eq(tasks.conversationId, filter.conversationId) : undefined,
       filter.personId ? eq(tasks.personId, filter.personId) : undefined,
     );
     const rows: TaskRow[] = await select(where)
@@ -57,8 +57,8 @@ export const drizzleTaskStore: TaskStore = {
     return rows;
   },
 
-  async recordExists(organizationId, recordId) {
-    const [row] = await db.select({ id: records.id }).from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)));
+  async conversationExists(organizationId, conversationId) {
+    const [row] = await db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)));
     return Boolean(row);
   },
 
@@ -75,13 +75,13 @@ export const drizzleTaskStore: TaskStore = {
   async create(input) {
     const { scope } = input;
     const [owner] =
-      scope.recordId !== undefined
+      scope.conversationId !== undefined
         ? await db
-            .select({ recordId: records.id, personId: records.personId })
-            .from(records)
-            .where(and(eq(records.id, scope.recordId), eq(records.organizationId, input.organizationId)))
+            .select({ conversationId: conversations.id, personId: conversations.personId })
+            .from(conversations)
+            .where(and(eq(conversations.id, scope.conversationId), eq(conversations.organizationId, input.organizationId)))
         : await db
-            .select({ recordId: sql<string | null>`null::uuid`, personId: people.id })
+            .select({ conversationId: sql<string | null>`null::uuid`, personId: people.id })
             .from(people)
             .where(and(eq(people.id, scope.personId), eq(people.organizationId, input.organizationId)));
     if (!owner) return null;
@@ -90,7 +90,7 @@ export const drizzleTaskStore: TaskStore = {
       .values({
         organizationId: input.organizationId,
         personId: owner.personId,
-        recordId: owner.recordId,
+        conversationId: owner.conversationId,
         name: input.name,
         description: input.description,
         dueAt: input.dueAt,
@@ -144,7 +144,7 @@ export const drizzleTaskStore: TaskStore = {
 
   async personNotes(organizationId, personId) {
     return db
-      .select({ id: notes.id, recordId: notes.recordId, title: notes.title, body: notes.body, createdAt: notes.createdAt, authorName: users.name, createdBy: notes.createdBy })
+      .select({ id: notes.id, conversationId: notes.conversationId, title: notes.title, body: notes.body, createdAt: notes.createdAt, authorName: users.name, createdBy: notes.createdBy })
       .from(notes)
       .leftJoin(users, eq(users.id, notes.createdBy))
       .where(

@@ -118,6 +118,6 @@ const accessOf = (principal: McpPrincipal) => {
 
 const toolHooks = (principal: McpPrincipal): ToolHooks => ({
   take: async (bucket) => (await takeMcpRequest(mcpRateLimitDeps(), principal, bucket))?.retryAfterSeconds ?? null,
-  record: (entry) => recordMcpToolCall(mcpToolCallDeps(), entry),
+  conversation: (entry) => recordMcpToolCall(mcpToolCallDeps(), entry),
   now: () => performance.now(),
 });

@@ -11,7 +11,7 @@ const TERMS = ["Lead", "Contact", "Company", "Deal", "Stage"];
 /** Terms "Contacts and Companies CRUD" in docs/decisions.md adds to that list. */
 const CRUD_TERMS = ["Other domains", "Listed in Companies", "Make contact"];
 
-/** Terms the UI shows whose code names differ (`record`, `grid`, `waterfall`), and the map of names that stay. */
+/** Terms the UI shows whose code names differ (`conversation`, `grid`, `waterfall`), and the map of names that stay. */
 const CODE_NAME_TERMS = ["Conversation", "Tables", "Workbook", "Table", "Enrichment column", "Enrichment provider", "Code names"];
 
 /** Terms "Reply types and type rules" in docs/decisions.md adds to that list. */
@@ -65,7 +65,7 @@ const SCREEN_DOCS = [
 ];
 
 /**
- * Screen names the UI retired, as a doc would use them. Code names in backticks stay (`subcategoryKey`,
+ * Screen names the UI retired, as a doc would use them. Code names in backticks stay (`replyTypeKey`,
  * `after-reply`), and so does "Follow-ups after a reply", whose lowercase words the case-sensitive rules leave alone.
  */
 const RETIRED_DOC_WORDS: ReadonlyArray<{ name: string; pattern: RegExp }> = [
@@ -106,6 +106,6 @@ describe("retired screen names in the docs", () => {
     expect(hits("Turn on After a reply.")).toBe(1);
     expect(hits("Set the Position of the type.")).toBe(1);
     expect(hits("Waiting on them since Monday.")).toBe(1);
-    expect(hits("Follow-ups after a reply, `after-reply`, `subcategoryKey`, the job kind `classification`.")).toBe(0);
+    expect(hits("Follow-ups after a reply, `after-reply`, `replyTypeKey`, the job kind `classification`.")).toBe(0);
   });
 });

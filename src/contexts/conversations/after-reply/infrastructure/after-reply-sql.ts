@@ -31,8 +31,8 @@ export const startableCampaignSql = (campaign: { channel: SQL; status: SQL; arch
 export const flowRunnableSql = (alias: string) => sql`(${sql.raw(alias)}.campaign_id is null or ${sql.raw(alias)}.status = 'active')`;
 
 /**
- * The rules a run start reads for record `alias`, joined to its type as `type`: the snapshot of the newest pick that
- * applied the record's type to the latest reply at the record's context version (`reply_type_picks.rules`), else the
+ * The rules a run start reads for conversation `alias`, joined to its type as `type`: the snapshot of the newest pick that
+ * applied the conversation's type to the latest reply at the conversation's context version (`reply_type_picks.rules`), else the
  * type's columns. Rules apply at
  * decision time, so an edit of the type after the pick changes nothing for that reply. A change off the thread bumps the
  * version past every pick, and the type the person chose decides. The sweep, `loadStartOn` and so `startBlockedReason`

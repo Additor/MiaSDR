@@ -40,7 +40,7 @@ async function matchEnrollment(tx: Tx, mailbox: SyncMailbox, email: InboundEmail
     const found = await pick(or(inArray(sends.rfcMessageId, ids), inArray(sends.providerMessageId, ids)));
     if (found) return found;
   }
-  if (email.threadId) return pick(and(eq(sends.threadId, email.threadId), eq(sends.mailboxId, mailbox.id)));
+  if (email.providerThreadId) return pick(and(eq(sends.providerThreadId, email.providerThreadId), eq(sends.mailboxId, mailbox.id)));
   return null;
 }
 
@@ -84,7 +84,7 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
   return inbox.email({
     organizationId: mailbox.organizationId,
     accountRef: mailbox.emailAddress,
-    providerThreadId: email.threadId ?? email.providerMessageId,
+    providerThreadId: email.providerThreadId ?? email.providerMessageId,
     providerMessageId: email.providerMessageId,
     rfcMessageId: email.rfcMessageId,
     inReplyTo: email.inReplyTo,
@@ -237,7 +237,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
           accountRef: mailbox.emailAddress,
           payload: {
             providerMessageId: email.providerMessageId,
-            threadId: email.threadId,
+            providerThreadId: email.providerThreadId,
             from: email.from,
             subject: email.subject,
             receivedAt: email.receivedAt.toISOString(),

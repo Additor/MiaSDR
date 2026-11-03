@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { actionToken, actionTokenMatches, readActionToken, stateDigest } from "./action-token";
 
 describe("action tokens", () => {
-  const state = { version: 3, counts: { conversations: 2 } };
+  const state = { version: 3, counts: { threads: 2 } };
 
   it("matches the state it was made from", () => {
     expect(actionTokenMatches(actionToken("delete_deal", "d1", state), "delete_deal", "d1", state)).toBe(true);
@@ -11,7 +11,7 @@ describe("action tokens", () => {
   it("stops matching when one item of the state changes", () => {
     const token = actionToken("delete_deal", "d1", state);
     expect(actionTokenMatches(token, "delete_deal", "d1", { ...state, version: 4 })).toBe(false);
-    expect(actionTokenMatches(token, "delete_deal", "d1", { ...state, counts: { conversations: 3 } })).toBe(false);
+    expect(actionTokenMatches(token, "delete_deal", "d1", { ...state, counts: { threads: 3 } })).toBe(false);
   });
 
   it("stops matching for another purpose or target", () => {

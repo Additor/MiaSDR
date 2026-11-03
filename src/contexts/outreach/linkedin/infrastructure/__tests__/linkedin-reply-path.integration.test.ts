@@ -98,7 +98,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
     });
 
   const statusOf = async (enrollment: string) => (await sql`select status from campaign_enrollments where id = ${enrollment}`)[0].status;
-  const recordOf = async (person: string) => (await sql`select * from records where person_id = ${person}`)[0];
+  const conversationOf = async (person: string) => (await sql`select * from conversations where person_id = ${person}`)[0];
 
   beforeAll(async () => {
     inbound = await import("../../application/linkedin-inbound");
@@ -129,10 +129,10 @@ describeDb("a reply on a LinkedIn campaign", () => {
     expect(list.rows.map((row) => row.snippet)).toEqual(["Tell me more"]);
     expect(await unread.drizzleUnreadStore.counts(f.org)).toMatchObject({ total: 1, linkedin: 1 });
 
-    const record = await recordOf(ada.person);
+    const record = await conversationOf(ada.person);
     expect(record).toMatchObject({ workflow_state: "action_required", context_version: 1 });
     const queue = await workQueueApp.getWorkQueue(workQueueComposition.workQueueDeps(), f.actor);
-    expect(Object.values(queue.groups).flatMap((group) => group.items.map((item) => item.recordId))).toContain(record.id);
+    expect(Object.values(queue.groups).flatMap((group) => group.items.map((item) => item.conversationId))).toContain(record.id);
 
     await aiJobs.drizzleAiJobStore.enqueueMissing(new Date());
     expect((await sql`select kind from ai_jobs where organization_id = ${f.org}`).map((job) => job.kind)).toEqual(["classification"]);
@@ -169,7 +169,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
     await receive(f, ada.member, "m1", "First");
     await receive(f, ada.member, "m1", "First");
     await receive(f, ada.member, "m2", "Second");
-    expect(await sql`select id from conversations where organization_id = ${f.org}`).toHaveLength(1);
+    expect(await sql`select id from threads where organization_id = ${f.org}`).toHaveLength(1);
     expect(await sql`select id from messages where organization_id = ${f.org}`).toHaveLength(2);
   });
 

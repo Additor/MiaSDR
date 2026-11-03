@@ -37,7 +37,7 @@ export const sendReplyTool = defineTool({
   name: "send_reply",
   title: "Send reply",
   description: [
-    "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass `conversationId`, `draftId`, `revision` from the last read, and an `idempotencyKey` (8 to 200 characters) you keep for this one send; the same key never sends twice.",
+    "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass `threadId`, `draftId`, `revision` from the last read, and an `idempotencyKey` (8 to 200 characters) you keep for this one send; the same key never sends twice.",
     "Agents reply only where a campaign reached the person or a person already replied, without CC, at most once a day per reply handling and within the organization's daily limits; a refusal names its `code`.",
     "A draft longer than the 12,000 characters an answer shows is refused (`draft_not_read`): shorten it with write_reply_draft, or a person sends it.",
     "Send only when the person asked for it or their standing instructions cover it.",
@@ -45,9 +45,9 @@ export const sendReplyTool = defineTool({
   scope: "mcp:send",
   needs: "replies",
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-  input: z.object({ conversationId: z.string(), draftId: z.string(), revision: z.number().int(), idempotencyKey: z.string() }),
+  input: z.object({ threadId: z.string(), draftId: z.string(), revision: z.number().int(), idempotencyKey: z.string() }),
   output: z.object({
-    conversationId: z.string(),
+    threadId: z.string(),
     status: z.enum(STATUSES),
     attemptId: z.string(),
     replayed: z.boolean(),
@@ -57,24 +57,24 @@ export const sendReplyTool = defineTool({
   }),
   buckets: () => ["write", "send"],
   async run({ actor, out }, input) {
-    const { channel } = await getThread(inboxDeps(), actor, input.conversationId);
+    const { channel } = await getThread(inboxDeps(), actor, input.threadId);
     // The draft must belong to the conversation the agent named; another organization's draft answers not found.
     const draft = await replyDeps().store.getDraft(actor.organizationId, input.draftId);
-    if (!draft || draft.conversationId !== input.conversationId) throw new NotFoundError("Draft not found");
+    if (!draft || draft.threadId !== input.threadId) throw new NotFoundError("Draft not found");
     // An agent sends only text it could read whole. A draft already sending or sent falls through to the replay answer.
     if (draft.status === "awaiting_review" && (draft.editedBodyText ?? draft.aiBodyText ?? "").length > LONG_TEXT_CHARS) {
       throw new ConflictError(`The draft is longer than the ${LONG_TEXT_CHARS} characters an answer shows, so the agent has not read all of it. Shorten it with write_reply_draft, or a person sends it in MiaSDR.`, { code: "draft_not_read" });
     }
     const result =
       channel === "linkedin"
-        ? await sendLinkedInReply(linkedinReplySendDeps(), actor, input.conversationId, { draftId: draft.id, revision: input.revision, idempotencyKey: input.idempotencyKey })
+        ? await sendLinkedInReply(linkedinReplySendDeps(), actor, input.threadId, { draftId: draft.id, revision: input.revision, idempotencyKey: input.idempotencyKey })
         : await approveAndSendDraft(replySendDeps(), actor, draft.id, { revision: input.revision, idempotencyKey: input.idempotencyKey });
     const error = "error" in result ? agentError(result) : null;
     // A replay answers what this key did before, so a block it reports says nothing about sending now.
     const retryable = result.status === "failed" || (result.status === "blocked" && !result.replayed && RETRYABLE_BLOCKS.has(result.reason));
     return {
       summary: [error, NEXT_STEP[result.status], result.replayed ? "This key had already sent; nothing new went out." : null].filter(Boolean).join(" "),
-      structured: { conversationId: input.conversationId, status: result.status, attemptId: result.attemptId, replayed: result.replayed, retryable, error, appUrl: appLinks(out).conversation(input.conversationId) },
+      structured: { threadId: input.threadId, status: result.status, attemptId: result.attemptId, replayed: result.replayed, retryable, error, appUrl: appLinks(out).thread(input.threadId) },
     };
   },
 });

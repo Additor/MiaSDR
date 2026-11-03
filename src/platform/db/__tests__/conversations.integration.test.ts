@@ -12,7 +12,7 @@ describeDb("conversation invariants", () => {
   let otherReplyTypeSet = "";
   let sub = "";
   let record = "";
-  let conversation = "";
+  let thread = "";
   let draft = "";
 
   beforeAll(async () => {
@@ -26,13 +26,13 @@ describeDb("conversation invariants", () => {
       insert into reply_types (organization_id, reply_type_set_id, group_key, key, name)
       values (${org}, ${pipeline}, 'interested', 'wants_demo', 'Wants demo') returning id`;
     [{ id: record }] = await sql`
-      insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
-    [{ id: conversation }] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref)
+      insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
+    [{ id: thread }] = await sql`
+      insert into threads (organization_id, conversation_id, channel, account_ref)
       values (${org}, ${record}, 'email', 'me@corp.test') returning id`;
     [{ id: draft }] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject)
-      values (${org}, ${record}, ${conversation}, 0, 'email', 'Re: hi') returning id`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject)
+      values (${org}, ${record}, ${thread}, 0, 'email', 'Re: hi') returning id`;
   });
 
   afterAll(async () => {
@@ -42,21 +42,21 @@ describeDb("conversation invariants", () => {
 
   it("rejects a subcategory from a different pipeline than the record's", async () => {
     const [{ id: other }] = await sql`
-      insert into records (organization_id, person_id, reply_type_set_id)
+      insert into conversations (organization_id, person_id, reply_type_set_id)
       select ${org}, id, ${otherReplyTypeSet} from people where id = ${person} returning id`;
     await expect(
-      sql`update records set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${other}`,
+      sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${other}`,
     ).rejects.toThrow(/foreign key|violates/i);
-    await sql`delete from records where id = ${other}`;
+    await sql`delete from conversations where id = ${other}`;
   });
 
   it("accepts the same subcategory on a record in its own pipeline", async () => {
-    await sql`update records set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
+    await sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
   });
 
   it("requires category and source to be set together", async () => {
     await expect(
-      sql`insert into records (organization_id, person_id, reply_type_set_id, group_key)
+      sql`insert into conversations (organization_id, person_id, reply_type_set_id, group_key)
           values (${org}, ${person}, ${otherReplyTypeSet}, 'other')`,
     ).rejects.toThrow(/check/i);
   });
@@ -94,15 +94,15 @@ describeDb("conversation invariants", () => {
 
   it("keeps a message consistent with its conversation's channel and account", async () => {
     await expect(
-      sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-          values (${org}, ${conversation}, 'linkedin', 'me@corp.test', 'inbound', 'm1', 'hi', now())`,
+      sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+          values (${org}, ${thread}, 'linkedin', 'me@corp.test', 'inbound', 'm1', 'hi', now())`,
     ).rejects.toThrow(/foreign key|violates/i);
   });
 
   it("makes a message idempotent per channel and account", async () => {
     const insert = () =>
-      sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-          values (${org}, ${conversation}, 'email', 'me@corp.test', 'inbound', 'same', 'hi', now())`;
+      sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+          values (${org}, ${thread}, 'email', 'me@corp.test', 'inbound', 'same', 'hi', now())`;
     await insert();
     await expect(insert()).rejects.toThrow(/unique|duplicate/i);
   });

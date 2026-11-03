@@ -23,7 +23,7 @@ export { BLOCK_MESSAGES };
 const KEPT_LINES: Record<BlockReason, (n: number) => string> = {
   has_sends: (n) => `${leads(n)} already got messages.`,
   in_active_campaign: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in a running or paused campaign. Cancel the enrollment or finish the campaign first.`,
-  linked_records: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
+  linked_conversations: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
   try_again: (n) => `${leads(n)} ${n === 1 ? "was" : "were"} busy with another change. Try again.`,
   agent_delete_protected: (n) => `${leads(n)} can be deleted only by a person.`,
 };
@@ -201,7 +201,7 @@ const blockedLead = (row: LeadForDelete, reason: BlockReason | undefined): Block
 const isBusy = (error: unknown) => (error instanceof ConflictError && error.details?.code === "try_again") || sqlState(error) === "57014";
 
 /** The people of a run that rolled back, with the reason they stay. */
-async function stayed(deps: LeadDeleteDeps, organizationId: string, ids: string[], reason: "try_again" | "linked_records"): Promise<BlockedLead[]> {
+async function stayed(deps: LeadDeleteDeps, organizationId: string, ids: string[], reason: "try_again" | "linked_conversations"): Promise<BlockedLead[]> {
   const rows = await deps.transaction((tx) => deps.people.read(tx, organizationId, ids));
   return rows.map((row) => ({ id: row.id, name: row.name, reason }));
 }
@@ -212,10 +212,10 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
     outcome.deleted += part.deleted;
     outcome.blocked.push(...part.blocked);
   };
-  /** A run of one lead that rolled back: busy is `try_again`, a foreign key violation `linked_records`. */
+  /** A run of one lead that rolled back: busy is `try_again`, a foreign key violation `linked_conversations`. */
   const keep = async (id: string, error: unknown) => {
     if (isBusy(error)) add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "try_again") });
-    else if (sqlState(error) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_records") });
+    else if (sqlState(error) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_conversations") });
     else throw error;
   };
   for (let i = 0; i < ids.length; i += LEAD_DELETE_BATCH) {
@@ -232,7 +232,7 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
       // A busy batch (one held row, a lock timeout twice, the statement timeout) or a foreign key violation runs again one
       // lead at a time, so the others still go. A 23503 is the last guard: before the batch held its locks, a send claim or
       // a new record could commit between the checks and the delete; under the locks no known writer can, so it catches
-      // only a reference no check covers, and the lead stays as `linked_records`. A lead still busy alone is `try_again`.
+      // only a reference no check covers, and the lead stays as `linked_conversations`. A lead still busy alone is `try_again`.
       for (const id of part) {
         try {
           add(await deleteBatch(deps, actor, [id]));

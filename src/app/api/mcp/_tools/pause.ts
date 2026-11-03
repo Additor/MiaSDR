@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { pauseSequenceRun, getRecordSequence } from "@/contexts/conversations/after-reply/application/sequences";
-import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
+import { pauseFollowUpRun, getConversationFollowUp } from "@/contexts/conversations/after-reply/application/follow-ups";
+import { followUpDeps } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
 import { changeCampaignStatus } from "@/contexts/outreach/application/campaign-management";
 import { getSendPause, setSendPause } from "@/contexts/outreach/application/send-pause";
 import { campaignDeps, emailRulesDeps, sendPauseDeps } from "@/contexts/outreach/infrastructure/composition";
@@ -37,12 +37,12 @@ async function pauseCampaign(actor: Actor, channel: (typeof CHANNELS)[number], c
   return "paused";
 }
 
-async function pauseFollowUps(actor: Actor, recordId: string): Promise<Outcome> {
-  const { run } = await getRecordSequence(sequenceDeps(), actor, recordId);
+async function pauseFollowUps(actor: Actor, conversationId: string): Promise<Outcome> {
+  const { run } = await getConversationFollowUp(followUpDeps(), actor, conversationId);
   if (!run) return "nothing_to_pause";
   if (run.status === "paused") return "already_paused";
   if (run.status !== "active") return "nothing_to_pause";
-  await pauseSequenceRun(sequenceDeps(), actor, recordId);
+  await pauseFollowUpRun(followUpDeps(), actor, conversationId);
   return "paused";
 }
 
@@ -64,13 +64,13 @@ export const pauseSendingTool = defineTool({
   name: "pause_sending",
   title: "Pause sending",
   description: [
-    "Stops sending; it never resumes. `campaign` pauses one campaign (`channel`, `campaignId`); `follow_ups` pauses the follow-ups of one reply handling (`recordId`);",
+    "Stops sending; it never resumes. `campaign` pauses one campaign (`channel`, `campaignId`); `follow_ups` pauses the follow-ups of one reply handling (`conversationId`);",
     "`organization` pauses every campaign email and LinkedIn action of the organization (owners and admins). A person resumes in MiaSDR.",
     "The answer says `paused`, `already_paused`, `nothing_to_pause` or `not_started`.",
   ].join(" "),
   scope: "mcp:write",
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  input: z.object({ target: z.enum(TARGETS), channel: z.enum(CHANNELS).optional(), campaignId: z.string().optional(), recordId: z.string().optional() }),
+  input: z.object({ target: z.enum(TARGETS), channel: z.enum(CHANNELS).optional(), campaignId: z.string().optional(), conversationId: z.string().optional() }),
   output: z.object({ target: z.enum(TARGETS), outcome: z.enum(OUTCOMES) }),
   async run({ actor }, input) {
     let outcome: Outcome;
@@ -80,8 +80,8 @@ export const pauseSendingTool = defineTool({
         outcome = await pauseCampaign(actor, input.channel, input.campaignId);
         break;
       case "follow_ups":
-        if (!input.recordId) throw new ValidationError("follow_ups needs recordId.");
-        outcome = await pauseFollowUps(actor, input.recordId);
+        if (!input.conversationId) throw new ValidationError("follow_ups needs conversationId.");
+        outcome = await pauseFollowUps(actor, input.conversationId);
         break;
       case "organization":
         outcome = await pauseOrganization(actor);

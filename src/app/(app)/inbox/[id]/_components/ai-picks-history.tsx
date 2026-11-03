@@ -18,7 +18,7 @@ import { confidenceText, pickBadge, undoMessage } from "../_lib/type-line";
 interface Entry {
   id: string;
   status: string;
-  conversationId: string;
+  threadId: string;
   previous: { groupKey: string | null; name: string | null };
   proposed: { groupKey: string | null; name: string | null };
   applied: { groupKey: string | null; name: string | null };
@@ -55,7 +55,7 @@ const UNDO_TIP = "Puts back the type from before the AI's pick. Open drafts reti
  * Each AI pick for this person's replies, with Undo on the ones a person may still change. Only a pick that waits for a person carries a badge; the rest of its facts read as one muted line. Undo says in its toast what it retired.
  * The caller frames it and leaves it out when there are no picks.
  */
-export function AiPicksHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
+export function AiPicksHistory({ entries, currentThreadId }: { entries: Entry[]; currentThreadId?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   // Every decision here touches the thread's one open draft, and Undo saves its edits at the draft's revision, so all
@@ -103,10 +103,10 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
               </p>
               {e.reasoning && <p className="text-muted-foreground">{e.reasoning}</p>}
               {e.error && <p className="text-destructive">{e.error}</p>}
-              {(e.canUndo || (e.status === "proposed" && e.latest && e.conversationId !== currentConversationId)) && (
+              {(e.canUndo || (e.status === "proposed" && e.latest && e.threadId !== currentThreadId)) && (
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {e.status === "proposed" && e.latest && e.conversationId !== currentConversationId && (
-                    <Link href={`/inbox/${e.conversationId}`} className="text-sm underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                  {e.status === "proposed" && e.latest && e.threadId !== currentThreadId && (
+                    <Link href={`/inbox/${e.threadId}`} className="text-sm underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                       Review in that conversation
                     </Link>
                   )}

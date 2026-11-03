@@ -10,7 +10,7 @@ import { campaignEnrollments, campaigns, drafts, mcpTokens, sendAttempts, users 
 
 export interface AgentSendRow {
   attemptId: string;
-  conversationId: string;
+  threadId: string;
   channel: "email" | "linkedin";
   status: string;
   tokenName: string;
@@ -45,7 +45,7 @@ export async function agentSendsOverview(organizationId: string, now: Date): Pro
     db
       .select({
         attemptId: sendAttempts.id,
-        conversationId: drafts.conversationId,
+        threadId: drafts.threadId,
         provider: sendAttempts.provider,
         status: sendAttempts.status,
         tokenName: sql<string>`coalesce(${mcpTokens.name}, 'a removed token')`,

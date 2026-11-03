@@ -470,7 +470,7 @@ describeDb("email send engine", () => {
       const third = await store.claimNext({ mailboxId: f.mailboxIds[0], now: current, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
       expect(third).toMatchObject({ sendId: stale.sendId, attempt: 3 });
       await store.resolveUncertainAsNotSent(stale, current, 15, MAX_SEND_ATTEMPTS, "not_found");
-      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", threadId: "stale" }, current);
+      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", providerThreadId: "stale" }, current);
       expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
 
       // Attempt 3's own failure ends the enrollment at the cap, and no fourth claim follows.
@@ -679,7 +679,7 @@ describeDb("email send engine", () => {
       const claim = await claimFor(f);
       await sql`update campaign_enrollments set status = 'replied', next_send_at = null, stop_reason = 'replied' where id = ${f.enrollmentIds[0]}`;
       advance(1);
-      await store.markSent(claim, { providerMessageId: "late-1", threadId: "late-thread" }, current);
+      await store.markSent(claim, { providerMessageId: "late-1", providerThreadId: "late-thread" }, current);
       const [row] = await sendRows(f.enrollmentIds[0]);
       expect(row).toMatchObject({ status: "sent", provider_message_id: "late-1" });
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", current_step: 0, next_send_at: null });

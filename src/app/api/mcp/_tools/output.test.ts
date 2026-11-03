@@ -58,7 +58,7 @@ describe("MCP tool output", () => {
 
   it("links each thing to the screen a person opens", () => {
     const links = appLinks(ctx);
-    expect(links.conversation("c1")).toBe("https://app.example.com/inbox/c1");
+    expect(links.thread("c1")).toBe("https://app.example.com/inbox/c1");
     expect(links.campaign("k1")).toBe("https://app.example.com/campaigns/k1");
     expect(links.deal("d1")).toBe("https://app.example.com/crm/deals/d1");
     expect(links.person("p1", "contact")).toBe("https://app.example.com/crm/contacts/p1");

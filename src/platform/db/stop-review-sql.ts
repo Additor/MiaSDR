@@ -17,7 +17,7 @@ export const stopReviewOpenSql = (messageId: SQL): SQL =>
       or exists (select 1 from messages sm where sm.id = ${messageId} and ${wordsAskToStopSql("sm")}))
     and not exists (select 1 from stop_reviews sr where sr.message_id = ${messageId}))`;
 
-/** The same rule for a person: the latest reply of one of their records waits on that review. `alias` names `people`. */
+/** The same rule for a person: the latest reply of one of their conversations waits on that review. `alias` names `people`. */
 export const personStopReviewOpenSql = (alias: string): SQL =>
-  sql`exists (select 1 from records srr where srr.person_id = ${sql.raw(alias)}.id and srr.organization_id = ${sql.raw(alias)}.organization_id
+  sql`exists (select 1 from conversations srr where srr.person_id = ${sql.raw(alias)}.id and srr.organization_id = ${sql.raw(alias)}.organization_id
     and ${stopReviewOpenSql(sql`srr.latest_inbound_message_id`)})`;

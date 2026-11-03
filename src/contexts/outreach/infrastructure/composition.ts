@@ -96,7 +96,7 @@ export const runningFieldUse = (): RunningFieldUse => drizzleRunningFieldUse;
 /** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' follow-up stop. */
 export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(followUps), secret: env().UNSUBSCRIBE_SECRET });
 
-/** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-up sequences. */
+/** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-ups. */
 export const suppressionListDeps = (followUps: FollowUpStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(followUps) });
 
 /** Real mail is on and `APP_URL` is an address recipients cannot open. The demo `fake` provider sends nothing, so it passes. */

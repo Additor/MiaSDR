@@ -13,7 +13,7 @@ import { RecordDisclosure } from "@/app/(app)/_components/record/record-header";
 import { toJson } from "@/app/(app)/_components/serialize";
 import { AfterReplyControls } from "./after-reply-controls";
 import { AiPicksHistory } from "./ai-picks-history";
-import { recordAfterReply, recordDetail } from "./thread-data";
+import { conversationAfterReply, conversationDetail } from "./thread-data";
 
 /** Shown in place of the follow-up controls for a contact. */
 export const CONTACT_FOLLOW_UPS = "The person is a contact, so follow-ups do not apply.";
@@ -57,9 +57,9 @@ const actorText = (e: EventEntry) => {
  * Follow-ups under the reply panel, where the drafts they write are approved. Nothing shows when there is nothing to
  * follow up: no run, and a campaign that hands replies to the Inbox, or a contact. Wrap it in Suspense.
  */
-export async function ThreadFollowUps({ actor, recordId, personId }: { actor: Actor; recordId: string; personId: string }) {
+export async function ThreadFollowUps({ actor, conversationId, personId }: { actor: Actor; conversationId: string; personId: string }) {
   await connection();
-  const [afterReply, people] = await Promise.all([recordAfterReply(actor, recordId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
+  const [afterReply, people] = await Promise.all([conversationAfterReply(actor, conversationId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
   const isContact = people.get(personId)?.lifecycle === "contact";
   if (!afterReply.run && (isContact || afterReply.campaign?.mode !== "ai_drafts")) return null;
   return (
@@ -67,7 +67,7 @@ export async function ThreadFollowUps({ actor, recordId, personId }: { actor: Ac
       <h2 id="follow-ups" className="heading-section">
         Follow-ups
       </h2>
-      <AfterReplyControls recordId={recordId} state={toJson(afterReply)} disabledReason={isContact ? CONTACT_FOLLOW_UPS : null} />
+      <AfterReplyControls conversationId={conversationId} state={toJson(afterReply)} disabledReason={isContact ? CONTACT_FOLLOW_UPS : null} />
     </section>
   );
 }
@@ -77,9 +77,9 @@ export async function ThreadFollowUps({ actor, recordId, personId }: { actor: Ac
  * each folded behind its count and closed: a pick that waits for a person already asks on the type line. A history with
  * nothing in it is left out. Wrap it in Suspense.
  */
-export async function ThreadHistory({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
+export async function ThreadHistory({ actor, threadId, conversationId, personId }: { actor: Actor; threadId: string; conversationId: string; personId: string }) {
   await connection();
-  const [detail, people] = await Promise.all([recordDetail(actor, recordId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
+  const [detail, people] = await Promise.all([conversationDetail(actor, conversationId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
   const lifecycle = people.get(personId)?.lifecycle;
   const picks = toJson(detail.replyTypePicks);
   const events = detail.events.slice(0, ACTIVITY_SHOWN);
@@ -92,7 +92,7 @@ export async function ThreadHistory({ actor, conversationId, recordId, personId 
       </h2>
       {picks.length > 0 && (
         <RecordDisclosure title="AI picks" count={picks.length} testId="thread-ai-picks">
-          <AiPicksHistory entries={picks} currentConversationId={conversationId} />
+          <AiPicksHistory entries={picks} currentThreadId={threadId} />
         </RecordDisclosure>
       )}
 

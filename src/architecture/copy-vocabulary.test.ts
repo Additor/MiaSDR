@@ -12,7 +12,7 @@ import { OUTREACH_HALTS } from "@/contexts/outreach/domain/enrollment-status";
 /**
  * Vocabulary gate for the Leads and CRM split ("Leads and CRM" in docs/decisions.md) and for reply types ("Reply types
  * and type rules"). People read "reply handling", "reply type", "AI pick", "deal" and "stage" (of a deal); code and
- * tables keep `records`, `reply_type_sets`, the AI job kind `classification` and the model field `subcategoryKey`. The
+ * tables keep `conversations`, `reply_type_sets`, the AI job kind `classification` and the model field `replyTypeKey`. The
  * scan reads the string literals, template text and JSX text of the UI and the domain layers and rejects the old words.
  */
 
@@ -214,12 +214,12 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
     reason: "Model-facing draft prompt line, never shown to a person; a wording change needs a draft eval.",
   },
   {
-    file: "src/contexts/conversations/after-reply/domain/sequences.ts",
+    file: "src/contexts/conversations/after-reply/domain/follow-ups.ts",
     text: "This step answers the lead's latest message.",
     reason: "Model-facing After a reply step guidance; runs start for leads only, and a wording change needs a draft eval.",
   },
   {
-    file: "src/contexts/conversations/after-reply/domain/sequences.ts",
+    file: "src/contexts/conversations/after-reply/domain/follow-ups.ts",
     text: "This step is a follow-up. The lead has not replied since our last message. Write a short nudge that adds something new instead of repeating the earlier message.",
     reason: "Model-facing After a reply step guidance; runs start for leads only, and a wording change needs a draft eval.",
   },
@@ -407,8 +407,8 @@ const EVENT_LABELS_FILE = "src/app/(app)/_components/event-labels.ts";
 const CAMPAIGN_VIEW_FILE = "src/contexts/outreach/domain/campaign-view.ts";
 
 const baseFacts: afterReply.StartBlockFacts = {
-  record: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", followUps: "continue", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
-  conversation: { channel: "email" },
+  conversation: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", followUps: "continue", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
+  thread: { channel: "email" },
   doNotContact: false,
   suppressed: false,
   contact: false,
@@ -421,21 +421,21 @@ const baseFacts: afterReply.StartBlockFacts = {
 /** One set of facts per branch of `startBlockedReason`. */
 const blockedFacts: afterReply.StartBlockFacts[] = [
   { ...baseFacts, contact: true },
-  { ...baseFacts, conversation: null },
+  { ...baseFacts, thread: null },
   { ...baseFacts, owner: null },
   { ...baseFacts, owner: { ...baseFacts.owner!, archived: true } },
   { ...baseFacts, owner: { ...baseFacts.owner!, status: "paused" } },
   { ...baseFacts, owner: { ...baseFacts.owner!, status: "draft" } },
   { ...baseFacts, flow: null },
   { ...baseFacts, flow: { status: "active", hasPublished: false } },
-  { ...baseFacts, record: { ...baseFacts.record, workflowState: "closed" } },
+  { ...baseFacts, conversation: { ...baseFacts.conversation, workflowState: "closed" } },
   { ...baseFacts, doNotContact: true },
   { ...baseFacts, suppressed: true },
-  { ...baseFacts, record: { ...baseFacts.record, hasEmail: false } },
-  { ...baseFacts, record: { ...baseFacts.record, replyTypeId: null } },
-  { ...baseFacts, record: { ...baseFacts.record, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested", followUps: "stop" } },
+  { ...baseFacts, conversation: { ...baseFacts.conversation, hasEmail: false } },
+  { ...baseFacts, conversation: { ...baseFacts.conversation, replyTypeId: null } },
+  { ...baseFacts, conversation: { ...baseFacts.conversation, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested", followUps: "stop" } },
   { ...baseFacts, stepCount: 1, answered: true },
-  { ...baseFacts, stepCount: 1, record: { ...baseFacts.record, replyDraft: false } },
+  { ...baseFacts, stepCount: 1, conversation: { ...baseFacts.conversation, replyDraft: false } },
 ];
 
 /** Each label a person reads, with the file whose rules apply to it. */
@@ -445,7 +445,7 @@ function renderedLabels(): Array<{ file: string; text: string }> {
     for (const text of texts) if (text !== null) out.push({ file, text });
   };
   push(EVENT_LABELS_FILE, Object.keys(EVENT_LABELS).map((eventType) => eventLabel({ eventType, toData: { stageName: "Proposal" } })));
-  push(EVENT_LABELS_FILE, ["deal.stage_moved", "inbound.unknown_type"].map((eventType) => eventLabel({ eventType })));
+  push(EVENT_LABELS_FILE, ["deal.type_changed", "inbound.unknown_type"].map((eventType) => eventLabel({ eventType })));
   push(CAMPAIGN_VIEW_FILE, Object.keys(STOP_REASON_LABELS).map(enrollmentStopLabel));
   push(AFTER_REPLY_FILE, stringValues(afterReply.INTERRUPT_REASON_LABELS));
   push(AFTER_REPLY_FILE, stringValues(afterReply.OTHER_END_REASON_LABELS));
@@ -597,7 +597,7 @@ describe("stored values have labels", () => {
   });
 
   it("labels every InterruptReason and the reasons a conversion stops runs with", () => {
-    const { literals, typeofNames } = unionMembers("src/contexts/conversations/after-reply/domain/sequences.ts", "InterruptReason");
+    const { literals, typeofNames } = unionMembers("src/contexts/conversations/after-reply/domain/follow-ups.ts", "InterruptReason");
     expect(literals).toContain("converted");
     expect(typeofNames).toEqual(["AFTER_REPLY_OFF"]);
     const reasons = [...literals, afterReply.AFTER_REPLY_OFF, ...reasonParameter("src/contexts/conversations/application/person-ports.ts", "interruptPersonRuns")];
@@ -607,7 +607,7 @@ describe("stored values have labels", () => {
   it("labels every event type the code writes, deal events included", () => {
     const written = writtenEventTypes();
     const values = new Set(written.map((w) => w.value));
-    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_moved", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
+    for (const expected of ["lifecycle.converted", "deal.created", "deal.type_changed", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
     expect(written.filter((w) => !Object.hasOwn(EVENT_LABELS, w.value)).map((w) => `${w.file}: ${w.value}`)).toEqual([]);
   });
 });

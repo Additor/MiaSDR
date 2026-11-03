@@ -45,16 +45,16 @@ export function inboxFilterOptions(deps: InboxDeps, actor: Actor, leadIds: strin
   return deps.store.filterOptions(actor.organizationId, leadIds);
 }
 
-export async function getThread(deps: InboxDeps, actor: Actor, conversationId: string) {
-  if (!UUID.test(conversationId)) throw new NotFoundError("Conversation not found");
-  const thread = await deps.store.thread(actor.organizationId, conversationId);
+export async function getThread(deps: InboxDeps, actor: Actor, threadId: string) {
+  if (!UUID.test(threadId)) throw new NotFoundError("Conversation not found");
+  const thread = await deps.store.thread(actor.organizationId, threadId);
   if (!thread) throw new NotFoundError("Conversation not found");
   return thread;
 }
 
-export async function markConversationRead(deps: InboxDeps, actor: Actor, conversationId: string): Promise<{ changed: number }> {
-  if (!UUID.test(conversationId)) throw new NotFoundError("Conversation not found");
-  const changed = await deps.store.markRead(actor.organizationId, conversationId, deps.now());
+export async function markThreadRead(deps: InboxDeps, actor: Actor, threadId: string): Promise<{ changed: number }> {
+  if (!UUID.test(threadId)) throw new NotFoundError("Conversation not found");
+  const changed = await deps.store.markRead(actor.organizationId, threadId, deps.now());
   if (changed === null) throw new NotFoundError("Conversation not found");
   return { changed };
 }

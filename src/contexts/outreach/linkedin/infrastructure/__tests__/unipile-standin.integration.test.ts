@@ -116,7 +116,7 @@ describeDb("unipile gateway against the local stand-in", () => {
   const sendRows = async (id: string) => await sql`select * from sends where enrollment_id = ${id} order by step_number, claimed_at`;
   const accountRow = async (id: string) => (await sql`select * from linkedin_accounts where id = ${id}`)[0];
   const inboxRows = async (org: string) =>
-    sql`select m.*, c.provider_thread_id, c.channel as conversation_channel from messages m join conversations c on c.id = m.conversation_id where m.organization_id = ${org} order by m.created_at`;
+    sql`select m.*, c.provider_thread_id, c.channel as thread_channel from messages m join threads c on c.id = m.thread_id where m.organization_id = ${org} order by m.created_at`;
 
   /** One engine action. The pacing gap between actions of an account is 10 to 20 minutes, so the clock moves first. */
   const act = async (f: Fixture, deps = engineDeps()) => {
@@ -264,7 +264,7 @@ describeDb("unipile gateway against the local stand-in", () => {
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", next_send_at: null, stop_reason: "replied" });
       const inbox = await inboxRows(f.org);
       expect(inbox).toHaveLength(1);
-      expect(inbox[0]).toMatchObject({ conversation_channel: "linkedin", provider_thread_id: standin.chats[0].id });
+      expect(inbox[0]).toMatchObject({ thread_channel: "linkedin", provider_thread_id: standin.chats[0].id });
       expect(JSON.stringify(inbox[0])).toContain("Sounds good, call me");
 
       // Nothing more goes out.

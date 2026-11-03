@@ -30,13 +30,13 @@ describeDb("gap-closure schema", () => {
   async function makeMessage(org: string, person: string, key: string): Promise<string> {
     const [{ id: replyTypeSetId }] = await sql`
       insert into reply_type_sets (organization_id, name) values (${org}, ${"p-" + key}) returning id`;
-    const [{ id: recordId }] = await sql`
-      insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${replyTypeSetId}) returning id`;
+    const [{ id: conversationId }] = await sql`
+      insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${replyTypeSetId}) returning id`;
     const [{ id: convId }] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref)
-      values (${org}, ${recordId}, 'email', ${"acc-" + key}) returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref)
+      values (${org}, ${conversationId}, 'email', ${"acc-" + key}) returning id`;
     const [{ id }] = await sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
       values (${org}, ${convId}, 'email', ${"acc-" + key}, 'inbound', ${"k-" + key}, 'hi', now()) returning id`;
     return id;
   }
@@ -142,17 +142,17 @@ describeDb("gap-closure schema", () => {
   describe("drafts.cc", () => {
     it("defaults to an empty array and refuses CC on a LinkedIn draft", async () => {
       const [{ id: replyTypeSetId }] = await sql`insert into reply_type_sets (organization_id, name) values (${orgA}, 'dp') returning id`;
-      const [{ id: recordId }] = await sql`
-        insert into records (organization_id, person_id, reply_type_set_id) values (${orgA}, ${personA}, ${replyTypeSetId}) returning id`;
+      const [{ id: conversationId }] = await sql`
+        insert into conversations (organization_id, person_id, reply_type_set_id) values (${orgA}, ${personA}, ${replyTypeSetId}) returning id`;
       const [{ id: convId }] = await sql`
-        insert into conversations (organization_id, record_id, channel, account_ref) values (${orgA}, ${recordId}, 'linkedin', 'li-1') returning id`;
+        insert into threads (organization_id, conversation_id, channel, account_ref) values (${orgA}, ${conversationId}, 'linkedin', 'li-1') returning id`;
       const [d] = await sql`
-        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel)
-        values (${orgA}, ${recordId}, ${convId}, 0, 'linkedin') returning cc`;
+        insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel)
+        values (${orgA}, ${conversationId}, ${convId}, 0, 'linkedin') returning cc`;
       expect(d.cc).toEqual([]);
       await expect(
-        sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, cc)
-            values (${orgA}, ${recordId}, ${convId}, 0, 'linkedin', ${["a@x.com"]})`,
+        sql`insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, cc)
+            values (${orgA}, ${conversationId}, ${convId}, 0, 'linkedin', ${["a@x.com"]})`,
       ).rejects.toThrow(/check/i);
     });
   });

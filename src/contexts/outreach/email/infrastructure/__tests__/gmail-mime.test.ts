@@ -11,7 +11,7 @@ const email: OutgoingEmail = {
   rfcMessageId: "<abc@acme.com>",
   inReplyTo: null,
   references: [],
-  threadId: null,
+  providerThreadId: null,
   listUnsubscribeUrl: "https://app.example.com/unsubscribe?t=1",
 };
 

@@ -45,7 +45,7 @@ export interface McpToolCallDeps {
 }
 
 /** The ids a tool call names, from its input. Text such as a note or a reply body stays out of the log. */
-export const TARGET_KEYS = ["recordId", "conversationId", "draftId", "personId", "campaignId", "taskId", "dealId", "stageId", "replyTypePickId", "userId", "tableId", "columnKey", "searchId"] as const;
+export const TARGET_KEYS = ["conversationId", "threadId", "draftId", "personId", "campaignId", "taskId", "dealId", "stageId", "replyTypePickId", "userId", "tableId", "columnKey", "searchId"] as const;
 
 export function callTarget(input: unknown): Record<string, string> {
   const values = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;

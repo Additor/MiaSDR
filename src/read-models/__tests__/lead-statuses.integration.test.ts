@@ -35,22 +35,22 @@ describeDb("lead status read model", () => {
     await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, updated_at, last_sent_at)
       values (${o.id}, ${campaignId}, ${personId}, 'email', ${status}, ${updatedAt}, ${lastSentAt})`;
   };
-  const record = async (o: Org, personId: string) => {
-    const [{ id }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.id}, ${personId}, ${o.pipeline}) returning id`;
+  const conversation = async (o: Org, personId: string) => {
+    const [{ id }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.id}, ${personId}, ${o.pipeline}) returning id`;
     return id as string;
   };
   let msg = 0;
-  const message = async (o: Org, recordId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string, raw: Record<string, unknown> | null = null) => {
+  const message = async (o: Org, conversationId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string, raw: Record<string, unknown> | null = null) => {
     msg += 1;
     const account = `${channel}-acct-${o.tag}`;
-    const [conv] = await sql`select id from conversations where record_id = ${recordId} and channel = ${channel}`;
-    const conversationId =
+    const [conv] = await sql`select id from threads where conversation_id = ${conversationId} and channel = ${channel}`;
+    const threadId =
       conv?.id ??
       (
-        await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${o.id}, ${recordId}, ${channel}, ${account}) returning id`
+        await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${o.id}, ${conversationId}, ${channel}, ${account}) returning id`
       )[0].id;
-    await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
-      values (${o.id}, ${conversationId}, ${channel}, ${account}, ${direction}, ${`k${msg}-${o.tag}`}, 'hello', ${sentAt}, ${raw ? sql.json(raw as never) : null})`;
+    await sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
+      values (${o.id}, ${threadId}, ${channel}, ${account}, ${direction}, ${`k${msg}-${o.tag}`}, 'hello', ${sentAt}, ${raw ? sql.json(raw as never) : null})`;
   };
 
   beforeAll(async () => {
@@ -104,7 +104,7 @@ describeDb("lead status read model", () => {
     const unsent = await person(o);
     await enroll(o, c, cold, "active", undefined, "2026-10-03T10:00:00Z");
     await enroll(o, c, later, "completed", undefined, "2026-10-03T10:00:00Z");
-    await message(o, await record(o, later), "email", "outbound", "2026-10-06T10:00:00Z");
+    await message(o, await conversation(o, later), "email", "outbound", "2026-10-06T10:00:00Z");
     await enroll(o, c, unsent, "pending");
     const map = await read(o.id, [cold, later, unsent]);
     expect(map.get(cold)?.lastContactAt?.toISOString()).toBe("2026-10-03T10:00:00.000Z");
@@ -132,11 +132,11 @@ describeDb("lead status read model", () => {
     const p = await person(o);
     const inboundOnly = await person(o);
     const never = await person(o);
-    const r = await record(o, p);
+    const r = await conversation(o, p);
     await message(o, r, "email", "outbound", "2026-09-01T10:00:00Z");
     await message(o, r, "linkedin", "outbound", "2026-09-20T10:00:00Z");
     await message(o, r, "email", "inbound", "2026-10-05T10:00:00Z");
-    const r2 = await record(o, inboundOnly);
+    const r2 = await conversation(o, inboundOnly);
     await message(o, r2, "email", "inbound", "2026-10-01T10:00:00Z");
     const map = await read(o.id, [p, inboundOnly, never]);
     expect(map.get(p)?.lastContactAt?.toISOString()).toBe("2026-09-20T10:00:00.000Z");
@@ -149,8 +149,8 @@ describeDb("lead status read model", () => {
     const o = await org();
     const outOfOffice = await person(o);
     const human = await person(o);
-    await message(o, await record(o, outOfOffice), "email", "inbound", "2026-10-01T10:00:00Z", { autoReply: true });
-    await message(o, await record(o, human), "email", "inbound", "2026-10-01T10:00:00Z");
+    await message(o, await conversation(o, outOfOffice), "email", "inbound", "2026-10-01T10:00:00Z", { autoReply: true });
+    await message(o, await conversation(o, human), "email", "inbound", "2026-10-01T10:00:00Z");
     const map = await read(o.id, [outOfOffice, human]);
     expect(map.get(outOfOffice)?.state).not.toBe("replied");
     expect(map.get(human)?.state).toBe("replied");
@@ -163,11 +163,11 @@ describeDb("lead status read model", () => {
     const outboundOnly = await person(o);
     const enrolledReplied = await person(o);
     const both = await person(o);
-    await message(o, await record(o, unknownSender), "email", "inbound", "2026-10-01T10:00:00Z");
-    await message(o, await record(o, outboundOnly), "email", "outbound", "2026-10-01T10:00:00Z");
+    await message(o, await conversation(o, unknownSender), "email", "inbound", "2026-10-01T10:00:00Z");
+    await message(o, await conversation(o, outboundOnly), "email", "outbound", "2026-10-01T10:00:00Z");
     await enroll(o, c, enrolledReplied, "replied");
     await enroll(o, c, both, "replied");
-    await message(o, await record(o, both), "email", "inbound", "2026-10-02T10:00:00Z");
+    await message(o, await conversation(o, both), "email", "inbound", "2026-10-02T10:00:00Z");
     const map = await read(o.id, [unknownSender, outboundOnly, enrolledReplied, both]);
     expect(map.get(unknownSender)?.state).toBe("replied");
     expect(map.get(outboundOnly)?.state).toBe("new");
@@ -199,7 +199,7 @@ describeDb("lead status read model", () => {
     const c = await campaign(theirs, "Theirs");
     const p = await person(theirs);
     await enroll(theirs, c, p, "replied");
-    await message(theirs, await record(theirs, p), "email", "outbound", "2026-10-01T10:00:00Z");
+    await message(theirs, await conversation(theirs, p), "email", "outbound", "2026-10-01T10:00:00Z");
     expect((await read(mine.id, [p])).size).toBe(0);
     // The same ids asked for under the right organization still work.
     const own = (await read(theirs.id, [p])).get(p);
@@ -226,7 +226,7 @@ describeDb("lead status read model", () => {
       const p = await person(o);
       ids.push(p);
       await enroll(o, c, p, "active");
-      await message(o, await record(o, p), "email", "outbound", "2026-10-01T10:00:00Z");
+      await message(o, await conversation(o, p), "email", "outbound", "2026-10-01T10:00:00Z");
     }
     const select = spyOnSelect();
     try {

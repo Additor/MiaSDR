@@ -64,14 +64,14 @@ describeDb("AI drafts for LinkedIn threads", () => {
       receivedAt: new Date(Date.now() - 5000),
     };
     const ingested = await composition.ingestInboundLinkedInMessage(input);
-    return { org, user, account: account as string, actor, fake, ai, liDeps, replyDeps, replyHandlingDeps, tag, input, conversationId: ingested.conversationId, personId: ingested.personId, run: () => tick.run({ deadline: Date.now() + 60_000, now: clock }) };
+    return { org, user, account: account as string, actor, fake, ai, liDeps, replyDeps, replyHandlingDeps, tag, input, threadId: ingested.threadId, personId: ingested.personId, run: () => tick.run({ deadline: Date.now() + 60_000, now: clock }) };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
   const key = () => `key-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
   const one = async (query: string, params: unknown[]) => (await sql.unsafe(query, params as never[]))[0];
   const count = async (table: string, org: string, where = "true") => Number((await sql.unsafe(`select count(*)::int as n from ${table} where organization_id = $1 and ${where}`, [org]))[0].n);
-  const panel = async (f: Fx) => (await liApp.getLinkedInReplyPanel(f.liDeps, f.actor, f.conversationId))!;
+  const panel = async (f: Fx) => (await liApp.getLinkedInReplyPanel(f.liDeps, f.actor, f.threadId))!;
   /** Ingests the lead's message and runs the AI tick: classification, then the draft. */
   async function drafted(opts: { ai?: boolean } = {}) {
     const f = await fixture(opts);
@@ -80,7 +80,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
   }
   const approve = async (f: Fx, text: string, k = key()) => {
     const p = await panel(f);
-    return liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text, idempotencyKey: k, draftId: p.draft!.id, revision: p.draft!.revision });
+    return liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text, idempotencyKey: k, draftId: p.draft!.id, revision: p.draft!.revision });
   };
 
   beforeAll(async () => {
@@ -154,12 +154,12 @@ describeDb("AI drafts for LinkedIn threads", () => {
     it("puts the stage move note and the matching knowledge in the prompt", async () => {
       const f = await drafted();
       await knowledgeApp.createKnowledge(stores.knowledge, { ...f.actor, role: "admin" }, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
-      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+      const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
       const target = await one("select id, group_key from reply_types where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
-      await replyHandlingApp.changeReplyType(f.replyHandlingDeps, f.actor, record.id, { groupKey: target.group_key, replyTypeId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });
+      await replyHandlingApp.changeReplyType(f.replyHandlingDeps, f.actor, conversation.id, { groupKey: target.group_key, replyTypeId: target.id, expectedContextVersion: Number(conversation.context_version), note: "We met on a call, send the contract" });
       // The move retires the open draft; a person asks for a fresh one.
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
-      await mgmt.requestDraft(f.replyDeps, f.actor, f.conversationId);
+      await mgmt.requestDraft(f.replyDeps, f.actor, f.threadId);
       const input = f.ai!.lastDraftInput!;
       expect(input.channel).toBe("linkedin");
       expect(input.replyTypeChange?.note).toBe("We met on a call, send the contract");
@@ -195,7 +195,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       await mgmt.discardDraft(f.replyDeps, f.actor, regenerated.draftId);
       expect((await panel(f)).draft).toBeNull();
       expect((await panel(f)).canGenerate).toBe(true);
-      const requested = await mgmt.requestDraft(f.replyDeps, f.actor, f.conversationId);
+      const requested = await mgmt.requestDraft(f.replyDeps, f.actor, f.threadId);
       expect(await one("select channel, subject from drafts where id = $1", [requested.draftId])).toMatchObject({ channel: "linkedin", subject: null });
     });
   });
@@ -213,10 +213,10 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const draft = await one("select status, edited_body_text, ai_body_text, revision from drafts where organization_id = $1", [f.org]);
       expect(draft).toMatchObject({ status: "sent", edited_body_text: "Thursday at 10 works. Sending an invite." });
       expect(draft.ai_body_text).not.toBe(draft.edited_body_text);
-      expect(await one("select workflow_state from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "waiting" });
+      expect(await one("select workflow_state from conversations where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "waiting" });
 
       // The same key again, as a lost response would trigger: the stored outcome comes back and nothing is sent.
-      const again = await liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "ignored", idempotencyKey: k, draftId: before.id, revision: before.revision });
+      const again = await liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "ignored", idempotencyKey: k, draftId: before.id, revision: before.revision });
       expect(again).toMatchObject({ status: "sent", replayed: true });
       expect(f.fake.messages).toHaveLength(1);
     });
@@ -226,10 +226,10 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const p = await panel(f);
       const k = key();
       const input = { text: "Once only", idempotencyKey: k, draftId: p.draft!.id, revision: p.draft!.revision };
-      const results = await Promise.all([1, 2, 3].map(() => liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, input)));
+      const results = await Promise.all([1, 2, 3].map(() => liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, input)));
       expect(results.filter((r) => !r.replayed)).toHaveLength(1);
       expect(f.fake.messages).toHaveLength(1);
-      expect(await liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, input)).toMatchObject({ status: "sent", replayed: true });
+      expect(await liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, input)).toMatchObject({ status: "sent", replayed: true });
       expect(f.fake.messages).toHaveLength(1);
       expect(await count("send_attempts", f.org)).toBe(1);
     });
@@ -248,8 +248,8 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const f = await drafted();
       // The account allows one message a day and a typed reply used it.
       await sql`update linkedin_accounts set daily_message_limit = 1 where id = ${f.account}`;
-      const [used] = await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status, provider)
-        select organization_id, record_id, conversation_id, expected_context_version, 'linkedin', 'earlier reply', 'discarded', 'human' from drafts where organization_id = ${f.org} returning id`;
+      const [used] = await sql`insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, edited_body_text, status, provider)
+        select organization_id, conversation_id, thread_id, expected_context_version, 'linkedin', 'earlier reply', 'discarded', 'human' from drafts where organization_id = ${f.org} returning id`;
       await sql`insert into send_attempts (organization_id, draft_id, idempotency_key, status, provider, account_ref, actor_user_id, request)
         values (${f.org}, ${used.id}, ${key()}, 'sent', 'linkedin', ${f.account}, ${f.user}, '{}'::jsonb)`;
       await expect(approve(f, "Hello")).rejects.toMatchObject({ details: { code: "daily_cap" } });
@@ -268,7 +268,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const f = await drafted();
       await sql`update channel_settings set values = ${sql.json({ replyGapSeconds: 600 })} where organization_id = ${f.org} and channel = 'linkedin'`;
       expect(await approve(f, "First")).toMatchObject({ status: "sent" });
-      const g = await mgmt.requestDraft(f.replyDeps, f.actor, f.conversationId);
+      const g = await mgmt.requestDraft(f.replyDeps, f.actor, f.threadId);
       expect(await one("select channel, status from drafts where id = $1", [g.draftId])).toEqual({ channel: "linkedin", status: "awaiting_review" });
       await expect(approve(f, "Second")).rejects.toMatchObject({ details: { code: "too_fast" } });
       expect(f.fake.messages).toHaveLength(1);
@@ -299,7 +299,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       expect(await one("select status from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "delivery_uncertain" });
       expect((await panel(f)).draft).toMatchObject({ status: "delivery_uncertain" });
       f.fake.messageBehavior = () => "ok";
-      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "again", idempotencyKey: key() })).rejects.toBeInstanceOf(ConflictError);
+      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "again", idempotencyKey: key() })).rejects.toBeInstanceOf(ConflictError);
       expect(f.fake.messages).toHaveLength(1);
     });
   });
@@ -311,7 +311,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       await composition.ingestInboundLinkedInMessage({ ...f.input, providerMessageId: `${f.input.providerMessageId}-2`, bodyText: "Actually, can we do Friday instead?", receivedAt: new Date() });
       expect(await one("select status from drafts where id = $1", [p.draft!.id])).toMatchObject({ status: "stale" });
       expect((await panel(f)).draft).toMatchObject({ id: p.draft!.id, status: "stale" });
-      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "old answer", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(ConflictError);
+      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "old answer", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(ConflictError);
       expect(f.fake.messages).toHaveLength(0);
       expect(await count("send_attempts", f.org)).toBe(0);
     });
@@ -319,8 +319,8 @@ describeDb("AI drafts for LinkedIn threads", () => {
     it("marks a draft stale when the record moved on before the stale sweep ran", async () => {
       const f = await drafted();
       const p = await panel(f);
-      await sql`update records set context_version = context_version + 1 where organization_id = ${f.org}`;
-      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(ConflictError);
+      await sql`update conversations set context_version = context_version + 1 where organization_id = ${f.org}`;
+      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(ConflictError);
       expect(await one("select status from drafts where id = $1", [p.draft!.id])).toMatchObject({ status: "stale" });
       expect(f.fake.messages).toHaveLength(0);
     });
@@ -328,10 +328,10 @@ describeDb("AI drafts for LinkedIn threads", () => {
     it("refuses a revision the person did not review, and a draft from another conversation", async () => {
       const f = await drafted();
       const p = await panel(f);
-      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision + 1 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision + 1 })).rejects.toBeInstanceOf(ConflictError);
       const other = await drafted();
       const o = await panel(other);
-      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "x", idempotencyKey: key(), draftId: o.draft!.id, revision: o.draft!.revision })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "x", idempotencyKey: key(), draftId: o.draft!.id, revision: o.draft!.revision })).rejects.toBeInstanceOf(NotFoundError);
       expect(f.fake.messages).toHaveLength(0);
       expect(other.fake.messages).toHaveLength(0);
     });
@@ -353,11 +353,11 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const a = await drafted();
       const b = await drafted();
       const p = await panel(a);
-      await expect(liApp.getLinkedInReplyPanel(b.liDeps, b.actor, a.conversationId)).resolves.toBeNull();
-      await expect(liApp.sendLinkedInReply(b.liDeps, b.actor, a.conversationId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(liApp.getLinkedInReplyPanel(b.liDeps, b.actor, a.threadId)).resolves.toBeNull();
+      await expect(liApp.sendLinkedInReply(b.liDeps, b.actor, a.threadId, { text: "x", idempotencyKey: key(), draftId: p.draft!.id, revision: p.draft!.revision })).rejects.toBeInstanceOf(NotFoundError);
       await expect(mgmt.regenerateDraft(b.replyDeps, b.actor, p.draft!.id, {})).rejects.toBeInstanceOf(NotFoundError);
       await expect(mgmt.discardDraft(b.replyDeps, b.actor, p.draft!.id)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(mgmt.requestDraft(b.replyDeps, b.actor, a.conversationId)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(mgmt.requestDraft(b.replyDeps, b.actor, a.threadId)).rejects.toBeInstanceOf(NotFoundError);
       expect(a.fake.messages).toHaveLength(0);
       expect(b.fake.messages).toHaveLength(0);
       expect(await one("select status from drafts where id = $1", [p.draft!.id])).toMatchObject({ status: "awaiting_review" });
@@ -366,13 +366,13 @@ describeDb("AI drafts for LinkedIn threads", () => {
     it("keeps the typed composer working with no AI, and with an AI draft open", async () => {
       const none = await drafted({ ai: false });
       expect((await panel(none)).draft).toBeNull();
-      expect(await liApp.sendLinkedInReply(none.liDeps, none.actor, none.conversationId, { text: "Typed by hand", idempotencyKey: key() })).toMatchObject({ status: "sent" });
+      expect(await liApp.sendLinkedInReply(none.liDeps, none.actor, none.threadId, { text: "Typed by hand", idempotencyKey: key() })).toMatchObject({ status: "sent" });
       expect(none.fake.messages.map((m) => m.text)).toEqual(["Typed by hand"]);
       expect(none.ai).toBeNull();
 
       const f = await drafted();
       // No draftId: the typed text goes out and takes the open draft's place.
-      expect(await liApp.sendLinkedInReply(f.liDeps, f.actor, f.conversationId, { text: "My own words", idempotencyKey: key() })).toMatchObject({ status: "sent" });
+      expect(await liApp.sendLinkedInReply(f.liDeps, f.actor, f.threadId, { text: "My own words", idempotencyKey: key() })).toMatchObject({ status: "sent" });
       expect(f.fake.messages.map((m) => m.text)).toEqual(["My own words"]);
       expect(await count("drafts", f.org, "status = 'sent'")).toBe(1);
       expect((await panel(f)).draft).toBeNull();
@@ -400,12 +400,12 @@ describeDb("AI drafts for LinkedIn threads", () => {
       expect(await count("drafts", f.org, "channel = 'email' and subject is not null and status = 'awaiting_review'")).toBe(1);
       expect(f.ai!.draftCalls).toBe(2);
       expect(await count("drafts", f.org, "channel = 'linkedin' and subject is null and status = 'awaiting_review'")).toBe(1);
-      const email = await one("select c.id from conversations c where c.organization_id = $1 and c.channel = 'email'", [f.org]);
+      const email = await one("select c.id from threads c where c.organization_id = $1 and c.channel = 'email'", [f.org]);
       const manual = await mgmt.createManualDraft(f.replyDeps, f.actor, email.id, { subject: "Re: hello", bodyText: "By hand." });
       expect(manual.revision).toBe(1);
       // The manual email draft leaves the LinkedIn draft of this organization alone.
       expect(await count("drafts", f.org, "channel = 'linkedin' and status = 'awaiting_review'")).toBe(1);
-      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "x", bodyText: "y" })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.threadId, { subject: "x", bodyText: "y" })).rejects.toBeInstanceOf(ConflictError);
     });
 
     it("a typed email draft leaves an open LinkedIn draft of the same record alone, and supersedes an open email draft", async () => {
@@ -427,11 +427,11 @@ describeDb("AI drafts for LinkedIn threads", () => {
         receivedAt: new Date(Date.now() - 4000),
         autoReply: false,
       });
-      const email = await one("select c.id, c.record_id from conversations c where c.organization_id = $1 and c.channel = 'email'", [f.org]);
-      // One person on two channels: the LinkedIn draft belongs to the same record as the email thread and replies to its latest inbound message.
+      const email = await one("select c.id, c.conversation_id from threads c where c.organization_id = $1 and c.channel = 'email'", [f.org]);
+      // One person on two channels: the LinkedIn draft belongs to the same conversation as the email thread and replies to its latest inbound message.
       await sql`
-        update drafts set record_id = ${email.record_id}, expected_context_version = r.context_version, reply_for_message_id = r.latest_inbound_message_id
-        from records r where r.id = ${email.record_id} and drafts.organization_id = ${f.org} and drafts.channel = 'linkedin'`;
+        update drafts set conversation_id = ${email.conversation_id}, expected_context_version = r.context_version, reply_for_message_id = r.latest_inbound_message_id
+        from conversations r where r.id = ${email.conversation_id} and drafts.organization_id = ${f.org} and drafts.channel = 'linkedin'`;
       expect(await count("drafts", f.org, "channel = 'linkedin' and status = 'awaiting_review'")).toBe(1);
       const first = await mgmt.createManualDraft(f.replyDeps, f.actor, email.id, { subject: "Re: hello", bodyText: "First by hand." });
       expect(await count("drafts", f.org, "channel = 'linkedin' and status = 'awaiting_review'")).toBe(1);

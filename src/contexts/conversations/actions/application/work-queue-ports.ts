@@ -3,13 +3,13 @@ import type { PickReviewKind, QueueCursor, QueueFilter, QueueGroup, QueueProblem
 /** The work queue: what waits on a person, as the Actions page, the badges and the API read it. Every method carries the organization and filters by it. */
 
 export interface QueueItem {
-  recordId: string;
+  conversationId: string;
   personId: string;
   group: QueueGroup;
   personName: string | null;
   personLifecycle: "lead" | "contact";
-  /** The thread to open. Null when the record has no conversation. */
-  conversationId: string | null;
+  /** The thread to open. Null when the conversation has no conversation. */
+  threadId: string | null;
   groupKey: string | null;
   replyTypeName: string | null;
   channel: string | null;
@@ -25,7 +25,7 @@ export interface QueueItem {
   draft: { draftId: string; status: string; subject: string | null; updatedAt: Date; preview: string | null } | null;
   /**
    * The AI pick of the latest reply when it waits for a person (`pickReviewOf`), else null. The field keeps its old name
-   * because the API carries it. `contextVersion` is the record version the pick was written for: accepting a held one sends
+   * because the API carries it. `contextVersion` is the conversation version the pick was written for: accepting a held one sends
    * it back. `groupKey` and `name` are the applied type, or the proposed one for a held pick.
    */
   classification: { /** Null for a stop request no pick read yet. */ replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
@@ -33,7 +33,7 @@ export interface QueueItem {
 }
 
 export interface QueueGroupPage {
-  /** Every record in the group under the filter, not only this page. */
+  /** Every conversation in the group under the filter, not only this page. */
   total: number;
   items: QueueItem[];
   /** Pass it back with the same filter and the group to load the next page. Null on the last page. */
@@ -55,19 +55,19 @@ export interface ActionQueueCounts {
   byScope: Record<QueueScope, number>;
   /** Open tasks by scope: assigned to me, to nobody, to someone else. A task on a record that is not shown is left out. */
   tasks: Record<QueueScope, number>;
-  /** Records and tasks together. A `next_step` record with an open task is in the queue's task count only, so nothing counts twice. `work.mine` is the sidebar number. */
+  /** Records and tasks together. A `next_step` conversation with an open task is in the queue's task count only, so nothing counts twice. `work.mine` is the sidebar number. */
   work: Record<QueueScope, number>;
   /** Per scope, the earliest waiting time over replies, AI picks, next steps and problems. Follow-ups are left out. Null when none waits. */
   oldestWaiting: Record<QueueScope, Date | null>;
 }
 
-/** Work that has no record: campaign sends the provider never confirmed, and inbound mail waiting for an identity decision. */
+/** Work that has no conversation: campaign sends the provider never confirmed, and inbound mail waiting for an identity decision. */
 export interface ActionQueueExtras {
   uncertainCampaignSends: Array<{ sendId: string; campaignId: string; campaignName: string; channel: string; personName: string | null; claimedAt: Date }>;
   openIdentityExceptions: number;
 }
 
-/** Where a record stands in the queue under a filter: its group and the cursor that continues the group after it. */
+/** Where a conversation stands in the queue under a filter: its group and the cursor that continues the group after it. */
 export interface QueuePosition {
   group: QueueGroup;
   cursor: QueueCursor;
@@ -79,6 +79,6 @@ export interface WorkQueueStore {
   /** `actorUserId` is the person "mine" means. */
   actionQueueCounts(organizationId: string, actorUserId: string): Promise<ActionQueueCounts>;
   actionQueueExtras(organizationId: string): Promise<ActionQueueExtras>;
-  /** Null when the record is not in the queue under the filter, for instance because it was just handled. */
-  queuePosition(organizationId: string, input: { actorUserId: string; filter: QueueFilter; recordId: string }): Promise<QueuePosition | null>;
+  /** Null when the conversation is not in the queue under the filter, for instance because it was just handled. */
+  queuePosition(organizationId: string, input: { actorUserId: string; filter: QueueFilter; conversationId: string }): Promise<QueuePosition | null>;
 }

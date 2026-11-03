@@ -47,7 +47,7 @@ export interface ContactDeleteCounts {
   notes: number;
   tasks: number;
   events: number;
-  conversations: number;
+  threads: number;
   messages: number;
   campaigns: number;
   sends: number;
@@ -59,7 +59,7 @@ export interface ContactDeleteExpected {
   notes: number;
   tasks: number;
   events: number;
-  conversations: number;
+  threads: number;
   messages: number;
   sends: number;
 }
@@ -85,7 +85,7 @@ export interface ContactDeleteStore {
 /** Conversations: `person-handling.ts` and `person-purge.ts`. */
 export interface ContactDeleteHandling {
   lockPersonForDelete(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  counts(tx: DbHandle, organizationId: string, personId: string): Promise<{ conversations: number; messages: number; events: number; notes: number; tasks: number }>;
+  counts(tx: DbHandle, organizationId: string, personId: string): Promise<{ threads: number; messages: number; events: number; notes: number; tasks: number }>;
   blockers(tx: DbHandle, organizationId: string, personId: string): Promise<Array<{ reason: "send_in_flight" | "ai_job_running" }>>;
   purge(tx: DbHandle, organizationId: string, personId: string): Promise<unknown>;
 }
@@ -150,7 +150,7 @@ const Name = (person: Pick<ContactForDelete, "fullName" | "email">) => {
   return name === "this contact" ? "This contact" : name;
 };
 
-const EXPECTED_KEYS = ["deals", "notes", "tasks", "events", "conversations", "messages", "sends"] as const;
+const EXPECTED_KEYS = ["deals", "notes", "tasks", "events", "threads", "messages", "sends"] as const;
 
 /** The counts of the dialog, as numbers or as the query's strings. 422 for a missing or non-integer count. */
 export function parseDeleteExpected(raw: unknown): ContactDeleteExpected {
@@ -185,7 +185,7 @@ async function countsOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, per
     notes: handling.notes,
     tasks: handling.tasks,
     events: handling.events,
-    conversations: handling.conversations,
+    threads: handling.threads,
     messages: handling.messages,
     campaigns: outreach.campaigns,
     sends: outreach.sends,
@@ -198,7 +198,7 @@ export const flatten = (counts: ContactDeleteCounts): ContactDeleteExpected => (
   notes: counts.notes,
   tasks: counts.tasks,
   events: counts.events,
-  conversations: counts.conversations,
+  threads: counts.threads,
   messages: counts.messages,
   sends: counts.sends,
 });

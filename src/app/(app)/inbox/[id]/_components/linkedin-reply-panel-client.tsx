@@ -28,7 +28,7 @@ type SendResult = { status: string; error?: string | null };
  * the page is still read.
  */
 export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: LinkedInReplyPanelView; noDraft: string | null; drafting: boolean }) {
-  const { busy, error, setError, work, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.conversationId);
+  const { busy, error, setError, work, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.threadId);
   const draft = panel.draft;
   const [text, setText] = useState(draft?.status === "awaiting_review" ? draft.text : "");
   const working = busy !== null;
@@ -50,7 +50,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
 
   function send() {
     return work("send", async () => {
-      const result = await callApi<SendResult>(`/api/inbox/${panel.conversationId}/linkedin-reply`, "POST", {
+      const result = await callApi<SendResult>(`/api/inbox/${panel.threadId}/linkedin-reply`, "POST", {
         text,
         idempotencyKey: sendKey.take(),
         // Approving the AI draft names the draft and the revision the person reviewed, so a stale or replaced draft cannot go out.

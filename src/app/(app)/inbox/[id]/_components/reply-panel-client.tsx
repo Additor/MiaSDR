@@ -48,7 +48,7 @@ export function ReplyPanelClient({
   drafting: boolean;
   decisionWaiting: boolean;
 }) {
-  const { busy, error, setError, work, change, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.conversationId);
+  const { busy, error, setError, work, change, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.threadId);
   const draft = panel.draft;
   const saved = draft ? (draft.editedBodyText ?? draft.aiBodyText ?? "") : "";
   const [body, setBody] = useState(saved);
@@ -109,7 +109,7 @@ export function ReplyPanelClient({
       )}
     </p>
   );
-  const composer = closedLine || <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
+  const composer = closedLine || <ReplyComposer threadId={panel.threadId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
 
   // Hand-typing starts folded while the AI can write the draft; with no AI, or once asked for, it is open.
   const [composeOpen, setComposeOpen] = useState(false);
@@ -232,7 +232,7 @@ export function ReplyPanelClient({
                 closedLine
               ) : editStale ? (
                 <ReplyComposer
-                  conversationId={panel.conversationId}
+                  threadId={panel.threadId}
                   defaultSubject={draft.subject ?? composerSubject}
                   defaultBody={saved}
                   title="Edit the draft as a new reply"

@@ -25,12 +25,12 @@ import { waitingLabel } from "./waiting-label";
 
 /** A queue item as it crosses the network: dates are ISO strings. */
 export interface QueueItemView {
-  recordId: string;
+  conversationId: string;
   personId: string;
   group: string;
   personName: string | null;
   personLifecycle: "lead" | "contact";
-  conversationId: string | null;
+  threadId: string | null;
   groupKey: string | null;
   replyTypeName: string | null;
   channel: string | null;
@@ -41,7 +41,7 @@ export interface QueueItemView {
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
   classification: { replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
-  problem: { kind: "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
+  problem: { kind: "conversation_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
 interface GroupResponse {
@@ -54,13 +54,13 @@ interface GroupResponse {
  * own page is the place left.
  */
 function rowHref(item: QueueItemView, query: string): string {
-  if (!item.conversationId) return personHref(item.personId, item.personLifecycle);
-  return `/inbox/${item.conversationId}?${threadQueryFromActions(Object.fromEntries(new URLSearchParams(query)))}`;
+  if (!item.threadId) return personHref(item.personId, item.personLifecycle);
+  return `/inbox/${item.threadId}?${threadQueryFromActions(Object.fromEntries(new URLSearchParams(query)))}`;
 }
 
 /** Review stop request opens the thread with Stop contacting open (`stop=1`). Null without a public thread. */
 function stopHref(item: QueueItemView, query: string): string | null {
-  return item.conversationId ? `${rowHref(item, query)}&stop=1` : null;
+  return item.threadId ? `${rowHref(item, query)}&stop=1` : null;
 }
 
 /** The channel as a mark after the name, with its name for screen readers. */
@@ -82,7 +82,7 @@ const SETTLED_MS = 6_000;
 
 /** A row a person settled in place: one muted line where it stood, so the outcome shows and not only the row leaving. */
 interface Settled {
-  recordId: string;
+  conversationId: string;
   /** Where the row stood, so the remnant stays at that spot while the rows around it change. */
   index: number;
   text: string;
@@ -136,7 +136,7 @@ function ProblemMark({ kind }: { kind: NonNullable<QueueItemView["problem"]>["ki
 /** The line under the snippet and the verb at its end: what waits on the person in this row. */
 function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail: ReactNode; action: string } {
   const contact = item.personLifecycle === "contact";
-  const open = item.conversationId ? "Open conversation" : contact ? "Open contact" : "Open lead";
+  const open = item.threadId ? "Open conversation" : contact ? "Open contact" : "Open lead";
   switch (item.group) {
     case "reply":
       // What the person has to judge is the draft, not the subject, which only repeats the thread's.
@@ -163,7 +163,7 @@ function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail
       // Accepting this one takes a locked customer out of Existing customer, so the row opens the thread instead of settling.
       if (c?.kind === "held" && c.unlocksCustomer) return { detail: `AI picked ${label}${confidence}. Accepting takes them out of Existing customer.`, action: open };
       // Accept answers on a thread only; without one the row opens the person.
-      return { detail: `AI picked ${label}${confidence}`, action: item.conversationId ? "Accept" : open };
+      return { detail: `AI picked ${label}${confidence}`, action: item.threadId ? "Accept" : open };
     }
     case "follow_up":
       return {
@@ -252,9 +252,9 @@ export function QueueGroup({
 
   /** Takes rows out of the list and puts focus on the row that moved up into their place. */
   function removeRows(ids: string[]) {
-    const at = items.findIndex((i) => ids.includes(i.recordId));
-    const rest = items.filter((i) => !ids.includes(i.recordId));
-    focusAfterLoad.current = rest[Math.min(at, rest.length - 1)]?.recordId ?? null;
+    const at = items.findIndex((i) => ids.includes(i.conversationId));
+    const rest = items.filter((i) => !ids.includes(i.conversationId));
+    focusAfterLoad.current = rest[Math.min(at, rest.length - 1)]?.conversationId ?? null;
     setItems(rest);
   }
 
@@ -267,13 +267,13 @@ export function QueueGroup({
   async function settle(item: QueueItemView): Promise<boolean> {
     const c = item.classification;
     if (!c || !c.replyTypePickId || c.kind !== "held" || c.unlocksCustomer) return false;
-    const result = item.conversationId
-      ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
+    const result = item.threadId
+      ? await callApi(`/api/inbox/${item.threadId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
       : { ok: false, error: "Open the person to decide.", code: null, details: null };
     if (!result.ok) {
       const stop = result.code === "stop_review" ? stopHref(item, query) : null;
       if (stop) router.push(stop);
-      else setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
+      else setRowErrors((current) => ({ ...current, [item.conversationId]: result.error ?? "Could not save. Try again." }));
       return false;
     }
     return true;
@@ -281,26 +281,26 @@ export function QueueGroup({
 
   async function decide(item: QueueItemView) {
     if (rowBusy) return;
-    setRowBusy(item.recordId);
-    setRowErrors((errors) => Object.fromEntries(Object.entries(errors).filter(([id]) => id !== item.recordId)));
+    setRowBusy(item.conversationId);
+    setRowErrors((errors) => Object.fromEntries(Object.entries(errors).filter(([id]) => id !== item.conversationId)));
     const ok = await settle(item);
     setRowBusy(null);
     if (ok) {
-      const index = items.findIndex((i) => i.recordId === item.recordId);
+      const index = items.findIndex((i) => i.conversationId === item.conversationId);
       const text = settledText(item, ambiguous);
       // The last row of a list empties it, and the refresh below takes the list off the page with its remnant. The outcome
       // then lands off screen, so a toast says it too (DESIGN.md Feedback).
       const last = items.length === 1 && cursor === null;
-      removeRows([item.recordId]);
+      removeRows([item.conversationId]);
       setSettled((current) => [
-        ...current.filter((r) => r.recordId !== item.recordId),
-        { recordId: item.recordId, index, text, href: item.conversationId ? rowHref(item, query) : null, survived: false },
+        ...current.filter((r) => r.conversationId !== item.conversationId),
+        { conversationId: item.conversationId, index, text, href: item.threadId ? rowHref(item, query) : null, survived: false },
       ]);
-      timers.current.push(window.setTimeout(() => setSettled((current) => current.filter((r) => r.recordId !== item.recordId)), SETTLED_MS));
+      timers.current.push(window.setTimeout(() => setSettled((current) => current.filter((r) => r.conversationId !== item.conversationId)), SETTLED_MS));
       announce(doneFor(ACCEPTED, item.personName));
       if (last) toast.success(text);
     }
-    // Totals and the group the record moves to are the server's to say.
+    // Totals and the group the conversation moves to are the server's to say.
     router.refresh();
   }
 
@@ -318,12 +318,12 @@ export function QueueGroup({
       return;
     }
     const page = result.data.groups[group];
-    const seen = new Set(items.map((i) => i.recordId));
-    const added = page.items.filter((i) => !seen.has(i.recordId));
-    focusAfterLoad.current = added[0]?.recordId ?? null;
+    const seen = new Set(items.map((i) => i.conversationId));
+    const added = page.items.filter((i) => !seen.has(i.conversationId));
+    focusAfterLoad.current = added[0]?.conversationId ?? null;
     setItems((current) => {
-      const have = new Set(current.map((i) => i.recordId));
-      return [...current, ...added.filter((i) => !have.has(i.recordId))];
+      const have = new Set(current.map((i) => i.conversationId));
+      return [...current, ...added.filter((i) => !have.has(i.conversationId))];
     });
     setCursor(page.nextCursor);
   }
@@ -350,7 +350,7 @@ export function QueueGroup({
             const r = entry.remnant;
             // Not a list row: j and k skip it, and its link sits in the tab order like any other link.
             return (
-              <li key={`settled-${r.recordId}`} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground sm:min-h-0" data-testid="queue-settled">
+              <li key={`settled-${r.conversationId}`} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground sm:min-h-0" data-testid="queue-settled">
                 <span className="min-w-0 truncate">{r.text}</span>
                 {r.href && (
                   <Link href={r.href} className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline focus-ring max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
@@ -361,7 +361,7 @@ export function QueueGroup({
             );
           }
           const item = entry.item;
-          const thread = rowHref(item, query);
+          const threadHref = rowHref(item, query);
           const { detail, action } = describe(item, ambiguous);
           const wait = waitingLabel(item.waitingSince, now);
           const type = typeLabel(item.replyTypeName, item.groupKey, ambiguous);
@@ -369,16 +369,16 @@ export function QueueGroup({
           const stop = kind === "stop_review" ? stopHref(item, query) : null;
           return (
             <li
-              key={item.recordId}
+              key={item.conversationId}
               data-testid="queue-item"
-              data-list-row={item.recordId}
-              data-href={thread}
+              data-list-row={item.conversationId}
+              data-href={threadHref}
               className={cn(rowLinkClasses, LIST_ROW_FRAME)}
             >
               <div className="flex items-baseline justify-between gap-3">
                 <div className="flex min-w-0 items-baseline gap-2">
                   {item.problem && <ProblemMark kind={item.problem.kind} />}
-                  <RowLink href={thread} className="truncate">
+                  <RowLink href={threadHref} className="truncate">
                     {item.personName ?? "Unknown sender"}
                     <span className="sr-only">
                       , {action}, {wait}
@@ -410,7 +410,7 @@ export function QueueGroup({
                   >
                     {action}
                   </Link>
-                ) : kind === "held" && item.conversationId && !item.classification?.unlocksCustomer ? (
+                ) : kind === "held" && item.threadId && !item.classification?.unlocksCustomer ? (
                   // Above the stretched link, so the click settles the row and does not open the thread.
                   <Button
                     variant="outline"
@@ -422,15 +422,15 @@ export function QueueGroup({
                     aria-label={`${action}: ${item.personName ?? "the sender"}`}
                     data-testid="settle"
                   >
-                    {rowBusy === item.recordId ? "Saving…" : action}
+                    {rowBusy === item.conversationId ? "Saving…" : action}
                   </Button>
                 ) : (
                   <span className="shrink-0 font-medium text-foreground">{action}</span>
                 )}
               </div>
-              {rowErrors[item.recordId] && (
+              {rowErrors[item.conversationId] && (
                 <p role="alert" className="text-xs text-destructive">
-                  {rowErrors[item.recordId]}
+                  {rowErrors[item.conversationId]}
                 </p>
               )}
             </li>

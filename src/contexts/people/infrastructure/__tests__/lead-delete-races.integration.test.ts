@@ -27,7 +27,7 @@ describeDb("person delete races", () => {
   let leadDeps: LeadDeleteDeps;
   let contactDeps: ContactDeleteDeps;
   let emailStore: typeof import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
-  let replyStop: typeof import("@/contexts/conversations/after-reply/infrastructure/sequence-stop").stopPersonOutreachOnReplyTx;
+  let replyStop: typeof import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop").stopPersonOutreachOnReplyTx;
   let db: typeof import("@/platform/db/client").db;
 
   beforeAll(async () => {
@@ -36,7 +36,7 @@ describeDb("person delete races", () => {
     contacts = await import("../../application/contact-delete");
     ({ leadDeleteDeps: leadDeps, contactDeleteDeps: contactDeps } = await import("@/composition/person-lifecycle"));
     emailStore = (await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store")).drizzleOutreachStore;
-    replyStop = (await import("@/contexts/conversations/after-reply/infrastructure/sequence-stop")).stopPersonOutreachOnReplyTx;
+    replyStop = (await import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop")).stopPersonOutreachOnReplyTx;
     db = (await import("@/platform/db/client")).db;
   }, 60_000);
 
@@ -130,7 +130,7 @@ describeDb("person delete races", () => {
     notes: preview.counts.notes,
     tasks: preview.counts.tasks,
     events: preview.counts.events,
-    conversations: preview.counts.conversations,
+    threads: preview.counts.threads,
     messages: preview.counts.messages,
     sends: preview.counts.sends,
   });
@@ -288,7 +288,7 @@ describeDb("person delete races", () => {
     await holder.release();
     const deleted = await deleting;
     expect(deleted.error).toBeNull();
-    expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "linked_records" }] });
+    expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "linked_conversations" }] });
   }, 30_000);
 
   it("unpaused reply stops and bulk deletes over the same people never deadlock", async () => {

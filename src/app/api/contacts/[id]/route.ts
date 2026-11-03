@@ -2,7 +2,7 @@ import { contactDeleteDeps } from "@/composition/person-lifecycle";
 import { deleteContact } from "@/contexts/people/application/contact-delete";
 import { withActor } from "@/app/_lib/api";
 
-const COUNT_KEYS = ["deals", "notes", "tasks", "events", "conversations", "messages", "sends"] as const;
+const COUNT_KEYS = ["deals", "notes", "tasks", "events", "threads", "messages", "sends"] as const;
 
 /**
  * Deletes a contact with no open deal. The query carries the counts the dialog showed (`?deals=&notes=&tasks=

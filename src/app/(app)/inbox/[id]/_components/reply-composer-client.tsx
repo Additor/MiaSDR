@@ -22,14 +22,14 @@ interface KnownCcOption {
  * an out-of-date draft the person chose to edit.
  */
 export function ReplyComposer({
-  conversationId,
+  threadId,
   defaultSubject,
   defaultBody = "",
   title = "Write the reply yourself",
   knownCcs,
   disabledReason,
 }: {
-  conversationId: string;
+  threadId: string;
   defaultSubject: string;
   defaultBody?: string;
   title?: string;
@@ -48,7 +48,7 @@ export function ReplyComposer({
   async function create() {
     setBusy(true);
     setError(null);
-    const result = await callApi(`/api/inbox/${conversationId}/draft`, "POST", { subject, bodyText: body, ...(cc.length > 0 ? { cc } : {}) });
+    const result = await callApi(`/api/inbox/${threadId}/draft`, "POST", { subject, bodyText: body, ...(cc.length > 0 ? { cc } : {}) });
     setBusy(false);
     if (!result.ok) return setError(result.error);
     setBody("");

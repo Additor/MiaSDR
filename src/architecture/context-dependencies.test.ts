@@ -79,7 +79,7 @@ export function readModelImports(file: string, source: string): string[] {
       const t = target(file, s);
       if (!t?.startsWith("contexts/")) return false;
       if (/^contexts\/[^/]+\/(?:[^/]+\/)*domain\//.test(t)) return false;
-      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|sequences-schema)$/.test(t)) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|follow-ups-schema)$/.test(t)) return false;
       return !(t in READ_MODEL_IMPORTS);
     })
     .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
@@ -89,7 +89,7 @@ export function readModelImports(file: string, source: string): string[] {
 const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
   // The schema barrel: the Drizzle client and migrations see every table through it.
   "src/platform/db/schema.ts": [
-    "@/contexts/conversations/after-reply/infrastructure/sequences-schema",
+    "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema",
     "@/contexts/conversations/infrastructure/schema",
     "@/contexts/deals/infrastructure/schema",
     "@/contexts/grid/infrastructure/schema",
@@ -138,7 +138,7 @@ describe("tier dependencies", () => {
     const source = [
       'import { leadStatus } from "@/contexts/outreach/domain/lead-status";',
       'import { people } from "@/contexts/people/infrastructure/schema";',
-      'import { runs } from "../contexts/conversations/after-reply/infrastructure/sequences-schema";',
+      'import { runs } from "../contexts/conversations/after-reply/infrastructure/follow-ups-schema";',
       'import { deleteDoNotContactTx } from "@/contexts/people/infrastructure/reachability";',
       'import type { LeadActivityDeps } from "@/contexts/outreach/application/read-lead-activity";',
       'import { leadImportDeps } from "@/contexts/people/infrastructure/composition";',
@@ -219,7 +219,7 @@ export function privateCrossImports(file: string, source: string): string[] {
     const t = target(file, s)?.match(/^contexts\/(([^/]+)\/(?:[^/]+\/)*infrastructure\/(?:[^/]+\/)*([^/]+))$/);
     if (!t || t[2] === own) continue;
     const [, module, , name] = t;
-    if (name === "schema" || name === "sequences-schema" || /(^|-)composition$/.test(name) || PUBLISHED_INFRASTRUCTURE.has(module)) continue;
+    if (name === "schema" || name === "follow-ups-schema" || /(^|-)composition$/.test(name) || PUBLISHED_INFRASTRUCTURE.has(module)) continue;
     found.add(module);
   }
   return [...found].sort();

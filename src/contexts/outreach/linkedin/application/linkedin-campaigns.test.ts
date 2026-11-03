@@ -89,7 +89,7 @@ describe("getLinkedInCampaignDetail", () => {
   const row = (id: string, variables: Record<string, string | null>, over: Partial<LinkedInEnrollmentRow> = {}): LinkedInEnrollmentRow => ({
     enrollmentId: id,
     personId: `p-${id}`,
-    inboxConversationId: null,
+    inboxThreadId: null,
     personName: id,
     profileUrl: null,
     status: "pending",

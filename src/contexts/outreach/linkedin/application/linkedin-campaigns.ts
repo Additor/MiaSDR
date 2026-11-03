@@ -48,7 +48,7 @@ export interface LinkedInEnrollmentRow {
   enrollmentId: string;
   personId: string;
   /** The Inbox conversation of a lead that replied, or null. */
-  inboxConversationId: string | null;
+  inboxThreadId: string | null;
   personName: string | null;
   profileUrl: string | null;
   status: string;

@@ -43,16 +43,16 @@ describeDb("account keys across organizations", () => {
     const first = await ingestInbound(mail(a.organizationId));
     const second = await ingestInbound(mail(b.organizationId));
     expect(second.status).toBe("created");
-    expect(second.conversationId).not.toBe(first.conversationId);
-    const [row] = await sql`select organization_id from conversations where id = ${second.conversationId}`;
+    expect(second.threadId).not.toBe(first.threadId);
+    const [row] = await sql`select organization_id from threads where id = ${second.threadId}`;
     expect(row.organization_id).toBe(b.organizationId);
-    const [{ n }] = await sql`select count(*)::int as n from messages where conversation_id = ${first.conversationId}`;
+    const [{ n }] = await sql`select count(*)::int as n from messages where thread_id = ${first.threadId}`;
     expect(n).toBe(1);
     expect((await ingestInbound(mail(b.organizationId))).status).toBe("duplicate");
   });
 
   it("keeps the same LinkedIn chat apart for each organization", async () => {
-    const { drizzleLinkedInConversationStore: store } = await import("../drizzle-linkedin-conversation-store");
+    const { drizzleLinkedInThreadStore: store } = await import("../drizzle-linkedin-thread-store");
     const a = await createTestOrg(sql, "Old account owner");
     const b = await createTestOrg(sql, "New account owner");
     orgs.push(a, b);
@@ -72,7 +72,7 @@ describeDb("account keys across organizations", () => {
     const second = await store.ingestLinkedIn(chat(b.organizationId));
     expect(first.status).toBe("created");
     expect(second.status).toBe("created");
-    expect(second.status === "created" && first.status === "created" && second.conversationId !== first.conversationId).toBe(true);
+    expect(second.status === "created" && first.status === "created" && second.threadId !== first.threadId).toBe(true);
     expect((await store.ingestLinkedIn(chat(b.organizationId))).status).toBe("duplicate");
   });
 });

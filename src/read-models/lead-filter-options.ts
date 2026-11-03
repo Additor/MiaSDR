@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { campaigns, people, records } from "@/platform/db/schema";
+import { campaigns, people, conversations } from "@/platform/db/schema";
 
 /** Values for the lead filter dropdowns: campaigns that can be picked, the sources in use and the CRM categories in use. */
 export async function leadFilterOptions(organizationId: string): Promise<{
@@ -19,9 +19,9 @@ export async function leadFilterOptions(organizationId: string): Promise<{
       .from(people)
       .where(and(eq(people.organizationId, organizationId), isNotNull(people.source))),
     db
-      .selectDistinct({ category: records.groupKey })
-      .from(records)
-      .where(and(eq(records.organizationId, organizationId), isNotNull(records.groupKey))),
+      .selectDistinct({ category: conversations.groupKey })
+      .from(conversations)
+      .where(and(eq(conversations.organizationId, organizationId), isNotNull(conversations.groupKey))),
   ]);
   return {
     campaigns: campaignRows,

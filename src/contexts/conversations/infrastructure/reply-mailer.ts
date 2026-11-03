@@ -32,10 +32,10 @@ export function createReplyMailer(provider: () => MailboxProvider): ReplyMailer 
           rfcMessageId: request.rfcMessageId,
           inReplyTo: request.inReplyTo,
           references: request.references,
-          threadId: request.threadId,
+          providerThreadId: request.providerThreadId,
           listUnsubscribeUrl: oneClickUrl,
         });
-        return { providerMessageId: sent.providerMessageId, threadId: sent.threadId };
+        return { providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // A person sees the reply come back to review, and the mailbox shows why, as a campaign send would have marked it.

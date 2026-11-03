@@ -165,8 +165,8 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     const [general] = await sql<{ values: { sendingPaused: { byName: string } } }[]>`select values from channel_settings where organization_id = ${orgs[0].organizationId} and channel = 'general'`;
     const [{ name }] = await sql<{ name: string }[]>`select name from users where id = ${orgs[0].userId}`;
     expect(general.values.sendingPaused.byName).toBe(`${name}'s agent (Test agent)`);
-    const [{ id: recordId }] = await sql<{ id: string }[]>`select gen_random_uuid() as id`;
-    expect((await owner.tool("pause_sending", { target: "follow_ups", recordId })).structured.error).toMatchObject({ code: "not_found" });
+    const [{ id: conversationId }] = await sql<{ id: string }[]>`select gen_random_uuid() as id`;
+    expect((await owner.tool("pause_sending", { target: "follow_ups", conversationId })).structured.error).toMatchObject({ code: "not_found" });
   });
 
   it("moves a deal with the version it read and refuses a stale one", async () => {
@@ -181,7 +181,7 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     const moved = await owner.tool("update_deal", { action: "move_stage", dealId, stageId: stage.id, expectedVersion: version });
     expect(moved.isError, moved.text).toBe(false);
     expect(moved.structured).toMatchObject({ dealId, stage: { stageId: stage.id }, appUrl: `http://localhost:3000/crm/deals/${dealId}` });
-    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where person_id = ${personId} and event_type in ('deal.stage_moved', 'deal.updated') order by created_at desc limit 1`;
+    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where person_id = ${personId} and event_type in ('deal.type_changed', 'deal.updated') order by created_at desc limit 1`;
     expect(event.meta).toMatchObject({ dealId, via: { tokenId: owner.tokenId } });
     const stale = await owner.tool("update_deal", { action: "edit", dealId, expectedVersion: version, title: "Acme 40 seats" });
     expect(stale.structured.error).toMatchObject({ code: "stale_version" });

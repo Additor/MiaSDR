@@ -13,8 +13,8 @@ export interface World {
   pipeline: string;
   subA: string;
   subB: string;
-  record: string;
   conversation: string;
+  thread: string;
   message: string;
   classification: string;
   draft: string;
@@ -59,18 +59,18 @@ export async function seedWorld(sql: Sql): Promise<World> {
   const pipeline = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
   const subA = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
   const subB = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'b', 'B') returning id`);
-  const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
-  const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', ${"me@" + tag + ".test"}) returning id`);
+  const conversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
+  const thread = await one(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversation}, 'email', ${"me@" + tag + ".test"}) returning id`);
   const message = await one(sql`
-    insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-    values (${org}, ${conversation}, 'email', ${"me@" + tag + ".test"}, 'inbound', ${"m-" + tag}, 'hello', now()) returning id`);
-  await sql`update records set latest_inbound_message_id = ${message} where id = ${record}`;
+    insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+    values (${org}, ${thread}, 'email', ${"me@" + tag + ".test"}, 'inbound', ${"m-" + tag}, 'hello', now()) returning id`);
+  await sql`update conversations set latest_inbound_message_id = ${message} where id = ${conversation}`;
   const classification = await one(sql`
-    insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
-    values (${org}, ${record}, ${message}, 0, ${subA}, ${subA}, ${subA}, 0.9) returning id`);
+    insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
+    values (${org}, ${conversation}, ${message}, 0, ${subA}, ${subA}, ${subA}, 0.9) returning id`);
   const draft = await one(sql`
-    insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
-    values (${org}, ${record}, ${conversation}, ${message}, 0, 'email') returning id`);
+    insert into drafts (organization_id, conversation_id, thread_id, reply_for_message_id, expected_context_version, channel)
+    values (${org}, ${conversation}, ${thread}, ${message}, 0, 'email') returning id`);
   const sendAttempt = await one(sql`insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id) values (${org}, ${draft}, ${"sa-" + tag}, ${user}) returning id`);
   const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb-" + tag + "@t8.test"}, 'connected') returning id`);
   const mailbox2 = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb2-" + tag + "@t8.test"}, 'connected') returning id`);
@@ -91,8 +91,8 @@ export async function seedWorld(sql: Sql): Promise<World> {
   const searchQuery = await one(sql`
     insert into linkedin_search_queries (organization_id, batch_id, url, current_account_id)
     values (${org}, ${searchBatch}, 'https://example.test/search', ${linkedinAccount}) returning id`);
-  const note = await one(sql`insert into notes (organization_id, person_id, record_id, body) values (${org}, ${person}, ${record}, 'n') returning id`);
-  const task = await one(sql`insert into tasks (organization_id, person_id, record_id, name) values (${org}, ${person}, ${record}, 't') returning id`);
+  const note = await one(sql`insert into notes (organization_id, person_id, conversation_id, body) values (${org}, ${person}, ${conversation}, 'n') returning id`);
+  const task = await one(sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${org}, ${person}, ${conversation}, 't') returning id`);
   const importRun = await one(sql`insert into import_runs (organization_id) values (${org}) returning id`);
   const contact = await one(sql`
     insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org}, ${"c-" + tag + "@lead.test"}, 'Contact', 'contact', now()) returning id`);
@@ -110,11 +110,11 @@ export async function seedWorld(sql: Sql): Promise<World> {
     return id;
   });
   const event = await one(sql`
-    insert into events (organization_id, person_id, record_id, event_type, actor_type, actor_user_id)
-    values (${org}, ${person}, ${record}, 'note', 'human', ${user}) returning id`);
+    insert into events (organization_id, person_id, conversation_id, event_type, actor_type, actor_user_id)
+    values (${org}, ${person}, ${conversation}, 'note', 'human', ${user}) returning id`);
   const audit = await one(sql`insert into audit_log (organization_id, actor_user_id, action) values (${org}, ${user}, 'test.action') returning id`);
   return {
-    tag, org, user, person, pipeline, subA, subB, record, conversation, message, classification, draft, sendAttempt, mailbox, mailbox2,
+    tag, org, user, person, pipeline, subA, subB, conversation, thread, message, classification, draft, sendAttempt, mailbox, mailbox2,
     linkedinAccount, campaign, enrollment, sendEmail, sendLinkedin, connection, searchBatch, searchQuery, note, task, importRun, contact, dealStage, deal, company, companyAlias, knowledgeDoc, event, audit,
   };
 }

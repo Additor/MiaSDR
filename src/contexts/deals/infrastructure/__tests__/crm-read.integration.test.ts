@@ -28,8 +28,8 @@ const ALIASES: Record<string, string> = {
   s: "deal_stages",
   col: "deal_stages",
   e: "events",
-  vc: "conversations",
-  vc2: "conversations",
+  vc: "threads",
+  vc2: "threads",
   cp: "contact_policies",
 };
 

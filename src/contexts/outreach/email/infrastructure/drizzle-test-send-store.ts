@@ -76,7 +76,7 @@ export const drizzleTestSendStore: TestSendStore = {
   async markSent(sendId, sent, now) {
     await db
       .update(sends)
-      .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
+      .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId, sentAt: now, error: null })
       .where(and(eq(sends.id, sendId), TEST, fromCall));
   },
 
@@ -121,7 +121,7 @@ export const drizzleTestSendStore: TestSendStore = {
     if (outcome.status === "sent") {
       await db
         .update(sends)
-        .set({ status: "sent", providerMessageId: outcome.sent.providerMessageId, threadId: outcome.sent.threadId, sentAt: outcome.now, error: null })
+        .set({ status: "sent", providerMessageId: outcome.sent.providerMessageId, providerThreadId: outcome.sent.providerThreadId, sentAt: outcome.now, error: null })
         .where(and(eq(sends.id, sendId), TEST, canSend("sent")));
     } else {
       await db.update(sends).set({ status: "failed", error: outcome.error }).where(and(eq(sends.id, sendId), TEST, canSend("failed")));

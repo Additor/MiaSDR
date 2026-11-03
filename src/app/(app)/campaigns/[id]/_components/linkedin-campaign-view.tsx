@@ -14,7 +14,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { enrollmentSelectionKey, type EnrollmentListQuery } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignSummary, enrollmentStatusLabel, leadsInProgress, sendingRulesLine, startBlockers, startSummaryLines, type CampaignTab } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
-import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
+import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
 import { INVITE_NOTE_MAX, describeLinkedInProgress, validateLinkedInSteps } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { MAX_SEND_ATTEMPTS } from "@/contexts/outreach/domain/send-policy";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
@@ -191,8 +191,8 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                           LinkedIn profile
                                         </a>
                                       )}
-                                      {row.inboxConversationId && (
-                                        <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
+                                      {row.inboxThreadId && (
+                                        <Link href={`/inbox/${row.inboxThreadId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
                                           Open in Inbox
                                         </Link>
                                       )}

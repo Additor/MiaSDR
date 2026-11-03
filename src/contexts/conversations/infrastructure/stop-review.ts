@@ -4,25 +4,25 @@ import type { AgentVia } from "@/shared/errors";
 import { pickAsksToStopSql, wordsAskToStopSql } from "@/platform/db/stop-review-sql";
 
 /**
- * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a record or a
+ * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a conversation or a
  * reply answers the stop requests it covers: a type change, a pick, undo, do not contact. An agent's call
- * records nothing, so no sequence of tool calls opens the agent send gate. With `messageId` it covers that reply, otherwise
+ * conversations nothing, so no sequence of tool calls opens the agent send gate. With `messageId` it covers that reply, otherwise
  * every reply of the record a pick reads as a stop request and the latest reply whose own words ask.
  */
 export async function personReviewedStopsTx(
   tx: DbTx,
-  input: { organizationId: string; recordId: string; messageId?: string; actorUserId: string; via?: AgentVia; now: Date },
+  input: { organizationId: string; conversationId: string; messageId?: string; actorUserId: string; via?: AgentVia; now: Date },
 ): Promise<void> {
   if (input.via) return;
-  const { organizationId, recordId, actorUserId, now } = input;
+  const { organizationId, conversationId, actorUserId, now } = input;
   const scope = input.messageId ? sql`and k.message_id = ${input.messageId}::uuid` : sql``;
   await tx.execute(sql`
     insert into stop_reviews (organization_id, message_id, reviewed_by, reviewed_at)
     select distinct k.organization_id, k.message_id, ${actorUserId}::uuid, ${now.toISOString()}::timestamptz
     from reply_type_picks k
-    where k.organization_id = ${organizationId} and k.record_id = ${recordId} ${scope} and ${pickAsksToStopSql("k")}
+    where k.organization_id = ${organizationId} and k.conversation_id = ${conversationId} ${scope} and ${pickAsksToStopSql("k")}
     on conflict (message_id) do nothing`);
-  const reply = input.messageId ? sql`${input.messageId}::uuid` : sql`(select r.latest_inbound_message_id from records r where r.id = ${recordId} and r.organization_id = ${organizationId})`;
+  const reply = input.messageId ? sql`${input.messageId}::uuid` : sql`(select r.latest_inbound_message_id from conversations r where r.id = ${conversationId} and r.organization_id = ${organizationId})`;
   await tx.execute(sql`
     insert into stop_reviews (organization_id, message_id, reviewed_by, reviewed_at)
     select m.organization_id, m.id, ${actorUserId}::uuid, ${now.toISOString()}::timestamptz

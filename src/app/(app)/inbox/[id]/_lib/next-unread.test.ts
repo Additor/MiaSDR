@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { pickNextUnread } from "./next-unread";
 
-const row = (conversationId: string, unreadCount: number) => ({ conversationId, unreadCount });
+const row = (threadId: string, unreadCount: number) => ({ threadId, unreadCount });
 
 describe("pickNextUnread", () => {
   it("takes the first unread row after the open one", () => {

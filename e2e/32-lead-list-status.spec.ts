@@ -26,10 +26,10 @@ async function seed() {
   await person("S30 Nora Nocampaign", null, "s30-nora", "2024-02-03T10:00:00Z");
   await db`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${orgId}, ${campaign.id}, ${replied}, 'email', 'replied')`;
   await db`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${orgId}, ${campaign.id}, ${waiting}, 'email', 'active')`;
-  const [record] = await db`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${replied}, ${replyTypeSetId}) returning id`;
-  const [conversation] = await db`insert into conversations (organization_id, record_id, channel, account_ref) values (${orgId}, ${record.id}, 'email', 's30@e2e-corp.test') returning id`;
-  await db`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-    values (${orgId}, ${conversation.id}, 'email', 's30@e2e-corp.test', 'outbound', 's30-msg-1', 'Hello', now() - interval '3 days')`;
+  const [record] = await db`insert into conversations (organization_id, person_id, reply_type_set_id) values (${orgId}, ${replied}, ${replyTypeSetId}) returning id`;
+  const [thread] = await db`insert into threads (organization_id, conversation_id, channel, account_ref) values (${orgId}, ${record.id}, 'email', 's30@e2e-corp.test') returning id`;
+  await db`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+    values (${orgId}, ${thread.id}, 'email', 's30@e2e-corp.test', 'outbound', 's30-msg-1', 'Hello', now() - interval '3 days')`;
 }
 
 const names = async (page: Page) => (await columnCells(page.getByRole("table"), "Name")).getByRole("link").allTextContents();

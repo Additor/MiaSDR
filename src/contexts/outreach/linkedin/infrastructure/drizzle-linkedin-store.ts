@@ -353,7 +353,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     await db.transaction(async (tx) => {
       const moved = await tx
         .update(sends)
-        .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.chatId, sentAt: now, error: null })
+        .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.chatId, sentAt: now, error: null })
         .where(ownClaim(claim))
         .returning({ id: sends.id });
       // A send that is already final stays as it is.

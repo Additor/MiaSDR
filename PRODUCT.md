@@ -24,7 +24,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Campaign:** the container for Leads, a Sequence and Settings.
 - **Sequence:** the tab and the campaign's own ordered outbound steps. They send automatically at their time. A reply, bounce or unsubscribe stops them.
 - **Step:** one message in the Sequence.
-- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves or an allowed agent sends. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply`.
+- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves or an allowed agent sends. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply` and its tables `follow_up_*`.
 - **Follow-ups in progress:** the runs of Follow-ups after a reply that have not ended.
 - **Lead status:** where a lead stands in outreach. One of New (in no campaign), Queued (waits for its first step), In sequence (inside the campaign's steps), Paused (its campaign is not running), Replied, Finished (every step went out, no reply) or Stopped (a bounce, a suppression, a failure or a cancellation cut it short). Leads only: a contact has no lead status.
 - **In sequence:** the lead status for a lead inside the campaign's steps.
@@ -57,20 +57,19 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Mine, Unassigned, Others:** the three scopes of Actions. Mine is what is assigned to you, Unassigned has no assignee, Others is assigned to someone else. Unconfirmed sends, unmatched senders and dead letters are Shared and sit outside the scopes.
 - **Waiting since:** the time of the last message from the person. Actions lists the longest wait first.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
-- **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `record` (`records` table); a `conversations` row is one channel's thread inside it.
+- **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `conversation` (`conversations` table); a `threads` row is one channel's thread inside it.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
 - **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
 - **Table:** one tab of a workbook, with typed columns and rows.
 - **Enrichment column:** a table column that asks a provider for each row, such as Find work emails or Verify emails. A column that tries several providers in order is a `waterfall` in the code; the UI says "tried in order". The code calls the lookup a provider offers an action (`actionKey`).
 - **Enrichment provider:** a data vendor an organization connects with its own key in Settings > Integrations. The AI provider is a separate connection on the same page.
 - **Code names:** names that stay different in code and tables, so a reader can map them:
-  - `records` holds Conversations.
   - The AI job kind `classification` is the job that picks a reply type.
-  - The model output field `subcategoryKey` names the picked type.
-  - The stored run reasons `stage_moved`, `classification_corrected` and `classification_undone` mean a person changed the reply type, corrected an AI pick or undid one.
+  - The model output field `replyTypeKey` names the picked type.
+  - The stored run reasons `type_changed`, `type_corrected` and `pick_undone` mean a person changed the reply type, corrected an AI pick or undid one.
   - The workflow states `unclassified` and `classifying` read as No type yet and Picking a type. The thread's type line says "No reply type yet", because no "Reply type" label stands next to it there.
 - A lead becomes a contact when you create a deal from it or make it a contact.
-- "Sequence" never names the post-reply feature in user-facing text. Code and table names keep `sequence`.
+- "Sequence" never names the post-reply feature, in user-facing text or in code.
 
 ## Capabilities and Constraints
 - Stack: Next.js 16.4 (App Router), React 19, Tailwind CSS 4.

@@ -6,10 +6,10 @@ describeDb("LinkedIn inbound creates leads with linkedin_url", () => {
   const sql = testSql({ max: 4 });
   let created: TestOrg;
   let org = "";
-  let store: typeof import("../drizzle-linkedin-conversation-store").drizzleLinkedInConversationStore;
+  let store: typeof import("../drizzle-linkedin-thread-store").drizzleLinkedInThreadStore;
 
   beforeAll(async () => {
-    store = (await import("../drizzle-linkedin-conversation-store")).drizzleLinkedInConversationStore;
+    store = (await import("../drizzle-linkedin-thread-store")).drizzleLinkedInThreadStore;
     created = await createTestOrg(sql, "I");
     org = created.organizationId;
   });

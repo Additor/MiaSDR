@@ -113,7 +113,7 @@ describeDb("follow-up takeover by another mailbox", () => {
 
     const mail = provider.delivered[0];
     expect(mail.subject).toMatch(/^Re: Hi Lead0$/);
-    expect(mail.threadId).toBeNull();
+    expect(mail.providerThreadId).toBeNull();
     expect(mail.inReplyTo).toBeNull();
     expect(mail.references).toEqual([]);
     expect(mail.mailbox.emailAddress).toMatch(/^m1-/);
@@ -131,7 +131,7 @@ describeDb("follow-up takeover by another mailbox", () => {
     const claim = await store.claimNext(claimOptions(f.mailboxIds[1]));
     expect(claim).toMatchObject({ takenOverFrom: f.mailboxIds[0], stepNumber: 2 });
     expect((await enrollment(f.enrollmentIds[0])).mailbox_id).toBe(f.mailboxIds[0]);
-    await store.markSent(claim!, { providerMessageId: "p-1", threadId: "t-1" }, current);
+    await store.markSent(claim!, { providerMessageId: "p-1", providerThreadId: "t-1" }, current);
     expect((await enrollment(f.enrollmentIds[0])).mailbox_id).toBe(f.mailboxIds[1]);
   });
 
@@ -146,7 +146,7 @@ describeDb("follow-up takeover by another mailbox", () => {
     const [, step3] = provider.delivered;
     expect(step3.inReplyTo).toBe(provider.delivered[0].rfcMessageId);
     expect(step3.references).toEqual([provider.delivered[0].rfcMessageId]);
-    expect(step3.threadId).not.toBeNull();
+    expect(step3.providerThreadId).not.toBeNull();
     expect((await sendRow(f.enrollmentIds[0], 3)).taken_over_from_mailbox_id).toBeNull();
   });
 

@@ -22,8 +22,8 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
       where e.organization_id = ${organizationId} and e.person_id in (${uuidList(personIds)}) and e.status = 'replied'
       union
       select r.person_id from messages m
-      join conversations c on c.id = m.conversation_id and c.organization_id = m.organization_id
-      join records r on r.id = c.record_id and r.organization_id = c.organization_id
+      join threads c on c.id = m.thread_id and c.organization_id = m.organization_id
+      join conversations r on r.id = c.conversation_id and r.organization_id = c.organization_id
       where m.organization_id = ${organizationId} and ${genuineInboundSql("m")}
         and r.person_id in (${uuidList(personIds)})
     `),

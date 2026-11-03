@@ -4,7 +4,7 @@ import type { DbHandle, DbTx } from "./client";
 /*
  * Lock primitives for the transactions that change one person across contexts: the conversion (deals) and the leads use
  * cases of "Contacts and Companies CRUD" in docs/decisions.md. The person advisory lock and the lock timeouts are generic
- * and live here; the record locks belong to conversations (`person-handling.ts`), which owns `records`.
+ * and live here; the conversation locks belong to conversations (`person-handling.ts`), which owns `conversations`.
  *
  * A person transaction meets reply ingest, suppression and the send engine on the same person. It runs with a 5 s lock
  * timeout and runs once more on a deadlock or a lock timeout through `retryOnce` in ./errors.
@@ -13,8 +13,8 @@ import type { DbHandle, DbTx } from "./client";
 /** The lock timeout of a conversion transaction while it holds nothing of the person. */
 export const CONVERSION_LOCK_TIMEOUT = "5s";
 /**
- * The lock timeout once the conversion holds the person's records or advisory lock. `suppressEmail` (enrollments before
- * records), multi-person ingest (advisory before records) and `advanceRunTx` (run before record) take these locks in another
+ * The lock timeout once the conversion holds the person's conversations or advisory lock. `suppressEmail` (enrollments before
+ * conversations), multi-person ingest (advisory before conversations) and `advanceRunTx` (run before conversation) take these locks in another
  * order, so a cycle with them can form at any later wait. Postgres resolves a cycle in the waiter whose `deadlock_timeout`
  * (1 s by default) runs out first, and those writers do not retry. A wait shorter than that makes the conversion give way first:
  * it rolls back, its caller runs it once more, and the other writer commits.

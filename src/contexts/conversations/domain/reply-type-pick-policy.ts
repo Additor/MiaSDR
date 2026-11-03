@@ -3,7 +3,7 @@ import { detectsStopRequest } from "./stop-request";
 
 /**
  * Deterministic rules for an AI pick. The model never decides whether its pick applies: `decideReplyType` reads the
- * type's system role, the confidence floor and the customer lock, and the apply path calls it once under the record lock.
+ * type's system role, the confidence floor and the customer lock, and the apply path calls it once under the conversation lock.
  */
 
 export type { HoldReason };

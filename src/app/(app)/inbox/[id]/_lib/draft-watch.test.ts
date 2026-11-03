@@ -71,11 +71,11 @@ describe("draft watch", () => {
 
 describe("watchedDraftStatus", () => {
   it("reads the newest open draft of the current context version only, so an earlier sent draft does not end the watch", () => {
-    const sentBefore = { conversationId: "c1", status: "sent", expectedContextVersion: 3 };
+    const sentBefore = { threadId: "c1", status: "sent", expectedContextVersion: 3 };
     expect(watchedDraftStatus([sentBefore], "c1", 4)).toBeNull();
-    const generating = { conversationId: "c1", status: "generating", expectedContextVersion: 4 };
+    const generating = { threadId: "c1", status: "generating", expectedContextVersion: 4 };
     expect(watchedDraftStatus([generating, sentBefore], "c1", 4)).toBe("generating");
     expect(watchedDraftStatus([{ ...generating, status: "stale" }, sentBefore], "c1", 4)).toBeNull();
-    expect(watchedDraftStatus([{ ...generating, conversationId: "c2" }], "c1", 4)).toBeNull();
+    expect(watchedDraftStatus([{ ...generating, threadId: "c2" }], "c1", 4)).toBeNull();
   });
 });

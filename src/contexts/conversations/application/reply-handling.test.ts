@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
-  closeRecord,
+  closeConversation,
   ignoreIdentityException,
   changeReplyType,
   quarantineInbound,
@@ -24,14 +24,14 @@ const NOW = new Date("2026-01-01T00:00:00Z");
 function fakeStore(over: Partial<ReplyHandlingStore> & { exceptions?: IdentityExceptionRow[] } = {}) {
   const exceptions = over.exceptions ?? [];
   const calls: Record<string, unknown[]> = {};
-  const record = (name: string, arg: unknown) => ((calls[name] ??= []).push(arg), arg);
+  const conversation = (name: string, arg: unknown) => ((calls[name] ??= []).push(arg), arg);
   const store = {
-    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false, runEnded: false }),
-    setDoNotContact: async (input: unknown) => (record("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
-    closeRecord: async (input: unknown) => void record("closeRecord", input),
+    changeReplyType: async (input: { personId?: string }) => (conversation("changeReplyType", input), { conversationId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false, runEnded: false }),
+    setDoNotContact: async (input: unknown) => (conversation("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
+    closeConversation: async (input: unknown) => void conversation("closeConversation", input),
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,
     personForReplay: async (org: string, pid: string) => (org === ORG && pid === id(7) ? { id: pid, email: "lead@acme.test" } : null),
-    closeIdentityException: async (input: unknown) => (record("closeIdentityException", input), true),
+    closeIdentityException: async (input: unknown) => (conversation("closeIdentityException", input), true),
     draftIdForAttempt: async (_org: string, aid: string) => (aid === id(8) ? id(9) : null),
     ...over,
   } as unknown as ReplyHandlingStore;
@@ -45,8 +45,8 @@ function deps(store: ReplyHandlingStore) {
     inbox: { list: vi.fn(), listScheduled: vi.fn(), filterOptions: vi.fn(), thread: vi.fn(), markRead: vi.fn() },
     now: () => NOW,
     replay: {
-      email: async (input) => (replayed.push(input), { status: "created", conversationId: id(70), messageId: id(71), personId: input.personId ?? id(0), personCreated: false }),
-      linkedin: async (input) => (replayed.push(input), { status: "created", conversationId: id(72), messageId: id(73), personId: input.personId ?? id(0), personCreated: false }),
+      email: async (input) => (replayed.push(input), { status: "created", threadId: id(70), messageId: id(71), personId: input.personId ?? id(0), personCreated: false }),
+      linkedin: async (input) => (replayed.push(input), { status: "created", threadId: id(72), messageId: id(73), personId: input.personId ?? id(0), personCreated: false }),
     },
   };
   return { d, replayed };
@@ -58,7 +58,7 @@ describe("stage moves", () => {
     const { d } = deps(store);
     const result = await changeReplyType(d, actor, id(2), { groupKey: "not_interested", replyTypeId: id(5), expectedContextVersion: 3, note: "  asked to stop  " });
     expect(result).toMatchObject({ contextVersion: 4, replyTypeKey: "do_not_contact" });
-    expect(calls.changeReplyType[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
+    expect(calls.changeReplyType[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, conversationId: id(2), note: "asked to stop", confirmUnlock: false });
     expect(calls.setDoNotContact).toBeUndefined();
   });
 
@@ -90,9 +90,9 @@ describe("do not contact", () => {
 describe("close", () => {
   it("requires a reason", async () => {
     const { store, calls } = fakeStore();
-    await expect(closeRecord(deps(store).d, actor, id(2), { reason: " " })).rejects.toThrow(ValidationError);
-    await closeRecord(deps(store).d, actor, id(2), { reason: "Lost to a competitor" });
-    expect(calls.closeRecord).toHaveLength(1);
+    await expect(closeConversation(deps(store).d, actor, id(2), { reason: " " })).rejects.toThrow(ValidationError);
+    await closeConversation(deps(store).d, actor, id(2), { reason: "Lost to a competitor" });
+    expect(calls.closeConversation).toHaveLength(1);
   });
 });
 
@@ -123,7 +123,7 @@ describe("identity exceptions", () => {
     const { store, calls } = fakeStore({ exceptions: [row({ payload: { ...email, message: { ...email.message, organizationId: OTHER_ORG } } })] });
     const { d, replayed } = deps(store);
     const result = await resolveIdentityException(d, actor, id(20), { personId: id(7) });
-    expect(result.conversationId).toBe(id(70));
+    expect(result.threadId).toBe(id(70));
     expect(replayed[0]).toMatchObject({ organizationId: ORG, personId: id(7), providerMessageId: "m1" });
     expect((replayed[0] as { receivedAt: Date }).receivedAt).toEqual(new Date("2026-01-01T00:00:00.000Z"));
     expect(calls.closeIdentityException[0]).toMatchObject({ organizationId: ORG, id: id(20), outcome: { status: "resolved", personId: id(7) } });

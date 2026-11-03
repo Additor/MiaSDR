@@ -5,14 +5,14 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { isReplyTypeGroup, parseInstructionBlocks, type ReplyTypeGroup } from "../domain/reply-handling";
 import { isTypeChangePath, typeChangeOutcome, type TypeChangeOutcome } from "../domain/reply-type";
-import type { ReplyHandlingStore, IdentityExceptionIntake, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
+import type { ReplyHandlingStore, IdentityExceptionIntake, IdentityExceptionRow, ConversationDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
 import { resolveUncertainSend, type ReplyDeps } from "./reply-management";
 import { noteScope, type NoteTarget } from "../actions/application/tasks";
 
 /**
- * Reply handling: the reply record behind each Inbox thread, identity exceptions and settings. Any member
+ * Reply handling: the reply conversation behind each Inbox thread, identity exceptions and settings. Any member
  * of the organization may use them (decisions.md, "AI replies"). Every store call carries the actor's organization, so
  * another organization's ids answer 404.
  *
@@ -36,40 +36,40 @@ const assertId = (id: string, what: string) => {
 };
 
 export interface TimelineMessage extends ThreadMessage {
-  conversationId: string;
+  threadId: string;
   channel: string;
   accountLabel: string;
 }
 
 /**
- * Everything the Inbox thread shows about its reply record in the side column: category, history, drafts, events,
+ * Everything the Inbox thread shows about its reply conversation in the side column: category, history, drafts, events,
  * notes, enrollments and the person's other conversations.
  */
-export async function getRecordDetail(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<RecordDetail> {
-  assertId(recordId, "Reply handling");
-  const detail = await deps.store.recordDetail(actor.organizationId, recordId);
+export async function getConversationDetail(deps: ReplyHandlingDeps, actor: Actor, conversationId: string): Promise<ConversationDetail> {
+  assertId(conversationId, "Reply handling");
+  const detail = await deps.store.conversationDetail(actor.organizationId, conversationId);
   if (!detail) throw new NotFoundError("Reply handling not found");
   return detail;
 }
 
-/** The record with one timeline across its email and LinkedIn conversations, oldest first. */
-export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId: string) {
-  const detail = await getRecordDetail(deps, actor, recordId);
-  const threads = await Promise.all(detail.conversations.map((c) => deps.inbox.thread(actor.organizationId, c.id)));
+/** The conversation with one timeline across its email and LinkedIn conversations, oldest first. */
+export async function getConversation(deps: ReplyHandlingDeps, actor: Actor, conversationId: string) {
+  const detail = await getConversationDetail(deps, actor, conversationId);
+  const threads = await Promise.all(detail.threads.map((c) => deps.inbox.thread(actor.organizationId, c.id)));
   const timeline: TimelineMessage[] = threads
-    .flatMap((thread) => (thread ? thread.messages.map((m) => ({ ...m, conversationId: thread.conversationId, channel: thread.channel, accountLabel: thread.accountLabel })) : []))
+    .flatMap((thread) => (thread ? thread.messages.map((m) => ({ ...m, threadId: thread.threadId, channel: thread.channel, accountLabel: thread.accountLabel })) : []))
     .sort((a, b) => a.at.getTime() - b.at.getTime());
   return { ...detail, timeline };
 }
 
 /**
- * What Change type would do for each reply type of the record on `path`, as the three lines of
- * `typeChangeOutcome`. The record's current type is left out: it is not a target.
+ * What Change type would do for each reply type of the conversation on `path`, as the three lines of
+ * `typeChangeOutcome`. The conversation's current type is left out: it is not a target.
  */
-export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string, path: unknown): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
+export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, conversationId: string, path: unknown): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
   if (!isTypeChangePath(path)) throw new ValidationError("The path must be correct or off_thread.");
-  assertId(recordId, "Reply handling");
-  const read = await deps.store.typeChangeFacts(actor.organizationId, recordId);
+  assertId(conversationId, "Reply handling");
+  const read = await deps.store.typeChangeFacts(actor.organizationId, conversationId);
   if (!read) throw new NotFoundError("Reply handling not found");
   const facts = { ...read.facts, currentType: read.current };
   return read.targets
@@ -87,14 +87,14 @@ export interface ChangeReplyTypeInput {
 }
 
 /**
- * A person changes the record's reply type because something happened off the thread (a meeting took place, a trial
+ * A person changes the conversation's reply type because something happened off the thread (a meeting took place, a trial
  * started). The AI's reading of the latest reply stays as it was; the change is logged as `reply_type.changed` with the
  * rules of the new type. The type's rules decide, through `decideReplyType` with no confidence: the workflow state
  * (`afterTypeChange`) and whether a follow-up run starts. No new draft is written here. A type change never marks the
  * person do not contact, the stop request type included: contact stops only through Stop contacting.
  */
-export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: ChangeReplyTypeInput) {
-  assertId(recordId, "Reply handling");
+export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, conversationId: string, input: ChangeReplyTypeInput) {
+  assertId(conversationId, "Reply handling");
   if (!isReplyTypeGroup(input.groupKey)) throw new ValidationError("Choose one of the four groups.");
   if (input.replyTypeId !== null) assertId(input.replyTypeId, "Reply type");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
@@ -108,7 +108,7 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     via: actor.via,
-    recordId,
+    conversationId,
     groupKey: input.groupKey as ReplyTypeGroup,
     replyTypeId: input.replyTypeId,
     expectedContextVersion: input.expectedContextVersion,
@@ -120,7 +120,7 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
 }
 
 /**
- * Reverts the latest applied pick to the type the record had before, as a person's decision. Open drafts retire, the
+ * Reverts the latest applied pick to the type the conversation had before, as a person's decision. Open drafts retire, the
  * follow-up run ends and a queued draft job for the pick is cancelled; the result says which of these happened.
  */
 export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<UndoReplyTypePickResult> {
@@ -130,7 +130,7 @@ export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, r
 
 /**
  * Do not contact applies to the person on every channel. Setting it stops the person's pending and
- * active campaign enrollments, retires open drafts and puts their records back in front of a human.
+ * active campaign enrollments, retires open drafts and puts their conversations back in front of a human.
  * Clearing it removes the flag only; enrollments that were stopped stay stopped.
  */
 export async function setPersonDoNotContact(deps: ReplyHandlingDeps, actor: Actor, personId: string, input: { enabled: boolean; reason?: string | null }) {
@@ -197,20 +197,20 @@ export async function setPeopleDoNotContact(deps: ReplyHandlingDeps, actor: Acto
   return result;
 }
 
-export async function closeRecord(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: { reason: string }): Promise<void> {
-  assertId(recordId, "Reply handling");
+export async function closeConversation(deps: ReplyHandlingDeps, actor: Actor, conversationId: string, input: { reason: string }): Promise<void> {
+  assertId(conversationId, "Reply handling");
   const reason = input.reason.trim();
   if (reason === "" || reason.length > 500) throw new ValidationError("Give a reason of 1 to 500 characters.");
-  await deps.store.closeRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, recordId, reason, now: deps.now() });
+  await deps.store.closeConversation({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, conversationId, reason, now: deps.now() });
 }
 
-export async function reopenRecord(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<void> {
-  assertId(recordId, "Reply handling");
-  await deps.store.reopenRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, recordId, now: deps.now() });
+export async function reopenConversation(deps: ReplyHandlingDeps, actor: Actor, conversationId: string): Promise<void> {
+  assertId(conversationId, "Reply handling");
+  await deps.store.reopenConversation({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, conversationId, now: deps.now() });
 }
 
-/** A note on a record (`target` is its id) or on a person without one (`{ personId }`, stored with a null `record_id`). */
-export async function addRecordNote(deps: ReplyHandlingDeps, actor: Actor, target: NoteTarget, input: { title?: string | null; body: string }) {
+/** A note on a conversation (`target` is its id) or on a person without one (`{ personId }`, stored with a null `conversation_id`). */
+export async function addConversationNote(deps: ReplyHandlingDeps, actor: Actor, target: NoteTarget, input: { title?: string | null; body: string }) {
   const scope = noteScope(target);
   const body = input.body.trim();
   if (body === "" || body.length > 10_000) throw new ValidationError("The note must be 1 to 10,000 characters.");
@@ -219,7 +219,7 @@ export async function addRecordNote(deps: ReplyHandlingDeps, actor: Actor, targe
   return deps.store.addNote({ organizationId: actor.organizationId, actorUserId: actor.userId, scope, title, body });
 }
 
-export async function deleteRecordNote(deps: ReplyHandlingDeps, actor: Actor, target: NoteTarget, noteId: string): Promise<void> {
+export async function deleteConversationNote(deps: ReplyHandlingDeps, actor: Actor, target: NoteTarget, noteId: string): Promise<void> {
   const scope = noteScope(target);
   assertId(noteId, "Note");
   if (!(await deps.store.deleteNote({ organizationId: actor.organizationId, scope, noteId }))) throw new NotFoundError("Note not found");
@@ -340,7 +340,7 @@ async function openException(deps: ReplyHandlingDeps, actor: Actor, id: string) 
  * action queue, then closes the exception. The replay is idempotent per provider message, so a failure
  * between the two steps is safe to retry.
  */
-export async function resolveIdentityException(deps: ReplyHandlingDeps, actor: Actor, id: string, input: { personId: string }): Promise<{ conversationId: string }> {
+export async function resolveIdentityException(deps: ReplyHandlingDeps, actor: Actor, id: string, input: { personId: string }): Promise<{ threadId: string }> {
   const row = await openException(deps, actor, id);
   assertId(input.personId, "Person");
   const person = await deps.store.personForReplay(actor.organizationId, input.personId);
@@ -359,7 +359,7 @@ export async function resolveIdentityException(deps: ReplyHandlingDeps, actor: A
   }
   const closed = await deps.store.closeIdentityException({ organizationId: actor.organizationId, id, outcome: { status: "resolved", personId: person.id }, now: deps.now() });
   if (!closed) throw new ConflictError("This exception was reviewed by someone else at the same time.");
-  return { conversationId: result.conversationId };
+  return { threadId: result.threadId };
 }
 
 export async function ignoreIdentityException(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {

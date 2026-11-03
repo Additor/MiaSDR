@@ -7,7 +7,7 @@ export function createSentFinder(provider: () => MailboxProvider): SentFinder {
     async findSent(mailboxEmail, rfcMessageId, since, hint) {
       const found = await provider().findSent({ emailAddress: mailboxEmail }, rfcMessageId, since, hint);
       if (found.status !== "found") return found;
-      return { status: "found", sent: { providerMessageId: found.sent.providerMessageId, threadId: found.sent.threadId } };
+      return { status: "found", sent: { providerMessageId: found.sent.providerMessageId, providerThreadId: found.sent.providerThreadId } };
     },
   };
 }

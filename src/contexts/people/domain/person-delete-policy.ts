@@ -16,7 +16,7 @@
  * appeared after the locks) and rolled back. `agent_delete_protected`: an agent asked, and the delete would erase a signal
  * that this person stays out of reach (`AGENT_DELETE_PROTECTED`).
  */
-export type BlockReason = "has_sends" | "in_active_campaign" | "linked_records" | "try_again" | "agent_delete_protected";
+export type BlockReason = "has_sends" | "in_active_campaign" | "linked_conversations" | "try_again" | "agent_delete_protected";
 
 /**
  * Deleting a person can undo a promise to leave them alone: without an email, the do not contact mark goes with them, and
@@ -38,12 +38,12 @@ export interface LeadDeleteFacts {
 }
 
 /** First matching reason wins. */
-const LEAD_ORDER: readonly BlockReason[] = ["has_sends", "in_active_campaign", "linked_records"];
+const LEAD_ORDER: readonly BlockReason[] = ["has_sends", "in_active_campaign", "linked_conversations"];
 
 /** The reason a lead stays, or null when lead mode deletes it. */
 export function leadDeleteBlock(facts: LeadDeleteFacts): BlockReason | null {
   // A contact always has events (the conversion writes one); a contact inserted without history stays undeletable too.
-  const found: readonly BlockReason[] = facts.history || facts.contact ? [...facts.outreach, "linked_records"] : facts.outreach;
+  const found: readonly BlockReason[] = facts.history || facts.contact ? [...facts.outreach, "linked_conversations"] : facts.outreach;
   return LEAD_ORDER.find((reason) => found.includes(reason)) ?? null;
 }
 

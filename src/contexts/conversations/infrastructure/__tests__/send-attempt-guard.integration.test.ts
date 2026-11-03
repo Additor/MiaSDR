@@ -13,7 +13,7 @@ describeDb("email reply attempt status guard", () => {
 
   async function claimed(f: Fx) {
     const r = await receive(f);
-    const p = await panel(f, r.conversationId);
+    const p = await panel(f, r.threadId);
     const draft = p.draft!;
     const started = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: "tok-guard", now: new Date() });
     if (started.kind !== "started") throw new Error("claim did not start");
@@ -23,7 +23,7 @@ describeDb("email reply attempt status guard", () => {
     attempt: (await one("select status, error from send_attempts where organization_id = $1", [f.org])) as unknown as { status: string; error: string | null },
     draft: (await one("select status from drafts where organization_id = $1 and status <> 'stale'", [f.org])).status as string,
   });
-  const delivered = { providerMessageId: "pm-1", threadId: null };
+  const delivered = { providerMessageId: "pm-1", providerThreadId: null };
 
   it("keeps a sent attempt and its draft sent when a late markFailed or markUncertain arrives", async () => {
     const f = await fixture();

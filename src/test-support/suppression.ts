@@ -2,12 +2,12 @@
 export async function suppressionStore() {
   const [{ createSuppressionStore }, { followUpStop }] = await Promise.all([
     import("@/contexts/outreach/infrastructure/suppression-store"),
-    import("@/contexts/conversations/after-reply/infrastructure/sequence-stop"),
+    import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop"),
   ]);
   return createSuppressionStore(followUpStop);
 }
 
 /** Conversations' follow-up stop, for tests that build outreach's inbound store. */
 export async function followUpStop() {
-  return (await import("@/contexts/conversations/after-reply/infrastructure/sequence-stop")).followUpStop;
+  return (await import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop")).followUpStop;
 }

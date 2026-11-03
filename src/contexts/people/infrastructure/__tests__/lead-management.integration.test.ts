@@ -151,13 +151,13 @@ describeDb("lead management", () => {
 
       const outcome = await uc.deleteLeads(deps, actor, { ids: [withEvent, bare, lead] });
       expect(outcome.deleted).toBe(1);
-      expect(outcome.blocked.map((b) => `${b.id}:${b.reason}`).sort()).toEqual([`${withEvent}:linked_records`, `${bare}:linked_records`].sort());
+      expect(outcome.blocked.map((b) => `${b.id}:${b.reason}`).sort()).toEqual([`${withEvent}:linked_conversations`, `${bare}:linked_conversations`].sort());
       const [{ count }] = await sql`select count(*)::int as count from people where id in ${sql([withEvent, bare])}`;
       expect(count).toBe(2);
 
       const { checkLeadDelete } = await import("../../application/lead-delete-check");
       expect((await checkLeadDelete(deps, actor, bare)).canDelete).toBe(false);
-      expect(await uc.leadDeleteBlockOf(deps, actor, bare)).toBe("linked_records");
+      expect(await uc.leadDeleteBlockOf(deps, actor, bare)).toBe("linked_conversations");
 
       // The filter delete only sees leads: the contact is not in its count, and the use case refuses any other lifecycle.
       const again = await person(o, "lead2@acme.com", { name: "Another Lead" });
@@ -243,10 +243,10 @@ describeDb("lead management", () => {
       const { id: o, actor } = await org();
       const p = await person(o, "crm@acme.com");
       const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${o}, 'P') returning id`;
-      await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o}, ${p}, ${pipeline})`;
+      await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o}, ${p}, ${pipeline})`;
       const result = await uc.deleteLeads(deps, actor, { ids: [p] });
       expect(result.deleted).toBe(0);
-      expect(result.blocked).toMatchObject([{ id: p, reason: "linked_records" }]);
+      expect(result.blocked).toMatchObject([{ id: p, reason: "linked_conversations" }]);
     });
 
     it("refuses a lead with history events and no CRM record", async () => {
@@ -256,10 +256,10 @@ describeDb("lead management", () => {
       await markDoNotContact(o, p, "Asked");
       await sql`insert into events (organization_id, person_id, event_type, actor_type, actor_user_id) values (${o}, ${p}, 'contact_policy.dnc_set', 'human', ${actor.userId})`;
       const result = await uc.deleteLeads(deps, actor, { ids: [p] });
-      expect(result).toEqual({ deleted: 0, blocked: [expect.objectContaining({ id: p, reason: "linked_records" })] });
+      expect(result).toEqual({ deleted: 0, blocked: [expect.objectContaining({ id: p, reason: "linked_conversations" })] });
       expect(await sql`select 1 from people where id = ${p}`).toHaveLength(1);
       // The delete falls back to the foreign key, but the check before it has only the rule to go on.
-      expect(await uc.leadDeleteBlockOf(deps, actor, p)).toBe("linked_records");
+      expect(await uc.leadDeleteBlockOf(deps, actor, p)).toBe("linked_conversations");
     });
 
     it("keeps a do-not-contact address on the suppression list after deleting the lead", async () => {

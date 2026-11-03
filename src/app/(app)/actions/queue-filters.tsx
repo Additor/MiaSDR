@@ -22,7 +22,7 @@ const CHANNELS = [
   { value: "linkedin", label: "LinkedIn" },
 ];
 
-/** The record has no reply type yet. The URL keeps its old value, `category=unclassified`. */
+/** The conversation has no reply type yet. The URL keeps its old value, `category=unclassified`. */
 const NO_TYPE = { value: NO_TYPE_FILTER, label: "No type yet" };
 
 const typeOptions = (types: Array<{ id: string; name: string; groupKey: string }>) => {

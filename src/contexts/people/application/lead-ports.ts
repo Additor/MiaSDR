@@ -51,7 +51,7 @@ export interface LeadDetail {
     stopReason: string | null;
   }>;
   /** The newest Inbox conversation with this lead, or null when none exists. */
-  conversationId: string | null;
+  threadId: string | null;
   /** The campaign sends to this lead. */
   sends: Array<{
     id: string;
@@ -69,7 +69,7 @@ export interface LeadDetail {
 }
 
 /** The part of the lead detail that other contexts' tables hold: enrollments, sends, the Inbox conversation. */
-export type LeadDetailActivity = Pick<LeadDetail, "enrollments" | "conversationId" | "sends">;
+export type LeadDetailActivity = Pick<LeadDetail, "enrollments" | "threadId" | "sends">;
 
 /** Reads `LeadDetailActivity` for one person in the organization. `src/composition/leads.ts` passes the read model's reader. */
 export type ReadLeadDetailActivity = (organizationId: string, personId: string) => Promise<LeadDetailActivity>;

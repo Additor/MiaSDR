@@ -20,6 +20,6 @@ describe("the reply fact", () => {
 
   it("moves an enrollment to replied in one place", () => {
     const writers = files().filter(({ text }) => /haltOutcome\("replied"\)|halt\w*\([^)]*"replied"/.test(text)).map(({ file }) => file);
-    expect(writers).toEqual(["src/contexts/conversations/after-reply/infrastructure/sequence-stop.ts"]);
+    expect(writers).toEqual(["src/contexts/conversations/after-reply/infrastructure/follow-up-stop.ts"]);
   });
 });

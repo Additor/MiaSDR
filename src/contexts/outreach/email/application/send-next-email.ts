@@ -85,7 +85,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
       rfcMessageId,
       inReplyTo: threading.inReplyTo,
       references: threading.references,
-      threadId: threading.threadId,
+      providerThreadId: threading.providerThreadId,
       listUnsubscribeUrl: oneClickUrl,
     });
     await deps.store.markSent(claim, sent, deps.clock.now());

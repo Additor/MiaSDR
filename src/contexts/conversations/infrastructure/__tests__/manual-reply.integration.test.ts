@@ -51,7 +51,7 @@ describeDb("manual email replies (no AI)", () => {
     };
     // Ingest only. No AI tick runs, so no draft exists and the classifier is never called.
     const ingested = await composition.ingestInbound(input);
-    return { org, actor, address, ai, replyDeps, input, conversationId: ingested.conversationId, lead: input.from.email, tag };
+    return { org, actor, address, ai, replyDeps, input, threadId: ingested.threadId, lead: input.from.email, tag };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
@@ -59,7 +59,7 @@ describeDb("manual email replies (no AI)", () => {
   const count = async (table: string, org: string, where = "true") => Number((await sql.unsafe(`select count(*)::int as n from ${table} where organization_id = $1 and ${where}`, [org]))[0].n);
   const key = () => `key-${Math.random().toString(36).slice(2)}`;
   const compose = (f: Fx, over: Partial<{ subject: string | null; bodyText: string; cc: string[] }> = {}) =>
-    mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "Hi Lena, pricing is attached.", ...over });
+    mgmt.createManualDraft(f.replyDeps, f.actor, f.threadId, { subject: "Re: Question about pricing", bodyText: "Hi Lena, pricing is attached.", ...over });
 
   beforeAll(async () => {
     composition = await import("../composition");
@@ -76,7 +76,7 @@ describeDb("manual email replies (no AI)", () => {
   });
 
   describe("expectedOpenRevision", () => {
-    const write = (f: Fx, expectedOpenRevision: number | null) => mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision });
+    const write = (f: Fx, expectedOpenRevision: number | null) => mgmt.createManualDraft(f.replyDeps, f.actor, f.threadId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision });
 
     it("answers draft_open and changes nothing when a person edited the draft after the caller read it", async () => {
       const f = await fixture();
@@ -93,7 +93,7 @@ describeDb("manual email replies (no AI)", () => {
       const read = await compose(f);
       const replacement = await compose(f, { bodyText: "A person's newer draft." });
       expect(replacement.revision).toBe(read.revision);
-      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision: read.revision, expectedOpenDraftId: read.draftId })).rejects.toMatchObject({ details: { code: "draft_open" } });
+      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.threadId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision: read.revision, expectedOpenDraftId: read.draftId })).rejects.toMatchObject({ details: { code: "draft_open" } });
       expect(await one("select status from drafts where id = $1", [replacement.draftId])).toMatchObject({ status: "awaiting_review" });
     });
 
@@ -135,13 +135,13 @@ describeDb("manual email replies (no AI)", () => {
     const row = await one("select * from drafts where id = $1", [created.draftId]);
     expect(row).toMatchObject({ status: "awaiting_review", channel: "email", revision: 1, subject: "Re: Question about pricing", provider: "manual", ai_body_text: null, edited_body_text: "Hi Lena, pricing is attached." });
     expect(row.request).toMatchObject({ source: "manual", createdBy: f.actor.userId });
-    const record = await one("select context_version, latest_inbound_message_id from records where organization_id = $1", [f.org]);
-    expect(row.expected_context_version).toBe(record.context_version);
-    expect(row.reply_for_message_id).toBe(record.latest_inbound_message_id);
+    const conversation = await one("select context_version, latest_inbound_message_id from conversations where organization_id = $1", [f.org]);
+    expect(row.expected_context_version).toBe(conversation.context_version);
+    expect(row.reply_for_message_id).toBe(conversation.latest_inbound_message_id);
     expect(await count("events", f.org, "event_type = 'draft.created_manual'")).toBe(1);
     expect(f.ai.classifyCalls + f.ai.draftCalls).toBe(0);
 
-    const panel = (await mgmt.getReplyPanel(f.replyDeps, f.actor, f.conversationId))!;
+    const panel = (await mgmt.getReplyPanel(f.replyDeps, f.actor, f.threadId))!;
     expect(panel.draft).toMatchObject({ id: created.draftId, source: "manual", status: "awaiting_review" });
     expect(panel.lastSubject).toBe("Question about pricing");
   });
@@ -149,10 +149,10 @@ describeDb("manual email replies (no AI)", () => {
   it("works when no AI key is configured", async () => {
     const f = await fixture();
     const deps = { ...f.replyDeps, ai: replyAiResolverOf(async () => null) };
-    const created = await mgmt.createManualDraft(deps, f.actor, f.conversationId, { subject: "Hello", bodyText: "Body" });
+    const created = await mgmt.createManualDraft(deps, f.actor, f.threadId, { subject: "Hello", bodyText: "Body" });
     const sent = await mgmt.approveAndSendDraft(deps, f.actor, created.draftId, { revision: created.revision, idempotencyKey: key() });
     expect(sent).toMatchObject({ status: "sent" });
-    await expect(mgmt.requestDraft(deps, f.actor, f.conversationId)).rejects.toBeInstanceOf(ValidationError);
+    await expect(mgmt.requestDraft(deps, f.actor, f.threadId)).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("requires a subject and a body, and enforces the 998 and 100,000 limits", async () => {
@@ -187,7 +187,7 @@ describeDb("manual email replies (no AI)", () => {
     expect(first).toMatchObject({ status: "sent", replayed: false });
     expect(mailbox.delivered.length).toBe(before + 1);
     const sent = mailbox.delivered.at(-1)!;
-    expect(sent).toMatchObject({ to: f.lead, subject: "Re: Pricing", bodyText: "Edited text", inReplyTo: f.input.rfcMessageId, threadId: f.input.providerThreadId });
+    expect(sent).toMatchObject({ to: f.lead, subject: "Re: Pricing", bodyText: "Edited text", inReplyTo: f.input.rfcMessageId, providerThreadId: f.input.providerThreadId });
 
     const again = await mgmt.approveAndSendDraft(f.replyDeps, f.actor, draftId, { revision: 2, idempotencyKey: k });
     expect(again).toMatchObject({ status: "sent", replayed: true });
@@ -220,13 +220,13 @@ describeDb("manual email replies (no AI)", () => {
 
   it("a new manual draft supersedes an open AI draft and the panel shows the new one", async () => {
     const f = await fixture();
-    const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+    const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
     const ai = await store.insertDraft({
       organizationId: f.org,
-      recordId: record.id,
-      conversationId: f.conversationId,
+      conversationId: conversation.id,
+      threadId: f.threadId,
       replyForMessageId: null,
-      expectedContextVersion: record.context_version,
+      expectedContextVersion: conversation.context_version,
       subject: "Re: AI",
       bodyText: "AI text",
       provider: "fake",
@@ -236,7 +236,7 @@ describeDb("manual email replies (no AI)", () => {
     });
     const created = await compose(f);
     expect(await one("select status from drafts where id = $1", [(ai as { id: string }).id])).toMatchObject({ status: "stale" });
-    expect((await mgmt.getReplyPanel(f.replyDeps, f.actor, f.conversationId))!.draft?.id).toBe(created.draftId);
+    expect((await mgmt.getReplyPanel(f.replyDeps, f.actor, f.threadId))!.draft?.id).toBe(created.draftId);
   });
 
   it("refuses a do-not-contact person and a suppressed address at creation", async () => {
@@ -299,8 +299,8 @@ describeDb("manual email replies (no AI)", () => {
   it("answers 404 for another organization's conversation and draft", async () => {
     const a = await fixture();
     const b = await fixture();
-    await expect(mgmt.createManualDraft(b.replyDeps, b.actor, a.conversationId, { subject: "Hi", bodyText: "x" })).rejects.toBeInstanceOf(NotFoundError);
-    await expect(mgmt.createManualDraft(b.replyDeps, b.actor, a.conversationId, { subject: "Hi", bodyText: "x", cc: ["a@b.test"] })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(mgmt.createManualDraft(b.replyDeps, b.actor, a.threadId, { subject: "Hi", bodyText: "x" })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(mgmt.createManualDraft(b.replyDeps, b.actor, a.threadId, { subject: "Hi", bodyText: "x", cc: ["a@b.test"] })).rejects.toBeInstanceOf(NotFoundError);
     await expect(mgmt.createManualDraft(b.replyDeps, b.actor, "not-a-uuid", { subject: "Hi", bodyText: "x" })).rejects.toBeInstanceOf(NotFoundError);
     expect(await count("drafts", a.org)).toBe(0);
     expect(await count("drafts", b.org)).toBe(0);
@@ -318,7 +318,7 @@ describeDb("manual email replies (no AI)", () => {
     await sql`update drafts set status = 'delivery_uncertain' where id = ${created.draftId}`;
     await expect(compose(f)).rejects.toThrow("An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.");
     await sql`update drafts set status = 'awaiting_review' where id = ${created.draftId}`;
-    await sql`update conversations set status = 'closed' where id = ${f.conversationId}`;
+    await sql`update threads set status = 'closed' where id = ${f.threadId}`;
     await expect(compose(f)).rejects.toThrow("This conversation is closed.");
   });
 
@@ -326,13 +326,13 @@ describeDb("manual email replies (no AI)", () => {
     const f = await fixture();
     // A LinkedIn reply of the same person, sending in its own chat (docs/decisions.md, "Reply send rules").
     const [chat] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
-      select organization_id, record_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from conversations where id = ${f.conversationId} returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id)
+      select organization_id, conversation_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from threads where id = ${f.threadId} returning id`;
     await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status, provider)
-      select organization_id, record_id, id, 1, 'linkedin', 'On its way', 'sending', 'human' from conversations where id = ${chat.id}`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, edited_body_text, status, provider)
+      select organization_id, conversation_id, id, 1, 'linkedin', 'On its way', 'sending', 'human' from threads where id = ${chat.id}`;
     const created = await compose(f);
-    expect(await one("select status, conversation_id from drafts where id = $1", [created.draftId])).toMatchObject({ status: "awaiting_review", conversation_id: f.conversationId });
+    expect(await one("select status, thread_id from drafts where id = $1", [created.draftId])).toMatchObject({ status: "awaiting_review", thread_id: f.threadId });
     await expect(mgmt.createManualDraft(f.replyDeps, f.actor, chat.id, { subject: "Hi", bodyText: "x" })).rejects.toThrow("This is not an email conversation.");
   });
 });

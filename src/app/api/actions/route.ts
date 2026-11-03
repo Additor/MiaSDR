@@ -3,7 +3,7 @@ import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/w
 import { withActor } from "@/app/_lib/api";
 
 /**
- * The work queue: records in `action_required` or `error`, or `waiting` and due, in five groups with an exact total each.
+ * The work queue: conversations in `action_required` or `error`, or `waiting` and due, in five groups with an exact total each.
  * Filters: category, channel, group, replyTypeId, campaignId, dueBefore, dueAfter, errorsOnly. `limit` defaults to 50, max 200.
  * `cursor` (from a group's `nextCursor`) needs `group` and returns that group's next page. Dead inbound events live at /api/inbound-events.
  */

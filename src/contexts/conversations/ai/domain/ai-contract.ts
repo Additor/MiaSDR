@@ -13,7 +13,7 @@ export const MAX_DRAFT_BODY = 20_000;
 export function classificationSchema(keys: readonly string[]) {
   if (keys.length === 0) throw new Error("The AI needs at least one active reply type to pick from.");
   return z.strictObject({
-    subcategoryKey: z.enum(keys as [string, ...string[]]),
+    replyTypeKey: z.enum(keys as [string, ...string[]]),
     confidence: z.number().finite().min(0).max(1),
     reason: z
       .string()
@@ -30,11 +30,11 @@ export function classificationJsonSchema(keys: readonly string[]) {
   return {
     type: "object",
     properties: {
-      subcategoryKey: { type: "string", enum: [...keys] },
+      replyTypeKey: { type: "string", enum: [...keys] },
       confidence: { type: "number", description: "Between 0 and 1." },
       reason: { type: "string", description: "One or two sentences, at most 500 characters." },
     },
-    required: ["subcategoryKey", "confidence", "reason"],
+    required: ["replyTypeKey", "confidence", "reason"],
     additionalProperties: false,
   } as const;
 }
@@ -111,7 +111,7 @@ export interface ClassifyInput {
 
 /** A person moved the record to another stage after the last inbound message, because something happened off the thread. */
 export interface ReplyTypeChange {
-  /** Name of the stage the record moved to. */
+  /** Name of the stage the conversation moved to. */
   stage: string;
   occurredAt: Date;
   note: string | null;

@@ -13,7 +13,7 @@ import {
 import type { NoteScope, TaskListFilter, TaskRow, TaskStore } from "./tasks-ports";
 
 /**
- * Tasks and notes of a person, through a reply record or directly by person, notes ownership and the important flag. Any member may create tasks and
+ * Tasks and notes of a person, through a reply conversation or directly by person, notes ownership and the important flag. Any member may create tasks and
  * assign them to any member. A member changes the tasks they created or hold; owners and admins
  * change any task. Every store call carries the actor's organization.
  */
@@ -32,23 +32,23 @@ const assertId = (id: string, what: string) => {
   if (!UUID.test(id)) throw new NotFoundError(`${what} not found`);
 };
 
-/** A record id (the record routes) or a person scope (the person routes), checked for shape. */
+/** A conversation id (the conversation routes) or a person scope (the person routes), checked for shape. */
 export type NoteTarget = string | NoteScope;
 
 export function noteScope(target: NoteTarget): NoteScope {
   if (typeof target === "string") {
     assertId(target, "Reply handling");
-    return { recordId: target };
+    return { conversationId: target };
   }
   if (target.personId !== undefined) {
     assertId(target.personId, "Person");
     return { personId: target.personId };
   }
-  assertId(target.recordId, "Reply handling");
-  return { recordId: target.recordId };
+  assertId(target.conversationId, "Reply handling");
+  return { conversationId: target.conversationId };
 }
 
-const scopeMissing = (scope: NoteScope) => new NotFoundError(scope.recordId !== undefined ? "Reply handling not found" : "Person not found");
+const scopeMissing = (scope: NoteScope) => new NotFoundError(scope.conversationId !== undefined ? "Reply handling not found" : "Person not found");
 
 async function assertAssignee(deps: TaskDeps, actor: Actor, assigneeId: string | null | undefined) {
   if (!assigneeId) return;
@@ -64,10 +64,10 @@ async function loadChangeable(deps: TaskDeps, actor: Actor, taskId: string): Pro
   return task;
 }
 
-export async function listTasks(deps: TaskDeps, actor: Actor, input: { state?: TaskListFilter["state"]; mine?: boolean; recordId?: string; personId?: string } = {}) {
-  if (input.recordId) {
-    assertId(input.recordId, "Reply handling");
-    if (!(await deps.store.recordExists(actor.organizationId, input.recordId))) throw new NotFoundError("Reply handling not found");
+export async function listTasks(deps: TaskDeps, actor: Actor, input: { state?: TaskListFilter["state"]; mine?: boolean; conversationId?: string; personId?: string } = {}) {
+  if (input.conversationId) {
+    assertId(input.conversationId, "Reply handling");
+    if (!(await deps.store.conversationExists(actor.organizationId, input.conversationId))) throw new NotFoundError("Reply handling not found");
   }
   if (input.personId) {
     assertId(input.personId, "Person");
@@ -76,13 +76,13 @@ export async function listTasks(deps: TaskDeps, actor: Actor, input: { state?: T
   return deps.store.list(actor.organizationId, {
     state: input.state ?? "open",
     assigneeId: input.mine ? actor.userId : undefined,
-    recordId: input.recordId,
+    conversationId: input.conversationId,
     personId: input.personId,
     limit: TASK_LIST_LIMIT,
   });
 }
 
-/** A task on a record (`target` is its id) or on a person without one (`{ personId }`, stored with a null `record_id`). */
+/** A task on a conversation (`target` is its id) or on a person without one (`{ personId }`, stored with a null `conversation_id`). */
 export async function createTask(
   deps: TaskDeps,
   actor: Actor,
@@ -142,7 +142,7 @@ export async function deleteTask(deps: TaskDeps, actor: Actor, taskId: string) {
   if (!(await deps.store.delete(actor.organizationId, taskId))) throw new NotFoundError("Task not found");
 }
 
-/** Edits a note found through its record (`target` is the record id) or through its person (`{ personId }`). */
+/** Edits a note found through its conversation (`target` is the conversation id) or through its person (`{ personId }`). */
 export async function editNote(deps: TaskDeps, actor: Actor, target: NoteTarget, noteId: string, input: { title?: string | null; body: string }) {
   const scope = noteScope(target);
   assertId(noteId, "Note");
@@ -156,7 +156,7 @@ export async function editNote(deps: TaskDeps, actor: Actor, target: NoteTarget,
   await deps.store.updateNote({ organizationId: actor.organizationId, scope, noteId, title, body });
 }
 
-/** Checks ownership of a note before `deleteRecordNote` removes it. */
+/** Checks ownership of a note before `deleteConversationNote` removes it. */
 export async function assertCanDeleteNote(deps: TaskDeps, actor: Actor, target: NoteTarget, noteId: string) {
   const scope = noteScope(target);
   assertId(noteId, "Note");
@@ -165,7 +165,7 @@ export async function assertCanDeleteNote(deps: TaskDeps, actor: Actor, target: 
   if (!canChangeNote(actor, isOwnerOrAdmin(actor.role), note)) throw new ForbiddenError("Only the author or an admin can delete this note.");
 }
 
-/** Every note of the person, record-bound ones included, newest first. 404 for a person outside the organization. */
+/** Every note of the person, conversation-bound ones included, newest first. 404 for a person outside the organization. */
 export async function listPersonNotes(deps: TaskDeps, actor: Actor, personId: string) {
   assertId(personId, "Person");
   if (!(await deps.store.personExists(actor.organizationId, personId))) throw new NotFoundError("Person not found");

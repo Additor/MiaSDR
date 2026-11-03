@@ -64,12 +64,12 @@ const enrollment = z.object({
   nextSendAt: z.string().nullable(),
   lastSentAt: z.string().nullable(),
   stopReason: z.string().nullable(),
-  conversationId: z.string().nullable(),
+  threadId: z.string().nullable(),
 });
 
 type EnrollmentQuery = ReturnType<typeof parseEnrollmentListQuery>;
 type Step = { stepNumber: number; kind: string; subject?: string; body: string; waitDays: number };
-type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxConversationId: string | null };
+type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxThreadId: string | null };
 
 /** What get_campaign and `campaignStatus` read of one channel. Both channels answer in the same shape. */
 interface ChannelReads {
@@ -165,7 +165,7 @@ export const getCampaignTool = defineTool({
           nextSendAt: iso(r.nextSendAt),
           lastSentAt: iso(r.lastSentAt),
           stopReason: r.stopReason,
-          conversationId: r.inboxConversationId,
+          threadId: r.inboxThreadId,
         })),
       },
       // The rendered text carries a lead's own values, so it comes fenced like any imported field.

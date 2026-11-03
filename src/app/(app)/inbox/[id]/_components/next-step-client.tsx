@@ -16,13 +16,13 @@ import type { NextInQueue } from "../_lib/next-queue";
 import { onOpenStopContacting, StopContactingDialog } from "./stop-contacting";
 
 export interface NextStepProps {
-  recordId: string;
   conversationId: string;
+  threadId: string;
   channel: string;
   personId: string;
   personName: string;
   firstName: string;
-  /** The record's reply type, the reason Done starts with. */
+  /** The conversation's reply type, the reason Done starts with. */
   typeName: string | null;
   closed: boolean;
   closedReason: string | null;
@@ -43,7 +43,7 @@ export interface NextStepProps {
  * step taken here, the next item of the queue is one tap away, as after a send.
  */
 export function NextStepClient(props: NextStepProps) {
-  const { recordId, personName, closed } = props;
+  const { conversationId, personName, closed } = props;
   const router = useRouter();
   const [mode, setMode] = useState<"follow" | "done" | null>(null);
   const [stopOpen, setStopOpen] = useState(false);
@@ -77,7 +77,7 @@ export function NextStepClient(props: NextStepProps) {
   const reopen = () =>
     run("reopen", async () => {
       setError(null);
-      const result = await runApiAction(callApi(`/api/records/${recordId}/reopen`, "POST"), { refresh: () => router.refresh() });
+      const result = await runApiAction(callApi(`/api/conversations/${conversationId}/reopen`, "POST"), { refresh: () => router.refresh() });
       if (!result.ok) return setError(result.error);
       setDecided(null);
       toast.success("Reopened.");
@@ -116,15 +116,15 @@ export function NextStepClient(props: NextStepProps) {
               </Button>
             )}
           </div>
-          {mode === "follow" && <FollowUpForm recordId={recordId} firstName={props.firstName} currentUserId={props.currentUserId} onCancel={() => setMode(null)} onDone={finish} />}
-          {mode === "done" && <DoneForm recordId={recordId} personName={personName} typeName={props.typeName} onCancel={() => setMode(null)} onDone={finish} />}
+          {mode === "follow" && <FollowUpForm conversationId={conversationId} firstName={props.firstName} currentUserId={props.currentUserId} onCancel={() => setMode(null)} onDone={finish} />}
+          {mode === "done" && <DoneForm conversationId={conversationId} personName={personName} typeName={props.typeName} onCancel={() => setMode(null)} onDone={finish} />}
         </>
       )}
 
       {canStop && (
         <StopContactingDialog
-          recordId={recordId}
-          conversationId={props.conversationId}
+          conversationId={conversationId}
+          threadId={props.threadId}
           channel={props.channel}
           personId={props.personId}
           personName={personName}
@@ -160,7 +160,7 @@ export function NextStepClient(props: NextStepProps) {
 }
 
 /** Remind me: a task to come back to the person, due tomorrow unless you pick another day, assigned to you. */
-function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: { recordId: string; firstName: string; currentUserId: string; onCancel: () => void; onDone: (message: string) => void }) {
+function FollowUpForm({ conversationId, firstName, currentUserId, onCancel, onDone }: { conversationId: string; firstName: string; currentUserId: string; onCancel: () => void; onDone: (message: string) => void }) {
   const zone = useBrowserZone();
   const [name, setName] = useState(`Follow up with ${firstName}`);
   const [dueDay, setDueDay] = useState(() => dayFromToday(1));
@@ -174,7 +174,7 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
     void run("add", async () => {
       setError(null);
       // `onDone` reloads the page after a success.
-      const result = await runApiAction(callApi(`/api/records/${recordId}/tasks`, "POST", { name, dueDay: dueDay || null, timeZone: zone ?? "UTC", assigneeId: currentUserId }));
+      const result = await runApiAction(callApi(`/api/conversations/${conversationId}/tasks`, "POST", { name, dueDay: dueDay || null, timeZone: zone ?? "UTC", assigneeId: currentUserId }));
       if (!result.ok) return setError(result.error);
       onDone("Reminder added.");
     });
@@ -184,11 +184,11 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
     <form onSubmit={submit} noValidate data-testid="follow-up-form">
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor={`follow-up-${recordId}`}>Task</FieldLabel>
-          <Input id={`follow-up-${recordId}`} autoFocus value={name} maxLength={200} touch className="max-w-md" onChange={(e) => setName(e.target.value)} aria-invalid={error ? true : undefined} />
+          <FieldLabel htmlFor={`follow-up-${conversationId}`}>Task</FieldLabel>
+          <Input id={`follow-up-${conversationId}`} autoFocus value={name} maxLength={200} touch className="max-w-md" onChange={(e) => setName(e.target.value)} aria-invalid={error ? true : undefined} />
           <FieldDescription>While the task is open, this conversation leaves Next steps in Actions and the task waits under Tasks.</FieldDescription>
         </Field>
-        <DueField id={`follow-up-due-${recordId}`} value={dueDay} onChange={setDueDay} />
+        <DueField id={`follow-up-due-${conversationId}`} value={dueDay} onChange={setDueDay} />
         {error && <FieldError>{error}</FieldError>}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" size="sm" disabled={pending || zone === null} touch>
@@ -207,12 +207,12 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
  * Ends reply handling without a reply. The reason starts as the reply type, which is the usual reason, so a not-interested reply is
  * one Enter away. Reopen undoes it, so the confirm is not red.
  */
-function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { recordId: string; personName: string; typeName: string | null; onCancel: () => void; onDone: (message: string) => void }) {
+function DoneForm({ conversationId, personName, typeName, onCancel, onDone }: { conversationId: string; personName: string; typeName: string | null; onCancel: () => void; onDone: (message: string) => void }) {
   const [reason, setReason] = useState(typeName ?? "");
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"close">();
   const pending = isBusy("close");
-  const fieldId = `done-reason-${recordId}`;
+  const fieldId = `done-reason-${conversationId}`;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -222,7 +222,7 @@ function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { record
       const unsaved = await saveDraftEdits();
       if (unsaved) return setError(unsavedEditsError(unsaved));
       // `onDone` reloads the page after a success.
-      const result = await runApiAction(callApi(`/api/records/${recordId}/close`, "POST", { reason: reason.trim() }));
+      const result = await runApiAction(callApi(`/api/conversations/${conversationId}/close`, "POST", { reason: reason.trim() }));
       if (!result.ok) return setError(result.error);
       onDone(`Marked done for ${personName}.`);
     });

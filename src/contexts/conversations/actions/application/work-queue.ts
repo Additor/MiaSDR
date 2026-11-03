@@ -3,7 +3,7 @@ import { QUEUE_GROUPS, clampQueueLimit, decodeQueueCursor, groupsAfter, parseQue
 import type { QueueItem, WorkQueueStore } from "./work-queue-ports";
 
 /**
- * The work queue: records, and the work around them, that wait on a person. Any member of the organization may read it
+ * The work queue: conversations, and the work around them, that wait on a person. Any member of the organization may read it
  * (decisions.md, "AI replies"). Every store call carries the actor's organization, so another organization's ids answer 404.
  *
  * Nothing here sends a message. Drafts are approved and sent only through `approveAndSendDraft`.
@@ -51,19 +51,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The item to open after the one the person is on, under the filter they came from, in display order: the next item of the
- * same group, then the first items of the groups below it, then the groups above it. A record that has left the queue (it was
+ * same group, then the first items of the groups below it, then the groups above it. A conversation that has left the queue (it was
  * just handled, or the filter no longer holds it) has no place, so the answer is the top of the queue. The position is read
- * with a keyset cursor, so it does not matter how far down the group the record sits. Null when nothing else waits.
+ * with a keyset cursor, so it does not matter how far down the group the conversation sits. Null when nothing else waits.
  */
-export async function getNextQueueItem(deps: WorkQueueDeps, actor: Actor, input: { recordId: string; filter?: Record<string, unknown> }): Promise<QueueItem | null> {
-  if (!UUID.test(input.recordId)) throw new NotFoundError("Reply handling not found");
+export async function getNextQueueItem(deps: WorkQueueDeps, actor: Actor, input: { conversationId: string; filter?: Record<string, unknown> }): Promise<QueueItem | null> {
+  if (!UUID.test(input.conversationId)) throw new NotFoundError("Reply handling not found");
   const filter = await filterFor(deps, actor, input.filter);
   if (filter.errorsOnly) filter.group = "problem";
   const org = actor.organizationId;
-  const position = await deps.store.queuePosition(org, { actorUserId: actor.userId, filter, recordId: input.recordId });
+  const position = await deps.store.queuePosition(org, { actorUserId: actor.userId, filter, conversationId: input.conversationId });
   // Two items per group are enough: the current one can be the first of its own group, never more than one of the two.
   const tops = await deps.store.actionQueue(org, { actorUserId: actor.userId, filter, limit: 2, cursor: null });
-  if (!position) return pickNextQueueItem(QUEUE_GROUPS.flatMap((g) => tops.groups[g].items), input.recordId);
+  if (!position) return pickNextQueueItem(QUEUE_GROUPS.flatMap((g) => tops.groups[g].items), input.conversationId);
   const below = await deps.store.actionQueue(org, { actorUserId: actor.userId, filter: { ...filter, group: position.group }, limit: 1, cursor: position.cursor });
-  return pickNextQueueItem([...below.groups[position.group].items, ...groupsAfter(position.group).flatMap((g) => tops.groups[g].items)], input.recordId);
+  return pickNextQueueItem([...below.groups[position.group].items, ...groupsAfter(position.group).flatMap((g) => tops.groups[g].items)], input.conversationId);
 }

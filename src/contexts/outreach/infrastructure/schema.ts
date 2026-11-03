@@ -306,7 +306,7 @@ export const sends = pgTable(
     /** Message-ID header we generate before sending, so an unknown send can be found in the mailbox. */
     rfcMessageId: text("rfc_message_id"),
     providerMessageId: text("provider_message_id"),
-    threadId: text("thread_id"),
+    providerThreadId: text("thread_id"),
     inReplyTo: text("in_reply_to"),
     references: text("references").array(),
     attempt: integer("attempt").notNull().default(1),

@@ -6778,8 +6778,8 @@
       },
       "isRLSEnabled": false
     },
-    "public.conversations": {
-      "name": "conversations",
+    "public.threads": {
+      "name": "threads",
       "schema": "",
       "columns": {
         "id": {
@@ -6795,8 +6795,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -6848,8 +6848,8 @@
         }
       },
       "indexes": {
-        "conversations_org_thread_uq": {
-          "name": "conversations_org_thread_uq",
+        "threads_org_thread_uq": {
+          "name": "threads_org_thread_uq",
           "columns": [
             {
               "expression": "organization_id",
@@ -6877,16 +6877,16 @@
             }
           ],
           "isUnique": true,
-          "where": "\"conversations\".\"provider_thread_id\" is not null",
+          "where": "\"threads\".\"provider_thread_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "conversations_record_idx": {
-          "name": "conversations_record_idx",
+        "threads_conversation_idx": {
+          "name": "threads_conversation_idx",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -6899,9 +6899,9 @@
         }
       },
       "foreignKeys": {
-        "conversations_organization_id_organizations_id_fk": {
-          "name": "conversations_organization_id_organizations_id_fk",
-          "tableFrom": "conversations",
+        "threads_organization_id_organizations_id_fk": {
+          "name": "threads_organization_id_organizations_id_fk",
+          "tableFrom": "threads",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -6912,12 +6912,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "conversations_record_id_organization_id_records_id_organization_id_fk": {
-          "name": "conversations_record_id_organization_id_records_id_organization_id_fk",
-          "tableFrom": "conversations",
-          "tableTo": "records",
+        "threads_conversation_id_organization_id_conversations_id_organization_id_fk": {
+          "name": "threads_conversation_id_organization_id_conversations_id_organization_id_fk",
+          "tableFrom": "threads",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -6930,16 +6930,16 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "conversations_id_org_uq": {
-          "name": "conversations_id_org_uq",
+        "threads_id_org_uq": {
+          "name": "threads_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
             "organization_id"
           ]
         },
-        "conversations_id_channel_account_uq": {
-          "name": "conversations_id_channel_account_uq",
+        "threads_id_channel_account_uq": {
+          "name": "threads_id_channel_account_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -6950,17 +6950,17 @@
       },
       "policies": {},
       "checkConstraints": {
-        "conversations_channel_ck": {
-          "name": "conversations_channel_ck",
-          "value": "\"conversations\".\"channel\" in ('email', 'linkedin', 'whatsapp')"
+        "threads_channel_ck": {
+          "name": "threads_channel_ck",
+          "value": "\"threads\".\"channel\" in ('email', 'linkedin', 'whatsapp')"
         },
-        "conversations_status_ck": {
-          "name": "conversations_status_ck",
-          "value": "\"conversations\".\"status\" in ('active', 'closed')"
+        "threads_status_ck": {
+          "name": "threads_status_ck",
+          "value": "\"threads\".\"status\" in ('active', 'closed')"
         },
-        "conversations_account_ref_ck": {
-          "name": "conversations_account_ref_ck",
-          "value": "length(btrim(\"conversations\".\"account_ref\")) > 0"
+        "threads_account_ref_ck": {
+          "name": "threads_account_ref_ck",
+          "value": "length(btrim(\"threads\".\"account_ref\")) > 0"
         }
       },
       "isRLSEnabled": false
@@ -6982,14 +6982,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "thread_id": {
+          "name": "thread_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -7103,11 +7103,11 @@
         }
       },
       "indexes": {
-        "drafts_record_status_idx": {
-          "name": "drafts_record_status_idx",
+        "drafts_conversation_status_idx": {
+          "name": "drafts_conversation_status_idx",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7140,11 +7140,11 @@
           "method": "btree",
           "with": {}
         },
-        "drafts_conversation_idx": {
-          "name": "drafts_conversation_idx",
+        "drafts_thread_idx": {
+          "name": "drafts_thread_idx",
           "columns": [
             {
-              "expression": "conversation_id",
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7159,7 +7159,7 @@
           "name": "drafts_one_in_flight_uq",
           "columns": [
             {
-              "expression": "conversation_id",
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7186,12 +7186,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "drafts_record_id_organization_id_records_id_organization_id_fk": {
-          "name": "drafts_record_id_organization_id_records_id_organization_id_fk",
+        "drafts_conversation_id_organization_id_conversations_id_organization_id_fk": {
+          "name": "drafts_conversation_id_organization_id_conversations_id_organization_id_fk",
           "tableFrom": "drafts",
-          "tableTo": "records",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -7201,12 +7201,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "drafts_conversation_id_organization_id_conversations_id_organization_id_fk": {
-          "name": "drafts_conversation_id_organization_id_conversations_id_organization_id_fk",
+        "drafts_thread_id_organization_id_threads_id_organization_id_fk": {
+          "name": "drafts_thread_id_organization_id_threads_id_organization_id_fk",
           "tableFrom": "drafts",
-          "tableTo": "conversations",
+          "tableTo": "threads",
           "columnsFrom": [
-            "conversation_id",
+            "thread_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -7310,8 +7310,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -7368,11 +7368,11 @@
         }
       },
       "indexes": {
-        "events_record_idx": {
-          "name": "events_record_idx",
+        "events_conversation_idx": {
+          "name": "events_conversation_idx",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7453,12 +7453,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "events_record_id_organization_id_records_id_organization_id_fk": {
-          "name": "events_record_id_organization_id_records_id_organization_id_fk",
+        "events_conversation_id_organization_id_conversations_id_organization_id_fk": {
+          "name": "events_conversation_id_organization_id_conversations_id_organization_id_fk",
           "tableFrom": "events",
-          "tableTo": "records",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -8090,8 +8090,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "thread_id": {
+          "name": "thread_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -8257,11 +8257,11 @@
           "method": "btree",
           "with": {}
         },
-        "messages_conversation_sent_idx": {
-          "name": "messages_conversation_sent_idx",
+        "messages_thread_sent_idx": {
+          "name": "messages_thread_sent_idx",
           "columns": [
             {
-              "expression": "conversation_id",
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -8320,12 +8320,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "messages_conversation_id_organization_id_conversations_id_organization_id_fk": {
-          "name": "messages_conversation_id_organization_id_conversations_id_organization_id_fk",
+        "messages_thread_id_organization_id_threads_id_organization_id_fk": {
+          "name": "messages_thread_id_organization_id_threads_id_organization_id_fk",
           "tableFrom": "messages",
-          "tableTo": "conversations",
+          "tableTo": "threads",
           "columnsFrom": [
-            "conversation_id",
+            "thread_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -8335,12 +8335,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "messages_conversation_id_channel_account_ref_conversations_id_channel_account_ref_fk": {
-          "name": "messages_conversation_id_channel_account_ref_conversations_id_channel_account_ref_fk",
+        "messages_thread_id_channel_account_ref_threads_id_channel_account_ref_fk": {
+          "name": "messages_thread_id_channel_account_ref_threads_id_channel_account_ref_fk",
           "tableFrom": "messages",
-          "tableTo": "conversations",
+          "tableTo": "threads",
           "columnsFrom": [
-            "conversation_id",
+            "thread_id",
             "channel",
             "account_ref"
           ],
@@ -8404,8 +8404,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -8508,12 +8508,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "notes_record_fk": {
-          "name": "notes_record_fk",
+        "notes_conversation_fk": {
+          "name": "notes_conversation_fk",
           "tableFrom": "notes",
-          "tableTo": "records",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -8530,8 +8530,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.records": {
-      "name": "records",
+    "public.conversations": {
+      "name": "conversations",
       "schema": "",
       "columns": {
         "id": {
@@ -8668,8 +8668,8 @@
         }
       },
       "indexes": {
-        "records_org_assigned_idx": {
-          "name": "records_org_assigned_idx",
+        "conversations_org_assigned_idx": {
+          "name": "conversations_org_assigned_idx",
           "columns": [
             {
               "expression": "organization_id",
@@ -8695,8 +8695,8 @@
           "method": "btree",
           "with": {}
         },
-        "records_org_state_idx": {
-          "name": "records_org_state_idx",
+        "conversations_org_state_idx": {
+          "name": "conversations_org_state_idx",
           "columns": [
             {
               "expression": "organization_id",
@@ -8722,8 +8722,8 @@
           "method": "btree",
           "with": {}
         },
-        "records_latest_inbound_message_idx": {
-          "name": "records_latest_inbound_message_idx",
+        "conversations_latest_inbound_message_idx": {
+          "name": "conversations_latest_inbound_message_idx",
           "columns": [
             {
               "expression": "latest_inbound_message_id",
@@ -8733,16 +8733,16 @@
             }
           ],
           "isUnique": false,
-          "where": "\"records\".\"latest_inbound_message_id\" is not null",
+          "where": "\"conversations\".\"latest_inbound_message_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "records_organization_id_organizations_id_fk": {
-          "name": "records_organization_id_organizations_id_fk",
-          "tableFrom": "records",
+        "conversations_organization_id_organizations_id_fk": {
+          "name": "conversations_organization_id_organizations_id_fk",
+          "tableFrom": "conversations",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -8753,9 +8753,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "records_person_id_organization_id_people_id_organization_id_fk": {
-          "name": "records_person_id_organization_id_people_id_organization_id_fk",
-          "tableFrom": "records",
+        "conversations_person_id_organization_id_people_id_organization_id_fk": {
+          "name": "conversations_person_id_organization_id_people_id_organization_id_fk",
+          "tableFrom": "conversations",
           "tableTo": "people",
           "columnsFrom": [
             "person_id",
@@ -8768,9 +8768,9 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "records_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk": {
-          "name": "records_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk",
-          "tableFrom": "records",
+        "conversations_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk": {
+          "name": "conversations_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk",
+          "tableFrom": "conversations",
           "tableTo": "reply_type_sets",
           "columnsFrom": [
             "reply_type_set_id",
@@ -8783,9 +8783,9 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "records_assigned_to_fk": {
-          "name": "records_assigned_to_fk",
-          "tableFrom": "records",
+        "conversations_assigned_to_fk": {
+          "name": "conversations_assigned_to_fk",
+          "tableFrom": "conversations",
           "tableTo": "members",
           "columnsFrom": [
             "organization_id",
@@ -8798,9 +8798,9 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "records_reply_type_id_reply_type_set_id_group_key_reply_types_id_reply_type_set_id_group_key_fk": {
-          "name": "records_reply_type_id_reply_type_set_id_group_key_reply_types_id_reply_type_set_id_group_key_fk",
-          "tableFrom": "records",
+        "conversations_reply_type_id_reply_type_set_id_group_key_reply_types_id_reply_type_set_id_group_key_fk": {
+          "name": "conversations_reply_type_id_reply_type_set_id_group_key_reply_types_id_reply_type_set_id_group_key_fk",
+          "tableFrom": "conversations",
           "tableTo": "reply_types",
           "columnsFrom": [
             "reply_type_id",
@@ -8818,16 +8818,16 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "records_person_reply_type_set_uq": {
-          "name": "records_person_reply_type_set_uq",
+        "conversations_person_reply_type_set_uq": {
+          "name": "conversations_person_reply_type_set_uq",
           "nullsNotDistinct": false,
           "columns": [
             "person_id",
             "reply_type_set_id"
           ]
         },
-        "records_id_org_uq": {
-          "name": "records_id_org_uq",
+        "conversations_id_org_uq": {
+          "name": "conversations_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -8837,45 +8837,45 @@
       },
       "policies": {},
       "checkConstraints": {
-        "records_group_ck": {
-          "name": "records_group_ck",
-          "value": "\"records\".\"group_key\" is null or \"records\".\"group_key\" in ('customer', 'interested', 'not_interested', 'other')"
+        "conversations_group_ck": {
+          "name": "conversations_group_ck",
+          "value": "\"conversations\".\"group_key\" is null or \"conversations\".\"group_key\" in ('customer', 'interested', 'not_interested', 'other')"
         },
-        "records_workflow_ck": {
-          "name": "records_workflow_ck",
-          "value": "\"records\".\"workflow_state\" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')"
+        "conversations_workflow_ck": {
+          "name": "conversations_workflow_ck",
+          "value": "\"conversations\".\"workflow_state\" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')"
         },
-        "records_closed_reason_ck": {
-          "name": "records_closed_reason_ck",
-          "value": "\"records\".\"closed_reason\" is null or \"records\".\"workflow_state\" = 'closed'"
+        "conversations_closed_reason_ck": {
+          "name": "conversations_closed_reason_ck",
+          "value": "\"conversations\".\"closed_reason\" is null or \"conversations\".\"workflow_state\" = 'closed'"
         },
-        "records_source_ck": {
-          "name": "records_source_ck",
-          "value": "\"records\".\"reply_type_source\" is null or \"records\".\"reply_type_source\" in ('ai', 'human', 'integration')"
+        "conversations_source_ck": {
+          "name": "conversations_source_ck",
+          "value": "\"conversations\".\"reply_type_source\" is null or \"conversations\".\"reply_type_source\" in ('ai', 'human', 'integration')"
         },
-        "records_reply_type_source_pair_ck": {
-          "name": "records_reply_type_source_pair_ck",
-          "value": "(\"records\".\"group_key\" is null) = (\"records\".\"reply_type_source\" is null)"
+        "conversations_reply_type_source_pair_ck": {
+          "name": "conversations_reply_type_source_pair_ck",
+          "value": "(\"conversations\".\"group_key\" is null) = (\"conversations\".\"reply_type_source\" is null)"
         },
-        "records_locked_ck": {
-          "name": "records_locked_ck",
-          "value": "not \"records\".\"reply_type_locked\" or \"records\".\"group_key\" = 'customer'"
+        "conversations_locked_ck": {
+          "name": "conversations_locked_ck",
+          "value": "not \"conversations\".\"reply_type_locked\" or \"conversations\".\"group_key\" = 'customer'"
         },
-        "records_reply_type_needs_group_ck": {
-          "name": "records_reply_type_needs_group_ck",
-          "value": "\"records\".\"reply_type_id\" is null or \"records\".\"group_key\" is not null"
+        "conversations_reply_type_needs_group_ck": {
+          "name": "conversations_reply_type_needs_group_ck",
+          "value": "\"conversations\".\"reply_type_id\" is null or \"conversations\".\"group_key\" is not null"
         },
-        "records_version_ck": {
-          "name": "records_version_ck",
-          "value": "\"records\".\"context_version\" >= 0"
+        "conversations_version_ck": {
+          "name": "conversations_version_ck",
+          "value": "\"conversations\".\"context_version\" >= 0"
         },
-        "records_active_channel_ck": {
-          "name": "records_active_channel_ck",
-          "value": "\"records\".\"active_channel\" is null or \"records\".\"active_channel\" in ('email', 'linkedin', 'whatsapp')"
+        "conversations_active_channel_ck": {
+          "name": "conversations_active_channel_ck",
+          "value": "\"conversations\".\"active_channel\" is null or \"conversations\".\"active_channel\" in ('email', 'linkedin', 'whatsapp')"
         },
-        "records_assigned_source_ck": {
-          "name": "records_assigned_source_ck",
-          "value": "(\"records\".\"assigned_source\" is null or \"records\".\"assigned_source\" in ('auto', 'human', 'cleared')) and (\"records\".\"assigned_to\" is null or \"records\".\"assigned_source\" is not null)"
+        "conversations_assigned_source_ck": {
+          "name": "conversations_assigned_source_ck",
+          "value": "(\"conversations\".\"assigned_source\" is null or \"conversations\".\"assigned_source\" in ('auto', 'human', 'cleared')) and (\"conversations\".\"assigned_to\" is null or \"conversations\".\"assigned_source\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -8977,8 +8977,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -9095,11 +9095,11 @@
         }
       },
       "indexes": {
-        "reply_type_picks_record_created_idx": {
-          "name": "reply_type_picks_record_created_idx",
+        "reply_type_picks_conversation_created_idx": {
+          "name": "reply_type_picks_conversation_created_idx",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9131,12 +9131,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "reply_type_picks_record_id_organization_id_records_id_organization_id_fk": {
-          "name": "reply_type_picks_record_id_organization_id_records_id_organization_id_fk",
+        "reply_type_picks_conversation_id_organization_id_conversations_id_organization_id_fk": {
+          "name": "reply_type_picks_conversation_id_organization_id_conversations_id_organization_id_fk",
           "tableFrom": "reply_type_picks",
-          "tableTo": "records",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10042,8 +10042,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -10247,12 +10247,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "tasks_record_fk": {
-          "name": "tasks_record_fk",
+        "tasks_conversation_fk": {
+          "name": "tasks_conversation_fk",
           "tableFrom": "tasks",
-          "tableTo": "records",
+          "tableTo": "conversations",
           "columnsFrom": [
-            "record_id",
+            "conversation_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10269,8 +10269,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.sequence_runs": {
-      "name": "sequence_runs",
+    "public.follow_up_runs": {
+      "name": "follow_up_runs",
       "schema": "",
       "columns": {
         "id": {
@@ -10286,26 +10286,26 @@
           "primaryKey": false,
           "notNull": true
         },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "conversation_id": {
           "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_id": {
-          "name": "sequence_id",
+        "thread_id": {
+          "name": "thread_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_version_id": {
-          "name": "sequence_version_id",
+        "flow_id": {
+          "name": "flow_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "follow_up_version_id": {
+          "name": "follow_up_version_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -10371,27 +10371,27 @@
         }
       },
       "indexes": {
-        "sequence_runs_one_active_uq": {
-          "name": "sequence_runs_one_active_uq",
+        "follow_up_runs_one_active_uq": {
+          "name": "follow_up_runs_one_active_uq",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"sequence_runs\".\"status\" = 'active'",
+          "where": "\"follow_up_runs\".\"status\" = 'active'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "sequence_runs_record_created_idx": {
-          "name": "sequence_runs_record_created_idx",
+        "follow_up_runs_conversation_created_idx": {
+          "name": "follow_up_runs_conversation_created_idx",
           "columns": [
             {
-              "expression": "record_id",
+              "expression": "conversation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -10408,8 +10408,8 @@
           "method": "btree",
           "with": {}
         },
-        "sequence_runs_trigger_message_idx": {
-          "name": "sequence_runs_trigger_message_idx",
+        "follow_up_runs_trigger_message_idx": {
+          "name": "follow_up_runs_trigger_message_idx",
           "columns": [
             {
               "expression": "trigger_message_id",
@@ -10423,11 +10423,11 @@
           "method": "btree",
           "with": {}
         },
-        "sequence_runs_conversation_idx": {
-          "name": "sequence_runs_conversation_idx",
+        "follow_up_runs_thread_idx": {
+          "name": "follow_up_runs_thread_idx",
           "columns": [
             {
-              "expression": "conversation_id",
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -10440,9 +10440,9 @@
         }
       },
       "foreignKeys": {
-        "sequence_runs_organization_id_organizations_id_fk": {
-          "name": "sequence_runs_organization_id_organizations_id_fk",
-          "tableFrom": "sequence_runs",
+        "follow_up_runs_organization_id_organizations_id_fk": {
+          "name": "follow_up_runs_organization_id_organizations_id_fk",
+          "tableFrom": "follow_up_runs",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -10453,24 +10453,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequence_runs_record_id_organization_id_records_id_organization_id_fk": {
-          "name": "sequence_runs_record_id_organization_id_records_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
-          "tableTo": "records",
-          "columnsFrom": [
-            "record_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "sequence_runs_conversation_id_organization_id_conversations_id_organization_id_fk": {
-          "name": "sequence_runs_conversation_id_organization_id_conversations_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
+        "follow_up_runs_conversation_id_organization_id_conversations_id_organization_id_fk": {
+          "name": "follow_up_runs_conversation_id_organization_id_conversations_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
           "tableTo": "conversations",
           "columnsFrom": [
             "conversation_id",
@@ -10483,12 +10468,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_runs_sequence_id_organization_id_sequences_id_organization_id_fk": {
-          "name": "sequence_runs_sequence_id_organization_id_sequences_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
-          "tableTo": "sequences",
+        "follow_up_runs_thread_id_organization_id_threads_id_organization_id_fk": {
+          "name": "follow_up_runs_thread_id_organization_id_threads_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
+          "tableTo": "threads",
           "columnsFrom": [
-            "sequence_id",
+            "thread_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10498,12 +10483,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_runs_sequence_version_id_organization_id_sequence_versions_id_organization_id_fk": {
-          "name": "sequence_runs_sequence_version_id_organization_id_sequence_versions_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
-          "tableTo": "sequence_versions",
+        "follow_up_runs_flow_id_organization_id_follow_up_flows_id_organization_id_fk": {
+          "name": "follow_up_runs_flow_id_organization_id_follow_up_flows_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
+          "tableTo": "follow_up_flows",
           "columnsFrom": [
-            "sequence_version_id",
+            "flow_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10513,9 +10498,24 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_runs_reply_type_id_organization_id_reply_types_id_organization_id_fk": {
-          "name": "sequence_runs_reply_type_id_organization_id_reply_types_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
+        "follow_up_runs_follow_up_version_id_organization_id_follow_up_versions_id_organization_id_fk": {
+          "name": "follow_up_runs_follow_up_version_id_organization_id_follow_up_versions_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
+          "tableTo": "follow_up_versions",
+          "columnsFrom": [
+            "follow_up_version_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id",
+            "organization_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "follow_up_runs_reply_type_id_organization_id_reply_types_id_organization_id_fk": {
+          "name": "follow_up_runs_reply_type_id_organization_id_reply_types_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
           "tableTo": "reply_types",
           "columnsFrom": [
             "reply_type_id",
@@ -10528,9 +10528,9 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_runs_trigger_message_id_organization_id_messages_id_organization_id_fk": {
-          "name": "sequence_runs_trigger_message_id_organization_id_messages_id_organization_id_fk",
-          "tableFrom": "sequence_runs",
+        "follow_up_runs_trigger_message_id_organization_id_messages_id_organization_id_fk": {
+          "name": "follow_up_runs_trigger_message_id_organization_id_messages_id_organization_id_fk",
+          "tableFrom": "follow_up_runs",
           "tableTo": "messages",
           "columnsFrom": [
             "trigger_message_id",
@@ -10546,8 +10546,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "sequence_runs_id_org_uq": {
-          "name": "sequence_runs_id_org_uq",
+        "follow_up_runs_id_org_uq": {
+          "name": "follow_up_runs_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -10557,23 +10557,23 @@
       },
       "policies": {},
       "checkConstraints": {
-        "sequence_runs_status_ck": {
-          "name": "sequence_runs_status_ck",
-          "value": "\"sequence_runs\".\"status\" in ('active', 'interrupted', 'paused', 'completed', 'cancelled')"
+        "follow_up_runs_status_ck": {
+          "name": "follow_up_runs_status_ck",
+          "value": "\"follow_up_runs\".\"status\" in ('active', 'interrupted', 'paused', 'completed', 'cancelled')"
         },
-        "sequence_runs_started_by_ck": {
-          "name": "sequence_runs_started_by_ck",
-          "value": "\"sequence_runs\".\"started_by\" in ('ai_assignment', 'human_override')"
+        "follow_up_runs_started_by_ck": {
+          "name": "follow_up_runs_started_by_ck",
+          "value": "\"follow_up_runs\".\"started_by\" in ('ai_assignment', 'human_override')"
         },
-        "sequence_runs_positions_ck": {
-          "name": "sequence_runs_positions_ck",
-          "value": "\"sequence_runs\".\"start_step_position\" > 0 and \"sequence_runs\".\"current_step_position\" >= \"sequence_runs\".\"start_step_position\""
+        "follow_up_runs_positions_ck": {
+          "name": "follow_up_runs_positions_ck",
+          "value": "\"follow_up_runs\".\"start_step_position\" > 0 and \"follow_up_runs\".\"current_step_position\" >= \"follow_up_runs\".\"start_step_position\""
         }
       },
       "isRLSEnabled": false
     },
-    "public.sequence_step_runs": {
-      "name": "sequence_step_runs",
+    "public.follow_up_step_runs": {
+      "name": "follow_up_step_runs",
       "schema": "",
       "columns": {
         "id": {
@@ -10589,14 +10589,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_run_id": {
-          "name": "sequence_run_id",
+        "follow_up_run_id": {
+          "name": "follow_up_run_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_step_id": {
-          "name": "sequence_step_id",
+        "follow_up_step_id": {
+          "name": "follow_up_step_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -10667,8 +10667,8 @@
         }
       },
       "indexes": {
-        "sequence_step_runs_draft_uq": {
-          "name": "sequence_step_runs_draft_uq",
+        "follow_up_step_runs_draft_uq": {
+          "name": "follow_up_step_runs_draft_uq",
           "columns": [
             {
               "expression": "draft_id",
@@ -10678,13 +10678,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"sequence_step_runs\".\"draft_id\" is not null",
+          "where": "\"follow_up_step_runs\".\"draft_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "sequence_step_runs_due_idx": {
-          "name": "sequence_step_runs_due_idx",
+        "follow_up_step_runs_due_idx": {
+          "name": "follow_up_step_runs_due_idx",
           "columns": [
             {
               "expression": "status",
@@ -10704,8 +10704,8 @@
           "method": "btree",
           "with": {}
         },
-        "sequence_step_runs_sent_message_idx": {
-          "name": "sequence_step_runs_sent_message_idx",
+        "follow_up_step_runs_sent_message_idx": {
+          "name": "follow_up_step_runs_sent_message_idx",
           "columns": [
             {
               "expression": "sent_message_id",
@@ -10715,16 +10715,16 @@
             }
           ],
           "isUnique": false,
-          "where": "\"sequence_step_runs\".\"sent_message_id\" is not null",
+          "where": "\"follow_up_step_runs\".\"sent_message_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "sequence_step_runs_organization_id_organizations_id_fk": {
-          "name": "sequence_step_runs_organization_id_organizations_id_fk",
-          "tableFrom": "sequence_step_runs",
+        "follow_up_step_runs_organization_id_organizations_id_fk": {
+          "name": "follow_up_step_runs_organization_id_organizations_id_fk",
+          "tableFrom": "follow_up_step_runs",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -10735,12 +10735,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequence_step_runs_sequence_run_id_organization_id_sequence_runs_id_organization_id_fk": {
-          "name": "sequence_step_runs_sequence_run_id_organization_id_sequence_runs_id_organization_id_fk",
-          "tableFrom": "sequence_step_runs",
-          "tableTo": "sequence_runs",
+        "follow_up_step_runs_follow_up_run_id_organization_id_follow_up_runs_id_organization_id_fk": {
+          "name": "follow_up_step_runs_follow_up_run_id_organization_id_follow_up_runs_id_organization_id_fk",
+          "tableFrom": "follow_up_step_runs",
+          "tableTo": "follow_up_runs",
           "columnsFrom": [
-            "sequence_run_id",
+            "follow_up_run_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10750,12 +10750,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequence_step_runs_sequence_step_id_organization_id_sequence_steps_id_organization_id_fk": {
-          "name": "sequence_step_runs_sequence_step_id_organization_id_sequence_steps_id_organization_id_fk",
-          "tableFrom": "sequence_step_runs",
-          "tableTo": "sequence_steps",
+        "follow_up_step_runs_follow_up_step_id_organization_id_follow_up_steps_id_organization_id_fk": {
+          "name": "follow_up_step_runs_follow_up_step_id_organization_id_follow_up_steps_id_organization_id_fk",
+          "tableFrom": "follow_up_step_runs",
+          "tableTo": "follow_up_steps",
           "columnsFrom": [
-            "sequence_step_id",
+            "follow_up_step_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10765,9 +10765,9 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_step_runs_draft_id_organization_id_drafts_id_organization_id_fk": {
-          "name": "sequence_step_runs_draft_id_organization_id_drafts_id_organization_id_fk",
-          "tableFrom": "sequence_step_runs",
+        "follow_up_step_runs_draft_id_organization_id_drafts_id_organization_id_fk": {
+          "name": "follow_up_step_runs_draft_id_organization_id_drafts_id_organization_id_fk",
+          "tableFrom": "follow_up_step_runs",
           "tableTo": "drafts",
           "columnsFrom": [
             "draft_id",
@@ -10780,9 +10780,9 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "sequence_step_runs_sent_message_id_organization_id_messages_id_organization_id_fk": {
-          "name": "sequence_step_runs_sent_message_id_organization_id_messages_id_organization_id_fk",
-          "tableFrom": "sequence_step_runs",
+        "follow_up_step_runs_sent_message_id_organization_id_messages_id_organization_id_fk": {
+          "name": "follow_up_step_runs_sent_message_id_organization_id_messages_id_organization_id_fk",
+          "tableFrom": "follow_up_step_runs",
           "tableTo": "messages",
           "columnsFrom": [
             "sent_message_id",
@@ -10798,34 +10798,34 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "sequence_step_runs_run_step_uq": {
-          "name": "sequence_step_runs_run_step_uq",
+        "follow_up_step_runs_run_step_uq": {
+          "name": "follow_up_step_runs_run_step_uq",
           "nullsNotDistinct": false,
           "columns": [
-            "sequence_run_id",
-            "sequence_step_id"
+            "follow_up_run_id",
+            "follow_up_step_id"
           ]
         }
       },
       "policies": {},
       "checkConstraints": {
-        "sequence_step_runs_status_ck": {
-          "name": "sequence_step_runs_status_ck",
-          "value": "\"sequence_step_runs\".\"status\" in ('scheduled', 'drafting', 'awaiting_review', 'sent', 'skipped', 'cancelled', 'failed')"
+        "follow_up_step_runs_status_ck": {
+          "name": "follow_up_step_runs_status_ck",
+          "value": "\"follow_up_step_runs\".\"status\" in ('scheduled', 'drafting', 'awaiting_review', 'sent', 'skipped', 'cancelled', 'failed')"
         },
-        "sequence_step_runs_attempts_ck": {
-          "name": "sequence_step_runs_attempts_ck",
-          "value": "\"sequence_step_runs\".\"attempt_count\" >= 0 and \"sequence_step_runs\".\"expected_context_version\" >= 0"
+        "follow_up_step_runs_attempts_ck": {
+          "name": "follow_up_step_runs_attempts_ck",
+          "value": "\"follow_up_step_runs\".\"attempt_count\" >= 0 and \"follow_up_step_runs\".\"expected_context_version\" >= 0"
         },
-        "sequence_step_runs_sent_ck": {
-          "name": "sequence_step_runs_sent_ck",
-          "value": "\"sequence_step_runs\".\"status\" <> 'sent' or \"sequence_step_runs\".\"sent_message_id\" is not null"
+        "follow_up_step_runs_sent_ck": {
+          "name": "follow_up_step_runs_sent_ck",
+          "value": "\"follow_up_step_runs\".\"status\" <> 'sent' or \"follow_up_step_runs\".\"sent_message_id\" is not null"
         }
       },
       "isRLSEnabled": false
     },
-    "public.sequence_steps": {
-      "name": "sequence_steps",
+    "public.follow_up_steps": {
+      "name": "follow_up_steps",
       "schema": "",
       "columns": {
         "id": {
@@ -10841,8 +10841,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_version_id": {
-          "name": "sequence_version_id",
+        "follow_up_version_id": {
+          "name": "follow_up_version_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -10913,9 +10913,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "sequence_steps_organization_id_organizations_id_fk": {
-          "name": "sequence_steps_organization_id_organizations_id_fk",
-          "tableFrom": "sequence_steps",
+        "follow_up_steps_organization_id_organizations_id_fk": {
+          "name": "follow_up_steps_organization_id_organizations_id_fk",
+          "tableFrom": "follow_up_steps",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -10926,12 +10926,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequence_steps_sequence_version_id_organization_id_sequence_versions_id_organization_id_fk": {
-          "name": "sequence_steps_sequence_version_id_organization_id_sequence_versions_id_organization_id_fk",
-          "tableFrom": "sequence_steps",
-          "tableTo": "sequence_versions",
+        "follow_up_steps_follow_up_version_id_organization_id_follow_up_versions_id_organization_id_fk": {
+          "name": "follow_up_steps_follow_up_version_id_organization_id_follow_up_versions_id_organization_id_fk",
+          "tableFrom": "follow_up_steps",
+          "tableTo": "follow_up_versions",
           "columnsFrom": [
-            "sequence_version_id",
+            "follow_up_version_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -10944,16 +10944,16 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "sequence_steps_version_position_uq": {
-          "name": "sequence_steps_version_position_uq",
+        "follow_up_steps_version_position_uq": {
+          "name": "follow_up_steps_version_position_uq",
           "nullsNotDistinct": false,
           "columns": [
-            "sequence_version_id",
+            "follow_up_version_id",
             "position"
           ]
         },
-        "sequence_steps_id_org_uq": {
-          "name": "sequence_steps_id_org_uq",
+        "follow_up_steps_id_org_uq": {
+          "name": "follow_up_steps_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -10963,23 +10963,23 @@
       },
       "policies": {},
       "checkConstraints": {
-        "sequence_steps_name_ck": {
-          "name": "sequence_steps_name_ck",
-          "value": "length(btrim(\"sequence_steps\".\"name\")) > 0 and length(btrim(\"sequence_steps\".\"ai_instructions\")) > 0"
+        "follow_up_steps_name_ck": {
+          "name": "follow_up_steps_name_ck",
+          "value": "length(btrim(\"follow_up_steps\".\"name\")) > 0 and length(btrim(\"follow_up_steps\".\"ai_instructions\")) > 0"
         },
-        "sequence_steps_delay_ck": {
-          "name": "sequence_steps_delay_ck",
-          "value": "\"sequence_steps\".\"delay_minutes\" >= 0"
+        "follow_up_steps_delay_ck": {
+          "name": "follow_up_steps_delay_ck",
+          "value": "\"follow_up_steps\".\"delay_minutes\" >= 0"
         },
-        "sequence_steps_semantics_ck": {
-          "name": "sequence_steps_semantics_ck",
-          "value": "(\"sequence_steps\".\"position\" = 1 and \"sequence_steps\".\"step_type\" = 'reply' and \"sequence_steps\".\"delay_minutes\" = 0) or (\"sequence_steps\".\"position\" > 1 and \"sequence_steps\".\"step_type\" = 'follow_up')"
+        "follow_up_steps_semantics_ck": {
+          "name": "follow_up_steps_semantics_ck",
+          "value": "(\"follow_up_steps\".\"position\" = 1 and \"follow_up_steps\".\"step_type\" = 'reply' and \"follow_up_steps\".\"delay_minutes\" = 0) or (\"follow_up_steps\".\"position\" > 1 and \"follow_up_steps\".\"step_type\" = 'follow_up')"
         }
       },
       "isRLSEnabled": false
     },
-    "public.sequence_versions": {
-      "name": "sequence_versions",
+    "public.follow_up_versions": {
+      "name": "follow_up_versions",
       "schema": "",
       "columns": {
         "id": {
@@ -10995,8 +10995,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "sequence_id": {
-          "name": "sequence_id",
+        "flow_id": {
+          "name": "flow_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -11036,27 +11036,27 @@
         }
       },
       "indexes": {
-        "sequence_versions_one_draft_uq": {
-          "name": "sequence_versions_one_draft_uq",
+        "follow_up_versions_one_draft_uq": {
+          "name": "follow_up_versions_one_draft_uq",
           "columns": [
             {
-              "expression": "sequence_id",
+              "expression": "flow_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"sequence_versions\".\"status\" = 'draft'",
+          "where": "\"follow_up_versions\".\"status\" = 'draft'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "sequence_versions_organization_id_organizations_id_fk": {
-          "name": "sequence_versions_organization_id_organizations_id_fk",
-          "tableFrom": "sequence_versions",
+        "follow_up_versions_organization_id_organizations_id_fk": {
+          "name": "follow_up_versions_organization_id_organizations_id_fk",
+          "tableFrom": "follow_up_versions",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -11067,12 +11067,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequence_versions_sequence_id_organization_id_sequences_id_organization_id_fk": {
-          "name": "sequence_versions_sequence_id_organization_id_sequences_id_organization_id_fk",
-          "tableFrom": "sequence_versions",
-          "tableTo": "sequences",
+        "follow_up_versions_flow_id_organization_id_follow_up_flows_id_organization_id_fk": {
+          "name": "follow_up_versions_flow_id_organization_id_follow_up_flows_id_organization_id_fk",
+          "tableFrom": "follow_up_versions",
+          "tableTo": "follow_up_flows",
           "columnsFrom": [
-            "sequence_id",
+            "flow_id",
             "organization_id"
           ],
           "columnsTo": [
@@ -11085,16 +11085,16 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "sequence_versions_seq_version_uq": {
-          "name": "sequence_versions_seq_version_uq",
+        "follow_up_versions_seq_version_uq": {
+          "name": "follow_up_versions_seq_version_uq",
           "nullsNotDistinct": false,
           "columns": [
-            "sequence_id",
+            "flow_id",
             "version"
           ]
         },
-        "sequence_versions_id_org_uq": {
-          "name": "sequence_versions_id_org_uq",
+        "follow_up_versions_id_org_uq": {
+          "name": "follow_up_versions_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -11104,23 +11104,23 @@
       },
       "policies": {},
       "checkConstraints": {
-        "sequence_versions_version_ck": {
-          "name": "sequence_versions_version_ck",
-          "value": "\"sequence_versions\".\"version\" > 0"
+        "follow_up_versions_version_ck": {
+          "name": "follow_up_versions_version_ck",
+          "value": "\"follow_up_versions\".\"version\" > 0"
         },
-        "sequence_versions_status_ck": {
-          "name": "sequence_versions_status_ck",
-          "value": "\"sequence_versions\".\"status\" in ('draft', 'published')"
+        "follow_up_versions_status_ck": {
+          "name": "follow_up_versions_status_ck",
+          "value": "\"follow_up_versions\".\"status\" in ('draft', 'published')"
         },
-        "sequence_versions_published_ck": {
-          "name": "sequence_versions_published_ck",
-          "value": "(\"sequence_versions\".\"status\" = 'draft') = (\"sequence_versions\".\"published_at\" is null)"
+        "follow_up_versions_published_ck": {
+          "name": "follow_up_versions_published_ck",
+          "value": "(\"follow_up_versions\".\"status\" = 'draft') = (\"follow_up_versions\".\"published_at\" is null)"
         }
       },
       "isRLSEnabled": false
     },
-    "public.sequences": {
-      "name": "sequences",
+    "public.follow_up_flows": {
+      "name": "follow_up_flows",
       "schema": "",
       "columns": {
         "id": {
@@ -11183,8 +11183,8 @@
         }
       },
       "indexes": {
-        "sequences_org_name_uq": {
-          "name": "sequences_org_name_uq",
+        "follow_up_flows_org_name_uq": {
+          "name": "follow_up_flows_org_name_uq",
           "columns": [
             {
               "expression": "organization_id",
@@ -11200,13 +11200,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"sequences\".\"campaign_id\" is null",
+          "where": "\"follow_up_flows\".\"campaign_id\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "sequences_campaign_uq": {
-          "name": "sequences_campaign_uq",
+        "follow_up_flows_campaign_uq": {
+          "name": "follow_up_flows_campaign_uq",
           "columns": [
             {
               "expression": "campaign_id",
@@ -11216,13 +11216,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"sequences\".\"campaign_id\" is not null",
+          "where": "\"follow_up_flows\".\"campaign_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "sequences_org_status_idx": {
-          "name": "sequences_org_status_idx",
+        "follow_up_flows_org_status_idx": {
+          "name": "follow_up_flows_org_status_idx",
           "columns": [
             {
               "expression": "organization_id",
@@ -11250,9 +11250,9 @@
         }
       },
       "foreignKeys": {
-        "sequences_organization_id_organizations_id_fk": {
-          "name": "sequences_organization_id_organizations_id_fk",
-          "tableFrom": "sequences",
+        "follow_up_flows_organization_id_organizations_id_fk": {
+          "name": "follow_up_flows_organization_id_organizations_id_fk",
+          "tableFrom": "follow_up_flows",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
@@ -11263,9 +11263,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "sequences_campaign_id_organization_id_campaigns_id_organization_id_fk": {
-          "name": "sequences_campaign_id_organization_id_campaigns_id_organization_id_fk",
-          "tableFrom": "sequences",
+        "follow_up_flows_campaign_id_organization_id_campaigns_id_organization_id_fk": {
+          "name": "follow_up_flows_campaign_id_organization_id_campaigns_id_organization_id_fk",
+          "tableFrom": "follow_up_flows",
           "tableTo": "campaigns",
           "columnsFrom": [
             "campaign_id",
@@ -11281,8 +11281,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "sequences_id_org_uq": {
-          "name": "sequences_id_org_uq",
+        "follow_up_flows_id_org_uq": {
+          "name": "follow_up_flows_id_org_uq",
           "nullsNotDistinct": false,
           "columns": [
             "id",
@@ -11292,13 +11292,13 @@
       },
       "policies": {},
       "checkConstraints": {
-        "sequences_name_ck": {
-          "name": "sequences_name_ck",
-          "value": "length(btrim(\"sequences\".\"name\")) > 0"
+        "follow_up_flows_name_ck": {
+          "name": "follow_up_flows_name_ck",
+          "value": "length(btrim(\"follow_up_flows\".\"name\")) > 0"
         },
-        "sequences_status_ck": {
-          "name": "sequences_status_ck",
-          "value": "\"sequences\".\"status\" in ('active', 'archived')"
+        "follow_up_flows_status_ck": {
+          "name": "follow_up_flows_status_ck",
+          "value": "\"follow_up_flows\".\"status\" in ('active', 'archived')"
         }
       },
       "isRLSEnabled": false

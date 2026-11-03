@@ -107,7 +107,7 @@ function Row({ id, title, detail, href, action, icon }: { id: string; title: Rea
 /** A contact's task opens the contact page; a lead's opens the conversation, or the lead page when there is none. */
 function taskTarget(t: TaskRow): { href: string; action: string } {
   if (t.personLifecycle === "contact") return { href: personHref(t.personId, t.personLifecycle), action: "Open contact" };
-  if (t.conversationId) return { href: `/inbox/${t.conversationId}`, action: "Open conversation" };
+  if (t.threadId) return { href: `/inbox/${t.threadId}`, action: "Open conversation" };
   return { href: personHref(t.personId, t.personLifecycle), action: "Open lead" };
 }
 
@@ -145,7 +145,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   const campaigns = [...emailCampaigns, ...linkedinCampaigns].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
   const openTasks = await listTasks(taskDeps(), actor, { state: "open" });
   const now = taskDeps().now().getTime();
-  // The tasks of the scope in view. A task has an assignee or none, like a record.
+  // The tasks of the scope in view. A task has an assignee or none, like a conversation.
   const scopedTasks = openTasks.filter((t) => scopeOf(t.assigneeId, actor.userId) === scope);
   // Dead letters are for owners and admins, like /settings/inbound-events.
   const dead = await listInboundEvents(inboundReviewDeps(), actor, { state: "dead", limit: 10 }).catch((error) => {
@@ -214,7 +214,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     oldestCandidate && oldestWaiting && oldestCandidate.waitingSince.at.getTime() === oldestWaiting.getTime()
       ? {
           name: oldestCandidate.personName ?? "an unknown sender",
-          href: oldestCandidate.conversationId ? `/inbox/${oldestCandidate.conversationId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
+          href: oldestCandidate.threadId ? `/inbox/${oldestCandidate.threadId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
         }
       : null;
   const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "AI picks", next_step: "Next steps" };

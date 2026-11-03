@@ -60,7 +60,7 @@ const CONTACT_BLOCKERS: Record<ContactDeleteBlocker["reason"], string> = {
 const targetIdOf = (target: IrreversibleTarget): string => ("dealId" in target ? target.dealId : "personId" in target ? target.personId : target.campaignId);
 
 const countWords = (counts: ContactDeleteCounts) =>
-  `${counts.conversations} conversations with ${counts.messages} messages, ${counts.deals.won + counts.deals.lost} closed deals, ${counts.notes} notes, ${counts.tasks} tasks and ${counts.sends} sends`;
+  `${counts.threads} conversations with ${counts.messages} messages, ${counts.deals.won + counts.deals.lost} closed deals, ${counts.notes} notes, ${counts.tasks} tasks and ${counts.sends} sends`;
 
 async function previewPerson(actor: Actor, kind: "delete_lead" | "delete_contact", personId: string): Promise<IrreversiblePreview> {
   const base = { kind, targetId: personId, erases: null, alreadyDone: false };

@@ -8,7 +8,7 @@ export const PICK_STATUSES = ["proposed", "auto_applied", "accepted", "rejected"
 
 export type PickStatus = (typeof PICK_STATUSES)[number];
 
-/** Picks whose type the record took. */
+/** Picks whose type the conversation took. */
 export const APPLIED_PICK_STATUSES = ["auto_applied", "accepted", "overridden"] as const satisfies readonly PickStatus[];
 
 /** Picks a person's decision on the same reply and version settles. */
@@ -28,7 +28,7 @@ export const isAppliedPick = (status: string): boolean => (APPLIED_PICK_STATUSES
 
 /** What a pick stores in `response` besides the provider's answer. SQL that reads a field names it the same way. */
 export interface PickResponse {
-  /** The record's lock before the pick applied, so undo gives it back. */
+  /** The conversation's lock before the pick applied, so undo gives it back. */
   previousLocked?: boolean;
   /** The reply asked to stop, as the AI or the reply's own words said. */
   stopRequested?: boolean;
@@ -46,15 +46,15 @@ export function pickResponse(stored: unknown): PickResponse {
   };
 }
 
-/** What a person can still do with a pick, against the record as it is now. */
+/** What a person can still do with a pick, against the conversation as it is now. */
 export function pickFlags(
   pick: { messageId: string; status: string; appliedGroupKey: string | null; expectedContextVersion: number },
-  record: { latestInboundMessageId: string | null; contextVersion: number },
+  conversation: { latestInboundMessageId: string | null; contextVersion: number },
 ): { latest: boolean; current: boolean; canUndo: boolean } {
-  const latest = pick.messageId === record.latestInboundMessageId;
+  const latest = pick.messageId === conversation.latestInboundMessageId;
   return {
     latest,
-    current: pick.expectedContextVersion === record.contextVersion && pick.status !== "stale",
+    current: pick.expectedContextVersion === conversation.contextVersion && pick.status !== "stale",
     canUndo: latest && isAppliedPick(pick.status) && pick.appliedGroupKey !== null,
   };
 }

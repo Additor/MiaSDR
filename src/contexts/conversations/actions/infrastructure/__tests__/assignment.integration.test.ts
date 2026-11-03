@@ -73,8 +73,8 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     };
   };
 
-  const recordOf = async (personId: string) => (await sql`select id, assigned_to, assigned_source from records where person_id = ${personId}`)[0];
-  const assignedEvents = (recordId: string) => sql`select actor_type, actor_user_id, from_data, to_data, meta from events where record_id = ${recordId} and event_type = 'assignee.changed' order by created_at, id`;
+  const conversationOf = async (personId: string) => (await sql`select id, assigned_to, assigned_source from conversations where person_id = ${personId}`)[0];
+  const assignedEvents = (conversationId: string) => sql`select actor_type, actor_user_id, from_data, to_data, meta from events where conversation_id = ${conversationId} and event_type = 'assignee.changed' order by created_at, id`;
 
   beforeAll(async () => {
     composition = await import("../../../infrastructure/composition");
@@ -96,9 +96,9 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
 
     await composition.ingestInbound(mail(f, lead.email));
 
-    const record = await recordOf(lead.personId);
-    expect(record).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
-    const events = await assignedEvents(record.id);
+    const conversation = await conversationOf(lead.personId);
+    expect(conversation).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
+    const events = await assignedEvents(conversation.id);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ actor_type: "system", actor_user_id: null, from_data: { assignedTo: null }, to_data: { assignedTo: f.ann }, meta: { source: "auto" } });
   });
@@ -109,20 +109,20 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     await enroll(f, await campaign(f, f.ann), newer.personId, "2026-10-01T09:00:00Z");
     await enroll(f, await campaign(f, f.bob), newer.personId, "2026-10-05T09:00:00Z");
     await composition.ingestInbound(mail(f, newer.email));
-    expect((await recordOf(newer.personId)).assigned_to).toBe(f.bob);
+    expect((await conversationOf(newer.personId)).assigned_to).toBe(f.bob);
 
     const skipped = await enrolledLead(f);
     await enroll(f, await campaign(f, f.ann), skipped.personId, "2026-10-01T09:00:00Z");
     await enroll(f, await campaign(f, f.carl), skipped.personId, "2026-10-09T09:00:00Z");
     await composition.ingestInbound(mail(f, skipped.email));
-    expect((await recordOf(skipped.personId)).assigned_to).toBe(f.ann);
+    expect((await conversationOf(skipped.personId)).assigned_to).toBe(f.ann);
   });
 
   it("leaves a record unassigned when nothing identifies a member", async () => {
     const f = await fixture();
     // An unknown sender has no enrollment at all.
     const stranger = await composition.ingestInbound(mail(f, `stranger-${f.tag}@nowhere.test`));
-    expect((await recordOf(stranger.personId)).assigned_to).toBeNull();
+    expect((await conversationOf(stranger.personId)).assigned_to).toBeNull();
 
     // A creator who is no member, a campaign without a creator and a removed enrollment do not count.
     const lead = await enrolledLead(f);
@@ -130,9 +130,9 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     await enroll(f, await campaign(f, null), lead.personId, "2026-10-02T09:00:00Z");
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-03T09:00:00Z", "removed");
     await composition.ingestInbound(mail(f, lead.email));
-    const record = await recordOf(lead.personId);
-    expect(record.assigned_to).toBeNull();
-    expect(await assignedEvents(record.id)).toHaveLength(0);
+    const conversation = await conversationOf(lead.personId);
+    expect(conversation.assigned_to).toBeNull();
+    expect(await assignedEvents(conversation.id)).toHaveLength(0);
   });
 
   it("does not assign on an automatic reply", async () => {
@@ -140,7 +140,7 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     const lead = await enrolledLead(f);
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-01T09:00:00Z");
     await composition.ingestInbound(mail(f, lead.email, { autoReply: true }));
-    expect((await recordOf(lead.personId))?.assigned_to ?? null).toBeNull();
+    expect((await conversationOf(lead.personId))?.assigned_to ?? null).toBeNull();
   });
 
   it("never replaces an assignee, whoever set it", async () => {
@@ -148,14 +148,14 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     const lead = await enrolledLead(f);
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-01T09:00:00Z");
     await composition.ingestInbound(mail(f, lead.email));
-    const record = await recordOf(lead.personId);
-    expect(record.assigned_to).toBe(f.ann);
+    const conversation = await conversationOf(lead.personId);
+    expect(conversation.assigned_to).toBe(f.ann);
 
     // A person hands it to Bob. Another reply comes in; Bob keeps it and no second event is written.
-    await sql`update records set assigned_to = ${f.bob}, assigned_source = 'human' where id = ${record.id}`;
+    await sql`update conversations set assigned_to = ${f.bob}, assigned_source = 'human' where id = ${conversation.id}`;
     await composition.ingestInbound(mail(f, lead.email, { receivedAt: new Date("2026-10-15T10:00:00Z") }));
-    expect(await recordOf(lead.personId)).toMatchObject({ assigned_to: f.bob, assigned_source: "human" });
-    expect(await assignedEvents(record.id)).toHaveLength(1);
+    expect(await conversationOf(lead.personId)).toMatchObject({ assigned_to: f.bob, assigned_source: "human" });
+    expect(await assignedEvents(conversation.id)).toHaveLength(1);
   });
 
   it("leaves a conversation unassigned that a person set to Nobody, until a person takes it", async () => {
@@ -163,21 +163,21 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     const lead = await enrolledLead(f);
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-01T09:00:00Z");
     await composition.ingestInbound(mail(f, lead.email));
-    const record = await recordOf(lead.personId);
-    expect(record).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
+    const conversation = await conversationOf(lead.personId);
+    expect(conversation).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
 
     const ann: Actor = { userId: f.ann, organizationId: f.org, role: "owner" };
-    await assignment.assignRecord(deps, ann, record.id, { assignedTo: null, expectedAssignedTo: f.ann });
-    expect(await recordOf(lead.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
+    await assignment.assignConversation(deps, ann, conversation.id, { assignedTo: null, expectedAssignedTo: f.ann });
+    expect(await conversationOf(lead.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
 
     // The lead writes again. Nobody was a choice, so the campaign creator does not get it back and no event is written.
     await composition.ingestInbound(mail(f, lead.email, { receivedAt: new Date("2026-10-15T10:00:00Z") }));
-    expect(await recordOf(lead.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
-    expect(await assignedEvents(record.id)).toHaveLength(2);
+    expect(await conversationOf(lead.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
+    expect(await assignedEvents(conversation.id)).toHaveLength(2);
 
     // A person who takes it afterwards is a human choice again.
-    await assignment.claimRecord(deps, ann, record.id);
-    expect(await recordOf(lead.personId)).toMatchObject({ assigned_to: f.ann, assigned_source: "human" });
+    await assignment.claimConversation(deps, ann, conversation.id);
+    expect(await conversationOf(lead.personId)).toMatchObject({ assigned_to: f.ann, assigned_source: "human" });
   });
 
   it("assigns again after the assignee leaves the organization, to a creator who is still a member", async () => {
@@ -186,15 +186,15 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-01T09:00:00Z");
     await enroll(f, await campaign(f, f.bob), lead.personId, "2026-10-05T09:00:00Z");
     await composition.ingestInbound(mail(f, lead.email));
-    const record = await recordOf(lead.personId);
-    expect(record.assigned_to).toBe(f.bob);
+    const conversation = await conversationOf(lead.personId);
+    expect(conversation.assigned_to).toBe(f.bob);
 
     await sql`delete from members where organization_id = ${f.org} and user_id = ${f.bob}`;
-    expect((await recordOf(lead.personId)).assigned_to).toBeNull();
+    expect((await conversationOf(lead.personId)).assigned_to).toBeNull();
 
     await composition.ingestInbound(mail(f, lead.email, { receivedAt: new Date("2026-10-16T10:00:00Z") }));
-    expect((await recordOf(lead.personId)).assigned_to).toBe(f.ann);
-    expect(await assignedEvents(record.id)).toHaveLength(2);
+    expect((await conversationOf(lead.personId)).assigned_to).toBe(f.ann);
+    expect(await assignedEvents(conversation.id)).toHaveLength(2);
   });
 
   it("assigns on a LinkedIn reply the same way", async () => {
@@ -219,35 +219,35 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       receivedAt: new Date("2026-10-14T10:00:00Z"),
     };
     await composition.ingestInboundLinkedInMessage(input);
-    expect(await recordOf(personId)).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
+    expect(await conversationOf(personId)).toMatchObject({ assigned_to: f.ann, assigned_source: "auto" });
   });
   describe("claim and assign", () => {
     const actorOf = (f: Fx, userId: string): Actor => ({ userId, organizationId: f.org, role: "member" });
 
-    /** An unassigned record with a draft waiting for review, from a sender no campaign knows. */
+    /** An unassigned conversation with a draft waiting for review, from a sender no campaign knows. */
     async function unassigned(f: Fx) {
       const stranger = await composition.ingestInbound(mail(f, `stranger${++counter}-${f.tag}@nowhere.test`));
-      const record = await recordOf(stranger.personId);
-      expect(record.assigned_to).toBeNull();
-      const [r] = await sql`select context_version, updated_at from records where id = ${record.id}`;
+      const conversation = await conversationOf(stranger.personId);
+      expect(conversation.assigned_to).toBeNull();
+      const [r] = await sql`select context_version, updated_at from conversations where id = ${conversation.id}`;
       const [draft] = await sql`
-        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, ai_body_text, status)
-        values (${f.org}, ${record.id}, ${stranger.conversationId}, ${r.context_version}, 'email', 'Re: hello', 'Sure.', 'awaiting_review') returning id`;
-      return { recordId: record.id as string, personId: stranger.personId, conversationId: stranger.conversationId, draftId: draft.id as string, contextVersion: r.context_version as number, updatedAt: r.updated_at as Date };
+        insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject, ai_body_text, status)
+        values (${f.org}, ${conversation.id}, ${stranger.threadId}, ${r.context_version}, 'email', 'Re: hello', 'Sure.', 'awaiting_review') returning id`;
+      return { conversationId: conversation.id as string, personId: stranger.personId, threadId: stranger.threadId, draftId: draft.id as string, contextVersion: r.context_version as number, updatedAt: r.updated_at as Date };
     }
 
     it("claims an unassigned conversation, writes the event, and leaves the context version, the draft and updated_at alone", async () => {
       const f = await fixture();
       const r = await unassigned(f);
 
-      const result = await assignment.claimRecord(deps, actorOf(f, f.ann), r.recordId);
+      const result = await assignment.claimConversation(deps, actorOf(f, f.ann), r.conversationId);
 
-      expect(result).toEqual({ recordId: r.recordId, assignedTo: f.ann, previousAssignedTo: null, changed: true });
-      const [row] = await sql`select assigned_to, assigned_source, context_version, updated_at from records where id = ${r.recordId}`;
+      expect(result).toEqual({ conversationId: r.conversationId, assignedTo: f.ann, previousAssignedTo: null, changed: true });
+      const [row] = await sql`select assigned_to, assigned_source, context_version, updated_at from conversations where id = ${r.conversationId}`;
       expect(row).toMatchObject({ assigned_to: f.ann, assigned_source: "human", context_version: r.contextVersion });
       expect(row.updated_at).toEqual(r.updatedAt);
       expect((await sql`select status from drafts where id = ${r.draftId}`)[0].status).toBe("awaiting_review");
-      const events = await assignedEvents(r.recordId);
+      const events = await assignedEvents(r.conversationId);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ actor_type: "human", actor_user_id: f.ann, from_data: { assignedTo: null, assigneeName: null }, to_data: { assignedTo: f.ann, assigneeName: "Ann" }, meta: { source: "human", action: "claim" } });
     });
@@ -255,12 +255,12 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     it("changes nothing when you claim what you already hold, and refuses what someone else holds", async () => {
       const f = await fixture();
       const r = await unassigned(f);
-      await assignment.claimRecord(deps, actorOf(f, f.ann), r.recordId);
+      await assignment.claimConversation(deps, actorOf(f, f.ann), r.conversationId);
 
-      expect(await assignment.claimRecord(deps, actorOf(f, f.ann), r.recordId)).toMatchObject({ assignedTo: f.ann, changed: false });
-      await expect(assignment.claimRecord(deps, actorOf(f, f.bob), r.recordId)).rejects.toBeInstanceOf(ConflictError);
-      expect((await recordOf(r.personId)).assigned_to).toBe(f.ann);
-      expect(await assignedEvents(r.recordId)).toHaveLength(1);
+      expect(await assignment.claimConversation(deps, actorOf(f, f.ann), r.conversationId)).toMatchObject({ assignedTo: f.ann, changed: false });
+      await expect(assignment.claimConversation(deps, actorOf(f, f.bob), r.conversationId)).rejects.toBeInstanceOf(ConflictError);
+      expect((await conversationOf(r.personId)).assigned_to).toBe(f.ann);
+      expect(await assignedEvents(r.conversationId)).toHaveLength(1);
     });
 
     it("lets two people claim at once and gives it to one of them", async () => {
@@ -273,12 +273,12 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       const gate = new Promise<void>((resolve) => (release = resolve));
       const holding = new Promise<void>((resolve) => (locked = resolve));
       const holder = sql.begin(async (tx) => {
-        await tx`select id from records where id = ${r.recordId} for update`;
+        await tx`select id from conversations where id = ${r.conversationId} for update`;
         locked();
         await gate;
       });
       await holding;
-      const attempts = Promise.allSettled([assignment.claimRecord(deps, actorOf(f, f.ann), r.recordId), assignment.claimRecord(deps, actorOf(f, f.bob), r.recordId)]);
+      const attempts = Promise.allSettled([assignment.claimConversation(deps, actorOf(f, f.ann), r.conversationId), assignment.claimConversation(deps, actorOf(f, f.bob), r.conversationId)]);
       await waitForLockWaiters(sql, 2);
       release();
       await holder;
@@ -289,7 +289,7 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       expect(won).toHaveLength(1);
       expect(lost).toHaveLength(1);
       expect(lost[0].reason).toBeInstanceOf(ConflictError);
-      expect(await assignedEvents(r.recordId)).toHaveLength(1);
+      expect(await assignedEvents(r.conversationId)).toHaveLength(1);
     });
 
     it("assigns to a member who was seen holding it, to nobody, and back", async () => {
@@ -297,28 +297,28 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       const r = await unassigned(f);
       const ann = actorOf(f, f.ann);
 
-      expect(await assignment.assignRecord(deps, ann, r.recordId, { assignedTo: f.bob, expectedAssignedTo: null })).toMatchObject({ assignedTo: f.bob, previousAssignedTo: null, changed: true });
-      expect(await assignment.assignRecord(deps, ann, r.recordId, { assignedTo: f.ann, expectedAssignedTo: f.bob })).toMatchObject({ assignedTo: f.ann, previousAssignedTo: f.bob });
-      expect(await assignment.assignRecord(deps, ann, r.recordId, { assignedTo: null, expectedAssignedTo: f.ann })).toMatchObject({ assignedTo: null, previousAssignedTo: f.ann });
-      expect(await assignment.assignRecord(deps, ann, r.recordId, { assignedTo: null, expectedAssignedTo: null })).toMatchObject({ changed: false });
+      expect(await assignment.assignConversation(deps, ann, r.conversationId, { assignedTo: f.bob, expectedAssignedTo: null })).toMatchObject({ assignedTo: f.bob, previousAssignedTo: null, changed: true });
+      expect(await assignment.assignConversation(deps, ann, r.conversationId, { assignedTo: f.ann, expectedAssignedTo: f.bob })).toMatchObject({ assignedTo: f.ann, previousAssignedTo: f.bob });
+      expect(await assignment.assignConversation(deps, ann, r.conversationId, { assignedTo: null, expectedAssignedTo: f.ann })).toMatchObject({ assignedTo: null, previousAssignedTo: f.ann });
+      expect(await assignment.assignConversation(deps, ann, r.conversationId, { assignedTo: null, expectedAssignedTo: null })).toMatchObject({ changed: false });
 
-      expect(await recordOf(r.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
-      const events = await assignedEvents(r.recordId);
+      expect(await conversationOf(r.personId)).toMatchObject({ assigned_to: null, assigned_source: "cleared" });
+      const events = await assignedEvents(r.conversationId);
       expect(events.map((e) => [e.from_data.assigneeName, e.to_data.assigneeName])).toEqual([[null, "Bob"], ["Bob", "Ann"], ["Ann", null]]);
     });
 
     it("refuses a change made from a stale view, and a target who is not a member", async () => {
       const f = await fixture();
       const r = await unassigned(f);
-      await assignment.claimRecord(deps, actorOf(f, f.ann), r.recordId);
+      await assignment.claimConversation(deps, actorOf(f, f.ann), r.conversationId);
 
       // Bob looked while it was unassigned.
-      await expect(assignment.assignRecord(deps, actorOf(f, f.bob), r.recordId, { assignedTo: f.bob, expectedAssignedTo: null })).rejects.toBeInstanceOf(ConflictError);
+      await expect(assignment.assignConversation(deps, actorOf(f, f.bob), r.conversationId, { assignedTo: f.bob, expectedAssignedTo: null })).rejects.toBeInstanceOf(ConflictError);
       // Carl is no member of this organization, and a made-up user is nobody.
-      await expect(assignment.assignRecord(deps, actorOf(f, f.ann), r.recordId, { assignedTo: f.carl, expectedAssignedTo: f.ann })).rejects.toBeInstanceOf(ValidationError);
-      await expect(assignment.assignRecord(deps, actorOf(f, f.ann), r.recordId, { assignedTo: "00000000-0000-4000-8000-000000000000", expectedAssignedTo: f.ann })).rejects.toBeInstanceOf(ValidationError);
-      expect((await recordOf(r.personId)).assigned_to).toBe(f.ann);
-      expect(await assignedEvents(r.recordId)).toHaveLength(1);
+      await expect(assignment.assignConversation(deps, actorOf(f, f.ann), r.conversationId, { assignedTo: f.carl, expectedAssignedTo: f.ann })).rejects.toBeInstanceOf(ValidationError);
+      await expect(assignment.assignConversation(deps, actorOf(f, f.ann), r.conversationId, { assignedTo: "00000000-0000-4000-8000-000000000000", expectedAssignedTo: f.ann })).rejects.toBeInstanceOf(ValidationError);
+      expect((await conversationOf(r.personId)).assigned_to).toBe(f.ann);
+      expect(await assignedEvents(r.conversationId)).toHaveLength(1);
     });
 
     it("answers 404 for another organization's record and an id that is no UUID", async () => {
@@ -326,10 +326,10 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       const other = await fixture();
       const theirs = await unassigned(other);
 
-      await expect(assignment.claimRecord(deps, actorOf(f, f.ann), theirs.recordId)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(assignment.assignRecord(deps, actorOf(f, f.ann), theirs.recordId, { assignedTo: f.ann, expectedAssignedTo: null })).rejects.toBeInstanceOf(NotFoundError);
-      await expect(assignment.claimRecord(deps, actorOf(f, f.ann), "not-an-id")).rejects.toBeInstanceOf(NotFoundError);
-      expect((await recordOf(theirs.personId)).assigned_to).toBeNull();
+      await expect(assignment.claimConversation(deps, actorOf(f, f.ann), theirs.conversationId)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(assignment.assignConversation(deps, actorOf(f, f.ann), theirs.conversationId, { assignedTo: f.ann, expectedAssignedTo: null })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(assignment.claimConversation(deps, actorOf(f, f.ann), "not-an-id")).rejects.toBeInstanceOf(NotFoundError);
+      expect((await conversationOf(theirs.personId)).assigned_to).toBeNull();
     });
   });
   describe("scopes of the work queue", () => {
@@ -337,13 +337,13 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
 
     async function waiting(f: Fx, assignedTo: string | null) {
       const stranger = await composition.ingestInbound(mail(f, `scope${++counter}-${f.tag}@nowhere.test`));
-      const record = await recordOf(stranger.personId);
-      if (assignedTo) await sql`update records set assigned_to = ${assignedTo}, assigned_source = 'human' where id = ${record.id}`;
-      return { recordId: record.id as string, personId: stranger.personId };
+      const conversation = await conversationOf(stranger.personId);
+      if (assignedTo) await sql`update conversations set assigned_to = ${assignedTo}, assigned_source = 'human' where id = ${conversation.id}`;
+      return { conversationId: conversation.id as string, personId: stranger.personId };
     }
-    const task = (f: Fx, personId: string, recordId: string | null, assignedTo: string | null) =>
-      sql`insert into tasks (organization_id, person_id, record_id, name, assigned_to) values (${f.org}, ${personId}, ${recordId}, ${"Call " + ++counter}, ${assignedTo})`;
-    const ids = (page: { items: Array<{ recordId: string }> }) => page.items.map((i) => i.recordId).sort();
+    const task = (f: Fx, personId: string, conversationId: string | null, assignedTo: string | null) =>
+      sql`insert into tasks (organization_id, person_id, conversation_id, name, assigned_to) values (${f.org}, ${personId}, ${conversationId}, ${"Call " + ++counter}, ${assignedTo})`;
+    const ids = (page: { items: Array<{ conversationId: string }> }) => page.items.map((i) => i.conversationId).sort();
 
     it("splits the queue by assignee into scopes that add up to the whole", async () => {
       const f = await fixture();
@@ -354,9 +354,9 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       const ann = actorOf(f, f.ann);
       const queue = (scope?: string) => workQueue.getWorkQueue(queueDeps, ann, { filter: scope ? { scope } : {} });
 
-      expect(ids((await queue("mine")).groups.next_step)).toEqual([mine.recordId, alsoMine.recordId].sort());
-      expect(ids((await queue("others")).groups.next_step)).toEqual([theirs.recordId]);
-      expect(ids((await queue("unassigned")).groups.next_step)).toEqual([nobody.recordId]);
+      expect(ids((await queue("mine")).groups.next_step)).toEqual([mine.conversationId, alsoMine.conversationId].sort());
+      expect(ids((await queue("others")).groups.next_step)).toEqual([theirs.conversationId]);
+      expect(ids((await queue("unassigned")).groups.next_step)).toEqual([nobody.conversationId]);
       expect((await queue()).total).toBe(4);
 
       const counts = await workQueue.getWorkQueueCounts(queueDeps, ann);
@@ -372,15 +372,15 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
 
     it("reports the oldest wait inside each scope, so the headline of a view never quotes someone else's item", async () => {
       const f = await fixture();
-      const at = (recordId: string, iso: string) => sql`update records set last_inbound_at = ${iso}, last_interaction_at = ${iso} where id = ${recordId}`;
+      const at = (conversationId: string, iso: string) => sql`update conversations set last_inbound_at = ${iso}, last_interaction_at = ${iso} where id = ${conversationId}`;
       const mineNew = await waiting(f, f.ann);
       const mineOld = await waiting(f, f.ann);
       const theirs = await waiting(f, f.bob);
       const nobody = await waiting(f, null);
-      await at(mineNew.recordId, "2026-10-12T09:00:00Z");
-      await at(mineOld.recordId, "2026-10-09T09:00:00Z");
-      await at(theirs.recordId, "2026-10-01T09:00:00Z");
-      await at(nobody.recordId, "2026-10-05T09:00:00Z");
+      await at(mineNew.conversationId, "2026-10-12T09:00:00Z");
+      await at(mineOld.conversationId, "2026-10-09T09:00:00Z");
+      await at(theirs.conversationId, "2026-10-01T09:00:00Z");
+      await at(nobody.conversationId, "2026-10-05T09:00:00Z");
 
       const counts = await workQueue.getWorkQueueCounts(queueDeps, actorOf(f, f.ann));
       expect(counts.oldestWaiting).toEqual({ mine: new Date("2026-10-09T09:00:00Z"), unassigned: new Date("2026-10-05T09:00:00Z"), others: new Date("2026-10-01T09:00:00Z") });
@@ -397,16 +397,16 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       const mine = await waiting(f, f.ann);
       const nobody = await waiting(f, null);
       const items = (await workQueue.getWorkQueue(queueDeps, actorOf(f, f.bob))).groups.next_step.items;
-      expect(items.find((i) => i.recordId === mine.recordId)?.assignee).toEqual({ id: f.ann, name: "Ann" });
-      expect(items.find((i) => i.recordId === nobody.recordId)?.assignee).toBeNull();
+      expect(items.find((i) => i.conversationId === mine.conversationId)?.assignee).toEqual({ id: f.ann, name: "Ann" });
+      expect(items.find((i) => i.conversationId === nobody.conversationId)?.assignee).toBeNull();
     });
 
     it("counts open tasks by assignee and never counts a record and its task twice", async () => {
       const f = await fixture();
       const ann = actorOf(f, f.ann);
       const handled = await waiting(f, f.ann);
-      // Ann holds the record and also has a task on it: the record leaves the queue and Ann's work stays one item.
-      await task(f, handled.personId, handled.recordId, f.ann);
+      // Ann holds the record and also has a task on it: the conversation leaves the queue and Ann's work stays one item.
+      await task(f, handled.personId, handled.conversationId, f.ann);
       const other = await waiting(f, f.bob);
       await task(f, other.personId, null, f.ann);
       await task(f, other.personId, null, null);

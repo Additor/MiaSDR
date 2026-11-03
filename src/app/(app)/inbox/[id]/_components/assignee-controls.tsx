@@ -16,7 +16,7 @@ const NOBODY = "__nobody__";
  * Every change names who the person saw holding it, so a change made in the meantime answers 409 instead of being
  * overwritten, and the page reloads to show the current holder.
  */
-export function AssigneeControls({ recordId, assignedTo, members, currentUserId }: { recordId: string; assignedTo: string | null; members: readonly MemberChoice[]; currentUserId: string }) {
+export function AssigneeControls({ conversationId, assignedTo, members, currentUserId }: { conversationId: string; assignedTo: string | null; members: readonly MemberChoice[]; currentUserId: string }) {
   const router = useRouter();
   // Take it and the menu both change who holds the conversation, so they share one key.
   const { isBusy, run } = useApiAction<"assignee">();
@@ -25,7 +25,7 @@ export function AssigneeControls({ recordId, assignedTo, members, currentUserId 
 
   const change = (body: { action: "claim" } | { action: "assign"; assignedTo: string | null; expectedAssignedTo: string | null }) =>
     run("assignee", async () => {
-      const result = await runApiAction(callApi(`/api/records/${recordId}/assignee`, "POST", body));
+      const result = await runApiAction(callApi(`/api/conversations/${conversationId}/assignee`, "POST", body));
       // A refusal means the holder changed under us, so the page reloads either way to show who holds it now.
       router.refresh();
       if (!result.ok) toast.error(result.error);

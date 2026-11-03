@@ -96,7 +96,7 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
         policy: policy ?? null,
         suppression: suppression[0] ?? null,
         enrollments: outreach.enrollments,
-        conversationId: outreach.conversationId,
+        threadId: outreach.threadId,
         sends: outreach.sends,
       };
     },

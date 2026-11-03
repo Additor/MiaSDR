@@ -13,8 +13,8 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
 interface Ids {
   lead: string;
   contact: string;
+  thread: string;
   conversation: string;
-  record: string;
   draft: string;
   pick: string;
   task: string;
@@ -29,7 +29,7 @@ interface Ids {
   replyType: string;
   linkedinAccount: string;
   member: string;
-  own: { campaign: string; conversation: string; record: string; deal: string; dealVersion: number };
+  own: { campaign: string; thread: string; conversation: string; deal: string; dealVersion: number };
 }
 
 type Args = (ids: Ids) => Record<string, unknown>;
@@ -44,7 +44,7 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
   get_workspace: { filtered: [() => ({})] },
   get_work_queue: { filtered: [() => ({}), (i) => ({ campaignId: i.emailCampaign }), (i) => ({ replyTypeId: i.replyType })] },
   list_inbox: { filtered: [() => ({}), (i) => ({ personIds: [i.contact] }), (i) => ({ campaignIds: [i.emailCampaign] })] },
-  get_conversation: { refused: [(i) => ({ conversationId: i.conversation }), (i) => ({ recordId: i.record })] },
+  get_conversation: { refused: [(i) => ({ threadId: i.thread }), (i) => ({ conversationId: i.conversation })] },
   search_people: { filtered: [() => ({}), (i) => ({ campaign: i.emailCampaign }), (i) => ({ notInCampaignId: i.emailCampaign })] },
   get_person: { refused: [(i) => ({ personId: i.lead }), (i) => ({ personId: i.contact })] },
   list_campaigns: { filtered: [() => ({})] },
@@ -57,8 +57,8 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
   list_linkedin_searches: { filtered: [() => ({})] },
   write_reply_draft: {
     refused: [
-      (i) => ({ action: "request_ai", conversationId: i.conversation }),
-      (i) => ({ action: "create_manual", conversationId: i.conversation, subject: "Re: Hello", bodyText: "Written across organizations." }),
+      (i) => ({ action: "request_ai", threadId: i.thread }),
+      (i) => ({ action: "create_manual", threadId: i.thread, subject: "Re: Hello", bodyText: "Written across organizations." }),
       (i) => ({ action: "edit", draftId: i.draft, revision: 1, bodyText: "Edited across organizations." }),
       (i) => ({ action: "regenerate", draftId: i.draft, revision: 1 }),
       (i) => ({ action: "discard", draftId: i.draft, revision: 1 }),
@@ -66,33 +66,33 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
   },
   set_reply_type: {
     refused: [
-      (i) => ({ action: "change", recordId: i.record, groupKey: "interested", expectedContextVersion: 0 }),
+      (i) => ({ action: "change", conversationId: i.conversation, groupKey: "interested", expectedContextVersion: 0 }),
       (i) => ({ action: "undo_pick", replyTypePickId: i.pick }),
     ],
-    crossed: [(i) => ({ action: "change", recordId: i.own.record, replyTypeId: i.replyType, expectedContextVersion: 0 })],
+    crossed: [(i) => ({ action: "change", conversationId: i.own.conversation, replyTypeId: i.replyType, expectedContextVersion: 0 })],
   },
   update_conversation: {
     refused: [
-      (i) => ({ action: "add_note", recordId: i.record, text: "Across organizations." }),
-      (i) => ({ action: "assign", recordId: i.record, assignedTo: i.member, expectedAssignedTo: null }),
-      (i) => ({ action: "claim", recordId: i.record }),
-      (i) => ({ action: "close", recordId: i.record, reason: "done" }),
-      (i) => ({ action: "reopen", recordId: i.record }),
+      (i) => ({ action: "add_note", conversationId: i.conversation, text: "Across organizations." }),
+      (i) => ({ action: "assign", conversationId: i.conversation, assignedTo: i.member, expectedAssignedTo: null }),
+      (i) => ({ action: "claim", conversationId: i.conversation }),
+      (i) => ({ action: "close", conversationId: i.conversation, reason: "done" }),
+      (i) => ({ action: "reopen", conversationId: i.conversation }),
     ],
-    crossed: [(i) => ({ action: "assign", recordId: i.own.record, assignedTo: i.member, expectedAssignedTo: null })],
+    crossed: [(i) => ({ action: "assign", conversationId: i.own.conversation, assignedTo: i.member, expectedAssignedTo: null })],
   },
   manage_task: {
     refused: [
-      (i) => ({ action: "list", recordId: i.record }),
-      (i) => ({ action: "create", recordId: i.record, name: "Across organizations" }),
+      (i) => ({ action: "list", conversationId: i.conversation }),
+      (i) => ({ action: "create", conversationId: i.conversation, name: "Across organizations" }),
       (i) => ({ action: "create", personId: i.contact, name: "Across organizations" }),
       (i) => ({ action: "update", taskId: i.task, name: "Across organizations" }),
       (i) => ({ action: "complete", taskId: i.task, completed: true }),
     ],
-    crossed: [(i) => ({ action: "create", recordId: i.own.record, name: "Assigned across", assigneeId: i.member })],
+    crossed: [(i) => ({ action: "create", conversationId: i.own.conversation, name: "Assigned across", assigneeId: i.member })],
   },
   pause_sending: {
-    refused: [(i) => ({ target: "campaign", channel: "email", campaignId: i.emailCampaign }), (i) => ({ target: "campaign", channel: "linkedin", campaignId: i.linkedinCampaign }), (i) => ({ target: "follow_ups", recordId: i.record })],
+    refused: [(i) => ({ target: "campaign", channel: "email", campaignId: i.emailCampaign }), (i) => ({ target: "campaign", channel: "linkedin", campaignId: i.linkedinCampaign }), (i) => ({ target: "follow_ups", conversationId: i.conversation })],
   },
   draft_campaign: {
     refused: [
@@ -116,8 +116,8 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
   stop_enrichment: { refused: [(i) => ({ tableId: i.table })] },
   cancel_linkedin_search: { refused: [(i) => ({ searchId: i.search })] },
   send_reply: {
-    refused: [(i) => ({ conversationId: i.conversation, draftId: i.draft, revision: 1, idempotencyKey: randomUUID() })],
-    crossed: [(i) => ({ conversationId: i.own.conversation, draftId: i.draft, revision: 1, idempotencyKey: randomUUID() })],
+    refused: [(i) => ({ threadId: i.thread, draftId: i.draft, revision: 1, idempotencyKey: randomUUID() })],
+    crossed: [(i) => ({ threadId: i.own.thread, draftId: i.draft, revision: 1, idempotencyKey: randomUUID() })],
   },
   preview_campaign_launch: { refused: [(i) => ({ channel: "email", campaignId: i.emailCampaign, purpose: "start" }), (i) => ({ channel: "linkedin", campaignId: i.linkedinCampaign, purpose: "start" })] },
   launch_campaign: { refused: [(i) => ({ channel: "email", campaignId: i.emailCampaign, action: "start", launchToken: "made-up" })] },
@@ -139,7 +139,7 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
       (i) => ({ kind: "delete_draft_campaign", channel: "email", campaignId: i.emailCampaign, actionToken: "made-up" }),
       (i) => ({ kind: "delete_lead", personId: i.lead, actionToken: "made-up" }),
       // These two read the token before the row, so a token built for the row is what reaches the row's check.
-      (i) => ({ kind: "delete_contact", personId: i.contact, actionToken: actionToken("delete_contact", i.contact, { deals: 0, notes: 0, tasks: 0, events: 0, conversations: 0, messages: 0, sends: 0 }) }),
+      (i) => ({ kind: "delete_contact", personId: i.contact, actionToken: actionToken("delete_contact", i.contact, { deals: 0, notes: 0, tasks: 0, events: 0, threads: 0, messages: 0, sends: 0 }) }),
       (i) => ({ kind: "delete_deal", dealId: i.deal, actionToken: actionToken("delete_deal", i.deal, { version: i.dealVersion }) }),
     ],
   },
@@ -193,9 +193,9 @@ describeDb("MCP tools across organizations", () => {
       receivedAt: new Date(Date.now() - 3_600_000),
       attachments: [],
     } as never);
-    const [row] = await sql<{ person: string; conversation: string; record: string; message: string }[]>`
-      select p.id as person, c.id as conversation, c.record_id as record, m.id as message
-      from people p join records r on r.person_id = p.id join conversations c on c.record_id = r.id join messages m on m.conversation_id = c.id
+    const [row] = await sql<{ person: string; thread: string; conversation: string; message: string }[]>`
+      select p.id as person, c.id as thread, c.conversation_id as conversation, m.id as message
+      from people p join conversations r on r.person_id = p.id join threads c on c.conversation_id = r.id join messages m on m.thread_id = c.id
       where p.organization_id = ${target.organizationId} and p.email = ${email}`;
     await sql`update people set lifecycle = 'contact', converted_at = now() where id = ${row.person}`;
     return row;
@@ -221,13 +221,13 @@ describeDb("MCP tools across organizations", () => {
     const [{ id: lead }] = await sql<{ id: string }[]>`insert into people (organization_id, email, full_name, lifecycle) values (${o}, ${`lead-${randomUUID().slice(0, 6)}@acme.test`}, ${`${MARKER} Lead`}, 'lead') returning id`;
     const thread = await seedThread(other, "contact");
     const otherAgent = await mcpCaller(sql, POST, other, ["mcp:read", "mcp:write"]);
-    const drafted = await otherAgent.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversation, subject: "Re: Hello", bodyText: `${MARKER} draft.` });
+    const drafted = await otherAgent.tool("write_reply_draft", { action: "create_manual", threadId: thread.thread, subject: "Re: Hello", bodyText: `${MARKER} draft.` });
     expect(drafted.isError, drafted.text).toBe(false);
-    const [{ id: draft }] = await sql<{ id: string }[]>`select id from drafts where organization_id = ${o} and conversation_id = ${thread.conversation} order by created_at desc limit 1`;
+    const [{ id: draft }] = await sql<{ id: string }[]>`select id from drafts where organization_id = ${o} and thread_id = ${thread.thread} order by created_at desc limit 1`;
     await sql`update drafts set revision = 1 where id = ${draft}`;
     const [{ id: pick }] = await sql<{ id: string }[]>`
-      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, error) values (${o}, ${thread.record}, ${thread.message}, 0, 'failed', 'The model did not answer.') returning id`;
-    const taskDone = await otherAgent.tool("manage_task", { action: "create", recordId: thread.record, name: `${MARKER} task` });
+      insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, status, error) values (${o}, ${thread.conversation}, ${thread.message}, 0, 'failed', 'The model did not answer.') returning id`;
+    const taskDone = await otherAgent.tool("manage_task", { action: "create", conversationId: thread.conversation, name: `${MARKER} task` });
     expect(taskDone.isError, taskDone.text).toBe(false);
     const deal = await seedDeal(other, thread.person);
     const [{ id: stage }] = await sql<{ id: string }[]>`select id from deal_stages where organization_id = ${o} and kind <> 'won' and kind <> 'lost' order by position desc limit 1`;
@@ -249,8 +249,8 @@ describeDb("MCP tools across organizations", () => {
     return {
       lead,
       contact: thread.person,
+      thread: thread.thread,
       conversation: thread.conversation,
-      record: thread.record,
       draft,
       pick,
       task,
@@ -265,7 +265,7 @@ describeDb("MCP tools across organizations", () => {
       replyType,
       linkedinAccount,
       member: other.userId,
-      own: { campaign: await campaign(org, "email"), conversation: ownThread.conversation, record: ownThread.record, deal: ownDeal.dealId, dealVersion: ownDeal.version },
+      own: { campaign: await campaign(org, "email"), thread: ownThread.thread, conversation: ownThread.conversation, deal: ownDeal.dealId, dealVersion: ownDeal.version },
     };
   }
 

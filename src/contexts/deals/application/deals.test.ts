@@ -372,7 +372,7 @@ describe("moveDealStage, updateDeal, deleteDeal", () => {
     await moveDealStage(w.deps, admin, dealId, { stageId: by("Proposal").id, expectedVersion: 2 });
     expect(deal()).toMatchObject({ closedAt: null, stageKind: "open", version: 3 });
     expect(deal().stageChangedAt.toISOString()).toBe("2026-10-16T12:00:03.000Z");
-    expect(w.state().events.filter((e) => e.eventType === "deal.stage_moved")).toHaveLength(3);
+    expect(w.state().events.filter((e) => e.eventType === "deal.type_changed")).toHaveLength(3);
   });
 
   it("stage_changed_at changes only on a move", async () => {

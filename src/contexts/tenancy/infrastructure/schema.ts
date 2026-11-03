@@ -202,7 +202,7 @@ export const mcpRateLimits = pgTable(
 
 /**
  * One row per MCP tool call, for the activity list on Settings, AI agents (MCP). `target` holds the ids the call named
- * (`recordId`, `personId` and the like), never text from the call, so the log keeps no copy of a lead's data. The
+ * (`conversationId`, `personId` and the like), never text from the call, so the log keeps no copy of a lead's data. The
  * history prune deletes rows older than `RETENTION_MCP_TOOL_CALLS_DAYS`.
  */
 export const mcpToolCalls = pgTable(

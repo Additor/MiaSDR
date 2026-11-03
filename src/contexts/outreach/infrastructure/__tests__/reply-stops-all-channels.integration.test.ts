@@ -68,7 +68,7 @@ describeDb("a genuine reply stops all outreach to the person", () => {
     seq += 1;
     return {
       providerMessageId: `m-${seq}-${uniqueKey()}`,
-      threadId: `t-${seq}-${uniqueKey()}`,
+      providerThreadId: `t-${seq}-${uniqueKey()}`,
       rfcMessageId: null,
       inReplyTo: null,
       references: [],

@@ -21,7 +21,7 @@ describeDb("contact delete races", () => {
   let deps: ContactDeleteDeps;
   let deals: typeof import("@/contexts/deals/application/deals");
   let dealsDeps: typeof import("@/composition/deals").dealsDeps;
-  let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
+  let threads: typeof import("@/contexts/conversations/infrastructure/composition");
   let crmStore: typeof import("@/contexts/conversations/infrastructure/drizzle-reply-handling-store").drizzleReplyHandlingStore;
   let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
 
@@ -31,7 +31,7 @@ describeDb("contact delete races", () => {
     deps = (await import("@/composition/person-lifecycle")).contactDeleteDeps;
     deals = await import("@/contexts/deals/application/deals");
     dealsDeps = (await import("@/composition/deals")).dealsDeps;
-    conversations = await import("@/contexts/conversations/infrastructure/composition");
+    threads = await import("@/contexts/conversations/infrastructure/composition");
     crmStore = (await import("@/contexts/conversations/infrastructure/drizzle-reply-handling-store")).drizzleReplyHandlingStore;
     suppression = await (await import("@/test-support/suppression")).suppressionStore();
   }, 60_000);
@@ -47,7 +47,7 @@ describeDb("contact delete races", () => {
     notes: preview.counts.notes,
     tasks: preview.counts.tasks,
     events: preview.counts.events,
-    conversations: preview.counts.conversations,
+    threads: preview.counts.threads,
     messages: preview.counts.messages,
     sends: preview.counts.sends,
   });
@@ -152,16 +152,16 @@ describeDb("contact delete races", () => {
     const lead = await repliedContact(f);
     const preview = await app.previewContactDelete(deps, f.member, lead.personId);
     expect(preview.counts.messages).toBe(1);
-    await conversations.ingestInbound(f.mail({ from: lead.input.from, providerThreadId: lead.input.providerThreadId, inReplyTo: lead.input.rfcMessageId }));
+    await threads.ingestInbound(f.mail({ from: lead.input.from, providerThreadId: lead.input.providerThreadId, inReplyTo: lead.input.rfcMessageId }));
 
     const changed = await settle(app.deleteContact(deps, f.member, lead.personId, { expected: expectedOf(preview) }));
     expect((changed.error as ConflictError).details).toMatchObject({ code: "counts_changed", counts: { messages: 2 } });
-    expect(await kit.count("messages", f.org, `conversation_id = '${lead.conversationId}'`)).toBe(2);
+    expect(await kit.count("messages", f.org, `thread_id = '${lead.threadId}'`)).toBe(2);
 
     const fresh = (changed.error as ConflictError).details?.counts as ContactDeletePreview["counts"];
     await app.deleteContact(deps, f.member, lead.personId, { expected: expectedOf({ ...preview, counts: fresh }) });
     expect(await people(lead.personId)).toBe(0);
-    expect(await kit.count("messages", f.org, `conversation_id = '${lead.conversationId}'`)).toBe(0);
+    expect(await kit.count("messages", f.org, `thread_id = '${lead.threadId}'`)).toBe(0);
   }, 30_000);
 
   it("a message insert that holds the contact's conversation makes the delete wait, then answer counts_changed: no message lands after the purge", async () => {
@@ -170,15 +170,15 @@ describeDb("contact delete races", () => {
     const preview = await app.previewContactDelete(deps, f.member, lead.personId);
     // The holder inserts a message into the thread and keeps it uncommitted: the insert holds the conversation in key share.
     const holder = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      select organization_id, id, channel, account_ref, 'inbound', ${`raced-${f.tag}`}, 'One more thing', now() from conversations where id = ${lead.conversationId}`);
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      select organization_id, id, channel, account_ref, 'inbound', ${`raced-${f.tag}`}, 'One more thing', now() from threads where id = ${lead.threadId}`);
     const deleting = settle(app.deleteContact(deps, f.member, lead.personId, { expected: expectedOf(preview) }));
     await waitForLockWaiters(kit.sql, 1);
     await holder.release();
     const deleted = await deleting;
     expect(sqlState(deleted.error)).toBeNull();
     expect((deleted.error as ConflictError).details).toMatchObject({ code: "counts_changed", counts: { messages: 2 } });
-    expect(await kit.count("messages", f.org, `conversation_id = '${lead.conversationId}'`)).toBe(2);
+    expect(await kit.count("messages", f.org, `thread_id = '${lead.threadId}'`)).toBe(2);
     expect(await people(lead.personId)).toBe(1);
   }, 30_000);
 
@@ -233,7 +233,7 @@ describeDb("contact delete races", () => {
     const lead = await f.ingest();
     await f.emailedBy(lead.personId);
     await f.cycle();
-    expect(await kit.count("sequence_runs", f.org, "status = 'active'")).toBe(1);
+    expect(await kit.count("follow_up_runs", f.org, "status = 'active'")).toBe(1);
     // The campaign email went out two days ago, so no recent send blocks the delete.
     await kit.sql`update campaign_enrollments set status = 'completed', next_send_at = null where person_id = ${lead.personId}`;
     await kit.sql`update sends set claimed_at = now() - interval '2 days' where enrollment_id in (select id from campaign_enrollments where person_id = ${lead.personId})`;

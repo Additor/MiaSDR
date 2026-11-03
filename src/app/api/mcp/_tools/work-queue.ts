@@ -7,8 +7,8 @@ import { defineTool, READ_ONLY } from "./define";
 import { appLinks, counted, DEFAULT_LIST_LIMIT, fencedExcerpt, fencedField, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
 
 const item = z.object({
-  recordId: z.string(),
-  conversationId: z.string().nullable(),
+  conversationId: z.string(),
+  threadId: z.string().nullable(),
   personId: z.string(),
   personName: z.string().nullable(),
   channel: z.string().nullable(),
@@ -30,8 +30,8 @@ const output = z.object({
 function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
   const links = appLinks(ctx);
   return {
-    recordId: i.recordId,
     conversationId: i.conversationId,
+    threadId: i.threadId,
     personId: i.personId,
     personName: i.personName,
     channel: i.channel,
@@ -48,7 +48,7 @@ function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
       contextVersion: i.classification.contextVersion,
     },
     problem: i.problem,
-    appUrl: i.conversationId ? links.conversation(i.conversationId) : links.person(i.personId, i.personLifecycle),
+    appUrl: i.threadId ? links.thread(i.threadId) : links.person(i.personId, i.personLifecycle),
   };
 }
 

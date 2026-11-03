@@ -49,13 +49,13 @@ describeDb("CC on a reply", () => {
       autoReply: false,
     };
     const ingested = await composition.ingestInbound(input);
-    const [record] = await sql`select id, context_version from records where organization_id = ${org}`;
+    const [conversation] = await sql`select id, context_version from conversations where organization_id = ${org}`;
     const { id: draftId } = (await store.insertDraft({
       organizationId: org,
-      recordId: record.id,
-      conversationId: ingested.conversationId,
+      conversationId: conversation.id,
+      threadId: ingested.threadId,
       replyForMessageId: ingested.messageId,
-      expectedContextVersion: record.context_version,
+      expectedContextVersion: conversation.context_version,
       subject: "Re: hello",
       bodyText: "Happy to help.",
       provider: "fake",
@@ -63,7 +63,7 @@ describeDb("CC on a reply", () => {
       request: {},
       response: {},
     })) as { id: string };
-    return { org, actor, deps, address, lead, draftId, conversationId: ingested.conversationId, personId: ingested.personId };
+    return { org, actor, deps, address, lead, draftId, threadId: ingested.threadId, personId: ingested.personId };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
@@ -86,7 +86,7 @@ describeDb("CC on a reply", () => {
 
   it("offers the remembered CCs on the panel, unchecked by default", async () => {
     const f = await fixture();
-    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel!.knownCcs.map((k) => k.email).sort()).toEqual(["boss@acme.test", "peer@acme.test"]);
     expect(panel!.draft!.cc).toEqual([]);
   });
@@ -95,7 +95,7 @@ describeDb("CC on a reply", () => {
     const f = await fixture();
     await sql`insert into mailboxes (organization_id, email_address, status) values (${f.org}, 'Spare-Box@corp.test', 'disabled')`;
     await sql`insert into lead_ccs (organization_id, person_id, email) values (${f.org}, ${f.personId}, 'spare-box@corp.test')`;
-    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel!.knownCcs.map((k) => k.email).sort()).toEqual(["boss@acme.test", "peer@acme.test"]);
     await expect(mgmt.editDraft(f.deps, f.actor, f.draftId, { revision: 1, bodyText: "x", cc: ["spare-box@corp.test"] })).rejects.toBeInstanceOf(ValidationError);
   });
@@ -103,7 +103,7 @@ describeDb("CC on a reply", () => {
   it("hides the lead's own address even when another person row shares it in a different case", async () => {
     const f = await fixture();
     await sql`insert into lead_ccs (organization_id, person_id, email) values (${f.org}, ${f.personId}, ${f.lead})`;
-    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel!.knownCcs.map((k) => k.email)).not.toContain(f.lead);
   });
 
@@ -149,7 +149,7 @@ describeDb("CC on a reply", () => {
     const f = await fixture();
     await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, 'boss@acme.test', 'unsubscribed')`;
     await expect(mgmt.editDraft(f.deps, f.actor, f.draftId, { revision: 1, bodyText: "x", cc: ["boss@acme.test"] })).rejects.toBeInstanceOf(ConflictError);
-    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await mgmt.getReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel!.knownCcs.find((k) => k.email === "boss@acme.test")?.blocked).toBe("suppressed");
   });
 
@@ -175,8 +175,8 @@ describeDb("CC on a reply", () => {
     const a = await fixture(["shared@acme.test"]);
     const b = await fixture([]);
     await expect(mgmt.editDraft(b.deps, b.actor, b.draftId, { revision: 1, bodyText: "x", cc: ["shared@acme.test"] })).rejects.toBeInstanceOf(ValidationError);
-    expect((await mgmt.getReplyPanel(b.deps, b.actor, b.conversationId))!.knownCcs).toEqual([]);
-    expect((await mgmt.getReplyPanel(a.deps, a.actor, a.conversationId))!.knownCcs).toHaveLength(1);
+    expect((await mgmt.getReplyPanel(b.deps, b.actor, b.threadId))!.knownCcs).toEqual([]);
+    expect((await mgmt.getReplyPanel(a.deps, a.actor, a.threadId))!.knownCcs).toHaveLength(1);
   });
 
   it("keeps the CC list when a later edit does not mention it, and clears it with an empty list", async () => {

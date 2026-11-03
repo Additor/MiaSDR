@@ -38,15 +38,15 @@ describeDb("one in-flight email reply per conversation", () => {
 
   async function withDraft(f: ReplyFixture) {
     const r = await receive(f);
-    const p = await panel(f, r.conversationId);
+    const p = await panel(f, r.threadId);
     return { r, draft: p.draft! };
   }
 
   /** A second open draft on the same conversation and context version. The product writes only one; the races need two. */
   async function twin(draftId: string): Promise<string> {
     const [row] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel, subject, ai_body_text, status, provider)
-      select organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel, subject, ai_body_text, 'awaiting_review', provider
+      insert into drafts (organization_id, conversation_id, thread_id, reply_for_message_id, expected_context_version, channel, subject, ai_body_text, status, provider)
+      select organization_id, conversation_id, thread_id, reply_for_message_id, expected_context_version, channel, subject, ai_body_text, 'awaiting_review', provider
       from drafts where id = ${draftId} returning id`;
     return row.id as string;
   }
@@ -82,10 +82,10 @@ describeDb("one in-flight email reply per conversation", () => {
     // postgres.js awaits an array a transaction returns, so the promises leave it inside an object.
     const { approvals } = await sql.begin(async (tx) => {
       // Hold the conversation so both approvals queue on its lock before either reads the drafts.
-      await tx`select id from conversations where id = ${r.conversationId} for update`;
+      await tx`select id from threads where id = ${r.threadId} for update`;
       const started = [draft.id, other].map((id) => mgmt.approveAndSendDraft(f.replyDeps, f.actor, id, { revision: 1, idempotencyKey: sendKey() }));
       started.forEach((p) => p.catch(() => undefined));
-      await waitForLockWaiters(sql, 2, 10_000, "%conversations%for update%");
+      await waitForLockWaiters(sql, 2, 10_000, "%threads%for update%");
       return { approvals: started };
     });
 
@@ -109,16 +109,16 @@ describeDb("one in-flight email reply per conversation", () => {
     const seen = watchMailer(f);
 
     const { ingest, approval } = await sql.begin(async (tx) => {
-      // Ingest takes the conversation's key share with its message insert and then waits here, on the record. Once it goes
+      // Ingest takes the conversation's key share with its message insert and then waits here, on the conversation. Once it goes
       // on it retires the draft, so an approval that held the draft while it waited for the conversation would deadlock.
-      await tx`select id from records where id = (select record_id from drafts where id = ${draft.id}) for update`;
+      await tx`select id from conversations where id = (select conversation_id from drafts where id = ${draft.id}) for update`;
       const ingest = composition.ingestInbound(mail(f, { providerThreadId: r.input.providerThreadId, bodyText: "One more question." }));
       ingest.catch(() => undefined);
-      await waitForLockWaiters(sql, 1, 10_000, "%update%records%");
+      await waitForLockWaiters(sql, 1, 10_000, "%update%conversations%");
       // The approval waits on the conversation behind the ingest, holding nothing.
       const approval = mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() });
       approval.catch(() => undefined);
-      await waitForLockWaiters(sql, 1, 10_000, "%conversations%for update%");
+      await waitForLockWaiters(sql, 1, 10_000, "%threads%for update%");
       return { ingest, approval };
     });
 
@@ -172,15 +172,15 @@ describeDb("one in-flight email reply per conversation", () => {
     const f = await fixture();
     const { r } = await withDraft(f);
     const [chat] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
-      select organization_id, record_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from conversations where id = ${r.conversationId} returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id)
+      select organization_id, conversation_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from threads where id = ${r.threadId} returning id`;
     const [linkedin] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status)
-      select organization_id, record_id, ${chat.id}, 1, 'linkedin', 'Tuesday works.', 'awaiting_review' from conversations where id = ${chat.id}
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, ai_body_text, status)
+      select organization_id, conversation_id, ${chat.id}, 1, 'linkedin', 'Tuesday works.', 'awaiting_review' from threads where id = ${chat.id}
       returning id`;
     // With the chat locked elsewhere, the refusal still comes at once: the email path takes no lock on it.
     await sql.begin(async (tx) => {
-      await tx`select id from conversations where id = ${chat.id} for update`;
+      await tx`select id from threads where id = ${chat.id} for update`;
       await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, linkedin.id, { revision: 1, idempotencyKey: sendKey() })).rejects.toThrow("This is not an email conversation.");
     });
   });

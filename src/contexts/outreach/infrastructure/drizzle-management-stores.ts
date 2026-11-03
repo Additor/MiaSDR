@@ -14,7 +14,7 @@ import { UNCONFIRMED_AFTER_MINUTES } from "../application/campaign-management";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import type { SendResolutionStore } from "../application/send-resolution";
 import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
-import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
+import { inboxThreadsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
@@ -330,9 +330,9 @@ export const drizzleCampaignStore: CampaignStore = {
       .limit(query.pageSize)
       .offset((Math.max(1, query.page) - 1) * query.pageSize);
     const repliedPeople = [...new Set(rows.filter((r) => r.status === "replied").map((r) => r.personId))];
-    const threads = await inboxConversationsOfPeople(organizationId, "email", repliedPeople);
+    const threads = await inboxThreadsOfPeople(organizationId, "email", repliedPeople);
     const [counts, sent] = await Promise.all([tabCounts(organizationId, id, query.campaignStatus), sentCount(organizationId, id)]);
-    return { rows: rows.map((r) => ({ ...r, inboxConversationId: threads.get(r.personId) ?? null })), total, counts, sent };
+    return { rows: rows.map((r) => ({ ...r, inboxThreadId: threads.get(r.personId) ?? null })), total, counts, sent };
   },
 
   async waitingOnUnavailableMailbox(organizationId, id) {

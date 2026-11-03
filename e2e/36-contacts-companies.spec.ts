@@ -189,8 +189,8 @@ test.describe("contacts and companies", () => {
   test("a contact with no reply record takes a note and a task", async ({ page }) => {
     await signInAdmin(page);
     const w = await seed(page.request);
-    const [records] = await sql()`select count(*)::int as n from records where person_id = ${w.cora}`;
-    expect(records.n, "Cora has no reply record").toBe(0);
+    const [conversations] = await sql()`select count(*)::int as n from conversations where person_id = ${w.cora}`;
+    expect(conversations.n, "Cora has no reply record").toBe(0);
     await page.goto(`/crm/contacts/${w.cora}`);
 
     const note = `Prefers email after 3pm ${SUFFIX}`;
@@ -216,8 +216,8 @@ test.describe("contacts and companies", () => {
     await page.getByRole("tab", { name: /Notes/ }).click();
     await expect(page.getByText(note)).toBeVisible();
     const [stored] = await sql()`
-      select (select count(*)::int from notes where person_id = ${w.cora} and record_id is null and body = ${note}) as notes,
-             (select count(*)::int from tasks where person_id = ${w.cora} and record_id is null and name = ${task}) as tasks`;
+      select (select count(*)::int from notes where person_id = ${w.cora} and conversation_id is null and body = ${note}) as notes,
+             (select count(*)::int from tasks where person_id = ${w.cora} and conversation_id is null and name = ${task}) as tasks`;
     expect(stored).toEqual({ notes: 1, tasks: 1 });
   });
 
@@ -274,9 +274,9 @@ test.describe("contacts and companies", () => {
     const domain = `vega-${SUFFIX}.test`;
     const vega = `S36 Vega ${SUFFIX}`;
     const { personId } = await seedContact(page.request, { firstName: "Vic", lastName: `Vega ${SUFFIX}`, email: `vic@${domain}`, companyDomain: domain, companyName: vega });
-    const preview = (await (await page.request.get(`/api/contacts/${personId}/delete-preview`)).json()) as { counts: { deals: { won: number; lost: number }; notes: number; tasks: number; events: number; conversations: number; messages: number; sends: number } };
+    const preview = (await (await page.request.get(`/api/contacts/${personId}/delete-preview`)).json()) as { counts: { deals: { won: number; lost: number }; notes: number; tasks: number; events: number; threads: number; messages: number; sends: number } };
     const { counts } = preview;
-    const query = new URLSearchParams({ deals: String(counts.deals.won + counts.deals.lost), notes: String(counts.notes), tasks: String(counts.tasks), events: String(counts.events), conversations: String(counts.conversations), messages: String(counts.messages), sends: String(counts.sends) });
+    const query = new URLSearchParams({ deals: String(counts.deals.won + counts.deals.lost), notes: String(counts.notes), tasks: String(counts.tasks), events: String(counts.events), threads: String(counts.threads), messages: String(counts.messages), sends: String(counts.sends) });
     expect((await page.request.delete(`/api/contacts/${personId}?${query}`)).status(), "delete the last contact").toBe(200);
 
     await page.goto(`/crm/companies?q=${encodeURIComponent(vega)}`);

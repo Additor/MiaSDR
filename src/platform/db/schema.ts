@@ -6,6 +6,6 @@ export * from "@/contexts/integrations/infrastructure/schema";
 export * from "@/contexts/outreach/infrastructure/schema";
 export * from "@/platform/jobs/schema";
 export * from "@/contexts/conversations/infrastructure/schema";
-export * from "@/contexts/conversations/after-reply/infrastructure/sequences-schema";
+export * from "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema";
 export * from "@/contexts/grid/infrastructure/schema";
 export * from "@/contexts/deals/infrastructure/schema";

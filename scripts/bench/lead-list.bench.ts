@@ -26,11 +26,11 @@ describeDb("lead list benchmark", () => {
       select ${o}, 'bulk' || g || '-' || ${org.slug} || '@la.test', 'Bulk ' || g from generate_series(1, ${LEADS}) g`;
     await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status)
       select ${o}, ${campaign}, id, 'email', case when random() < 0.1 then 'replied' else 'active' end from people where organization_id = ${o}`;
-    await sql`insert into records (organization_id, person_id, reply_type_set_id) select ${o}, id, ${pipeline} from people where organization_id = ${o}`;
-    await sql`insert into conversations (organization_id, record_id, channel, account_ref) select ${o}, id, 'email', ${"bulk-" + org.slug} from records where organization_id = ${o}`;
-    await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      select ${o}, c.id, 'email', ${"bulk-" + org.slug}, 'outbound', 'bulk-' || c.id, 'hello', now() - (random() * interval '60 days') from conversations c where c.organization_id = ${o}`;
-    for (const table of ["people", "campaign_enrollments", "messages", "conversations", "records"]) await sql`analyze ${sql(table)}`;
+    await sql`insert into conversations (organization_id, person_id, reply_type_set_id) select ${o}, id, ${pipeline} from people where organization_id = ${o}`;
+    await sql`insert into threads (organization_id, conversation_id, channel, account_ref) select ${o}, id, 'email', ${"bulk-" + org.slug} from conversations where organization_id = ${o}`;
+    await sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      select ${o}, c.id, 'email', ${"bulk-" + org.slug}, 'outbound', 'bulk-' || c.id, 'hello', now() - (random() * interval '60 days') from threads c where c.organization_id = ${o}`;
+    for (const table of ["people", "campaign_enrollments", "messages", "threads", "conversations"]) await sql`analyze ${sql(table)}`;
   }, 600_000);
 
   afterAll(async () => {

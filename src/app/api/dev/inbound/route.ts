@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     subject?: string;
     bodyText?: string;
     inReplyTo?: string | null;
-    threadId?: string;
+    providerThreadId?: string;
     cc?: string[];
   };
   const email = provider.deliverInbound(body.mailbox, {
@@ -29,8 +29,8 @@ export async function POST(request: Request) {
     ...(body.subject !== undefined ? { subject: body.subject } : {}),
     ...(body.bodyText !== undefined ? { bodyText: body.bodyText } : {}),
     ...(body.inReplyTo !== undefined ? { inReplyTo: body.inReplyTo } : {}),
-    ...(body.threadId !== undefined ? { threadId: body.threadId } : {}),
+    ...(body.providerThreadId !== undefined ? { providerThreadId: body.providerThreadId } : {}),
     ...(Array.isArray(body.cc) ? { cc: body.cc } : {}),
   });
-  return NextResponse.json({ delivered: email.providerMessageId, threadId: email.threadId });
+  return NextResponse.json({ delivered: email.providerMessageId, providerThreadId: email.providerThreadId });
 }

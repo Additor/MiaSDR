@@ -9,7 +9,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/people/[per
   return withActor(async (actor) => listTasks(taskDeps(), actor, { state: "all", personId }));
 }
 
-/** A task on the person without a reply record (`record_id` null). */
+/** A task on the person without a reply record (`conversation_id` null). */
 export async function POST(request: Request, ctx: RouteContext<"/api/people/[personId]/tasks">) {
   const { personId } = await ctx.params;
   const body = z

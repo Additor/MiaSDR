@@ -78,13 +78,13 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
     operatorInstructions: ctx.operatorInstructions,
     businessContext: ctx.businessContext,
   });
-  // The closed set is enforced here, whatever the adapter did: a key outside the pipeline never reaches the record.
+  // The closed set is enforced here, whatever the adapter did: a key outside the pipeline never reaches the conversation.
   const parsed = schema.safeParse(result.output);
   if (!parsed.success) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
-  const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.subcategoryKey);
+  const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.replyTypeKey);
   if (!proposal) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
 
-  // The store decides under the record lock (`decideReplyType`): the hold, the draft, the settle and the follow-ups.
+  // The store decides under the conversation lock (`decideReplyType`): the hold, the draft, the settle and the follow-ups.
   const stopRequested = stopRequestedBy(ctx.messageText, proposal);
 
   const outcome = await deps.jobs.finishClassification({
@@ -110,8 +110,8 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
   const result = await produceDraft(provider, ctx);
   const written = await deps.jobs.insertDraft(job, {
     organizationId: ctx.organizationId,
-    recordId: ctx.recordId,
     conversationId: ctx.conversationId,
+    threadId: ctx.threadId,
     replyForMessageId: ctx.replyForMessageId,
     expectedContextVersion: ctx.contextVersion,
     channel: ctx.channel,

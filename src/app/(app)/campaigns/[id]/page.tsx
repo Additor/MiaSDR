@@ -19,7 +19,7 @@ import { campaignLeadStatus } from "@/contexts/outreach/domain/campaign-lead-sta
 import { stepsEditable, stepsWithPlaceholders, validateSteps } from "@/contexts/outreach/domain/campaign";
 import { campaignSummary, leadsInProgress, parseCampaignTab, parseLeadsQuery, sendingRulesLine, startBlockers, startSummaryLines } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
-import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
+import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
 import { campaignDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
@@ -211,8 +211,8 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
                                     <Link href={`/leads/${row.personId}`} className="underline-offset-4 focus-ring hover:underline">
                                       {row.personName ?? row.email ?? "Unnamed lead"}
                                     </Link>
-                                    {row.inboxConversationId && (
-                                      <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
+                                    {row.inboxThreadId && (
+                                      <Link href={`/inbox/${row.inboxThreadId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
                                         Open in Inbox
                                       </Link>
                                     )}

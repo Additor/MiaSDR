@@ -27,7 +27,7 @@ describeDb("send status guard", () => {
     const deps: EngineDeps = { store: outreachStore, provider, clock: { now: () => current }, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40) };
     // Every settle call is followed by the late calls of a slow worker. None of them may change the row.
     const late = async (claim: Parameters<typeof outreachStore.markFailed>[0]) => {
-      await outreachStore.markSent(claim, { providerMessageId: "late-pm", threadId: "late-th" }, current);
+      await outreachStore.markSent(claim, { providerMessageId: "late-pm", providerThreadId: "late-th" }, current);
       await outreachStore.markFailed(claim, "late failure", current, 5, 3);
       await outreachStore.markUnknown(claim, "late unknown");
       await outreachStore.abandon(claim, "suppressed", current);
@@ -93,7 +93,7 @@ describeDb("send status guard", () => {
     await sql`update sends set status = 'sending', attempt = 2, body = 'attempt 2', rfc_message_id = '<two@test>' where id = ${f.sendId}`;
     const stale = { sendId: f.sendId, attempt: 1, enrollmentId: f.enrollment, stepNumber: 1, nextStep: { waitDays: 2 }, mailbox: { id: f.mailbox } } as never;
     await outreachStore.recordRendered(stale, { subject: "late", body: "attempt 1", rfcMessageId: "<one@test>" } as never);
-    await outreachStore.markSent(stale, { providerMessageId: "late-pm", threadId: "late-th" }, current);
+    await outreachStore.markSent(stale, { providerMessageId: "late-pm", providerThreadId: "late-th" }, current);
     await outreachStore.markFailed(stale, "late failure", current, 5, 3);
     await outreachStore.markUnknown(stale, "late unknown");
     await outreachStore.abandon(stale, "suppressed", current);
@@ -117,7 +117,7 @@ describeDb("send status guard", () => {
       (await sql`insert into sends (organization_id, kind, channel, status, mailbox_id, to_address, requested_by, claimed_at)
         values (${f.org}, 'test', 'email', ${status}, ${f.mailbox}, 'dev@example.com', ${user}, now()) returning id`)[0].id as string;
     const sentId = await insert("sending");
-    await drizzleTestSendStore.markSent(sentId, { providerMessageId: "t1", threadId: null }, current);
+    await drizzleTestSendStore.markSent(sentId, { providerMessageId: "t1", providerThreadId: null }, current);
     await drizzleTestSendStore.markFailed(sentId, "late");
     await drizzleTestSendStore.markUnknown(sentId, "late");
     await drizzleTestSendStore.abandon(sentId, "late");
@@ -126,7 +126,7 @@ describeDb("send status guard", () => {
 
     const unknownId = await insert("sending");
     await drizzleTestSendStore.markUnknown(unknownId, "timeout");
-    await drizzleTestSendStore.markSent(unknownId, { providerMessageId: "t2", threadId: null }, current);
+    await drizzleTestSendStore.markSent(unknownId, { providerMessageId: "t2", providerThreadId: null }, current);
     await drizzleTestSendStore.markFailed(unknownId, "late");
     expect(await row(unknownId)).toMatchObject({ status: "unknown", error: "timeout" });
     await drizzleTestSendStore.settle(unknownId, { status: "failed", error: "not found", now: current } as never);

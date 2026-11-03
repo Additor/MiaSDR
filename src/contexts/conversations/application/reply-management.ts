@@ -9,7 +9,7 @@ import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendBlocker, type SendContext, type SentFinder } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
-import { checkNoneInFlight, checkRecordOpen, checkReplyText, replyRefusal, type ReplyChannel } from "../domain/reply-send";
+import { checkNoneInFlight, checkConversationOpen, checkReplyText, replyRefusal, type ReplyChannel } from "../domain/reply-send";
 
 /**
  * Human actions on drafts. Permissions: any member of the organization may edit, regenerate, discard,
@@ -50,9 +50,9 @@ export type ReplyPanel = PanelData & { aiConfigured: boolean; aiOff: string | nu
 
 const readerOf = (actor: Actor) => (isOwnerOrAdmin(actor.role) ? "admin" : "member");
 
-export async function getReplyPanel(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<ReplyPanel | null> {
-  assertId(conversationId, "Conversation");
-  const panel = await deps.store.panel(actor.organizationId, conversationId);
+export async function getReplyPanel(deps: ReplyDeps, actor: Actor, threadId: string): Promise<ReplyPanel | null> {
+  assertId(threadId, "Conversation");
+  const panel = await deps.store.panel(actor.organizationId, threadId);
   if (!panel) throw new NotFoundError("Conversation not found");
   if (panel.channel !== "email") return null;
   const status = await deps.ai.status(actor.organizationId);
@@ -67,13 +67,13 @@ async function requireProvider(deps: ReplyDeps, actor: Actor) {
 }
 
 /** Generates a draft on request, for threads where the job made none (or AI was off when the reply arrived). */
-export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<{ draftId: string }> {
-  assertId(conversationId, "Conversation");
+export async function requestDraft(deps: ReplyDeps, actor: Actor, threadId: string): Promise<{ draftId: string }> {
+  assertId(threadId, "Conversation");
   const provider = await requireProvider(deps, actor);
-  const ctx = await deps.store.draftContext(actor.organizationId, conversationId);
+  const ctx = await deps.store.draftContext(actor.organizationId, threadId);
   if (!ctx) throw new NotFoundError("Conversation not found");
-  const panel = await deps.store.panel(actor.organizationId, conversationId);
-  if (panel) checkRecordOpen(panel, ctx.channel);
+  const panel = await deps.store.panel(actor.organizationId, threadId);
+  if (panel) checkConversationOpen(panel, ctx.channel);
   if (panel?.draft && UNSENT_DRAFT_STATUSES.includes(panel.draft.status)) throw new ConflictError("This thread already has a draft. Edit or regenerate it.");
   checkNoneInFlight(panel?.draft && IN_FLIGHT_DRAFT_STATUSES.includes(panel.draft.status) ? panel.draft : null, null, ctx.channel);
   try {
@@ -82,8 +82,8 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
       draftId: personDraftId(
         await deps.store.insertDraft({
           organizationId: ctx.organizationId,
-          recordId: ctx.recordId,
           conversationId: ctx.conversationId,
+          threadId: ctx.threadId,
           replyForMessageId: ctx.replyForMessageId,
           expectedContextVersion: ctx.contextVersion,
           channel: ctx.channel,
@@ -131,7 +131,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
   if (!["awaiting_review", "failed", "stale"].includes(ctx.draft.status)) {
     throw new ConflictError(`A draft that is ${ctx.draft.status.replace(/_/g, " ")} cannot be regenerated.`);
   }
-  checkRecordOpen(ctx, ctx.channel);
+  checkConversationOpen(ctx, ctx.channel);
   const note = input.note?.trim().slice(0, 2000) || null;
   try {
     const result = await produceDraft(provider, ctx, { feedback: note, previousDraft: ctx.draft.editedBodyText ?? ctx.draft.aiBodyText });
@@ -140,8 +140,8 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
       draftId: personDraftId(
         await deps.store.insertDraft({
           organizationId: ctx.organizationId,
-          recordId: ctx.recordId,
           conversationId: ctx.conversationId,
+          threadId: ctx.threadId,
           replyForMessageId: ctx.replyForMessageId,
           expectedContextVersion: ctx.contextVersion,
           channel: ctx.channel,
@@ -177,8 +177,8 @@ function ccMessage(error: ReplyCcError): string {
 }
 
 /** Checks a CC choice against the addresses seen on the lead's mail, then against suppression and do-not-contact. */
-async function checkCc(deps: ReplyDeps, actor: Actor, target: { draftId: string } | { conversationId: string }, chosen: string[]): Promise<string[]> {
-  const ctx = "draftId" in target ? await deps.store.ccContext(actor.organizationId, target.draftId) : await deps.store.ccContextForConversation(actor.organizationId, target.conversationId);
+async function checkCc(deps: ReplyDeps, actor: Actor, target: { draftId: string } | { threadId: string }, chosen: string[]): Promise<string[]> {
+  const ctx = "draftId" in target ? await deps.store.ccContext(actor.organizationId, target.draftId) : await deps.store.ccContextForThread(actor.organizationId, target.threadId);
   if (!ctx) throw new NotFoundError("draftId" in target ? "Draft not found" : "Conversation not found");
   const result = validateReplyCc(chosen, ctx);
   if (!result.ok) throw new ValidationError(ccMessage(result.error));
@@ -202,10 +202,10 @@ async function checkCc(deps: ReplyDeps, actor: Actor, target: { draftId: string 
 export async function createManualDraft(
   deps: ReplyDeps,
   actor: Actor,
-  conversationId: string,
+  threadId: string,
   input: { subject: string | null | undefined; bodyText: string; cc?: string[]; channel?: ReplyChannel; expectedOpenRevision?: number | null; expectedOpenDraftId?: string },
 ): Promise<{ draftId: string; revision: number }> {
-  assertId(conversationId, "Conversation");
+  assertId(threadId, "Conversation");
   const channel = input.channel ?? "email";
   let subject: string | null = null;
   let bodyText: string;
@@ -218,10 +218,10 @@ export async function createManualDraft(
     subject = checked.subject;
     bodyText = checked.bodyText;
   }
-  const cc = input.cc && input.cc.length > 0 ? await checkCc(deps, actor, { conversationId }, input.cc) : [];
+  const cc = input.cc && input.cc.length > 0 ? await checkCc(deps, actor, { threadId }, input.cc) : [];
   const created = await deps.store.createManualDraft({
     organizationId: actor.organizationId,
-    conversationId,
+    threadId,
     channel,
     subject,
     bodyText,
@@ -330,7 +330,7 @@ export async function approveAndSendDraft(
       rfcMessageId: send.rfcMessageId,
       inReplyTo: send.inReplyTo,
       references: send.references,
-      threadId: send.threadId,
+      providerThreadId: send.providerThreadId,
       organizationId: send.organizationId,
     });
     await deps.store.markSent(send, sent, deps.now());
@@ -419,14 +419,14 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
 export async function setReplyType(
   deps: ReplyDeps,
   actor: Actor,
-  conversationId: string,
+  threadId: string,
   input: { replyTypeKey: string | null; expectedContextVersion: number },
 ) {
-  assertId(conversationId, "Conversation");
+  assertId(threadId, "Conversation");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
   return deps.store.applyHumanReplyTypePick({
     organizationId: actor.organizationId,
-    conversationId,
+    threadId,
     replyTypeKey: input.replyTypeKey,
     expectedContextVersion: input.expectedContextVersion,
     actorUserId: actor.userId,
@@ -435,9 +435,9 @@ export async function setReplyType(
 }
 
 /** One click: puts the sender's address on the suppression list and stops their sequences. Never done by the AI. */
-export async function suppressSender(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<{ email: string }> {
-  assertId(conversationId, "Conversation");
-  return deps.store.suppressSender({ organizationId: actor.organizationId, conversationId, actorUserId: actor.userId });
+export async function suppressSender(deps: ReplyDeps, actor: Actor, threadId: string): Promise<{ email: string }> {
+  assertId(threadId, "Conversation");
+  return deps.store.suppressSender({ organizationId: actor.organizationId, threadId, actorUserId: actor.userId });
 }
 
 export type { SendContext };

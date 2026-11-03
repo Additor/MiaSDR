@@ -44,7 +44,7 @@ describe("parseGmailMessage headers", () => {
     );
     expect(parsed).toMatchObject({
       providerMessageId: "m1",
-      threadId: "t1",
+      providerThreadId: "t1",
       rfcMessageId: "<id1@example.com>",
       inReplyTo: "<a@acme.com>",
       references: ["<x@acme.com>", "<a@acme.com>"],

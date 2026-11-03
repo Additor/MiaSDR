@@ -7,20 +7,20 @@ import { seedWorld, uid, type World } from "../../../test-support/full-world";
  * versions stay as written. Each test names the trigger it protects, so dropping the trigger fails exactly that test.
  * Every trigger also gets a pass case for the update paths the application uses. Needs TEST_DATABASE_URL.
  */
-const IDENTITY = /conversations identity is immutable/;
+const IDENTITY = /threads identity is immutable/;
 const KEYS = /reply_types keys are immutable/;
 const KNOWLEDGE = /knowledge_document_versions is append-only/;
 const KNOWLEDGE_DELETE = /knowledge_document_versions is append-only: rows cannot be deleted directly/;
-const VERSION_IDENTITY = /sequence_versions identity is immutable/;
+const VERSION_IDENTITY = /follow_up_versions identity is immutable/;
 const VERSION_FROZEN = /a published sequence version is frozen/;
 const VERSION_DELETE = /a published sequence version cannot be deleted directly/;
-const STEPS_FROZEN = /sequence_steps of a published sequence version are frozen/;
+const STEPS_FROZEN = /follow_up_steps of a published sequence version are frozen/;
 
 /** Columns each trigger guards. The foreign key scan below fails if an ON DELETE/UPDATE SET NULL action could write one. */
 const GUARDED: Record<string, string[]> = {
-  conversations: ["channel", "account_ref", "provider_thread_id", "provider_contact_id"],
+  threads: ["channel", "account_ref", "provider_thread_id", "provider_contact_id"],
   reply_types: ["key", "group_key", "reply_type_set_id"],
-  sequence_versions: ["organization_id", "sequence_id", "version", "status", "published_at"],
+  follow_up_versions: ["organization_id", "flow_id", "version", "status", "published_at"],
   people: ["lifecycle", "converted_at"],
   deal_stages: ["kind"],
   deals: ["person_id", "organization_id"],
@@ -40,24 +40,24 @@ describeDb("immutable identity and versions", () => {
   });
 
   /** A sequence with a published version 1 that holds one step. Returns the ids. */
-  async function sequenceWithPublished(w: World) {
-    const [seq] = await sql`insert into sequences (organization_id, name) values (${w.org}, ${"s-" + uid()}) returning id`;
-    const [version] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${seq.id}, 1, 'draft') returning id`;
+  async function flowWithPublished(w: World) {
+    const [seq] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"s-" + uid()}) returning id`;
+    const [version] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${seq.id}, 1, 'draft') returning id`;
     const [step] = await sql`
-      insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+      insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${w.org}, ${version.id}, 1, 'reply', 'Reply', 0, 'Answer the question.') returning id`;
-    await sql`update sequence_versions set status = 'published', published_at = now(), updated_at = now() where id = ${version.id}`;
+    await sql`update follow_up_versions set status = 'published', published_at = now(), updated_at = now() where id = ${version.id}`;
     return { sequence: seq.id as string, version: version.id as string, step: step.id as string };
   }
 
-  describe("conversations_identity_trg", () => {
+  describe("threads_identity_trg", () => {
     it("raises when channel, account_ref, provider_thread_id or provider_contact_id change", async () => {
       const w = await world();
-      await expect(sql`update conversations set channel = 'linkedin' where id = ${w.conversation}`).rejects.toThrow(IDENTITY);
-      await expect(sql`update conversations set account_ref = 'other@t8.test' where id = ${w.conversation}`).rejects.toThrow(IDENTITY);
-      await expect(sql`update conversations set provider_thread_id = 'thread-1' where id = ${w.conversation}`).rejects.toMatchObject({ code: "23000" });
-      await expect(sql`update conversations set provider_contact_id = 'contact-1' where id = ${w.conversation}`).rejects.toThrow(IDENTITY);
-      const [row] = await sql`select channel, account_ref from conversations where id = ${w.conversation}`;
+      await expect(sql`update threads set channel = 'linkedin' where id = ${w.thread}`).rejects.toThrow(IDENTITY);
+      await expect(sql`update threads set account_ref = 'other@t8.test' where id = ${w.thread}`).rejects.toThrow(IDENTITY);
+      await expect(sql`update threads set provider_thread_id = 'thread-1' where id = ${w.thread}`).rejects.toMatchObject({ code: "23000" });
+      await expect(sql`update threads set provider_contact_id = 'contact-1' where id = ${w.thread}`).rejects.toThrow(IDENTITY);
+      const [row] = await sql`select channel, account_ref from threads where id = ${w.thread}`;
       expect(row.channel).toBe("email");
       expect(row.account_ref).toBe("me@" + w.tag + ".test");
     });
@@ -65,9 +65,9 @@ describeDb("immutable identity and versions", () => {
     it("allows the update paths the application uses", async () => {
       const w = await world();
       // updated_at touches (reply and inbound stores), status, and a same-value write.
-      await sql`update conversations set updated_at = now() where id = ${w.conversation}`;
-      await sql`update conversations set status = 'closed' where id = ${w.conversation}`;
-      await sql`update conversations set channel = channel, account_ref = account_ref, provider_thread_id = provider_thread_id where id = ${w.conversation}`;
+      await sql`update threads set updated_at = now() where id = ${w.thread}`;
+      await sql`update threads set status = 'closed' where id = ${w.thread}`;
+      await sql`update threads set channel = channel, account_ref = account_ref, provider_thread_id = provider_thread_id where id = ${w.thread}`;
     });
   });
 
@@ -125,93 +125,93 @@ describeDb("immutable identity and versions", () => {
     });
   });
 
-  describe("sequence_versions_frozen_trg", () => {
+  describe("follow_up_versions_frozen_trg", () => {
     it("raises when the identity of any version changes", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
-      const [draft] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
-      await expect(sql`update sequence_versions set version = 7 where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
-      const [other] = await sql`insert into sequences (organization_id, name) values (${w.org}, ${"o-" + uid()}) returning id`;
-      await expect(sql`update sequence_versions set sequence_id = ${other.id} where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
+      const s = await flowWithPublished(w);
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      await expect(sql`update follow_up_versions set version = 7 where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
+      const [other] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"o-" + uid()}) returning id`;
+      await expect(sql`update follow_up_versions set flow_id = ${other.id} where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
     });
 
     it("raises when a published version changes status or published_at", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
-      await expect(sql`update sequence_versions set status = 'draft', published_at = null where id = ${s.version}`).rejects.toThrow(VERSION_FROZEN);
-      await expect(sql`update sequence_versions set published_at = now() - interval '1 day' where id = ${s.version}`).rejects.toThrow(VERSION_FROZEN);
+      const s = await flowWithPublished(w);
+      await expect(sql`update follow_up_versions set status = 'draft', published_at = null where id = ${s.version}`).rejects.toThrow(VERSION_FROZEN);
+      await expect(sql`update follow_up_versions set published_at = now() - interval '1 day' where id = ${s.version}`).rejects.toThrow(VERSION_FROZEN);
     });
 
     it("allows the draft to published transition and updated_at touches", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
+      const s = await flowWithPublished(w);
       // The draft is edited, then published: the same statement the store uses. An updated_at touch on the published row passes.
-      const [draft] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
-      await sql`update sequence_versions set updated_at = now() where id = ${draft.id}`;
-      await sql`update sequence_versions set status = 'published', published_at = now(), updated_at = now() where id = ${draft.id}`;
-      await sql`update sequence_versions set updated_at = now() where id = ${s.version}`;
-      const [row] = await sql`select status from sequence_versions where id = ${draft.id}`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      await sql`update follow_up_versions set updated_at = now() where id = ${draft.id}`;
+      await sql`update follow_up_versions set status = 'published', published_at = now(), updated_at = now() where id = ${draft.id}`;
+      await sql`update follow_up_versions set updated_at = now() where id = ${s.version}`;
+      const [row] = await sql`select status from follow_up_versions where id = ${draft.id}`;
       expect(row.status).toBe("published");
     });
   });
 
-  describe("sequence_versions_no_delete_trg", () => {
+  describe("follow_up_versions_no_delete_trg", () => {
     it("raises on a direct delete of a published version, allows a draft, and passes through the sequence delete", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
-      await expect(sql`delete from sequence_versions where id = ${s.version}`).rejects.toThrow(VERSION_DELETE);
-      const [draft] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
-      await sql`delete from sequence_versions where id = ${draft.id}`;
-      await sql`delete from sequences where id = ${s.sequence}`;
-      expect((await sql`select 1 from sequence_versions where sequence_id = ${s.sequence}`).length).toBe(0);
-      expect((await sql`select 1 from sequence_steps where id = ${s.step}`).length).toBe(0);
+      const s = await flowWithPublished(w);
+      await expect(sql`delete from follow_up_versions where id = ${s.version}`).rejects.toThrow(VERSION_DELETE);
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      await sql`delete from follow_up_versions where id = ${draft.id}`;
+      await sql`delete from follow_up_flows where id = ${s.sequence}`;
+      expect((await sql`select 1 from follow_up_versions where flow_id = ${s.sequence}`).length).toBe(0);
+      expect((await sql`select 1 from follow_up_steps where id = ${s.step}`).length).toBe(0);
     });
   });
 
-  describe("sequence_steps_frozen_trg", () => {
+  describe("follow_up_steps_frozen_trg", () => {
     it("raises on insert, update and delete under a published version", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
+      const s = await flowWithPublished(w);
       await expect(
-        sql`insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+        sql`insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
             values (${w.org}, ${s.version}, 2, 'follow_up', 'Later', 60, 'Nudge.')`,
       ).rejects.toThrow(STEPS_FROZEN);
-      await expect(sql`update sequence_steps set ai_instructions = 'Changed.' where id = ${s.step}`).rejects.toThrow(STEPS_FROZEN);
-      await expect(sql`delete from sequence_steps where id = ${s.step}`).rejects.toThrow(STEPS_FROZEN);
-      const [row] = await sql`select ai_instructions from sequence_steps where id = ${s.step}`;
+      await expect(sql`update follow_up_steps set ai_instructions = 'Changed.' where id = ${s.step}`).rejects.toThrow(STEPS_FROZEN);
+      await expect(sql`delete from follow_up_steps where id = ${s.step}`).rejects.toThrow(STEPS_FROZEN);
+      const [row] = await sql`select ai_instructions from follow_up_steps where id = ${s.step}`;
       expect(row.ai_instructions).toBe("Answer the question.");
     });
 
     it("raises when a step moves from a draft into a published version", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
-      const [draft] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const s = await flowWithPublished(w);
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
       const [step] = await sql`
-        insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+        insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${w.org}, ${draft.id}, 1, 'reply', 'Reply', 0, 'Draft text.') returning id`;
-      await expect(sql`update sequence_steps set sequence_version_id = ${s.version} where id = ${step.id}`).rejects.toThrow(STEPS_FROZEN);
+      await expect(sql`update follow_up_steps set follow_up_version_id = ${s.version} where id = ${step.id}`).rejects.toThrow(STEPS_FROZEN);
     });
 
     it("keeps draft steps editable: delete and re-insert, as the store does", async () => {
       const w = await world();
-      const s = await sequenceWithPublished(w);
-      const [draft] = await sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const s = await flowWithPublished(w);
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
       await sql`
-        insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+        insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${w.org}, ${draft.id}, 1, 'reply', 'Reply', 0, 'v1')`;
-      await sql`delete from sequence_steps where sequence_version_id = ${draft.id} and organization_id = ${w.org}`;
+      await sql`delete from follow_up_steps where follow_up_version_id = ${draft.id} and organization_id = ${w.org}`;
       await sql`
-        insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+        insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${w.org}, ${draft.id}, 1, 'reply', 'Reply', 0, 'v2')`;
-      await sql`update sequence_steps set ai_instructions = 'v3' where sequence_version_id = ${draft.id}`;
+      await sql`update follow_up_steps set ai_instructions = 'v3' where follow_up_version_id = ${draft.id}`;
     });
   });
 
   it("an organization delete cascades through every guarded table", async () => {
     const w = await world();
-    await sequenceWithPublished(w);
+    await flowWithPublished(w);
     await sql`delete from organizations where id = ${w.org}`;
-    for (const table of ["conversations", "reply_types", "knowledge_document_versions", "sequence_versions", "sequence_steps"]) {
+    for (const table of ["threads", "reply_types", "knowledge_document_versions", "follow_up_versions", "follow_up_steps"]) {
       expect((await sql.unsafe(`select 1 from ${table} where organization_id = $1`, [w.org])).length, table).toBe(0);
     }
   });

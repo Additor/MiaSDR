@@ -146,7 +146,7 @@ test.describe("the Actions queue as a list to work through", () => {
     const email = "ola@s43-sure.test";
     const [seeded] = await sql()`select 1 from people where email = ${email}`;
     if (!seeded) await seedReply(page.request, { key: "S43C", mailbox: "sdrs43c@e2e-corp.test", lead: { email, firstName: "Ola", lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: "No thanks, not interested." } });
-    const [record] = await sql()`select r.workflow_state, t.name from records r join people p on p.id = r.person_id join reply_types t on t.id = r.reply_type_id where p.email = ${email}`;
+    const [record] = await sql()`select r.workflow_state, t.name from conversations r join people p on p.id = r.person_id join reply_types t on t.id = r.reply_type_id where p.email = ${email}`;
     expect(record).toMatchObject({ workflow_state: "idle", name: "Not now" });
     await page.goto("/actions");
     await expect(page.getByTestId("queue-item").first()).toBeVisible();
@@ -157,8 +157,8 @@ test.describe("the Actions queue as a list to work through", () => {
   test("a problem leads the page, and the top line names the oldest wait and jumps to each list", async ({ page }) => {
     await signInAdmin(page);
     const db = sql();
-    const [{ id: recordId }] = await db`select r.id from records r join people p on p.id = r.person_id where p.email = 'eli@s43-group.test'`;
-    await db`update records set workflow_state = 'error' where id = ${recordId}`;
+    const [{ id: conversationId }] = await db`select r.id from conversations r join people p on p.id = r.person_id where p.email = 'eli@s43-group.test'`;
+    await db`update conversations set workflow_state = 'error' where id = ${conversationId}`;
     try {
       await page.goto("/actions");
       const groups = page.locator('[data-slot="queue-group"]');
@@ -175,7 +175,7 @@ test.describe("the Actions queue as a list to work through", () => {
       await jump.click();
       await expect(page).toHaveURL(new RegExp(`${target}$`));
     } finally {
-      await db`update records set workflow_state = 'action_required' where id = ${recordId}`;
+      await db`update conversations set workflow_state = 'action_required' where id = ${conversationId}`;
     }
   });
 

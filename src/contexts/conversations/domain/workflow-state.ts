@@ -1,7 +1,7 @@
 import type { ReplyTypeDecision } from "./reply-type";
 
 /**
- * Where a conversation's reply handling stands (`records.workflow_state`). Mirrors the `records_workflow_ck` check.
+ * Where a conversation's reply handling stands (`conversations.workflow_state`). Mirrors the `conversations_workflow_ck` check.
  *
  * - `unclassified`, `classifying`: a reply waits for its category.
  * - `action_required`: a person has something to do (a draft to approve, a category to review, a reply to answer).

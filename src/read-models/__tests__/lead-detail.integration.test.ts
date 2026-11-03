@@ -30,7 +30,7 @@ describeDb("lead detail", () => {
     expect(detail?.person).toMatchObject({ id: w.person, email: `${w.tag}@lead.test`, fullName: "Lead", lifecycle: "lead" });
     expect(detail?.enrollments.map((e) => e.id)).toEqual([w.enrollment]);
     expect(detail?.enrollments[0]).toMatchObject({ campaignId: w.campaign, campaignName: "c", campaignStatus: "draft", channel: "email", status: "pending", currentStep: 0 });
-    expect(detail?.conversationId).toBe(w.conversation);
+    expect(detail?.threadId).toBe(w.thread);
     expect(detail?.policy).toBeNull();
     expect(detail?.suppression).toBeNull();
   });

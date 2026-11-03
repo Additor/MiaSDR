@@ -3,7 +3,7 @@ import { isCalendarDay, shiftDay, startOfDayInZone } from "@/shared/time-zone";
 import type { SystemRole } from "../../domain/reply-type";
 
 /**
- * The Actions queue lists records, not source rows. A record is in the queue when it is `action_required`
+ * The Actions queue lists conversations, not source rows. A conversation is in the queue when it is `action_required`
  * or `error`, or `waiting` with `next_action_at` due. Each one sits in exactly one group, picked in this
  * order: problem, reply, classification, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
  * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age. The `classification`
@@ -23,9 +23,9 @@ export const QUEUE_GROUP_LABELS: Record<QueueGroup, { title: string; description
 };
 
 /**
- * What the queue knows about one visible record. Each flag is true when the thing exists and applies: a failed or
+ * What the queue knows about one visible conversation. Each flag is true when the thing exists and applies: a failed or
  * unconfirmed draft, a failed AI job that no newer draft answers, a draft awaiting review, an AI pick that waits for a
- * person (`pickReviewOf`), an open task. `workflowState` is the record's state as the domain wrote it; the queue reads it
+ * person (`pickReviewOf`), an open task. `workflowState` is the conversation's state as the domain wrote it; the queue reads it
  * and never works it out again. The SQL in `work-queue-read.ts` computes the same facts; `queueGroupOf` and `isInQueue`
  * are the rule, and `action-queue.integration.test.ts` checks that the query agrees with them.
  */
@@ -37,7 +37,7 @@ export interface QueueFacts {
   hasDraftToReview: boolean;
   hasReplyTypePickToReview: boolean;
   hasOpenTask: boolean;
-  /** The pick to review is a stop request. It stays listed whatever the record's state, since it keeps refusing agents. */
+  /** The pick to review is a stop request. It stays listed whatever the conversation's state, since it keeps refusing agents. */
   hasStopToReview: boolean;
 }
 
@@ -51,14 +51,14 @@ export interface QueueFacts {
  *   contact, or an email address on the suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
  *
- * Null when nothing waits: the pick applied or is stale, a held pick that asks nothing to stop lost its record version,
+ * Null when nothing waits: the pick applied or is stale, a held pick that asks nothing to stop lost its conversation version,
  * or it is a held stop request for someone who can no longer be contacted.
  */
 export type PickReviewKind = "stop_review" | "held";
 
 export interface PickReviewFacts {
   status: string;
-  /** The pick was written for the record's current version and is not stale. */
+  /** The pick was written for the conversation's current version and is not stale. */
   current: boolean;
   /** The held pick names a type. */
   hasProposedType: boolean;
@@ -86,8 +86,8 @@ export function queueGroupOf(facts: QueueFacts): QueueGroup {
 }
 
 /**
- * A record is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due, or a stop request
- * waits on it. A `next_step` record with an open task is left out, because the task already puts it in front of a person.
+ * A conversation is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due, or a stop request
+ * waits on it. A `next_step` conversation with an open task is left out, because the task already puts it in front of a person.
  */
 export function isInQueue(facts: QueueFacts, now: Date): boolean {
   if (facts.hasStopToReview) return true;
@@ -113,7 +113,7 @@ export interface WaitingFacts {
   lastInteractionAt: Date | null;
   createdAt: Date;
   nextActionAt: Date | null;
-  /** When the failure was recorded: the failed draft's last update, the failed job's failure time, or the record's last update. */
+  /** When the failure was recorded: the failed draft's last update, the failed job's failure time, or the conversation's last update. */
   failedAt: Date;
 }
 
@@ -143,12 +143,12 @@ export function isWorkClear(totals: WorkTotals): boolean {
 }
 
 /**
- * The item to open after `currentRecordId`, given candidates in the order they should win. The first one that is not the
- * current record wins. The open item never qualifies. `getNextQueueItem` builds the candidates: the next item of the same
+ * The item to open after `currentConversationId`, given candidates in the order they should win. The first one that is not the
+ * current conversation wins. The open item never qualifies. `getNextQueueItem` builds the candidates: the next item of the same
  * group, then the first items of the other groups (`groupsAfter`), and for a record that left the queue the top of the queue.
  */
-export function pickNextQueueItem<T extends { recordId: string }>(candidates: readonly T[], currentRecordId: string): T | null {
-  return candidates.find((item) => item.recordId !== currentRecordId) ?? null;
+export function pickNextQueueItem<T extends { conversationId: string }>(candidates: readonly T[], currentConversationId: string): T | null {
+  return candidates.find((item) => item.conversationId !== currentConversationId) ?? null;
 }
 
 /**
@@ -164,7 +164,7 @@ export const QUEUE_DEFAULT_LIMIT = 50;
 export const QUEUE_MAX_LIMIT = 200;
 
 /**
- * Whose work a queue item is. The three scopes split the queue by assignee and do not overlap: a record is mine when I am
+ * Whose work a queue item is. The three scopes split the queue by assignee and do not overlap: a conversation is mine when I am
  * its assignee, unassigned when it has none, and someone else's otherwise.
  */
 export const QUEUE_SCOPES = ["mine", "unassigned", "others"] as const;
@@ -177,13 +177,13 @@ export function scopeOf(assignedTo: string | null, actorUserId: string): QueueSc
   return assignedTo === actorUserId ? "mine" : "others";
 }
 
-export type QueueProblemKind = "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
+export type QueueProblemKind = "conversation_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
 
-/** The group filter value for a record with no reply type yet. URLs keep it as `category=unclassified`. */
+/** The group filter value for a conversation with no reply type yet. URLs keep it as `category=unclassified`. */
 export const NO_TYPE_FILTER = "unclassified";
 
 export interface QueueFilter {
-  /** A group key, or `NO_TYPE_FILTER` for a record with no reply type yet. */
+  /** A group key, or `NO_TYPE_FILTER` for a conversation with no reply type yet. */
   groupKey?: string;
   channel?: string;
   group?: QueueGroup;
@@ -199,13 +199,13 @@ export interface QueueFilter {
 }
 
 /**
- * Position of the last item of a group page: its waiting time as Postgres printed it (microseconds survive) and the record id.
+ * Position of the last item of a group page: its waiting time as Postgres printed it (microseconds survive) and the conversation id.
  * The first element of the encoded cursor is the order it belongs to. A group is read oldest first (`w`); a cursor from the
  * newest-first order is refused, because continuing it would skip or repeat items.
  */
 export interface QueueCursor {
   sortKey: string;
-  recordId: string;
+  conversationId: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -213,7 +213,7 @@ const SORT_KEY = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\
 
 const CURSOR_ORDER = "w";
 
-export const encodeQueueCursor = (cursor: QueueCursor) => Buffer.from(JSON.stringify([CURSOR_ORDER, cursor.sortKey, cursor.recordId])).toString("base64url");
+export const encodeQueueCursor = (cursor: QueueCursor) => Buffer.from(JSON.stringify([CURSOR_ORDER, cursor.sortKey, cursor.conversationId])).toString("base64url");
 
 export function decodeQueueCursor(value: string): QueueCursor {
   try {
@@ -227,7 +227,7 @@ export function decodeQueueCursor(value: string): QueueCursor {
       SORT_KEY.test(parsed[1]) &&
       UUID.test(parsed[2])
     ) {
-      return { sortKey: parsed[1], recordId: parsed[2] };
+      return { sortKey: parsed[1], conversationId: parsed[2] };
     }
   } catch {
     // Falls through to the error below.

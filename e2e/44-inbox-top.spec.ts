@@ -8,7 +8,7 @@ const UMA = { email: "uma@s44-group.test", firstName: "Uma", lastName: "Reed", t
  */
 async function openWithReply(page: Page) {
   await signInAdmin(page);
-  const [seeded] = await sql()`select 1 from messages m join conversations c on c.id = m.conversation_id join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${UMA.email} and m.direction = 'inbound' limit 1`;
+  const [seeded] = await sql()`select 1 from messages m join threads c on c.id = m.thread_id join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${UMA.email} and m.direction = 'inbound' limit 1`;
   if (!seeded) await seedReply(page.request, { key: "S44", mailbox: "sdr44@e2e-corp.test", lead: UMA, reply: { bodyText: "Can you share the rollout timeline?" } });
 }
 

@@ -239,7 +239,7 @@ export const drizzleOutreachStore: OutreachStore = {
     await db.transaction(async (tx) => {
       const moved = await tx
         .update(sends)
-        .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
+        .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId, sentAt: now, error: null })
         .where(ownClaim(claim))
         .returning({ id: sends.id });
       // A send that is already final (for example failed by a reconciler) stays as it is.
@@ -329,7 +329,7 @@ export const drizzleOutreachStore: OutreachStore = {
     await db.transaction(async (tx) => {
       const updated = await tx
         .update(sends)
-        .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
+        .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId, sentAt: now, error: null })
         .where(readAttempt(send, "sent"))
         .returning({ id: sends.id, mailboxId: sends.mailboxId });
       if (updated.length === 0) return;
@@ -432,12 +432,12 @@ async function buildClaim(
   );
 
   const priorRows = await tx
-    .select({ subject: sends.subject, rfcMessageId: sends.rfcMessageId, threadId: sends.threadId, mailboxId: sends.mailboxId })
+    .select({ subject: sends.subject, rfcMessageId: sends.rfcMessageId, providerThreadId: sends.providerThreadId, mailboxId: sends.mailboxId })
     .from(sends)
     .where(and(eq(sends.enrollmentId, input.enrollmentId), eq(sends.status, "sent")))
     .orderBy(asc(sends.stepNumber));
   // Another mailbox cannot continue this mailbox's thread. Keep the subject so a blank-subject follow-up still reads "Re: ...".
-  const prior = priorRows.map(({ mailboxId, ...p }) => (mailboxId === input.mailbox.id ? p : { ...p, rfcMessageId: null, threadId: null }));
+  const prior = priorRows.map(({ mailboxId, ...p }) => (mailboxId === input.mailbox.id ? p : { ...p, rfcMessageId: null, providerThreadId: null }));
 
   const step = row.steps[input.stepNumber - 1];
   const next = row.steps[input.stepNumber];

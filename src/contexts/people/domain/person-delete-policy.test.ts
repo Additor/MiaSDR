@@ -11,8 +11,8 @@ describe("leadDeleteBlock", () => {
   it("ranks the reasons: a send, a running campaign, history", () => {
     expect(leadDeleteBlock({ ...clean, outreach: ["in_active_campaign", "has_sends"] })).toBe("has_sends");
     expect(leadDeleteBlock({ contact: true, history: true, outreach: ["in_active_campaign"] })).toBe("in_active_campaign");
-    expect(leadDeleteBlock({ ...clean, history: true })).toBe("linked_records");
-    expect(leadDeleteBlock({ ...clean, contact: true })).toBe("linked_records");
+    expect(leadDeleteBlock({ ...clean, history: true })).toBe("linked_conversations");
+    expect(leadDeleteBlock({ ...clean, contact: true })).toBe("linked_conversations");
   });
 });
 

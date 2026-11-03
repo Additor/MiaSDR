@@ -46,7 +46,7 @@ export function parseGmailMessage(message: GmailMessage): InboundEmail {
 
   return {
     providerMessageId: message.id,
-    threadId: message.threadId ?? null,
+    providerThreadId: message.threadId ?? null,
     rfcMessageId: all.get("message-id")?.trim() || null,
     inReplyTo: all.get("in-reply-to")?.trim() || null,
     references: (all.get("references") ?? "").split(/\s+/).filter(Boolean),

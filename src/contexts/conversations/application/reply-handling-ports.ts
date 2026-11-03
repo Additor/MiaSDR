@@ -44,7 +44,7 @@ export interface ReplyTypeOption {
   rules: TypeRules;
 }
 
-/** What `typeChangeOutcome` needs for one record: its current type, the types it can move to, and the facts. */
+/** What `typeChangeOutcome` needs for one conversation: its current type, the types it can move to, and the facts. */
 export interface TypeChangeFacts {
   current: ReplyTypeOption | null;
   targets: ReplyTypeOption[];
@@ -55,7 +55,7 @@ export interface ReplyTypePickEntry {
   id: string;
   status: string;
   messageId: string;
-  conversationId: string;
+  threadId: string;
   previous: { groupKey: string | null; name: string | null };
   proposed: { groupKey: string | null; name: string | null };
   applied: { groupKey: string | null; name: string | null };
@@ -73,22 +73,22 @@ export interface ReplyTypePickEntry {
   /** The reply asked to stop, as the AI read it. */
   stopRequested: boolean;
   createdAt: Date;
-  /** Belongs to the record's latest inbound message. */
+  /** Belongs to the conversation's latest inbound message. */
   latest: boolean;
-  /** Decided on the record's current context version and not stale, so Accept still applies to it. */
+  /** Decided on the conversation's current context version and not stale, so Accept still applies to it. */
   current: boolean;
   canUndo: boolean;
 }
 
 export interface DraftEntry {
   id: string;
-  conversationId: string;
+  threadId: string;
   channel: string;
   status: string;
   subject: string | null;
   preview: string;
   revision: number;
-  /** The record's context version the draft was written for. */
+  /** The conversation's context version the draft was written for. */
   expectedContextVersion: number;
   createdAt: Date;
   attemptId: string | null;
@@ -123,8 +123,8 @@ export interface EnrollmentEntry {
   stopReason: string | null;
 }
 
-export interface RecordDetail {
-  record: {
+export interface ConversationDetail {
+  conversation: {
     id: string;
     replyTypeSetId: string;
     groupKey: string | null;
@@ -132,10 +132,10 @@ export interface RecordDetail {
     replyTypeName: string | null;
     replyTypeSource: string | null;
     replyTypeLocked: boolean;
-    /** Rules of the record's type. Null without a type. */
+    /** Rules of the conversation's type. Null without a type. */
     replyTypeRules: TypeRules | null;
     replyTypeSystemRole: SystemRole | null;
-    /** The initial draft job of the latest pick of the latest reply is queued or running, and that pick is applied at the record's version. */
+    /** The initial draft job of the latest pick of the latest reply is queued or running, and that pick is applied at the conversation's version. */
     draftJobPending: boolean;
     workflowState: string;
     activeChannel: string | null;
@@ -154,7 +154,7 @@ export interface RecordDetail {
   person: { id: string; name: string | null; email: string | null; linkedinUrl: string | null; phone: string | null; title: string | null; company: string | null };
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
-  conversations: Array<{ id: string; channel: string; accountRef: string; status: string; updatedAt: Date }>;
+  threads: Array<{ id: string; channel: string; accountRef: string; status: string; updatedAt: Date }>;
   replyTypePicks: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];
@@ -169,7 +169,7 @@ export interface ReplyTypeChangeInput {
   actorUserId: string;
   /** Set when an agent acted; the event's meta records it. */
   via?: AgentVia;
-  recordId: string;
+  conversationId: string;
   groupKey: ReplyTypeGroup;
   replyTypeId: string | null;
   expectedContextVersion: number;
@@ -180,7 +180,7 @@ export interface ReplyTypeChangeInput {
 }
 
 export interface ReplyTypeChangeResult {
-  recordId: string;
+  conversationId: string;
   personId: string;
   groupKey: string;
   replyTypeKey: string | null;
@@ -194,7 +194,7 @@ export interface ReplyTypeChangeResult {
 
 /** What an undo retired, so the client can say it. */
 export interface UndoReplyTypePickResult {
-  recordId: string;
+  conversationId: string;
   /** Open drafts of the record that turned stale. */
   draftsRetired: number;
   /** An active or paused follow-up run ended. */
@@ -243,18 +243,18 @@ export interface IdentityExceptionIntake {
 
 export interface ReplyHandlingStore extends IdentityExceptionIntake {
   /** Everything but the conversation timelines, which the use case reads through the inbox store. */
-  recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
+  conversationDetail(organizationId: string, conversationId: string): Promise<ConversationDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
-  /** Null when the record is not in the organization. */
-  typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
+  /** Null when the conversation is not in the organization. */
+  typeChangeFacts(organizationId: string, conversationId: string): Promise<TypeChangeFacts | null>;
 
   changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
   undoReplyTypePick(input: { organizationId: string; actorUserId: string; via?: AgentVia; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;
-  closeRecord(input: { organizationId: string; actorUserId: string; via?: AgentVia; recordId: string; reason: string; now: Date }): Promise<void>;
-  reopenRecord(input: { organizationId: string; actorUserId: string; via?: AgentVia; recordId: string; now: Date }): Promise<void>;
-  /** NotFoundError when the record or person is not in the organization. */
+  closeConversation(input: { organizationId: string; actorUserId: string; via?: AgentVia; conversationId: string; reason: string; now: Date }): Promise<void>;
+  reopenConversation(input: { organizationId: string; actorUserId: string; via?: AgentVia; conversationId: string; now: Date }): Promise<void>;
+  /** NotFoundError when the conversation or person is not in the organization. */
   addNote(input: { organizationId: string; actorUserId: string; scope: NoteScope; title: string | null; body: string }): Promise<{ id: string }>;
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
