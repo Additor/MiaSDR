@@ -198,8 +198,8 @@ export const drizzleInboxStore: InboxStore = {
       sql`ssr.organization_id = ${organizationId}`,
       sql`ssr.status = 'scheduled'`,
       sql`sr.status = 'active'`,
-      // A paused campaign holds its follow-ups, so they are not scheduled to go out. A flow with no campaign keeps running.
-      sql`seq_camp.status is distinct from 'paused'`,
+      // A paused campaign holds its follow-ups, so they are not scheduled to go out.
+      sql`seq_camp.status <> 'paused'`,
       ...person,
       ...(present(filter.campaignIds) ? [sql`seq.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
       ...(present(filter.mailboxIds) ? [sql`lower(c.account_ref) in ${mailboxAddresses(organizationId, filter.mailboxIds)}`] : []),
@@ -218,12 +218,12 @@ export const drizzleInboxStore: InboxStore = {
       where ${sql.join(campaignWhere, sql` and `)}
       union all
       select 'sequence'::text, ssr.id, p.id, p.full_name, p.first_name, p.email, c.channel,
-             coalesce(seq_camp.name, seq.name), ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
+             seq_camp.name, ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
       from follow_up_step_runs ssr
       join follow_up_runs sr on sr.id = ssr.follow_up_run_id and sr.organization_id = ssr.organization_id
       join follow_up_steps ss on ss.id = ssr.follow_up_step_id
       join follow_up_flows seq on seq.id = sr.flow_id and seq.organization_id = sr.organization_id
-      left join campaigns seq_camp on seq_camp.id = seq.campaign_id and seq_camp.organization_id = seq.organization_id
+      join campaigns seq_camp on seq_camp.id = seq.campaign_id and seq_camp.organization_id = seq.organization_id
       join threads c on c.id = sr.thread_id
       join conversations r on r.id = sr.conversation_id
       join people p on p.id = r.person_id

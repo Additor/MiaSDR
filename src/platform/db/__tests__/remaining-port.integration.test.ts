@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { createTestOrg, describeDb, dropOrgs, testSql, type TestOrg } from "../../../test-support/db";
+import { createTestOrg, describeDb, dropOrgs, insertFollowUpFlow, testSql, type TestOrg } from "../../../test-support/db";
 
 /** Constraint checks for the sequence and grid tables. Set TEST_DATABASE_URL to enable. */
 describeDb("sequence and grid invariants", () => {
@@ -68,7 +68,7 @@ describeDb("sequence and grid invariants", () => {
   });
 
   it("keeps one draft version per sequence and checks step semantics", async () => {
-    const [{ id: seq }] = await sql`insert into follow_up_flows (organization_id, name) values (${orgA}, 's') returning id`;
+    const seq = await insertFollowUpFlow(sql, orgA, "s");
     const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${orgA}, ${seq}, 1) returning id`;
     await expect(
       sql`insert into follow_up_versions (organization_id, flow_id, version) values (${orgA}, ${seq}, 2)`,
@@ -83,8 +83,8 @@ describeDb("sequence and grid invariants", () => {
     await sql`insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
               values (${orgA}, ${ver}, 1, 'reply', 'x', 0, 'do it')`;
     await expect(
-      sql`insert into follow_up_flows (organization_id, name) values (${orgB}, 's2') returning id`.then(([r]) =>
-        sql`insert into follow_up_versions (organization_id, flow_id, version) values (${orgA}, ${r.id}, 1)`),
+      insertFollowUpFlow(sql, orgB, "s2").then((flow) =>
+        sql`insert into follow_up_versions (organization_id, flow_id, version) values (${orgA}, ${flow}, 1)`),
     ).rejects.toThrow(/foreign key|violates/i);
   });
 });

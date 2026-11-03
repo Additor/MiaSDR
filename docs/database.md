@@ -105,7 +105,7 @@ To change a frozen value, insert a new row (a new knowledge version, a new seque
 
 ## After a reply storage
 
-The campaign setting Follow-ups after a reply (After a reply in code) lives in the sequence tables. `follow_up_flows.campaign_id` is nullable, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`), a partial unique index on `(organization_id, name) WHERE campaign_id IS NULL` and a partial unique index on `(campaign_id) WHERE campaign_id IS NOT NULL`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
+The campaign setting Follow-ups after a reply (After a reply in code) lives in the sequence tables. `follow_up_flows.campaign_id` is required, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`) and a unique index on `(campaign_id)`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
 
 `follow_up_flows.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
 

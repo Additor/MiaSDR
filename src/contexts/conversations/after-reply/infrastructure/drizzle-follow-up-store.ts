@@ -218,7 +218,7 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
   },
 };
 
-/** The campaign that owns a flow of the organization, or null for a flow with no campaign or an unknown id. */
+/** The campaign that owns a flow of the organization, or null for an unknown id. */
 export async function campaignIdOfFlow(organizationId: string, flowId: string): Promise<string | null> {
   const [row] = await db.select({ campaignId: followUpFlows.campaignId }).from(followUpFlows).where(and(eq(followUpFlows.id, flowId), eq(followUpFlows.organizationId, organizationId)));
   return row?.campaignId ?? null;

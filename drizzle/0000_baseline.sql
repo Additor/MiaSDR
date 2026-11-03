@@ -1194,7 +1194,7 @@ CREATE TABLE "follow_up_flows" (
 	"name" text NOT NULL,
 	"description" text,
 	"status" text DEFAULT 'active' NOT NULL,
-	"campaign_id" uuid,
+	"campaign_id" uuid NOT NULL,
 	"after_reply_enabled_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -1671,8 +1671,7 @@ CREATE UNIQUE INDEX "follow_up_step_runs_draft_uq" ON "follow_up_step_runs" USIN
 CREATE INDEX "follow_up_step_runs_due_idx" ON "follow_up_step_runs" USING btree ("status","due_at");--> statement-breakpoint
 CREATE INDEX "follow_up_step_runs_sent_message_idx" ON "follow_up_step_runs" USING btree ("sent_message_id") WHERE "follow_up_step_runs"."sent_message_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "follow_up_versions_one_draft_uq" ON "follow_up_versions" USING btree ("flow_id") WHERE "follow_up_versions"."status" = 'draft';--> statement-breakpoint
-CREATE UNIQUE INDEX "follow_up_flows_org_name_uq" ON "follow_up_flows" USING btree ("organization_id","name") WHERE "follow_up_flows"."campaign_id" is null;--> statement-breakpoint
-CREATE UNIQUE INDEX "follow_up_flows_campaign_uq" ON "follow_up_flows" USING btree ("campaign_id") WHERE "follow_up_flows"."campaign_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "follow_up_flows_campaign_uq" ON "follow_up_flows" USING btree ("campaign_id");--> statement-breakpoint
 CREATE INDEX "follow_up_flows_org_status_idx" ON "follow_up_flows" USING btree ("organization_id","status","name");--> statement-breakpoint
 CREATE INDEX "grid_cell_runs_cell_idx" ON "grid_cell_runs" USING btree ("row_id","column_key");--> statement-breakpoint
 CREATE INDEX "grid_cell_runs_table_created_idx" ON "grid_cell_runs" USING btree ("table_id","created_at");--> statement-breakpoint

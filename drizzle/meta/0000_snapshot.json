@@ -11172,7 +11172,7 @@
           "name": "campaign_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "after_reply_enabled_at": {
           "name": "after_reply_enabled_at",
@@ -11196,28 +11196,6 @@
         }
       },
       "indexes": {
-        "follow_up_flows_org_name_uq": {
-          "name": "follow_up_flows_org_name_uq",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"follow_up_flows\".\"campaign_id\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "follow_up_flows_campaign_uq": {
           "name": "follow_up_flows_campaign_uq",
           "columns": [
@@ -11229,7 +11207,6 @@
             }
           ],
           "isUnique": true,
-          "where": "\"follow_up_flows\".\"campaign_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -474,25 +474,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
     });
 
-    it("a run of a flow with no campaign survives the sweep even though the sequence is archived", async () => {
-      const { f, run, flowId } = await withRun();
-      // Turn the flow into a legacy one: archived, owned by no campaign.
-      await sql`update follow_up_flows set campaign_id = null, status = 'archived', name = ${"Legacy " + f.tag} where id = ${flowId}`;
-      const tick = await f.seqRun();
-      expect(tick.detail?.interrupted_after_reply_off ?? 0).toBe(0);
-      expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted'")).toBe(0);
-      // It keeps going on its pinned version: the reply draft stays and the next step still drafts when due.
-      const draft = await one("select id from drafts where organization_id = $1", [f.org]);
-      await approve(f, draft.id);
-      await f.seqRun();
-      f.state.offsetMs += 3 * DAY;
-      const later = await f.seqRun();
-      expect(later.detail?.drafted).toBe(1);
-      expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
-    });
-
-    it("the sweep and the step claim agree: a campaign-owned flow that is not active is not claimed, a legacy one is", async () => {
+    it("the sweep and the step claim agree: a flow that is not active is not claimed", async () => {
       const lease = seqJobsApp.FOLLOW_UP_LEASE_MS;
       /** A run whose follow-up is due: the reply went out, so step 2 waits for its delay. */
       const dueRun = async () => {
@@ -514,27 +496,21 @@ describeDb("Follow-ups after a reply flows", () => {
       const swept = await owned.f.seqRun();
       expect(swept.detail?.interrupted_after_reply_off).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [owned.run.id])).toMatchObject({ status: "interrupted" });
-
-      const legacy = await dueRun();
-      await sql`update follow_up_flows set campaign_id = null, status = 'archived', name = ${"Legacy " + legacy.f.tag} where id = ${legacy.flowId}`;
-      expect(await stores.engine.claimDue("w", legacy.f.clock(), lease)).toMatchObject({ run: { id: legacy.run.id } });
     });
 
-    it("switching a campaign to handoff still ends its runs with after_reply_off while a legacy run of the same organization goes on", async () => {
+    it("switching a campaign to handoff ends its runs with after_reply_off and leaves another campaign's run going", async () => {
       const { f, campaignId, run } = await withRun();
-      // A second conversation with a run on a legacy sequence in the same organization.
       const lead = await ingest(f, { from: { email: `second-${f.tag}@acme.test`, name: "Second Lead" } });
-      const legacyCampaign = await emailedBy(f, { personId: lead.personId, steps: STEPS });
+      const otherCampaign = await emailedBy(f, { personId: lead.personId, steps: STEPS });
       await f.cycle();
-      const legacyRun = await one("select r.id, r.flow_id from follow_up_runs r join conversations rec on rec.id = r.conversation_id where rec.person_id = $1", [lead.personId]);
-      await sql`update follow_up_flows set campaign_id = null, status = 'archived', name = ${"Legacy " + f.tag} where id = ${legacyRun.flow_id}`;
-      expect(legacyCampaign).not.toBe(campaignId);
+      const otherRun = await one("select r.id from follow_up_runs r join conversations rec on rec.id = r.conversation_id where rec.person_id = $1", [lead.personId]);
+      expect(otherCampaign).not.toBe(campaignId);
 
       await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
       await f.seqRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
-      expect(await one("select status from follow_up_runs where id = $1", [legacyRun.id])).toMatchObject({ status: "active" });
+      expect(await one("select status from follow_up_runs where id = $1", [otherRun.id])).toMatchObject({ status: "active" });
     });
 
     it("a paused run stops too", async () => {

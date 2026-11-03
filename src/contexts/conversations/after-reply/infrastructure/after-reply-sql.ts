@@ -23,12 +23,10 @@ export const startableCampaignSql = (campaign: { channel: SQL; status: SQL; arch
   sql`${campaign.channel} = 'email' and ${campaign.archivedAt} is null and ${campaign.status} in ('active', 'completed')`;
 
 /**
- * A run's flow may keep running. A campaign-owned flow runs only while its status is `active`: switching Follow-ups after a reply
- * off archives it and ends its runs. A flow with no campaign, which no code path creates, runs on whatever its status, so a run already in flight finishes on its pinned
- * version.
+ * A run's flow may keep running: switching Follow-ups after a reply off archives it and ends its runs.
  * The interrupt sweep and the step claim both use this condition, so they agree.
  */
-export const flowRunnableSql = (alias: string) => sql`(${sql.raw(alias)}.campaign_id is null or ${sql.raw(alias)}.status = 'active')`;
+export const flowRunnableSql = (alias: string) => sql`${sql.raw(alias)}.status = 'active'`;
 
 /**
  * The rules a run start reads for conversation `alias`, joined to its type as `type`: the snapshot of the newest pick that

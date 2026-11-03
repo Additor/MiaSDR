@@ -3,7 +3,7 @@ import type { IdentityPayload } from "../../application/reply-handling";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
 import type { InboundEmailInput } from "../../application/ports";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { createTestOrg, describeDb, dropOrgs, insertFollowUpFlow, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 
 describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
@@ -332,7 +332,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const target = await sub(f, "demo_request");
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const r = await rec(l.conversationId);
-      const [{ id: seq }] = await sql`insert into follow_up_flows (organization_id, name) values (${f.org}, 'Demo follow-up') returning id`;
+      const seq = await insertFollowUpFlow(sql, f.org, "Demo follow-up");
       // Steps go in while the version is a draft: follow_up_steps_frozen_trg refuses them under a published one.
       const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq}, 1) returning id`;
       const stepIds: string[] = [];
