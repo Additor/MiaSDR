@@ -159,7 +159,7 @@ export const createEnrollmentRestoreStore = (timeline: PersonTimeline): Enrollme
             // Progress that completed while the lead was removed is written back, so the claims and the lead panel agree with the sends.
             ...(progress > e.currentStep ? { currentStep: progress, lastSentAt: last?.at ?? e.lastSentAt } : {}),
           })
-          .where(and(eq(campaignEnrollments.id, e.id), eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.status, "removed")))
+          .where(and(eq(campaignEnrollments.id, e.id), eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.status, e.status)))
           .returning({ id: campaignEnrollments.id });
         if (changed.length === 0) {
           refuse("not_removed");

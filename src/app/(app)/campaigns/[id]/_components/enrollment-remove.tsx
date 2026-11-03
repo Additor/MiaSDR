@@ -132,7 +132,7 @@ interface RestoreResult {
 }
 
 /** Row action of a removed lead. Says why when the lead cannot come back. */
-function RestoreRowButton({ id, name }: { id: string; name: string | null }) {
+function RestoreRowButton({ id, name, retry = false }: { id: string; name: string | null; retry?: boolean }) {
   const router = useRouter();
   const { channel, campaignId } = useSelection();
   const { isBusy, run } = useApiAction<"restore">();
@@ -143,24 +143,26 @@ function RestoreRowButton({ id, name }: { id: string; name: string | null }) {
       const result = await runApiAction(callApi<RestoreResult>(`${base(channel, campaignId)}/restore`, "POST", { ids: [id] }), { refresh: () => router.refresh(), expectData: true });
       if (!result.ok) return void toast.error(result.error);
       const refusal = result.data.refused[0];
-      if (refusal) toast.error(`${name ?? "This lead"} stays removed. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);
+      if (refusal) toast.error(`${name ?? "This lead"} stays where it is. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);
       else if (result.data.restored > 0) toast.success("Lead restored to this campaign.");
       else toast.error("Lead not found in this campaign.");
     });
 
   return (
     <Button size="sm" variant="ghost" onClick={() => void restore()} disabled={busy} aria-label={`Restore ${name ?? "lead"} to this campaign`}>
-      {busy ? "Restoring…" : "Restore"}
+      {busy ? (retry ? "Retrying…" : "Restoring…") : retry ? "Retry" : "Restore"}
     </Button>
   );
 }
 
-/** Row action. Remove for a pending or active lead, Restore for a removed one. */
+/** Row action. Remove for a pending or active lead, Restore for a removed one, Retry for a failed one. */
 export function RemoveRowButton({ id, name, status }: { id: string; name: string | null; status: string }) {
   const router = useRouter();
   const { channel, campaignId } = useSelection();
   const [confirming, setConfirming] = useState(false);
   if (status === "removed") return <RestoreRowButton id={id} name={name} />;
+  // A step that failed may have failed for a reason that is gone now, such as a mailbox that lost its access.
+  if (status === "failed") return <RestoreRowButton id={id} name={name} retry />;
   if (!canRemoveEnrollment(status)) return null;
 
   async function confirm() {
