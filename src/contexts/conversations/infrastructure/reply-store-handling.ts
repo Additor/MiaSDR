@@ -7,7 +7,7 @@ import { db } from "@/platform/db/client";
 import { personTypeDecisionTx, queuePickDraftTx, restartRecordWorkTx } from "./restart-record-work";
 import { personReviewedStopsTx } from "./stop-review";
 import { replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
-import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
 import { typeRulesOf } from "../domain/reply-type";
@@ -37,6 +37,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
       if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the type again.");
+      if (head.state === "closed") throw new ConflictError("Reply handling is marked done. Reopen it before you change the type.");
 
       // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the record
       // of what went wrong, and the person's pick goes in as a row of its own.
@@ -146,7 +147,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           .returning({ id: replyTypePicks.id });
         replyTypePickId = row.id;
       }
-      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: head.recordId, actorUserId: input.actorUserId, now });
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: head.recordId, actorUserId: input.actorUserId, via: input.via, now });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
@@ -156,7 +157,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         actorUserId: input.actorUserId,
         fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId, replyTypeLocked: head.locked },
         toData: { groupKey: target.groupKey, replyTypeId: target.id, replyTypeLocked: locked },
-        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted, rules },
+        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted, rules, ...viaMeta(input.via) },
         contextVersion: restart.contextVersion,
       });
       const draftQueued = wantsDraft ? await queuePickDraftTx(tx, { organizationId: input.organizationId, replyTypePickId, contextVersion: restart.contextVersion }) : false;

@@ -432,6 +432,7 @@ export async function setReplyType(
     replyTypeKey: input.replyTypeKey,
     expectedContextVersion: input.expectedContextVersion,
     actorUserId: actor.userId,
+    via: actor.via,
   });
 }
 

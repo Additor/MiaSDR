@@ -146,6 +146,51 @@ describeDb("the agent send gate on a stop request", () => {
     expect((await add()).structured).toMatchObject({ enroll: { added: 1 } });
   });
 
+  describe("a held pick that does not ask to stop", () => {
+    async function held(body = "Tell me more.") {
+      const thread = await conversation(body);
+      const t = await types(thread.recordId);
+      const [{ message_id, v }] = await sql<{ message_id: string; v: number }[]>`select latest_inbound_message_id as message_id, context_version as v from records where id = ${thread.recordId}`;
+      await sql`insert into reply_type_picks (organization_id, record_id, message_id, status, confidence, response, expected_context_version, proposed_group_key, proposed_reply_type_id)
+        select organization_id, id, ${message_id}, 'proposed', 0.5, ${sql.json({})}, context_version, ${t.applied.group_key}, ${t.applied.id} from records where id = ${thread.recordId}`;
+      return { ...thread, t, v };
+    }
+
+    it("lets an agent accept it, as the person's Accept does", async () => {
+      const thread = await held();
+      const answer = await agent.tool("set_reply_type", { action: "accept_pick", conversationId: thread.conversationId, expectedContextVersion: thread.v });
+      expect(answer.isError).toBeFalsy();
+      const [pick] = await sql`select status from reply_type_picks where record_id = ${thread.recordId} order by created_at desc limit 1`;
+      expect(pick.status).toBe("accepted");
+    });
+
+    it("lets an agent override it with another type, and names the token on the event", async () => {
+      const thread = await held();
+      const answer = await agent.tool("set_reply_type", { action: "override_pick", conversationId: thread.conversationId, replyTypeKey: thread.t.other.key, expectedContextVersion: thread.v });
+      expect(answer.isError).toBeFalsy();
+      const [event] = await sql`select meta->'via'->>'tokenName' as via from events where record_id = ${thread.recordId} and event_type = 'reply_type_pick.overridden'`;
+      expect(event.via).toBeTruthy();
+    });
+
+    it("refuses a pick on a closed record", async () => {
+      const thread = await held();
+      await agent.tool("update_conversation", { action: "close", recordId: thread.recordId, reason: "done" });
+      const [{ v }] = await sql<{ v: number }[]>`select context_version as v from records where id = ${thread.recordId}`;
+      const answer = await agent.tool("set_reply_type", { action: "override_pick", conversationId: thread.conversationId, replyTypeKey: thread.t.other.key, expectedContextVersion: v });
+      expect(answer.isError).toBe(true);
+    });
+  });
+
+  it("refuses an agent's accept of a held stop request, and an override leaves the gate closed", async () => {
+    const thread = await conversation();
+    const { t } = await seedPick(thread, "proposed_role");
+    const [{ v }] = await sql<{ v: number }[]>`select context_version as v from records where id = ${thread.recordId}`;
+    const accept = await agent.tool("set_reply_type", { action: "accept_pick", conversationId: thread.conversationId, expectedContextVersion: v });
+    expect(accept.isError).toBe(true);
+    expect(await agent.tool("set_reply_type", { action: "override_pick", conversationId: thread.conversationId, replyTypeKey: t.other.key, expectedContextVersion: v })).toMatchObject({ isError: false });
+    expect(await sendCode(thread.conversationId)).toBe("agent_stop_requested");
+  });
+
   it("refuses a reply whose own words ask to stop before any pick read it", async () => {
     const thread = await conversation();
     expect(await sendCode(thread.conversationId)).toBe("agent_stop_requested");
