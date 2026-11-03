@@ -9,6 +9,7 @@ describeDb("member management", () => {
   const sql = testSql({ max: 3 });
   let uc: typeof import("../../application/member-management");
   let store: typeof import("../drizzle-member-store");
+  let agentAccess: import("../../application/member-management").MemberAgentAccess;
   const orgs: string[] = [];
 
   async function user(tag: string) {
@@ -29,7 +30,7 @@ describeDb("member management", () => {
     };
     const owner = await join("owner", "owner");
     const deps: import("../../application/member-management").MemberDeps = {
-      members: store.drizzleMemberStore,
+      members: store.drizzleMemberStore(agentAccess),
       invitations: {
         async invite(actor, input) {
           const [{ id }] = await sql`insert into invitations (organization_id, email, role, expires_at, inviter_id) values (${actor.organizationId}, ${input.email}, ${input.role}, now() + interval '7 days', ${actor.userId}) returning id`;
@@ -43,6 +44,7 @@ describeDb("member management", () => {
   beforeAll(async () => {
     uc = await import("../../application/member-management");
     store = await import("../drizzle-member-store");
+    ({ memberAgentAccess: agentAccess } = await import("@/contexts/agent-access/infrastructure/member-access-composition"));
   });
 
   afterAll(async () => {

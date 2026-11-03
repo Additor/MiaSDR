@@ -89,6 +89,7 @@ export function readModelImports(file: string, source: string): string[] {
 const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
   // The schema barrel: the Drizzle client and migrations see every table through it.
   "src/platform/db/schema.ts": [
+    "@/contexts/agent-access/infrastructure/schema",
     "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema",
     "@/contexts/conversations/infrastructure/schema",
     "@/contexts/deals/infrastructure/schema",
@@ -173,7 +174,7 @@ describe("tier dependencies", () => {
 const PUBLISHED_INFRASTRUCTURE = new Set([
   // Session readers and the auth handler.
   "identity/infrastructure/auth",
-  // A revoke in tenancy also ends the app's consent and refresh tokens, which identity owns.
+  // A revoke in agent access also ends the app's consent and refresh tokens, which identity owns.
   "identity/infrastructure/mcp-oauth-grants",
   // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
   "identity/infrastructure/user-accounts",
@@ -191,7 +192,7 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // The member directory: assignee and owner checks and pickers.
   "tenancy/infrastructure/drizzle-member-directory",
   // The agent send policy, which conversations and outreach read inside their send and start transactions.
-  "tenancy/infrastructure/mcp-policy-reader",
+  "agent-access/infrastructure/mcp-policy-reader",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.

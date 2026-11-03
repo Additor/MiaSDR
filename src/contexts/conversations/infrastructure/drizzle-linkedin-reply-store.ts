@@ -13,7 +13,7 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
-import { lockAgentSend } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
+import { lockAgentSend } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
 import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt, type LinkedInSnapshot } from "./reply-attempt-ledger";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";

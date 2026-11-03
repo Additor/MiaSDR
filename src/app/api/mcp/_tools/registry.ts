@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { clientNameFrom } from "@/app/_lib/mcp";
-import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
-import { hasScope } from "@/contexts/tenancy/domain/mcp-policy";
-import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
-import { callTarget, recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls";
-import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import type { McpPrincipal } from "@/contexts/agent-access/application/mcp-principal";
+import { hasScope } from "@/contexts/agent-access/domain/mcp-policy";
+import { takeMcpRequest } from "@/contexts/agent-access/application/mcp-rate-limit";
+import { callTarget, recordMcpToolCall } from "@/contexts/agent-access/application/mcp-tool-calls";
+import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
 import { draftCampaignTool } from "./campaign-drafts";
 import { UI_EXTENSION } from "./cards";

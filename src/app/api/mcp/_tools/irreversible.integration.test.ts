@@ -21,8 +21,8 @@ describeDb("MCP actions that cannot be undone", () => {
   let org: TestOrg;
   let owner: Actor;
   let agent: McpCaller;
-  let tokens: typeof import("@/contexts/tenancy/application/mcp-tokens");
-  let deps: import("@/contexts/tenancy/application/mcp-tokens").McpTokenDeps;
+  let tokens: typeof import("@/contexts/agent-access/application/mcp-tokens");
+  let deps: import("@/contexts/agent-access/application/mcp-tokens").McpTokenDeps;
   let n = 0;
 
   const codeOf = (result: { structured: Record<string, unknown> }) => (result.structured.error as { code?: string } | undefined)?.code;
@@ -108,8 +108,8 @@ describeDb("MCP actions that cannot be undone", () => {
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
-    tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    deps = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).mcpTokenDeps();
+    tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    deps = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).mcpTokenDeps();
     org = await createTestOrg(sql, "Irreversible");
     orgs.push(org);
     owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };

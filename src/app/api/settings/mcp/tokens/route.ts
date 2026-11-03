@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { createMcpToken, listMcpTokens, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/tenancy/application/mcp-tokens";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { createMcpToken, listMcpTokens, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/agent-access/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { withActor } from "@/app/_lib/api";
 
 /** `?scope=organization` lists every member's tokens for an owner or admin; otherwise the caller's own. */

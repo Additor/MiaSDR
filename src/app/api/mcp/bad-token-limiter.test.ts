@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MCP_BAD_TOKEN_LIMIT } from "@/contexts/tenancy/domain/mcp-rate-limit";
+import { MCP_BAD_TOKEN_LIMIT } from "@/contexts/agent-access/domain/mcp-rate-limit";
 import { BadTokenLimiter, clientIp } from "./bad-token-limiter";
 
 describe("clientIp", () => {

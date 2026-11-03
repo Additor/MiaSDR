@@ -24,8 +24,8 @@ describeDb("MCP agent LinkedIn search", () => {
   let org: TestOrg;
   let owner: Actor;
   let agent: McpCaller;
-  let tokens: typeof import("@/contexts/tenancy/application/mcp-tokens");
-  let tokenDeps: import("@/contexts/tenancy/application/mcp-tokens").McpTokenDeps;
+  let tokens: typeof import("@/contexts/agent-access/application/mcp-tokens");
+  let tokenDeps: import("@/contexts/agent-access/application/mcp-tokens").McpTokenDeps;
 
   const codeOf = (result: { structured: Record<string, unknown> }) => (result.structured.error as { code?: string } | undefined)?.code;
   const reserved = async () => (await sql<{ amount: number }[]>`select amount from mcp_agent_usage where organization_id = ${org.organizationId} and kind = 'search_leads'`)[0]?.amount ?? 0;
@@ -61,8 +61,8 @@ describeDb("MCP agent LinkedIn search", () => {
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
-    tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    tokenDeps = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).mcpTokenDeps();
+    tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    tokenDeps = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).mcpTokenDeps();
     org = await createTestOrg(sql, "Agent search");
     orgs.push(org);
     owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };

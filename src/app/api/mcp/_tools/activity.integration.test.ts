@@ -12,8 +12,8 @@ describeDb("MCP agent activity", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
   let POST: (request: Request) => Promise<Response>;
-  let calls: typeof import("@/contexts/tenancy/application/mcp-tool-calls");
-  let deps: import("@/contexts/tenancy/application/mcp-tool-calls").McpToolCallDeps;
+  let calls: typeof import("@/contexts/agent-access/application/mcp-tool-calls");
+  let deps: import("@/contexts/agent-access/application/mcp-tool-calls").McpToolCallDeps;
   const orgs: TestOrg[] = [];
   const users: string[] = [];
   let caller: McpCaller;
@@ -22,8 +22,8 @@ describeDb("MCP agent activity", () => {
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
-    calls = await import("@/contexts/tenancy/application/mcp-tool-calls");
-    deps = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).mcpToolCallDeps();
+    calls = await import("@/contexts/agent-access/application/mcp-tool-calls");
+    deps = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).mcpToolCallDeps();
     orgs.push(await createTestOrg(sql, "Activity"));
     const [org] = orgs;
     await enableMcp(sql, org.organizationId);

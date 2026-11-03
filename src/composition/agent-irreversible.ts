@@ -9,8 +9,8 @@ import { deleteContact, flatten, previewContactDelete, type ContactDeleteBlocker
 import { BLOCK_MESSAGES } from "@/contexts/people/application/lead-delete-terms";
 import { deleteLeads, previewLeadDelete } from "@/contexts/people/application/lead-management";
 import { AGENT_DELETE_PROTECTED } from "@/contexts/people/domain/person-delete-policy";
-import { withAgentUsage } from "@/contexts/tenancy/application/mcp-agent-usage";
-import { agentUsageDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { withAgentUsage } from "@/contexts/agent-access/application/mcp-agent-usage";
+import { agentUsageDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { actionToken, actionTokenMatches, actionTokenStale, readActionToken } from "@/shared/action-token";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 

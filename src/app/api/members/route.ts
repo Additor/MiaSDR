@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { inviteMember } from "@/contexts/tenancy/application/member-management";
-import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
+import { memberDeps } from "@/composition/members";
 import { withAdmin } from "@/app/_lib/api";
 
 export const POST = (request: Request) =>

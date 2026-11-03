@@ -14,7 +14,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
-import { mcpTokens, members } from "@/contexts/tenancy/infrastructure/schema";
+import { mcpTokens } from "@/contexts/agent-access/infrastructure/schema";
+import { members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES, IN_FLIGHT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";

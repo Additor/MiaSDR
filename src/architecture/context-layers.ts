@@ -5,6 +5,7 @@ import path from "node:path";
 export const LAYERS: readonly (readonly string[])[] = [
   ["identity"],
   ["tenancy"],
+  ["agent-access"],
   ["integrations"],
   ["ai"],
   ["people"],

@@ -28,9 +28,9 @@ describeDb("MCP with spending and irreversible actions off for the install", () 
 
   it("hides the tools from a token the organization would allow, refuses the reservation, and leaves other tools alone", async () => {
     const { POST } = await import("../route");
-    const tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    const { agentUsageDeps, mcpTokenDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
-    const { withAgentUsage } = await import("@/contexts/tenancy/application/mcp-agent-usage");
+    const tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    const { agentUsageDeps, mcpTokenDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
+    const { withAgentUsage } = await import("@/contexts/agent-access/application/mcp-agent-usage");
     const [org] = orgs;
     const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     await tokens.updateMcpSettings(mcpTokenDeps(), owner, { enabled: true, agentSpendCentsPerDay: 500, agentSearchLeadsPerDay: 100, agentIrreversiblePerDay: 5 });

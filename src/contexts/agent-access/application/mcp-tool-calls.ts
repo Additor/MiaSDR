@@ -1,5 +1,5 @@
 import { ForbiddenError, type Actor } from "@/shared/errors";
-import { isOwnerOrAdmin } from "../domain/roles";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 /** One tool call as the MCP endpoint records it. `target` holds ids only. */
 export interface McpToolCallEntry {

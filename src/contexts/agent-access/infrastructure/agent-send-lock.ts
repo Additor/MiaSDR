@@ -5,8 +5,9 @@ import { mcpTokens } from "@/platform/db/schema";
 
 /**
  * The organization's agent-send lock (docs/database.md, "Lock modes"). A member change (a role change or a removal,
- * `drizzle-member-store.ts`) and a token revoke (`drizzle-mcp-token-admin-store.ts`) take it exclusive before any row
- * lock, so an agent action that starts after they answer sees the new state. A policy change must take it the same way.
+ * `tenancy/infrastructure/drizzle-member-store.ts`) and a token revoke (`drizzle-mcp-token-admin-store.ts`) take it
+ * exclusive before any row lock, so an agent action that starts after they answer sees the new state. A policy change
+ * must take it the same way.
  */
 export const lockAgentSend = (tx: DbHandle, organizationId: string) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`agent-send:${organizationId}`}, 0))`);

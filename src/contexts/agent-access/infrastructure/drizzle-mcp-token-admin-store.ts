@@ -1,13 +1,13 @@
 import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type DbHandle } from "@/platform/db/client";
-import { channelSettings, mcpTokens, members, users } from "@/platform/db/schema";
+import { mcpTokens, members, users } from "@/platform/db/schema";
 import type { McpTokenRow, McpTokenStore, McpTokenView } from "../application/mcp-tokens";
 import { readScopes } from "../domain/mcp-policy";
 import { MCP_SETTINGS_CHANNEL, type McpSettings } from "../domain/mcp-settings";
 import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
-import { recordAudit } from "./audit";
-import { mergeChannelSettings } from "./channel-settings";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
+import { mergeChannelSettings, setChannelSettingTo } from "@/contexts/tenancy/infrastructure/channel-settings";
 import { drizzleMcpTokenStore } from "./drizzle-mcp-token-store";
 import { mcpSettingsIn } from "./mcp-settings-reader";
 
@@ -28,15 +28,16 @@ const toView = (row: Omit<McpTokenView, "scopes"> & { scopes: string[] }): McpTo
 
 /** Moves a stored epoch past its current value and past every token's. The caller holds `lockAgentSend`. */
 async function moveEpoch(tx: DbHandle, organizationId: string, key: "agentSendEpoch" | "agentSpendEpoch" | "agentIrreversibleEpoch", current: number, column: AnyPgColumn) {
-  await tx
-    .update(channelSettings)
-    .set({
-      values: sql`jsonb_set(${channelSettings.values}, ${`{${key}}`}::text[], to_jsonb(greatest(
+  await setChannelSettingTo(
+    tx,
+    organizationId,
+    MCP_SETTINGS_CHANNEL,
+    key,
+    sql`to_jsonb(greatest(
         ${current}::bigint,
         (select coalesce(max(${column}), 0) from ${mcpTokens} where ${mcpTokens.organizationId} = ${organizationId})
-      ) + 1))`,
-    })
-    .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL)));
+      ) + 1)`,
+  );
 }
 
 /** The token list, creation and revoke behind Settings > MCP. `drizzle-mcp-token-store.ts` serves the MCP requests. */

@@ -1,5 +1,5 @@
 import { revokeInvitation } from "@/contexts/tenancy/application/member-management";
-import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
+import { memberDeps } from "@/composition/members";
 import { withActor } from "@/app/_lib/api";
 
 export const DELETE = async (_request: Request, { params }: RouteContext<"/api/invitations/[id]">) => {
