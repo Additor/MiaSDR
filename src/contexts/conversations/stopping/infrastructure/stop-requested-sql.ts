@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import { rowsOf, uuidList } from "@/platform/db/sql-values";
-import { stopReviewOpenSql, wordsAskToStopSql } from "@/platform/db/stop-review-sql";
+import { stopReviewOpenSql, wordsAskToStopSql } from "./stop-review-sql";
 
 /**
  * True when the reply `messageId` asked to stop and a pick of it stored the flag (`response.stopRequested`). The AI's

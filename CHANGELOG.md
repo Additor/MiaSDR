@@ -37,6 +37,13 @@ The tables and code now use the words the screens use, so start from an empty da
 - Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
 - The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
 
+### Stopping contact
+
+- An unsubscribe, a suppression added by hand and Suppress in the Inbox now end the LinkedIn enrollments and follow-ups of the people with that address too. They used to end email enrollments only, while ending follow-ups on every channel.
+- A hard bounce now ends email enrollments and email follow-ups only. A LinkedIn enrollment or follow-up of that person goes on.
+- A reply and do not contact now clear the LinkedIn resolve retry of an enrollment they end.
+- Every stop now takes the person's locks in one order and takes the outreach lock, so a stop can no longer commit between the checks and the write of a restore of a removed lead or of a person delete. Do not contact on a single person now runs once more after a lock conflict, then answers 409 `try_again`.
+
 ### Removed
 
 Nothing used these, and the database baseline drops them, so start from an empty database.
@@ -44,6 +51,7 @@ Nothing used these, and the database baseline drops them, so start from an empty
 - The redirects from old URLs such as `/crm/records/[id]` and `/settings/email`.
 - 24 `GET` API handlers that no screen, MCP tool or test called. Screens read through the server, and MCP tools call the same use cases.
 - `draft_knowledge_citations` and 12 columns with no reader. A draft's stored request still names the knowledge it used.
+- The `complaint` suppression reason and its label, because no path ever wrote it. The Replies report no longer counts complaints.
 - The `shadcn` and `date-fns` packages. `src/app/globals.css` keeps the few CSS rules the app uses.
 
 ### Fixed

@@ -34,7 +34,6 @@ describe("enrollment outcomes", () => {
       replied: "replied",
       bounced: "bounced",
       unsubscribed: "suppressed",
-      complaint: "suppressed",
       manual: "suppressed",
       do_not_contact: "suppressed",
       converted: "cancelled",

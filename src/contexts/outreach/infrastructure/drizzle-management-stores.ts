@@ -18,7 +18,7 @@ import { inboxThreadsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { personStopReviewOpenSql } from "./stop-review-gate";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../domain/send-status";
 

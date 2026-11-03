@@ -418,7 +418,7 @@ CREATE TABLE "suppression_list" (
 	"added_in_settings" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "suppression_org_email_uq" UNIQUE("organization_id","email"),
-	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual', 'complaint'))
+	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual'))
 );
 --> statement-breakpoint
 CREATE TABLE "integration_accounts" (
@@ -2077,6 +2077,23 @@ END $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;--> statement-breakpoint
+
+-- The stop review rule, which conversations owns. A reply is open while it asks to stop, in a pick's reading or its own words, and no person reviewed it.
+CREATE VIEW public.stop_review_open_messages AS
+ SELECT m.id AS message_id, m.organization_id
+   FROM public.messages m
+  WHERE (coalesce(m.raw->>'stopAsked', 'false') = 'true'
+     OR EXISTS (SELECT 1 FROM public.reply_type_picks k
+                 WHERE k.message_id = m.id
+                   AND (coalesce((k.response->>'stopRequested')::boolean, false)
+                     OR EXISTS (SELECT 1 FROM public.reply_types st WHERE st.id = k.proposed_reply_type_id AND st.system_role = 'stop_request'))))
+    AND NOT EXISTS (SELECT 1 FROM public.stop_reviews sr WHERE sr.message_id = m.id);--> statement-breakpoint
+
+-- The same rule for a person: the latest reply of one of their conversations waits on that review.
+CREATE VIEW public.stop_review_open_people AS
+ SELECT c.organization_id, c.person_id
+   FROM public.conversations c
+   JOIN public.stop_review_open_messages o ON o.message_id = c.latest_inbound_message_id;--> statement-breakpoint
 
 CREATE TRIGGER audit_log_no_delete_trg BEFORE DELETE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ledger_reject_delete();--> statement-breakpoint
 

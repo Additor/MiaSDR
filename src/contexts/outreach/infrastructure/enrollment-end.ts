@@ -1,7 +1,7 @@
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
-import { campaignEnrollments, people } from "@/platform/db/schema";
-import { ENROLLMENT_FROM, haltOutcome, type EnrollmentOutcome, type OutreachHalt } from "../domain/enrollment-status";
+import { campaignEnrollments, linkedinEnrollmentDetails } from "@/platform/db/schema";
+import { ENROLLMENT_FROM, haltOutcome, LIVE_ENROLLMENT_STATUSES, type EnrollmentOutcome, type OutreachHalt } from "../domain/enrollment-status";
 
 export interface EndedEnrollment {
   id: string;
@@ -23,16 +23,38 @@ export async function endEnrollmentsTx(tx: DbHandle, scope: SQL | undefined, out
 }
 
 /**
- * Ends every live enrollment of these people, on every channel and campaign, for one halt. `stopContactTx` calls it inside
- * the transaction that records the trigger (a reply, do not contact) and records the event itself.
+ * Ends the live enrollments of these people for one halt, in every campaign, on every channel or on email alone. Every
+ * `stopContactTx` trigger ends enrollments here, inside the transaction that records the trigger.
+ *
+ * It locks in the order of the LinkedIn paths (acceptance, invitation sent): the details rows, then the enrollment rows, each
+ * set in id order, so a webhook loop and this write stay out of each other's way. An ended LinkedIn enrollment loses its
+ * resolve retry time, as removing one does. The status condition repeats in the write, so a writer that raced this one
+ * keeps its outcome.
  */
-export async function haltPersonEnrollmentsTx(tx: DbHandle, organizationId: string, personIds: readonly string[], halt: OutreachHalt, now: Date) {
+export async function haltEnrollmentsTx(tx: DbHandle, input: { organizationId: string; personIds: readonly string[]; channels: "every_channel" | "email_only"; halt: OutreachHalt; now: Date }): Promise<EndedEnrollment[]> {
+  const { organizationId, personIds, channels, halt, now } = input;
   if (personIds.length === 0) return [];
-  return endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, [...personIds])), haltOutcome(halt), now);
-}
-
-/** Ends the live email enrollments of every person in the organization with this stored address. LinkedIn stays open. */
-export async function haltAddressEmailEnrollmentsTx(tx: DbHandle, organizationId: string, email: string, halt: OutreachHalt, now: Date) {
-  const owners = tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, organizationId), sql`lower(${people.email}) = ${email}`));
-  return endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.channel, "email"), inArray(campaignEnrollments.personId, owners)), haltOutcome(halt), now);
+  const ofPeople = and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, [...personIds]), inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]));
+  if (channels === "every_channel") {
+    const linkedin = await tx.select({ id: campaignEnrollments.id }).from(campaignEnrollments).where(and(ofPeople, eq(campaignEnrollments.channel, "linkedin")));
+    if (linkedin.length > 0) {
+      await tx
+        .select({ id: linkedinEnrollmentDetails.enrollmentId })
+        .from(linkedinEnrollmentDetails)
+        .where(inArray(linkedinEnrollmentDetails.enrollmentId, linkedin.map((e) => e.id)))
+        .orderBy(asc(linkedinEnrollmentDetails.enrollmentId))
+        .for("update");
+    }
+  }
+  const live = await tx
+    .select({ id: campaignEnrollments.id })
+    .from(campaignEnrollments)
+    .where(and(ofPeople, channels === "email_only" ? eq(campaignEnrollments.channel, "email") : undefined))
+    .orderBy(asc(campaignEnrollments.id))
+    .for("update");
+  if (live.length === 0) return [];
+  const ended = await endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, live.map((e) => e.id))), haltOutcome(halt), now);
+  const endedLinkedin = ended.filter((e) => e.channel === "linkedin").map((e) => e.id);
+  if (endedLinkedin.length > 0) await tx.update(linkedinEnrollmentDetails).set({ resolveNextAttemptAt: null }).where(inArray(linkedinEnrollmentDetails.enrollmentId, endedLinkedin));
+  return ended;
 }

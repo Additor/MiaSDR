@@ -199,7 +199,7 @@ describeDb("contact delete races", () => {
     expect(await kit.count("contact_policies", f.org, `person_id = '${contact}'`)).toBe(0);
   }, 30_000);
 
-  it("Mark do not contact holding the policy row while it waits for the conversations makes the delete give way; the retry sees the mark", async () => {
+  it("Mark do not contact waits for the conversations the delete holds, holding nothing: the delete commits and the mark answers not found", async () => {
     const f = await kit.organization();
     const lead = await repliedContact(f);
     await kit.sql`insert into contact_policies (organization_id, person_id, do_not_contact, source) values (${f.org}, ${lead.personId}, false, null)`;
@@ -207,25 +207,19 @@ describeDb("contact delete races", () => {
     expect(preview.suppressionKept).toBe(false);
     const retries = lockRetryStats.retries;
 
-    // The delete stops after its first lock step, holding the conversations, their conversations and the advisory lock.
+    // The delete stops after its first lock step, holding the conversations, their threads and the advisory lock.
     const gate = pauseAt("handling", "lockPersonForDelete");
     const deleting = settle(app.deleteContact(gate.deps, f.member, lead.personId, { expected: expectedOf(preview) }));
     await gate.paused;
-    // Do not contact takes its policy row, then waits for the conversations the delete holds.
     const marking = settle(crmStore.setDoNotContact({ organizationId: f.org, actorUserId: f.member.userId, personId: lead.personId, enabled: true, reason: "asked", now: new Date() }));
     await waitForLockWaiters(kit.sql, 1);
     gate.resume();
     const [deleted, marked] = await Promise.all([deleting, marking]);
-    expect(marked.error).toBeNull();
-    expect(lockRetryStats.retries).toBe(retries + 1);
-    expect(gate.calls()).toBe(2);
-    // The mark wrote a history line, so the retry reports the new counts; the next confirm deletes and keeps the email suppressed.
-    expect((deleted.error as ConflictError).details).toMatchObject({ code: "counts_changed" });
-    const fresh = (deleted.error as ConflictError).details?.counts as ContactDeletePreview["counts"];
-    const done = await app.deleteContact(deps, f.member, lead.personId, { expected: expectedOf({ ...preview, counts: fresh }) });
-    expect(done.deleted).toEqual(fresh);
+    expect(deleted.error).toBeNull();
+    expect(marked.error).toBeInstanceOf(NotFoundError);
+    expect(lockRetryStats.retries).toBe(retries);
+    expect(gate.calls()).toBe(1);
     expect(await people(lead.personId)).toBe(0);
-    expect(await kit.count("suppression_list", f.org, `email = '${lead.input.from.email.toLowerCase()}' and note = 'Deleted while marked do not contact.'`)).toBe(1);
   }, 30_000);
 
   it("suppressEmail racing a delete that holds the conversations: both commit, the person goes and the address stays suppressed", async () => {

@@ -18,9 +18,9 @@ Any of these ends a lead's sequence and cancels its unsent steps and unsent draf
 | --- | --- |
 | A real reply on any channel (email or LinkedIn) | The lead's sequence stops in every campaign. The reply lands in the Inbox. |
 | Do-not-contact on the person | Blocks every channel. A person sets it, with a reason, on the lead page, the contact page, the deal page or the Inbox thread, or for many contacts at once from the Contacts bulk bar. |
-| Suppression list | An address that unsubscribed, hard-bounced or was added by hand. It blocks email to that address in your organization. |
-| Hard bounce | The address goes on the suppression list and its sequences end. |
-| Unsubscribe link or one-click header | The address goes on the suppression list and its sequences end. |
+| Suppression list | An address that unsubscribed, hard-bounced or was added by hand. It blocks email to that address in your organization. Adding an address by hand also ends the sequences and follow-ups of the people with it on every channel, LinkedIn included. |
+| Hard bounce | The address goes on the suppression list and its email sequences and email follow-ups end. A bounce says the address is bad, so LinkedIn outreach to the same person goes on. |
+| Unsubscribe link or one-click header | The address goes on the suppression list, and the sequences and follow-ups of the people with that address end on every channel, LinkedIn included. |
 | The lead becomes a contact: you create a deal for it, press Make contact on the lead page, or confirm the matching-lead step of Add contact | Its pending and active enrollments end in every campaign with the stop reason "Became a contact", its follow-ups after a reply end, and the app discards their unsent drafts. A contact cannot go back to Leads or join a campaign again, even after you delete its deal. The Create deal and Make contact dialogs name these counts before you confirm. |
 | A person pauses or completes the campaign | Nothing more sends from it. A paused campaign releases a send that was reserved but not yet made. |
 

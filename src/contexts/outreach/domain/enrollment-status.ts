@@ -40,7 +40,7 @@ export interface EnrollmentOutcome {
 
 /**
  * Why outreach to a person, or to an address, stops on every campaign at once. The token is the stored `stop_reason`.
- * The suppression reasons (`bounced`, `unsubscribed`, `complaint`, `manual`) are the reasons of `suppression_list`.
+ * The suppression reasons (`bounced`, `unsubscribed`, `manual`) are the reasons of `suppression_list`.
  * Conversations ends the person's follow-up runs for the same halt and keeps its own run reason for it.
  */
 export const OUTREACH_HALTS = ["replied", ...SUPPRESSION_REASONS, "do_not_contact", "converted"] as const;
@@ -50,7 +50,6 @@ const HALT_STATUS: Record<OutreachHalt, EnrollmentOutcomeStatus> = {
   replied: "replied",
   bounced: "bounced",
   unsubscribed: "suppressed",
-  complaint: "suppressed",
   manual: "suppressed",
   do_not_contact: "suppressed",
   converted: "cancelled",

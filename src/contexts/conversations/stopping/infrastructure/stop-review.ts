@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import type { AgentVia } from "@/shared/errors";
-import { pickAsksToStopSql, wordsAskToStopSql } from "@/platform/db/stop-review-sql";
+import { pickAsksToStopSql, wordsAskToStopSql } from "./stop-review-sql";
 
 /**
  * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a conversation or a

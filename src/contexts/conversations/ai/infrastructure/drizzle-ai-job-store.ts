@@ -1,4 +1,4 @@
-import { wordsAskToStopSql } from "@/platform/db/stop-review-sql";
+import { wordsAskToStopSql } from "../../stopping/infrastructure/stop-review-sql";
 import { isAppliedPick } from "../../domain/reply-type-pick";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";

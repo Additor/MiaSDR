@@ -14,7 +14,7 @@ Replies and unknown senders are stored in the Inbox (`/inbox`). A message whose 
 
 The first sync of a new mailbox stores a cursor and ingests nothing. If Gmail expires the cursor, the app resets it and writes a note in the mailbox's `last_error`. Replies and bounces in that gap are not synced.
 
-Every email carries an unsubscribe link and the `List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link opens a page with a confirm button. Confirming suppresses the address in that organization only and stops its pending and active email enrollments. Repeating it does nothing.
+Every email carries an unsubscribe link and the `List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link opens a page with a confirm button. Confirming suppresses the address in that organization only and ends the pending and active enrollments of the people with that address on every channel. Repeating it does nothing.
 
 ## Limits and spacing
 

@@ -72,7 +72,7 @@ describe("state machines", () => {
 
 describe("interruptReason", () => {
   const facts = (over: { run?: Partial<InterruptFacts["run"]>; conversation?: Partial<InterruptFacts["conversation"]>; doNotContact?: boolean; contact?: boolean; suppression?: InterruptFacts["suppression"]; flowActive?: boolean } = {}): InterruptFacts => ({
-    run: { triggerMessageId: "m1", replyTypeId: "s1", ...over.run },
+    run: { triggerMessageId: "m1", replyTypeId: "s1", channel: "email", ...over.run },
     conversation: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", followUps: "continue", workflowState: "waiting", ...over.conversation },
     doNotContact: over.doNotContact ?? false,
     contact: over.contact ?? false,
@@ -85,8 +85,13 @@ describe("interruptReason", () => {
   it("stops on do not contact, unsubscribe and bounce", () => {
     expect(interruptReason(facts({ doNotContact: true }))).toBe("do_not_contact");
     expect(interruptReason(facts({ suppression: "unsubscribed" }))).toBe("unsubscribed");
-    expect(interruptReason(facts({ suppression: "complaint" }))).toBe("unsubscribed");
     expect(interruptReason(facts({ suppression: "bounced" }))).toBe("bounce");
+  });
+  it("lets a bounce end only a run on an email thread, while other suppressions end a run on any channel", () => {
+    const linkedin = { run: { channel: "linkedin" } };
+    expect(interruptReason(facts({ ...linkedin, suppression: "bounced" }))).toBeNull();
+    expect(interruptReason(facts({ ...linkedin, suppression: "unsubscribed" }))).toBe("unsubscribed");
+    expect(interruptReason(facts({ ...linkedin, suppression: "manual" }))).toBe("suppressed");
   });
   it("stops a contact's run with the converted reason, after do not contact and suppression", () => {
     expect(interruptReason(facts({ contact: true }))).toBe("converted");

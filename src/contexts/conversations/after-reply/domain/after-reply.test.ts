@@ -93,7 +93,7 @@ describe("FIXED_STOP_RULES", () => {
 
   it("matches what interruptReason returns for each lead or record fact", () => {
     const base: InterruptFacts = {
-      run: { triggerMessageId: "m1", replyTypeId: "s1" },
+      run: { triggerMessageId: "m1", replyTypeId: "s1", channel: "email" },
       conversation: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", followUps: "continue", workflowState: "open" },
       doNotContact: false,
       suppression: null,

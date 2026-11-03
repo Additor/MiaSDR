@@ -60,6 +60,7 @@ interface FactsRow {
   conversation_id: string;
   trigger_message_id: string;
   run_reply_type_id: string;
+  run_channel: string;
   latest_inbound_message_id: string | null;
   reply_type_id: string | null;
   group_key: string | null;
@@ -77,7 +78,7 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
   organizationId: r.organization_id,
   conversationId: r.conversation_id,
   facts: {
-    run: { triggerMessageId: r.trigger_message_id, replyTypeId: r.run_reply_type_id },
+    run: { triggerMessageId: r.trigger_message_id, replyTypeId: r.run_reply_type_id, channel: r.run_channel },
     conversation: { latestInboundMessageId: r.latest_inbound_message_id, replyTypeId: r.reply_type_id, groupKey: r.group_key, replyTypeKey: r.sub_key, followUps: r.follow_ups, workflowState: r.workflow_state },
     doNotContact: r.dnc,
     suppression: r.suppression,
@@ -88,17 +89,18 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
 
 /** The facts that decide whether a run must stop, for the runs matching `where`. Every join stays inside the run's organization. */
 const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
-  select r.id as run_id, r.organization_id, r.conversation_id, r.trigger_message_id, r.reply_type_id as run_reply_type_id,
+  select r.id as run_id, r.organization_id, r.conversation_id, r.trigger_message_id, r.reply_type_id as run_reply_type_id, t.channel as run_channel,
          rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, s.follow_ups, rec.workflow_state,
          ${doNotContactSql("p")} as dnc,
          (select sl.reason from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)
-           order by case sl.reason when 'complaint' then 0 when 'unsubscribed' then 1 when 'bounced' then 2 else 3 end limit 1) as suppression,
+           order by case sl.reason when 'unsubscribed' then 0 when 'bounced' then 1 else 2 end limit 1) as suppression,
          p.lifecycle = 'contact' as contact,
          ${flowRunnableSql("fl")} as flow_active
   from follow_up_runs r
   join follow_up_flows fl on fl.id = r.flow_id and fl.organization_id = r.organization_id
   join conversations rec on rec.id = r.conversation_id and rec.organization_id = r.organization_id
   join people p on p.id = rec.person_id and p.organization_id = r.organization_id
+  join threads t on t.id = r.thread_id and t.organization_id = r.organization_id
   left join reply_types s on s.id = rec.reply_type_id
   where ${where} ${tail}`;
 

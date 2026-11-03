@@ -36,7 +36,7 @@ describe("reachability", () => {
 
 describe("suppressionReasonLabel", () => {
   it("labels every stored reason", () => {
-    expect(["unsubscribed", "bounced", "manual", "complaint"].map(suppressionReasonLabel)).toEqual(["Unsubscribed", "Bounced", "Added by hand", "Spam complaint"]);
+    expect(["unsubscribed", "bounced", "manual"].map(suppressionReasonLabel)).toEqual(["Unsubscribed", "Bounced", "Added by hand"]);
   });
 
   it("falls back to a readable word for an unknown reason", () => {

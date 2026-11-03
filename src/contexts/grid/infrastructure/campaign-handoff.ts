@@ -7,7 +7,7 @@ import { DEFAULT_STEPS } from "@/contexts/outreach/application/campaign-manageme
 import { campaignDeps, enrollEmailPeople } from "@/contexts/outreach/infrastructure/composition";
 import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { db, type DbTx } from "@/platform/db/client";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { personStopReviewOpenSql } from "@/contexts/outreach/infrastructure/stop-review-gate";
 import { campaignEnrollments, campaigns, contactPolicies, people, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { CampaignHandoff, HandoffFailure } from "../application/ports";

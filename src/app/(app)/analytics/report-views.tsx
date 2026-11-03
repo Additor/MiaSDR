@@ -461,7 +461,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
       )}
       {report.suppressions ? (
         <p className="text-sm text-muted-foreground">
-          Suppressions added in this window: {formatCount(report.suppressions.unsubscribed)} unsubscribed, {formatCount(report.suppressions.bounced)} bounced, {formatCount(report.suppressions.complaint)} complaints, {formatCount(report.suppressions.manual)} manual.
+          Suppressions added in this window: {formatCount(report.suppressions.unsubscribed)} unsubscribed, {formatCount(report.suppressions.bounced)} bounced, {formatCount(report.suppressions.manual)} manual.
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">Suppressions belong to the organization, not a campaign, so they are hidden while a campaign filter is on.</p>
