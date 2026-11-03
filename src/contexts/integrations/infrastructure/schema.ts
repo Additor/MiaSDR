@@ -28,12 +28,12 @@ export const integrationAccounts = pgTable(
   ],
 );
 
-/** One AES-256-GCM blob per account (`v1.<iv>.<tag>.<ciphertext>`). Plaintext exists only server-side right before a call. */
+/** One AES-256-GCM blob per account (`v2:<keyId>:<iv>:<tag>:<ciphertext>`). Plaintext exists only server-side right before a call. */
 export const integrationCredentials = pgTable("integration_credentials", {
   accountId: uuid("account_id")
     .primaryKey()
     .references(() => integrationAccounts.id, { onDelete: "cascade" }),
   encryptedPayload: text("encrypted_payload").notNull(),
-  encryptionVersion: text("encryption_version").notNull().default("v1"),
+  encryptionVersion: text("encryption_version").notNull().default("v2"),
   updatedAt: updatedAt(),
 });

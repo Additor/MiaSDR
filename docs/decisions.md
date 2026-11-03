@@ -110,7 +110,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 ### Secrets at rest
 
-Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciphertext>` (`integrations/infrastructure/credential-crypto.ts`), keyed by HKDF over `INTEGRATION_CREDENTIALS_KEY`. Decryption also tries `INTEGRATION_CREDENTIALS_LEGACY_KEYS`, and the older `v1` envelope still opens. `pnpm credentials:rotate` (`scripts/rotate-credentials.mjs`, `--apply` to write) re-encrypts every row with the current key and lists rows it cannot open.
+Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciphertext>` (`integrations/infrastructure/credential-crypto.ts`), keyed by HKDF over `INTEGRATION_CREDENTIALS_KEY`. Decryption also tries `INTEGRATION_CREDENTIALS_LEGACY_KEYS`. A pre-release `v1` format without a key id is gone: no install ever stored one. `pnpm credentials:rotate` (`scripts/rotate-credentials.mjs`, `--apply` to write) re-encrypts every row with the current key and lists rows it cannot open.
 
 ### Environment and boot
 

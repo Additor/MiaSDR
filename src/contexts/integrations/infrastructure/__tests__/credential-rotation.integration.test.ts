@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { rotateCredentials } from "../../../../../scripts/rotate-credentials.mjs";
-import { credentialKeyId, decryptCredential, encryptCredential, encryptCredentialV1 } from "../credential-crypto";
+import { credentialKeyId, decryptCredential, encryptCredential } from "../credential-crypto";
 import { describeDb, dropOrgs, TEST_DATABASE_URL, testSql } from "@/test-support/db";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
@@ -46,7 +46,7 @@ describeDb("credentials:rotate", () => {
 
   it("dry run counts rows and changes nothing", async () => {
     const s = await seed();
-    const a = await s.account("anthropic", encryptCredentialV1("A", OLD), "v1");
+    const a = await s.account("anthropic", encryptCredential("A", OLD), "v2");
     const g = await s.provider("hunter", encryptCredential("G", OLD), "v2");
     const before = [await payload("integration_credentials", "account_id", a), await payload("grid_provider_credentials", "provider_id", g)];
     const report = await run(false);
@@ -60,7 +60,7 @@ describeDb("credentials:rotate", () => {
 
   it("apply re-encrypts, rows decrypt with the new key alone, and a second run changes nothing", async () => {
     const s = await seed();
-    const a = await s.account("anthropic", encryptCredentialV1('{"apiKey":"one"}', OLD), "v1");
+    const a = await s.account("anthropic", encryptCredential('{"apiKey":"one"}', OLD), "v2");
     const g = await s.provider("hunter", encryptCredential('{"apiKey":"two"}', OLD), "v2");
     const report = await run(true);
     expect(report.tables.integration_credentials.rotated).toBe(1);
@@ -82,7 +82,7 @@ describeDb("credentials:rotate", () => {
   it("lists an undecryptable row, leaves it untouched and rotates the others", async () => {
     const s = await seed();
     const bad = await s.account("anthropic", encryptCredential("lost", LOST), "v2");
-    const good = await s.provider("hunter", encryptCredentialV1("kept", OLD), "v1");
+    const good = await s.provider("hunter", encryptCredential("kept", OLD), "v2");
     const badBefore = await payload("integration_credentials", "account_id", bad);
     const report = await run(true);
     expect(report.tables.integration_credentials.undecryptable).toEqual([{ id: bad, reason: `no known key for key id ${credentialKeyId(LOST)}` }]);
@@ -119,14 +119,14 @@ describeDb("credentials:rotate", () => {
     await sql`delete from grid_provider_credentials`;
     await sql`delete from integration_credentials`;
     const s = await seed();
-    const a = await s.account("anthropic", encryptCredentialV1("node-run", OLD), "v1");
+    const a = await s.account("anthropic", encryptCredential("node-run", OLD), "v2");
     const env = { PATH: process.env.PATH, DATABASE_URL: TEST_DATABASE_URL, DATABASE_SSL: "disable", INTEGRATION_CREDENTIALS_KEY: NEW, INTEGRATION_CREDENTIALS_LEGACY_KEYS: OLD };
     const node = (...args: string[]) => promisify(execFile)(process.execPath, ["scripts/rotate-credentials.mjs", ...args], { env: { ...env, NODE_ENV: "test" } as NodeJS.ProcessEnv, cwd: process.cwd() });
 
     const dry = await node();
     expect(dry.stdout).toContain("Dry run");
     expect(dry.stdout).toContain(`Current key id: ${credentialKeyId(NEW)}`);
-    expect((await payload("integration_credentials", "account_id", a)).encryption_version).toBe("v1");
+    expect((await payload("integration_credentials", "account_id", a)).encrypted_payload.startsWith(`v2:${credentialKeyId(OLD)}:`)).toBe(true);
 
     const applied = await node("--apply");
     expect(applied.stdout).toContain("integration_credentials: 1 rows, 0 already on the current key, 1 rotated");

@@ -64,7 +64,7 @@ describeDb("sequence and grid invariants", () => {
     await expect(
       sql`insert into grid_provider_credentials (provider_id, organization_id, encrypted_payload) values (${provider}, ${orgA}, 'sk-plaintext')`,
     ).rejects.toThrow(/check/i);
-    await sql`insert into grid_provider_credentials (provider_id, organization_id, encrypted_payload) values (${provider}, ${orgA}, 'v1:a:b:c')`;
+    await sql`insert into grid_provider_credentials (provider_id, organization_id, encrypted_payload) values (${provider}, ${orgA}, 'v2:k:a:b:c')`;
   });
 
   it("keeps one draft version per sequence and checks step semantics", async () => {

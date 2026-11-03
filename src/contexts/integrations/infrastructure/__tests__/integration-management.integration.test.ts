@@ -58,7 +58,7 @@ describeDb("integration credentials", () => {
     const list = await uc.listIntegrations(deps(), t.actor);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ key: "anthropic", kind: "ai", hasCredential: true, manageHref: null, runsAi: true });
-    expect(JSON.stringify(list)).not.toMatch(/sk-ant|encrypted|v1:/);
+    expect(JSON.stringify(list)).not.toMatch(/sk-ant|encrypted|v2:/);
   });
 
   it("marks the key that runs AI with the resolver's rule, and says where AI goes if it is removed", async () => {
@@ -211,7 +211,7 @@ describeDb("integration credentials", () => {
 
     it("rolls the audit row back with the credential when the transaction fails", async () => {
       const t = await org();
-      const failing = { ...deps(), cipher: { encrypt: () => "v1:bad" } };
+      const failing = { ...deps(), cipher: { encrypt: () => "v2:bad" } };
       // A payload the store accepts, then a failure after the audit insert: drop the credential table write by violating the audit FK.
       const ghost = { ...t.actor, userId: "11111111-1111-1111-1111-111111111111" };
       await expect(uc.saveIntegrationCredential(failing, ghost, { providerKey: "anthropic", values: { apiKey: "k" } })).rejects.toThrow();

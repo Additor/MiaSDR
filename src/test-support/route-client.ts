@@ -284,7 +284,7 @@ export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
   notes: { seedFrom: { conversation_id: "conversations.id", person_id: "conversations.person_id" } },
   // enrollment_id and step_number became nullable (test sends), so the seeder no longer follows the foreign key by itself.
   sends: { step_number: 1, seedFrom: { enrollment_id: "campaign_enrollments.id" } },
-  grid_provider_credentials: { encryption_version: "v1", encrypted_payload: "v1:seed" },
+  grid_provider_credentials: { encryption_version: "v2", encrypted_payload: "v2:seed" },
   // A deal's person must be a contact (trigger on `deals`), so the person the foreign key walk seeds is one.
   deals: { parentForce: { people: { lifecycle: "contact", converted_at: new Date("2026-10-16T00:00:00Z") } } },
   // A personal token; ROW_HOOKS gives each one its own hash, which is unique.

@@ -3629,7 +3629,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'v1'"
+          "default": "'v2'"
         },
         "updated_at": {
           "name": "updated_at",
@@ -12099,7 +12099,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'v1'"
+          "default": "'v2'"
         },
         "created_at": {
           "name": "created_at",

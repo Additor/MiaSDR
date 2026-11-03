@@ -438,7 +438,7 @@ CREATE TABLE "integration_accounts" (
 CREATE TABLE "integration_credentials" (
 	"account_id" uuid PRIMARY KEY NOT NULL,
 	"encrypted_payload" text NOT NULL,
-	"encryption_version" text DEFAULT 'v1' NOT NULL,
+	"encryption_version" text DEFAULT 'v2' NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -1279,7 +1279,7 @@ CREATE TABLE "grid_provider_credentials" (
 	"provider_id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"encrypted_payload" text NOT NULL,
-	"encryption_version" text DEFAULT 'v1' NOT NULL,
+	"encryption_version" text DEFAULT 'v2' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "grid_provider_credentials_envelope_ck" CHECK ("grid_provider_credentials"."encrypted_payload" like "grid_provider_credentials"."encryption_version" || ':%')

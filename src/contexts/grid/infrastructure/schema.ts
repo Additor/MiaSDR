@@ -261,14 +261,14 @@ export const gridProviders = pgTable(
   ],
 );
 
-/** One AES-256-GCM envelope (`v1:<iv>:<tag>:<ciphertext>`) per provider. Never plaintext. */
+/** One AES-256-GCM envelope (`v2:<keyId>:<iv>:<tag>:<ciphertext>`) per provider. Never plaintext. */
 export const gridProviderCredentials = pgTable(
   "grid_provider_credentials",
   {
     providerId: uuid("provider_id").primaryKey(),
     organizationId: orgId(),
     encryptedPayload: text("encrypted_payload").notNull(),
-    encryptionVersion: text("encryption_version").notNull().default("v1"),
+    encryptionVersion: text("encryption_version").notNull().default("v2"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

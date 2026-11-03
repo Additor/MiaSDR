@@ -20,7 +20,6 @@ import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } f
 import { pathToFileURL } from "node:url";
 
 const CURRENT_VERSION = "v2";
-const LEGACY_VERSION = "v1";
 const INFO = "miasdr:integration-credentials:v1";
 
 export const TABLES = [
@@ -68,17 +67,6 @@ export function decryptWithKeys(envelope, keys) {
     } catch {
       throw new Error(`authentication failed for key id ${keyId}`);
     }
-  }
-  if (parts[0] === LEGACY_VERSION && parts.length === 4 && parts[1] && parts[2] && parts[3] !== undefined) {
-    const [, iv, tag, body] = parts;
-    for (const key of keys) {
-      try {
-        return { plaintext: open(key, iv, tag, body), keyId: credentialKeyId(key) };
-      } catch {
-        // try the next key
-      }
-    }
-    throw new Error("no known key decrypts this v1 envelope");
   }
   throw new Error("unsupported envelope");
 }
