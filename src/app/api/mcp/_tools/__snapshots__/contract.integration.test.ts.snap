@@ -691,7 +691,7 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Sets how a reply handling is classified, as a person does in the inbox. \`change\` sets the group and reply type (\`recordId\`, \`groupKey\`, \`replyTypeId\` or null for the group alone, \`expectedContextVersion\` from get_conversation, optional \`note\`); a customer type stays locked unless \`confirmUnlock\`. \`confirm_pick\` marks an applied AI pick as seen and \`undo_pick\` reverts it (\`replyTypePickId\`). A change can retire open drafts and start or end follow-ups; the answer says which.",
+    "description": "Sets how a reply handling is classified, as a person does in the inbox. \`change\` sets the group and reply type (\`recordId\`, \`groupKey\`, \`replyTypeId\` or null for the group alone, \`expectedContextVersion\` from get_conversation, optional \`note\`); a customer type stays locked unless \`confirmUnlock\`. \`confirm_pick\` marks an applied AI pick as seen and \`undo_pick\` reverts it (\`replyTypePickId\`). For a pick that waits for a check, as get_work_queue lists it: \`accept_pick\` applies the AI's proposal and \`override_pick\` applies \`replyTypeKey\` instead (\`conversationId\`, \`expectedContextVersion\`). Both queue a fresh draft when the type writes one. A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: send_reply stays refused until a person reviews it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -700,11 +700,16 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
             "change",
             "confirm_pick",
             "undo_pick",
+            "accept_pick",
+            "override_pick",
           ],
           "type": "string",
         },
         "confirmUnlock": {
           "type": "boolean",
+        },
+        "conversationId": {
+          "type": "string",
         },
         "expectedContextVersion": {
           "maximum": 9007199254740991,
@@ -725,6 +730,9 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
             "string",
             "null",
           ],
+        },
+        "replyTypeKey": {
+          "type": "string",
         },
         "replyTypePickId": {
           "type": "string",
