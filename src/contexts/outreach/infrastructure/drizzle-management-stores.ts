@@ -19,6 +19,7 @@ import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreac
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../domain/send-status";
 
 /** SQL condition for an archive filter on `campaigns`. */
@@ -197,9 +198,12 @@ export const drizzleCampaignStore: CampaignStore = {
     return rows.length > 0;
   },
 
-  async delete(organizationId, id) {
-    const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
-    return rows.length > 0;
+  async delete(organizationId, id, audit) {
+    return db.transaction(async (tx) => {
+      const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+      if (rows.length > 0) await recordAudit(tx, audit);
+      return rows.length > 0;
+    });
   },
 
   async setArchived(organizationId, id, archived) {

@@ -19,6 +19,7 @@ import { enrollmentVariableColumns, personVariableColumns } from "../../infrastr
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
 import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 const DAY_MS = 86_400_000;
@@ -179,10 +180,13 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     return rows.length > 0;
   },
 
-  async delete(organizationId, id) {
+  async delete(organizationId, id, audit) {
     try {
-      const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
-      return rows.length > 0;
+      return await db.transaction(async (tx) => {
+        const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+        if (rows.length > 0) await recordAudit(tx, audit);
+        return rows.length > 0;
+      });
     } catch (error) {
       // conversations_private_campaign_fk: replies of a personal campaign are stored under it and keep it alive.
       const code = (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;

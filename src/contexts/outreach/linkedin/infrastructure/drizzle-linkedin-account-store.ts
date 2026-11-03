@@ -1,3 +1,4 @@
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -223,7 +224,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
     );
   },
 
-  async update(organizationId, id, patch) {
+  async update(organizationId, id, patch, audit) {
     const set = {
       ...(patch.dailyInviteLimit !== undefined ? { dailyInviteLimit: patch.dailyInviteLimit } : {}),
       ...(patch.dailyMessageLimit !== undefined ? { dailyMessageLimit: patch.dailyMessageLimit } : {}),
@@ -238,8 +239,12 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
       const [found] = await db.select(returning).from(linkedinAccounts).where(where);
       return found ?? null;
     }
-    const [row] = await db.update(linkedinAccounts).set(set).where(where).returning(returning);
-    return row ?? null;
+    return db.transaction(async (tx) => {
+      const [row] = await tx.update(linkedinAccounts).set(set).where(where).returning(returning);
+      if (!row) return null;
+      for (const entry of audit(row)) await recordAudit(tx, entry);
+      return row;
+    });
   },
 };
 

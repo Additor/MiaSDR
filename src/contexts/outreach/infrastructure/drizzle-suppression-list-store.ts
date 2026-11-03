@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
+import type { SuppressionAudit } from "../application/suppression-list";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { suppressionList } from "@/platform/db/schema";
 import { removeSettingsSuppression } from "@/contexts/people/infrastructure/reachability";
@@ -35,11 +36,16 @@ export const drizzleSuppressionListStore: SuppressionListStore = {
     return row ? toRow(row) : null;
   },
 
-  async remove(organizationId, id) {
-    await removeSettingsSuppression(db, organizationId, id);
+  async remove(organizationId, id, audit) {
+    await db.transaction(async (tx) => {
+      await removeSettingsSuppression(tx, organizationId, id);
+      await writeAudit(tx, audit);
+    });
   },
 
-  async audit(entry) {
-    await recordAudit(db, { organizationId: entry.organizationId, actorUserId: entry.actorUserId, action: entry.action, entityType: "suppression", entityId: entry.entityId ?? undefined, meta: entry.meta });
-  },
+  audit: (entry) => writeAudit(db, entry),
 };
+
+function writeAudit(handle: DbHandle, entry: SuppressionAudit) {
+  return recordAudit(handle, { organizationId: entry.organizationId, actorUserId: entry.actorUserId, action: entry.action, entityType: "suppression", entityId: entry.entityId ?? undefined, meta: entry.meta });
+}

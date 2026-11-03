@@ -3,16 +3,10 @@ import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/sh
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { REQUEUE_BATCH } from "../domain/ai-job-requeue";
 import type { ReplyAiResolver } from "./ai-ports";
-import type { AiJobQueueStore, FailedAiJob, SkippedAiJob } from "../../application/reply-ports";
-
-/** Same shape as the audit sink other contexts use; each composition root passes the `audit_log` writer. */
-export interface AuditPort {
-  record(entry: { organizationId: string; actorUserId: string | null; action: string; entityType?: string; entityId?: string; meta?: Record<string, unknown> }): Promise<void>;
-}
+import type { AiJobQueueStore, FailedAiJob, RequeueAudit, SkippedAiJob } from "../../application/reply-ports";
 
 export interface AiJobOpsDeps {
   jobs: AiJobQueueStore;
-  audit: AuditPort;
   now: () => Date;
 }
 
@@ -45,19 +39,17 @@ export interface RequeueSummary {
   more: boolean;
 }
 
-async function audited(deps: AiJobOpsDeps, actor: Actor, ids: string[], meta: Record<string, unknown>): Promise<RequeueSummary> {
-  if (ids.length > 0) {
-    await deps.audit.record({
-      organizationId: actor.organizationId,
-      actorUserId: actor.userId,
-      action: "ai_jobs.requeued",
-      entityType: "ai_job",
-      entityId: ids.length === 1 ? ids[0] : undefined,
-      meta: { ...meta, count: ids.length, jobIds: ids.slice(0, AUDIT_ID_LIMIT) },
-    });
-  }
-  return { requeued: ids.length, more: ids.length >= REQUEUE_BATCH };
-}
+/** The audit row of a requeue, which the store writes with it. Nothing requeued writes nothing. */
+const requeueAudit = (actor: Actor, meta: Record<string, unknown>): RequeueAudit => (ids) => ({
+  organizationId: actor.organizationId,
+  actorUserId: actor.userId,
+  action: "ai_jobs.requeued",
+  entityType: "ai_job",
+  entityId: ids.length === 1 ? ids[0] : undefined,
+  meta: { ...meta, count: ids.length, jobIds: ids.slice(0, AUDIT_ID_LIMIT) },
+});
+
+const summary = (ids: string[]): RequeueSummary => ({ requeued: ids.length, more: ids.length >= REQUEUE_BATCH });
 
 /**
  * Puts one failed job, or one the daily cap skipped, back in the queue. Any other job (already requeued, running, done) changes
@@ -65,17 +57,17 @@ async function audited(deps: AiJobOpsDeps, actor: Actor, ids: string[], meta: Re
  */
 export async function requeueAiJob(deps: AiJobOpsDeps, actor: Actor, jobId: string): Promise<RequeueSummary> {
   requireAdmin(actor);
-  const ids = await deps.jobs.requeueFailed(actor.organizationId, { jobId }, deps.now(), 1);
+  const ids = await deps.jobs.requeueFailed(actor.organizationId, { jobId }, deps.now(), 1, requeueAudit(actor, { mode: "single" }));
   if (ids.length === 0 && !(await deps.jobs.jobExists(actor.organizationId, jobId))) throw new NotFoundError("AI job not found.");
-  return audited(deps, actor, ids, { mode: "single" });
+  return summary(ids);
 }
 
 /** Puts every job of this organization that failed, or was skipped by the daily cap, at or after `since` back in the queue. */
 export async function requeueFailedAiJobsSince(deps: AiJobOpsDeps, actor: Actor, since: Date): Promise<RequeueSummary> {
   requireAdmin(actor);
   if (Number.isNaN(since.getTime())) throw new ValidationError("Choose a valid start time.");
-  const ids = await deps.jobs.requeueFailed(actor.organizationId, { since }, deps.now(), REQUEUE_BATCH);
-  return audited(deps, actor, ids, { mode: "since", since: since.toISOString() });
+  const ids = await deps.jobs.requeueFailed(actor.organizationId, { since }, deps.now(), REQUEUE_BATCH, requeueAudit(actor, { mode: "since", since: since.toISOString() }));
+  return summary(ids);
 }
 
 /**
@@ -88,16 +80,14 @@ export async function sweepFailedAiJobs(deps: SweepDeps): Promise<number> {
   let total = 0;
   for (const organizationId of await deps.jobs.organizationsWithSweepable(now)) {
     if (!aiIsOn(await deps.ai.status(organizationId))) continue;
-    const ids = await deps.jobs.requeueSweepable(organizationId, now, REQUEUE_BATCH);
-    if (ids.length === 0) continue;
-    total += ids.length;
-    await deps.audit.record({
+    const ids = await deps.jobs.requeueSweepable(organizationId, now, REQUEUE_BATCH, (requeued) => ({
       organizationId,
       actorUserId: null,
       action: "ai_jobs.auto_requeued",
       entityType: "ai_job",
-      meta: { count: ids.length, jobIds: ids.slice(0, AUDIT_ID_LIMIT) },
-    });
+      meta: { count: requeued.length, jobIds: requeued.slice(0, AUDIT_ID_LIMIT) },
+    }));
+    total += ids.length;
   }
   return total;
 }

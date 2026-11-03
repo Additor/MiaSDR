@@ -2,7 +2,8 @@ import { isAppliedPick } from "../../domain/reply-type-pick";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { aiJobs, replyTypePicks, conversations, drafts, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
-import type { AiJobQueueStore, AiJobStore, ClassifyContext, DraftContext, FailedAiJob, JobKind, SkippedAiJob } from "../../application/reply-ports";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
+import type { AiJobQueueStore, AiJobStore, ClassifyContext, DraftContext, FailedAiJob, JobKind, RequeueAudit, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
@@ -26,7 +27,7 @@ const sweepable = (now: Date) => sql`
  * competing caller skips locked rows, so two callers never requeue the same job twice. A classification job also
  * loses its `failed` classification row: that row holds the (message, context version) slot the new result needs.
  */
-async function requeue(organizationId: string, picked: ReturnType<typeof sql>, mode: "auto" | "manual", limit: number): Promise<string[]> {
+async function requeue(organizationId: string, picked: ReturnType<typeof sql>, mode: "auto" | "manual", limit: number, audit: RequeueAudit): Promise<string[]> {
   return db.transaction(async (tx) => {
     const counters =
       mode === "auto"
@@ -53,7 +54,9 @@ async function requeue(organizationId: string, picked: ReturnType<typeof sql>, m
     if (messageIds.length > 0) {
       await tx.delete(replyTypePicks).where(and(eq(replyTypePicks.organizationId, organizationId), eq(replyTypePicks.status, "failed"), inArray(replyTypePicks.messageId, messageIds)));
     }
-    return rows.map((r) => r.id);
+    const ids = rows.map((r) => r.id);
+    if (ids.length > 0) await recordAudit(tx, audit(ids));
+    return ids;
   });
 }
 
@@ -103,14 +106,14 @@ const queueStore: AiJobQueueStore = {
     };
   },
 
-  async requeueFailed(organizationId, filter, _now, limit) {
+  async requeueFailed(organizationId, filter, _now, limit, audit) {
     // A job the daily cap set aside is requeueable like a failed one: a person raised the cap, or a new day began.
     const skipped = sql`(status = 'skipped' and payload->>'skipReason' in (${skipReasons}))`;
     const picked =
       "jobId" in filter
         ? sql`id = ${filter.jobId} and (status = 'failed' or ${skipped})`
         : sql`((status = 'failed' and failed_at >= ${filter.since.toISOString()}::timestamptz) or (${skipped} and completed_at >= ${filter.since.toISOString()}::timestamptz))`;
-    return requeue(organizationId, picked, "manual", limit);
+    return requeue(organizationId, picked, "manual", limit, audit);
   },
 
   async jobExists(organizationId, jobId) {
@@ -123,8 +126,8 @@ const queueStore: AiJobQueueStore = {
     return rows.map((r) => r.organization_id);
   },
 
-  async requeueSweepable(organizationId, now, limit) {
-    return requeue(organizationId, sweepable(now), "auto", limit);
+  async requeueSweepable(organizationId, now, limit, audit) {
+    return requeue(organizationId, sweepable(now), "auto", limit, audit);
   },
 
   async listSkipped(organizationId, limit) {

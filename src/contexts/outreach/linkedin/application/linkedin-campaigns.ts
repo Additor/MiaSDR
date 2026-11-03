@@ -1,6 +1,6 @@
 import type { EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
-import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCampaignType, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
 import { archiveOn, changeStatusOn, createCampaignOn, deleteOn, enrollOn, enrollPickedOn, loadCampaign, removeLeadOn, removeLeadsOn, sendersOn, startProblemsOn, unarchiveOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps } from "../../application/campaign-lifecycle";
@@ -116,7 +116,8 @@ export interface LinkedInCampaignStore {
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
   /** Deletes a draft. Returns false when no draft matched. */
-  delete(organizationId: string, id: string): Promise<boolean>;
+  /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
+  delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** People with a LinkedIn profile become enrollments with their LinkedIn progress row, in one transaction. */

@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { canArchive, canTransition, stepsEditable, stepsWithPlaceholders, type CampaignStatus, type CampaignStatusChange, type StepIssue } from "../domain/campaign";
 import { enrollUnder, type EnrollOptions } from "./enroll-options";
@@ -35,7 +35,8 @@ export interface CampaignLifecycleStore<Step, Row extends CampaignRow<Step> = Ca
   furthestStep(organizationId: string, id: string, tx?: DbHandle): Promise<number>;
   update(organizationId: string, id: string, patch: { name?: string; steps?: Step[] }, tx?: DbHandle): Promise<boolean>;
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<Step>, tx?: DbHandle): Promise<boolean>;
-  delete(organizationId: string, id: string): Promise<boolean>;
+  /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
+  delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<Enrolled>;
 }
@@ -195,8 +196,8 @@ export async function deleteOn<Step, Row extends CampaignRow<Step>, Enrolled>(de
   const refusal = () => new ConflictError("Only a draft campaign can be deleted. Pause it or mark it completed instead.", { code: "campaign_not_draft" });
   if (campaign.status !== "draft") throw refusal();
   // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
-  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw refusal();
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel, ...viaMeta(actor.via) } });
+  const audit = { organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel, ...viaMeta(actor.via) } };
+  if (!(await deps.campaigns.delete(actor.organizationId, id, audit))) throw refusal();
 }
 
 export async function enrollOn<Step, Row extends CampaignRow<Step>, Enrolled>(

@@ -6,7 +6,7 @@ import { normalizeSubject } from "../../domain/subject";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, ClaimedJob, DraftContext } from "../../application/reply-ports";
-import { sweepFailedAiJobs, type AuditPort } from "./ai-job-ops";
+import { sweepFailedAiJobs } from "./ai-job-ops";
 import type { FailureKind } from "../domain/ai-job-requeue";
 
 export interface AiJobDeps {
@@ -18,8 +18,8 @@ export interface AiJobDeps {
   leaseMs: number;
   /** Delay before a job of an organization without AI is looked at again. */
   notConfiguredDelayMs: number;
-  /** Writes `audit_log` rows. Without it the sweep that requeues failed jobs does not run. */
-  audit?: AuditPort;
+  /** Runs the sweep that requeues failed jobs. */
+  sweepsFailed?: boolean;
 }
 
 export const AI_JOB_LEASE_MS = 5 * 60_000;
@@ -145,9 +145,9 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
         const detail: Record<string, number> = {};
         const count = (key: string) => (detail[key] = (detail[key] ?? 0) + 1);
         // A sweep failure must not stop new work, but the tick report names it so the scheduler logs it.
-        if (deps.audit) {
+        if (deps.sweepsFailed) {
           try {
-            const requeued = await sweepFailedAiJobs({ jobs: deps.jobs, ai: deps.ai, audit: deps.audit, now: deps.now });
+            const requeued = await sweepFailedAiJobs({ jobs: deps.jobs, ai: deps.ai, now: deps.now });
             if (requeued > 0) detail.auto_requeued = requeued;
           } catch (error) {
             console.error(`[ai-jobs] requeue sweep failed: ${message(error)}`);

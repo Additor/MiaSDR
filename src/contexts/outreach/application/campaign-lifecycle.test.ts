@@ -13,7 +13,10 @@ function setup(status: CampaignStatus, overrides: Partial<CampaignLifecycleStore
   const campaigns = {
     get: async () => ({ name: "Q4", status, steps: [], archivedAt: null }),
     transaction: <T>(fn: (tx: never) => Promise<T>) => fn(undefined as never),
-    delete: async () => true,
+    delete: async (_org: string, _id: string, audit: { action: string; meta?: Record<string, unknown> }) => {
+      audited.push(audit);
+      return true;
+    },
     setArchived: async () => true,
     furthestStep: async () => 3,
     enroll: async (_org: string, _id: string, filter: { limit: number }) => limits.push(filter.limit),

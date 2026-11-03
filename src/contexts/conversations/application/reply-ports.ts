@@ -285,6 +285,9 @@ export interface AiJobWorkerStore {
 }
 
 /** The AI queue outside a claim: enqueueing, the failed and skipped lists, requeue, and the job handlers' reads. */
+/** The audit row of a requeue, given the ids. The store writes it with the requeue, and writes nothing when none moved. */
+export type RequeueAudit = (ids: string[]) => { organizationId: string; actorUserId: string | null; action: string; entityType?: string; entityId?: string; meta?: Record<string, unknown> };
+
 export interface AiJobQueueStore {
   /** Queues a classification job for every record whose latest inbound message has none. */
   enqueueMissing(now: Date): Promise<number>;
@@ -296,13 +299,13 @@ export interface AiJobQueueStore {
    * classification job's `failed` record is removed so the new result can be stored. Only rows that are failed
    * now change, so a second call finds nothing. Returns the ids requeued.
    */
-  requeueFailed(organizationId: string, filter: { jobId: string } | { since: Date }, now: Date, limit: number): Promise<string[]>;
+  requeueFailed(organizationId: string, filter: { jobId: string } | { since: Date }, now: Date, limit: number, audit: RequeueAudit): Promise<string[]>;
   /** Whether a job with this id exists in this organization. */
   jobExists(organizationId: string, jobId: string): Promise<boolean>;
   /** Organizations that hold a failed job the sweep may requeue at `now`. */
   organizationsWithSweepable(now: Date): Promise<string[]>;
   /** Sweep requeue: the same transition as `requeueFailed`, limited to jobs that pass backoff, kind and ceiling. */
-  requeueSweepable(organizationId: string, now: Date, limit: number): Promise<string[]>;
+  requeueSweepable(organizationId: string, now: Date, limit: number, audit: RequeueAudit): Promise<string[]>;
   /** Skipped jobs of one organization, newest first. */
   listSkipped(organizationId: string, limit: number): Promise<{ total: number; rows: SkippedAiJob[] }>;
 

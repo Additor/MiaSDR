@@ -106,7 +106,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 - Child tables reference their parents with composite `(column, organization_id)` foreign keys, so a row cannot point into another organization.
 - `src/platform/db/schema-audit.ts` requires every public table to have `organization_id uuid not null`, a foreign key to `organizations` and an index containing the column. Exceptions sit in `NO_SCOPE` (Better Auth tables, `organizations`, `integration_credentials`), `NULLABLE_SCOPE` (`inbound_events`, `job_runs`) and `INDEX_DEBT`, each with a reason. A stale entry fails the audit, so the lists only shrink.
 - `events`, `audit_log` and `messages` are append-only by trigger. `messages` accepts updates to `important` and `opened_at`. Deletes pass inside a cascade or in a transaction that sets `miasdr.allow_purge` to `on`.
-- `recordAudit` (`tenancy/infrastructure/audit.ts`, the one writer of the table tenancy declares) writes an `audit_log` row inside the caller's transaction, so the row commits with the change. `meta` never holds a secret.
+- `recordAudit` (`tenancy/infrastructure/audit.ts`, the one writer of the table tenancy declares) writes an `audit_log` row inside the caller's transaction, so the row commits with the change. A use case passes the entry to its store, or writes through its own `tx`. The few that write it after the change, because the change spans transactions or calls another system, sit in `audit-transactions.test.ts` with their reason. `meta` never holds a secret.
 - Organization deletion is disabled. Foreign keys to `organizations` cascade, which tests use for cleanup.
 
 ### Secrets at rest
