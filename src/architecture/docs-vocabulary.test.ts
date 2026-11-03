@@ -40,7 +40,7 @@ const RETIRED_IN_CONVERSATIONS: ReadonlyArray<{ name: string; pattern: RegExp; e
   { name: "pipeline", pattern: /pipeline/i },
   { name: "the record", pattern: /\b(the|a|another|closed|each|every|per-) record\b/i },
   // The draft prompt's text is on the copy-vocabulary allowlist, because a wording change needs a draft eval.
-  { name: "stage outside deals", pattern: /(?<!deal )\bstages?\b/i, except: /\/ai\/domain\/prompts(\.test)?\.ts$/ },
+  { name: "stage outside deals", pattern: /(?<!deal )\bstages?\b/i },
   { name: "conversation's conversation", pattern: /conversation's conversation/i },
   { name: "legacy standalone", pattern: /legacy standalone/i },
 ];
