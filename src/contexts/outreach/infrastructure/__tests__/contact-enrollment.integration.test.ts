@@ -5,7 +5,7 @@ import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTes
 
 /**
  * Contacts cannot be enrolled ("Leads and CRM" in docs/decisions.md): every candidate select skips a contact, the
- * savepoint path absorbs a conversion that commits after the candidate read, `stopPersonEnrollmentsTx` and the read helpers of
+ * savepoint path absorbs a conversion that commits after the candidate read, `haltEnrollmentsTx` and the read helpers of
  * the conversion, and the send engine against a conversion-like transaction. Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
 const ALL_DAY = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ start: "00:00", end: "23:59" }]]));
@@ -27,6 +27,7 @@ describeDb("contacts and campaign enrollment", () => {
   let admin: typeof import("../drizzle-enrollment-admin").drizzleEnrollmentAdminStore;
   let guard: typeof import("../contact-guard");
   let conversion: typeof import("../drizzle-conversion-outreach");
+  let enrollmentEnd: typeof import("../enrollment-end");
   let outreachStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   let linkedinEngineStore: typeof import("../../linkedin/infrastructure/drizzle-linkedin-store");
   let inboundStore: ReturnType<typeof import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
@@ -128,6 +129,7 @@ describeDb("contacts and campaign enrollment", () => {
     ({ drizzleEnrollmentAdminStore: admin } = await import("../drizzle-enrollment-admin"));
     guard = await import("../contact-guard");
     conversion = await import("../drizzle-conversion-outreach");
+    enrollmentEnd = await import("../enrollment-end");
     ({ drizzleOutreachStore: outreachStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
     linkedinEngineStore = await import("../../linkedin/infrastructure/drizzle-linkedin-store");
     inboundStore = (await import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
@@ -311,7 +313,10 @@ describeDb("contacts and campaign enrollment", () => {
     });
   });
 
-  describe("stopPersonEnrollmentsTx", () => {
+  const haltConverted = (tx: Parameters<typeof enrollmentEnd.haltEnrollmentsTx>[0], organizationId: string, personId: string, now: Date) =>
+    enrollmentEnd.haltEnrollmentsTx(tx, { organizationId, personIds: [personId], channels: "every_channel", halt: "converted", now });
+
+  describe("haltEnrollmentsTx for a conversion", () => {
     it("cancels only the person's pending and active rows and clears the LinkedIn retry time", async () => {
       const f = await fixture();
       const [mail, li, li2, other] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("linkedin"), await f.campaign("email")];
@@ -330,8 +335,8 @@ describeDb("contacts and campaign enrollment", () => {
       const foreignPerson = await foreign.person("target");
       const foreignEnrollment = await foreign.enrollment(await foreign.campaign("email"), foreignPerson, "email", "pending");
 
-      const out = await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }));
-      expect(out).toEqual({ stopped: 3 });
+      const out = await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW));
+      expect(out).toHaveLength(3);
       for (const id of [pending, active, secondLinkedIn]) expect(await rowOf(id)).toMatchObject({ status: "cancelled", stop_reason: "converted", next_send_at: null });
       expect(await rowOf(removed)).toMatchObject({ status: "removed", stop_reason: "removed" });
       expect(await rowOf(replied)).toMatchObject({ status: "replied", stop_reason: "replied" });
@@ -346,7 +351,7 @@ describeDb("contacts and campaign enrollment", () => {
       const updated = await sql`select updated_at from campaign_enrollments where id = ${pending}`;
       expect(new Date(updated[0].updated_at).toISOString()).toBe(NOW.toISOString());
 
-      expect(await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }))).toEqual({ stopped: 0 });
+      expect(await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW))).toEqual([]);
     });
 
     it("the cancelled rows show under Suppressed / stopped with the label Became a contact", async () => {
@@ -355,7 +360,7 @@ describeDb("contacts and campaign enrollment", () => {
       const p = await f.person("target");
       await f.enrollment(mail, p, "email", "pending");
       await f.enrollment(li, p, "linkedin", "pending");
-      await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }));
+      await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW));
       const { stopReasonNote } = await import("../../domain/campaign-view");
       const { describeLinkedInProgress } = await import("../../linkedin/domain/linkedin");
 
@@ -433,7 +438,7 @@ describeDb("contacts and campaign enrollment", () => {
       appDb.transaction(async (tx) => {
         await tx.update(schema.people).set({ lifecycle: "contact", convertedAt: new Date() }).where(and(eq(schema.people.organizationId, org), eq(schema.people.id, personId)));
         await sleep(Math.random() * 3);
-        await conversion.stopPersonEnrollmentsTx(tx, { organizationId: org, personId, reason: "converted", now: new Date() });
+        await haltConverted(tx, org, personId, new Date());
       });
     const settleAll = async (runs: Array<Promise<unknown>>) => {
       const results = await Promise.allSettled(runs);

@@ -83,7 +83,7 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
       </div>
 
       {canManage && (
-        <SettingsSection title="Add addresses" description="Paste up to 500 addresses, separated by commas, spaces or line breaks. Each one stops its unfinished email sequences.">
+        <SettingsSection title="Add addresses" description="Paste up to 500 addresses, separated by commas, spaces or line breaks. Each one stops its unfinished sequences on every channel.">
           <form onSubmit={add}>
             <FieldGroup>
               <Field>

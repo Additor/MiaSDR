@@ -1,9 +1,8 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, linkedinEnrollmentDetails } from "@/platform/db/schema";
+import { campaignEnrollments, campaigns } from "@/platform/db/schema";
 import type { ConversionOutreach, EnrollmentSource } from "../application/conversion";
-import { haltOutcome, REMOVABLE_STATUSES } from "../domain/enrollment-status";
-import { endEnrollmentsTx } from "./enrollment-end";
+import { REMOVABLE_STATUSES } from "../domain/enrollment-status";
 
 const CHUNK = 1_000;
 
@@ -13,40 +12,7 @@ function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
   return out;
 }
 
-/**
- * Callee-owned writes and reads of the conversion. The one write locks the rows in id order, as `removeEnrollments` does, then
- * ends them through `endEnrollmentsTx`, which repeats the status condition in the UPDATE.
- */
-export async function stopPersonEnrollmentsTx(tx: DbHandle, input: { organizationId: string; personId: string; reason: "converted"; now: Date }): Promise<{ stopped: number }> {
-  const { organizationId, personId, reason, now } = input;
-  // Lock order of the LinkedIn paths (acceptance, invitation sent): the details row, then the enrollment row. Taking the details rows
-  // first keeps a webhook loop and this write out of each other's way. They are found unlocked, then locked in id order.
-  const linkedinIds = await tx
-    .select({ id: campaignEnrollments.id })
-    .from(campaignEnrollments)
-    .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, personId), eq(campaignEnrollments.channel, "linkedin"), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])));
-  if (linkedinIds.length > 0) {
-    await tx
-      .select({ id: linkedinEnrollmentDetails.enrollmentId })
-      .from(linkedinEnrollmentDetails)
-      .where(inArray(linkedinEnrollmentDetails.enrollmentId, linkedinIds.map((e) => e.id)))
-      .orderBy(asc(linkedinEnrollmentDetails.enrollmentId))
-      .for("update");
-  }
-  const live = await tx
-    .select({ id: campaignEnrollments.id })
-    .from(campaignEnrollments)
-    .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, personId), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])))
-    .orderBy(asc(campaignEnrollments.id))
-    .for("update");
-  if (live.length === 0) return { stopped: 0 };
-  // The status condition repeats in the UPDATE, so a writer that raced us (a reply, a bounce) keeps its final status.
-  const changed = await endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, live.map((e) => e.id))), haltOutcome(reason), now);
-  const linkedin = changed.filter((e) => e.channel === "linkedin").map((e) => e.id);
-  if (linkedin.length > 0) await tx.update(linkedinEnrollmentDetails).set({ resolveNextAttemptAt: null }).where(inArray(linkedinEnrollmentDetails.enrollmentId, linkedin));
-  return { stopped: changed.length };
-}
-
+/** Callee-owned reads of the conversion. `haltEnrollmentsTx` (`./enrollment-end`) ends the enrollments. */
 export async function liveEnrollmentCounts(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, number>> {
   const ids = [...new Set(personIds)];
   const out = new Map<string, number>(ids.map((id) => [id, 0]));
@@ -86,4 +52,4 @@ export async function enrollmentSources(organizationId: string, enrollmentIds: s
   return out;
 }
 
-export const conversionOutreach: ConversionOutreach = { stopPersonEnrollmentsTx, liveEnrollmentCounts, latestRepliedEnrollment, enrollmentSources };
+export const conversionOutreach: ConversionOutreach = { liveEnrollmentCounts, latestRepliedEnrollment, enrollmentSources };

@@ -136,7 +136,7 @@ export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, r
 export async function setPersonDoNotContact(deps: ReplyHandlingDeps, actor: Actor, personId: string, input: { enabled: boolean; reason?: string | null }) {
   assertId(personId, "Person");
   const reason = dncReason(input.enabled, input.reason);
-  return deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId, enabled: input.enabled, reason, now: deps.now() });
+  return retryOnce(() => deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId, enabled: input.enabled, reason, now: deps.now() }));
 }
 
 function dncReason(enabled: boolean, raw: string | null | undefined): string {

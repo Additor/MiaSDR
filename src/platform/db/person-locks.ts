@@ -13,19 +13,20 @@ import type { DbHandle, DbTx } from "./client";
 /** The lock timeout of a conversion transaction while it holds nothing of the person. */
 export const CONVERSION_LOCK_TIMEOUT = "5s";
 /**
- * The lock timeout once the conversion holds the person's conversations or advisory lock. `suppressEmail` (enrollments before
- * conversations), multi-person ingest (advisory before conversations) and `advanceRunTx` (run before conversation) take these locks in another
- * order, so a cycle with them can form at any later wait. Postgres resolves a cycle in the waiter whose `deadlock_timeout`
- * (1 s by default) runs out first, and those writers do not retry. A wait shorter than that makes the conversion give way first:
- * it rolls back, its caller runs it once more, and the other writer commits.
+ * The lock timeout once the conversion holds the person's conversations or advisory lock. One writer steps outside the order
+ * in docs/decisions.md ("Conversion and lock order"): ingest of a reply filed under one person from another person's address
+ * holds the filed person's conversations before it learns the sender, so a cycle with it can form at a later wait. Postgres
+ * resolves a cycle in the waiter whose `deadlock_timeout` (1 s by default) runs out first, and ingest does not retry in its
+ * transaction. A wait shorter than that makes the conversion give way first: it rolls back, its caller runs it once more, and
+ * ingest commits.
  */
 export const HELD_LOCK_TIMEOUT = "300ms";
 
 export const setLockTimeout = (tx: DbHandle, value: string) => tx.execute(sql.raw(`set local lock_timeout = '${value}'`));
 
 /**
- * Serializes the writers that decide whether a person may receive outreach: the reply stop, the restore of a removed
- * lead and the person deletes. They read facts about the person (a reply, another active enrollment, a send) and then
+ * Serializes the writers that decide whether a person may receive outreach: every `stopContactTx` trigger, the restore of
+ * a removed lead and the person deletes. They read facts about the person (a reply, another active enrollment, a send) and then
  * write enrollments, and without a shared lock each reads the world before the other commits. The lock is
  * transaction-scoped and keyed on the person; several people are taken in id order so two callers cannot wait on each other.
  */

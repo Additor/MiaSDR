@@ -716,7 +716,7 @@ describeDb("email send engine", () => {
     const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     const provider = new FakeMailboxProvider();
     await send.sendNextEmail(deps(provider), f.mailboxIds[0]); // lead 0 is now active
-    // Suppression blocks email only: lead 0's LinkedIn sequence keeps running.
+    // An unsubscribe says the person wants contact stopped, so lead 0's LinkedIn sequence ends too.
     const [{ id: person0 }] = await sql`update people set linkedin_slug = ${"lead0-" + f.org} where organization_id = ${f.org} and email = ${f.emails[0]} returning id`;
     const [{ id: linkedinCampaign }] = await sql`
       insert into campaigns (organization_id, channel, name, status, steps)
@@ -726,10 +726,10 @@ describeDb("email send engine", () => {
       values (${f.org}, ${linkedinCampaign}, ${person0}, 'linkedin', 'active', 1) returning id`;
 
     const first = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: ` ${f.emails[0].toUpperCase()} `, reason: "unsubscribed" });
-    expect(first.stopped).toBe(1);
+    expect(first.stopped).toBe(2);
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", next_send_at: null, stop_reason: "unsubscribed" });
     expect((await enrollment(f.enrollmentIds[1])).status).toBe("pending");
-    expect(await enrollment(linkedinEnrollment)).toMatchObject({ status: "active", stop_reason: null });
+    expect(await enrollment(linkedinEnrollment)).toMatchObject({ status: "suppressed", stop_reason: "unsubscribed" });
 
     const again = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: f.emails[0], reason: "unsubscribed" });
     expect(again.stopped).toBe(0); // idempotent

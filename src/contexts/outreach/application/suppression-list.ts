@@ -67,7 +67,7 @@ export function listSuppressions(deps: SuppressionListDeps, actor: Actor, query:
 }
 
 /**
- * Adds addresses by hand (reason `manual`). Each one stops its unfinished email sequences, as a suppression from the
+ * Adds addresses by hand (reason `manual`). Each one stops its unfinished sequences on every channel, as a suppression from the
  * Inbox does. An address already on the list keeps its first reason.
  */
 export async function addSuppressions(deps: SuppressionListDeps, actor: Actor, input: { text: string; note?: string | null }): Promise<{ added: number; alreadyListed: number; stopped: number }> {

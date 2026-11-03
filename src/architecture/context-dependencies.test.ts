@@ -205,7 +205,6 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "people/infrastructure/linkedin-profile",
   // The enrollment outcome writers, which conversations' contact stop runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
-  "outreach/infrastructure/drizzle-conversion-outreach",
   // Enrollment's gate on a stop request, which the table handoff to a campaign applies too.
   "outreach/infrastructure/stop-review-gate",
 ]);

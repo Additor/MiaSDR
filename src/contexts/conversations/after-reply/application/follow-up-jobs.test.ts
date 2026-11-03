@@ -54,7 +54,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
               organizationId: "org",
               conversationId: "rec",
               facts: {
-                run: { triggerMessageId: "msg", replyTypeId: "sub" },
+                run: { triggerMessageId: "msg", replyTypeId: "sub", channel: "email" },
                 conversation: { latestInboundMessageId: "msg", replyTypeId: "sub", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting" },
                 doNotContact: false,
                 suppression: null,
@@ -67,7 +67,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
     settleDrafts: async () => ({ settled: 0, deferred: 0 }),
     claimDue: async () => (claimed ? null : ((claimed = true), claim)),
     interruptFactsFor: async () => ({
-      run: { triggerMessageId: "msg", replyTypeId: "sub" },
+      run: { triggerMessageId: "msg", replyTypeId: "sub", channel: "email" },
       conversation: { latestInboundMessageId: "msg", replyTypeId: "sub", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting" },
       doNotContact: false,
       suppression: null,

@@ -108,10 +108,8 @@ export async function listPersonEvents(organizationId: string, personId: string,
 
 /**
  * Step 1 of the conversion, the order of `lockPersonConversations`: the person's conversations `FOR NO KEY UPDATE` in id order (waiting up to 5 s,
- * holding nothing), then the person's outreach advisory lock. Single-person ingest takes the same order. Do not contact
- * (`setDoNotContact`) takes another: `dnc:{personId}`, its `contact_policies` row through the upsert, then the conversations, runs
- * and enrollments, so it holds the policy row while it waits on the conversations. A contact delete locks the conversations first and the
- * policy row later; when the two meet, the delete's held-lock timeout makes it give way and run once more.
+ * holding nothing), then the person's outreach advisory lock. Single-person ingest and `stopContactTx` take the same order, and
+ * do not contact writes its `contact_policies` row after both, as a contact delete locks it after both.
  */
 export async function lockPersonForConversion(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
   const locked = await lockPersonConversationRows(tx, organizationId, personId);

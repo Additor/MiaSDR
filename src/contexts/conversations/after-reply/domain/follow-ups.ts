@@ -126,7 +126,8 @@ export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bou
 export const followUpsContinue = (followUps: FollowUpsRule | null): boolean => followUps === "continue";
 
 export interface InterruptFacts {
-  run: { triggerMessageId: string; replyTypeId: string };
+  /** `channel` is the channel of the run's thread. */
+  run: { triggerMessageId: string; replyTypeId: string; channel: string };
   conversation: {
     latestInboundMessageId: string | null;
     replyTypeId: string | null;
@@ -148,12 +149,13 @@ export interface InterruptFacts {
 /**
  * Why a run must stop now, or null. A move to a reply type whose Follow-ups rule is Stop ends the run. A run whose
  * conversation still carries the type it started on is spared: rules apply at decision time, so an edit of that type's
- * rule later does not reach back into a run already going.
+ * rule later does not reach back into a run already going. A bounce is a fact about an address, so it ends a run on an email
+ * thread and leaves a run on a LinkedIn thread going, as the `bounce` row of `STOP_TABLE` does.
  */
 export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.doNotContact) return "do_not_contact";
   if (facts.suppression === "unsubscribed") return "unsubscribed";
-  if (facts.suppression === "bounced") return "bounce";
+  if (facts.suppression === "bounced" && facts.run.channel === "email") return "bounce";
   if (facts.suppression === "manual") return "suppressed";
   if (facts.contact) return "converted";
   if (facts.conversation.latestInboundMessageId !== null && facts.conversation.latestInboundMessageId !== facts.run.triggerMessageId) return "reply";

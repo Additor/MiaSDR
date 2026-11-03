@@ -12,12 +12,6 @@ export interface EnrollmentSource {
 }
 
 export interface ConversionOutreach {
-  /**
-   * The person's pending and active enrollments, in every campaign, become `cancelled` with stop reason
-   * `converted`, stop being due, and lose the LinkedIn resolve retry time, as removing an enrollment does. Removed, replied,
-   * completed and other final rows, other people and other organizations stay as they are. Run it inside the conversion transaction.
-   */
-  stopPersonEnrollmentsTx(tx: DbHandle, input: { organizationId: string; personId: string; reason: "converted"; now: Date }): Promise<{ stopped: number }>;
   /** Live (pending and active) enrollments per requested person. Every requested id has an entry. */
   liveEnrollmentCounts(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, number>>;
   /** Person id to the id of the most recently updated enrollment with status `replied` (`updated_at` desc, `id` desc). People without one are absent. */

@@ -524,21 +524,6 @@ function unionMembers(file: string, name: string): { literals: string[]; typeofN
   return { literals, typeofNames };
 }
 
-/** Literals of the `reason` parameter type of a declared method or function. */
-function reasonParameter(file: string, fn: string): string[] {
-  const out: string[] = [];
-  walk(parse(file), (node) => {
-    if ((ts.isMethodSignature(node) || ts.isFunctionDeclaration(node)) && node.name?.getText() === fn) {
-      for (const param of node.parameters) {
-        walk(param, (n) => {
-          if (ts.isPropertySignature(n) && n.name.getText() === "reason" && n.type) out.push(...literalsIn(n.type));
-        });
-      }
-    }
-  });
-  return out;
-}
-
 /**
  * `events.event_type` literals the code writes: an `eventType` property and the `type` of a `recordEvent` call. The
  * `inbound_events` ledger has a column of the same name; its rows never reach Activity, so its inserts are skipped.
@@ -589,9 +574,7 @@ function writtenStopReasons(): string[] {
 
 describe("stored values have labels", () => {
   it("labels every stop reason that cancels or ends an enrollment", () => {
-    const converted = reasonParameter("src/contexts/outreach/application/conversion.ts", "stopPersonEnrollmentsTx");
-    expect(converted).toEqual(["converted"]);
-    const written = [...new Set([...converted, ...writtenStopReasons()])];
+    const written = [...new Set(writtenStopReasons())];
     expect(written).toEqual(expect.arrayContaining(["converted", "replied", "removed"]));
     expect(written.filter((reason) => !Object.hasOwn(STOP_REASON_LABELS, reason))).toEqual([]);
   });

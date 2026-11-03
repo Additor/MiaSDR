@@ -9,7 +9,7 @@ const RUN_DRAFT_ERROR = "The follow-up sequence ended.";
 /**
  * Walks `STOP_TABLE` against real rows: each trigger ends exactly what its row says, and everything else stays. The world
  * holds three people. `reached` is the trigger's target, with a live email enrollment, a live LinkedIn enrollment, a
- * finished enrollment, a run on a LinkedIn thread and three drafts. `sender` owns the address of a reply that `reached`'s
+ * finished enrollment, a run on a LinkedIn thread with three drafts, and a run on an email thread in a second conversation, because a conversation holds one live run. `sender` owns the address of a reply that `reached`'s
  * thread received. `bystander` shares nothing with either.
  */
 describeDb("stopContactTx walks the trigger table", () => {
@@ -39,6 +39,8 @@ describeDb("stopContactTx walks the trigger table", () => {
     const set = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'set', true) returning id`);
     const type = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${set}, 'interested', 'a', 'A') returning id`);
     const steps = sql.json([{ stepNumber: 1, kind: "email", subject: "Hi", body: "Hello", waitDays: 0 }] as never);
+    const secondSet = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'second', false) returning id`);
+    const secondType = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${secondSet}, 'interested', 'b', 'B') returning id`);
     const emailCampaign = await one(sql`insert into campaigns (organization_id, channel, name, status, steps) values (${org}, 'email', 'e', 'active', ${steps}) returning id`);
     const linkedinCampaign = await one(sql`insert into campaigns (organization_id, channel, name, status, steps) values (${org}, 'linkedin', 'l', 'active', ${steps}) returning id`);
     const earlierCampaign = await one(sql`insert into campaigns (organization_id, channel, name, status, steps) values (${org}, 'email', 'earlier', 'completed', ${steps}) returning id`);
@@ -68,9 +70,19 @@ describeDb("stopContactTx walks the trigger table", () => {
       const draft = (status: string, request: Record<string, string>) =>
         one(sql`insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, status, request)
                 values (${org}, ${conversation}, ${thread}, 0, 'linkedin', ${status}, ${sql.json(request as never)}) returning id`);
+      const emailConversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id, workflow_state) values (${org}, ${id}, ${secondSet}, 'waiting') returning id`);
+      const emailThread = await one(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${emailConversation}, 'email', 'box@corp.test') returning id`);
+      const emailMessage = await one(sql`
+        insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        values (${org}, ${emailThread}, 'email', 'box@corp.test', 'inbound', ${"e-" + name + tag}, 'Tell me more', now()) returning id`);
+      const emailRun = await one(sql`
+        insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, started_by, trigger_message_id, last_inbound_at_start)
+        values (${org}, ${emailConversation}, ${emailThread}, ${flow}, ${version}, ${secondType}, 'ai_assignment', ${emailMessage}, now()) returning id`);
       return {
         id,
         email,
+        emailConversation,
+        emailRun,
         emailEnrollment,
         linkedinEnrollment,
         finished: await enroll(earlierCampaign, "email", "completed"),
@@ -86,24 +98,24 @@ describeDb("stopContactTx walks the trigger table", () => {
   }
   type World = Awaited<ReturnType<typeof world>>;
 
-  const raise = (w: World, kind: StopTriggerKind) =>
-    db.transaction((tx) => {
-      const { org: organizationId, reached, user: actorUserId } = w;
-      switch (kind) {
-        case "reply":
-          return stopContactTx(tx, { organizationId, personId: reached.id, senderEmail: w.sender.email.toUpperCase() }, { kind, channel: "email", now: NOW });
-        case "bounce":
-        case "unsubscribe":
-        case "suppression":
-          return stopContactTx(tx, { organizationId, email: reached.email }, { kind, note: "n", now: NOW });
-        case "sender_suppressed":
-          return stopContactTx(tx, { organizationId, email: reached.email }, { kind, conversationId: reached.conversation, personId: reached.id, threadId: reached.thread, actorUserId, note: "n", now: NOW });
-        case "do_not_contact":
-          return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, reason: "asked", actorUserId, now: NOW });
-        case "conversion":
-          return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, now: NOW });
-      }
-    });
+  const raiseInTx = (tx: Parameters<typeof stopContactTx>[0], w: World, kind: StopTriggerKind) => {
+    const { org: organizationId, reached, user: actorUserId } = w;
+    switch (kind) {
+      case "reply":
+        return stopContactTx(tx, { organizationId, personId: reached.id, senderEmail: w.sender.email.toUpperCase() }, { kind, channel: "email", now: NOW });
+      case "bounce":
+      case "unsubscribe":
+      case "suppression":
+        return stopContactTx(tx, { organizationId, email: reached.email }, { kind, note: "n", now: NOW });
+      case "sender_suppressed":
+        return stopContactTx(tx, { organizationId, email: reached.email }, { kind, conversationId: reached.conversation, personId: reached.id, threadId: reached.thread, actorUserId, note: "n", now: NOW });
+      case "do_not_contact":
+        return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, reason: "asked", actorUserId, now: NOW });
+      case "conversion":
+        return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, now: NOW });
+    }
+  };
+  const raise = (w: World, kind: StopTriggerKind) => db.transaction((tx) => raiseInTx(tx, w, kind));
 
   const enrollment = async (id: string) => (await sql`select status, stop_reason, next_send_at from campaign_enrollments where id = ${id}`)[0];
   const runState = async (id: string) => (await sql`select status from follow_up_runs where id = ${id}`)[0].status as string;
@@ -124,17 +136,19 @@ describeDb("stopContactTx walks the trigger table", () => {
       expect(await enrollment(w.reached.linkedinEnrollment)).toMatchObject(row.enrollments === "email_only" ? live : ended);
       expect(await enrollment(w.reached.finished)).toMatchObject({ status: "completed", stop_reason: null });
 
-      // Runs end on every channel: an email_only trigger still ends this run on a LinkedIn thread.
-      expect(await runState(w.reached.run)).toBe("interrupted");
-      const [runEvent] = await sql`select meta from events where organization_id = ${w.org} and conversation_id = ${w.reached.conversation} and event_type = 'sequence.interrupted'`;
+      expect(await runState(w.reached.emailRun)).toBe("interrupted");
+      const [runEvent] = await sql`select meta from events where organization_id = ${w.org} and conversation_id = ${w.reached.emailConversation} and event_type = 'sequence.interrupted'`;
       expect(runEvent.meta).toEqual({ reason: row.runReason });
+      expect(await runState(w.reached.run)).toBe(row.runs === "email_only" ? "active" : "interrupted");
 
-      expect(await draftState(w.reached.runDraft)).toMatchObject({ status: "stale", error: row.drafts === "all_open" ? row.draftError : RUN_DRAFT_ERROR });
+      const runDraftEnds = row.drafts === "all_open" ? row.draftError : row.runs === "email_only" ? null : RUN_DRAFT_ERROR;
+      expect(await draftState(w.reached.runDraft)).toMatchObject(runDraftEnds ? { status: "stale", error: runDraftEnds } : { status: "awaiting_review", error: null });
       expect(await draftState(w.reached.reviewDraft)).toMatchObject(row.drafts === "run_drafts" ? { status: "awaiting_review", error: null } : { status: "stale", error: row.draftError });
       expect(await draftState(w.reached.failedDraft)).toMatchObject(row.drafts === "all_open" ? { status: "stale", error: row.draftError } : { status: "failed" });
 
       expect(result.enrollments).toBe(row.enrollments === "email_only" ? 1 : row.people === "person_and_sender" ? 4 : 2);
-      expect(result.runs).toBe(row.people === "person_and_sender" ? 2 : 1);
+      const runsPerPerson = row.runs === "email_only" ? 1 : 2;
+      expect(result.runs).toBe(row.people === "person_and_sender" ? runsPerPerson * 2 : runsPerPerson);
     });
 
     it("reaches the sender only where its row says, and never a bystander", async () => {
@@ -142,9 +156,9 @@ describeDb("stopContactTx walks the trigger table", () => {
       await raise(w, kind);
       const reachesSender = row.people === "person_and_sender";
       for (const id of [w.sender.emailEnrollment, w.sender.linkedinEnrollment]) expect((await enrollment(id)).status).toBe(reachesSender ? haltOutcome(row.halt).status : "active");
-      expect(await runState(w.sender.run)).toBe(reachesSender ? "interrupted" : "active");
+      for (const run of [w.sender.run, w.sender.emailRun]) expect(await runState(run)).toBe(reachesSender ? "interrupted" : "active");
       for (const id of [w.bystander.emailEnrollment, w.bystander.linkedinEnrollment]) expect(await enrollment(id)).toMatchObject({ status: "active" });
-      expect(await runState(w.bystander.run)).toBe("active");
+      for (const run of [w.bystander.run, w.bystander.emailRun]) expect(await runState(run)).toBe("active");
       expect(await draftState(w.bystander.reviewDraft)).toMatchObject({ status: "awaiting_review" });
     });
 
@@ -166,7 +180,7 @@ describeDb("stopContactTx walks the trigger table", () => {
       if (row.settlesConversations) {
         expect(conversation).toMatchObject({ workflow_state: "action_required", context_version: 1, next_action_at: null });
         expect(reviews).toHaveLength(1);
-        expect(result.conversations).toBe(1);
+        expect(result.conversations).toBe(2);
       } else {
         expect(conversation).toMatchObject({ workflow_state: "waiting", context_version: 0 });
         expect(reviews).toHaveLength(0);
@@ -179,44 +193,33 @@ describeDb("stopContactTx walks the trigger table", () => {
       await raise(w, kind);
       const expected: Record<string, number> = { "outreach.stopped_by_reply": 0, "contact.suppressed": 0, "contact_policy.dnc_set": 0, "contact_policy.enforced": 0 };
       if (row.eventType) expected[row.eventType] = kind === "reply" ? 2 : 1;
-      if (row.conversationEventType) expected[row.conversationEventType] = 1;
+      if (row.conversationEventType) expected[row.conversationEventType] = 2;
       for (const [type, count] of Object.entries(expected)) expect(await eventCount(w.org, type)).toBe(count);
     });
 
-    it("clears the LinkedIn resolve retry only where its row says", async () => {
+    it("clears the LinkedIn resolve retry of an enrollment it ends, and keeps it on one it leaves open", async () => {
       const w = await world();
       await raise(w, kind);
       const [details] = await sql`select resolve_next_attempt_at from linkedin_enrollment_details where enrollment_id = ${w.reached.linkedinEnrollment}`;
-      if (row.enrollments === "every_channel_locked") expect(details.resolve_next_attempt_at).toBeNull();
-      else expect(details.resolve_next_attempt_at).not.toBeNull();
+      if (row.enrollments === "email_only") expect(details.resolve_next_attempt_at).not.toBeNull();
+      else expect(details.resolve_next_attempt_at).toBeNull();
     });
 
-    it("takes the outreach lock only where its row says", async () => {
+    it("waits for the outreach lock of the person it reaches", async () => {
       const w = await world();
       const key = `person-outreach:${w.org}:${w.reached.id}`;
       const holder = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
       try {
         const attempt = db.transaction(async (tx) => {
           await tx.execute("set local lock_timeout = '300ms'");
-          return kind === "reply"
-            ? stopContactTx(tx, { organizationId: w.org, personId: w.reached.id }, { kind, channel: "email", now: NOW })
-            : raiseInTx(tx, w, kind);
+          return raiseInTx(tx, w, kind);
         });
-        if (row.takesOutreachLock) await expect(attempt).rejects.toThrow();
-        else await expect(attempt).resolves.toBeDefined();
+        await expect(attempt).rejects.toThrow();
       } finally {
         await holder.release();
       }
     });
   });
-
-  const raiseInTx = (tx: Parameters<typeof stopContactTx>[0], w: World, kind: Exclude<StopTriggerKind, "reply">) => {
-    const { org: organizationId, reached, user: actorUserId } = w;
-    if (kind === "do_not_contact") return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, reason: "asked", actorUserId, now: NOW });
-    if (kind === "conversion") return stopContactTx(tx, { organizationId, personId: reached.id }, { kind, now: NOW });
-    if (kind === "sender_suppressed") return stopContactTx(tx, { organizationId, email: reached.email }, { kind, conversationId: reached.conversation, personId: reached.id, threadId: reached.thread, actorUserId, note: "n", now: NOW });
-    return stopContactTx(tx, { organizationId, email: reached.email }, { kind, now: NOW });
-  };
 
   describe("the guards", () => {
     it("a reply already filed stops nothing, so a replayed batch leaves a new enrollment alone", async () => {
@@ -228,7 +231,7 @@ describeDb("stopContactTx walks the trigger table", () => {
         db.transaction((tx) => stopContactTx(tx, { organizationId: w.org, personId: w.reached.id }, { kind: "reply", channel: "email", unlessFiled: { accountRef: "box@corp.test", providerMessageId: unlessId }, now: NOW }));
       expect(await stop("filed")).toMatchObject({ enrollments: 0, runs: 0 });
       expect(await enrollment(w.reached.emailEnrollment)).toMatchObject({ status: "active" });
-      expect(await stop("not-filed")).toMatchObject({ enrollments: 2, runs: 1 });
+      expect(await stop("not-filed")).toMatchObject({ enrollments: 2, runs: 2 });
     });
 
     it("do not contact on a person already marked ends nothing and writes nothing", async () => {

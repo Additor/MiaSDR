@@ -7,7 +7,7 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
  * A conversion (the real `createDealFromLead`) racing the writers that meet it on one person, on two connections:
  *   (a) reply ingest for a person without a conversation, holding the advisory lock while the conversion starts;
  *   (b) ingest holding the person's conversation, on its way to the advisory lock while the conversion waits for the conversation;
- *   (c) `suppressEmail` (enrollments before conversations) for a person with a conversation, a run and a live enrollment;
+ *   (c) `suppressEmail`, waiting for the conversation the conversion holds, for a person with a conversation, a run and a live enrollment;
  *   (d) ingest of a thread filed under person A with person B's address, racing a conversion of B;
  *   (e) `markSent` in flight.
  * Every writer is the real code: `ingestInbound`, `createSuppressionStore(...).suppressEmail`, `drizzleOutreachStore.markSent`.
@@ -99,7 +99,7 @@ describeDb("conversion races", () => {
     expect((await kit.one("select status from campaign_enrollments where id = $1", [enrollment])).status).toBe("replied");
   }, 30_000);
 
-  it("(c) suppressEmail holding the enrollment waits for the conversation the conversion holds: the conversion gives way, retries once, and both commit", async () => {
+  it("(c) suppressEmail waits for the conversation the conversion holds, holding nothing: both commit, no retry", async () => {
     const f = await kit.organization();
     const lead = await f.ingest();
     await f.emailedBy(lead.personId);
@@ -107,8 +107,6 @@ describeDb("conversion races", () => {
     const live = await f.enrollment(await f.campaign(), lead.personId, "active");
     expect(await kit.count("follow_up_runs", f.org, "status = 'active'")).toBe(1);
     const retries = lockRetryStats.retries;
-
-    // The conversion stops in process before its enrollment step, holding the conversation, the advisory lock and the people row.
     let paused!: () => void;
     const reachedStop = new Promise<void>((resolve) => (paused = resolve));
     let resume!: () => void;
@@ -126,26 +124,26 @@ describeDb("conversion races", () => {
     const deps = composition.dealsDeps({ convertLead: (tx, input) => leadsApp.convertToContact(conversion, tx, input) });
     const converting = convert(f, lead.personId, deps);
     await reachedStop;
-    // suppressEmail takes the live enrollment, then waits for the conversation to end the run.
+    // suppressEmail takes the person's conversations first, so it waits here before it touches anything else.
     const suppressing = settle(suppression.suppressEmail({ organizationId: f.org, email: lead.input.from.email, reason: "unsubscribed" }));
     await waitForLockWaiters(kit.sql, 1);
     resume();
     const [suppressed, converted] = await Promise.all([suppressing, converting]);
     expect(sqlState(suppressed.error)).toBeNull();
     expect(suppressed.error).toBeNull();
-    expect(suppressed.value).toEqual({ stopped: 1, added: true });
+    expect(suppressed.value).toEqual({ stopped: 0, added: true });
     expect(converted.error).toBeNull();
-    expect(lockRetryStats.retries).toBe(retries + 1);
-    expect(calls).toBe(2);
-    // No lost state: the address is suppressed, the enrollment stopped by the suppression, the run ended, the person a contact with a deal.
+    expect(lockRetryStats.retries).toBe(retries);
+    expect(calls).toBe(1);
+    // No lost state: the address is suppressed, the enrollment stopped by the conversion, the run ended, the person a contact with a deal.
     expect(await kit.count("suppression_list", f.org, `email = '${lead.input.from.email.toLowerCase()}'`)).toBe(1);
-    expect((await kit.one("select status, stop_reason from campaign_enrollments where id = $1", [live])).status).toBe("suppressed");
+    expect((await kit.one("select status, stop_reason from campaign_enrollments where id = $1", [live])).status).toBe("cancelled");
     expect(await kit.count("follow_up_runs", f.org, "status in ('active', 'paused')")).toBe(0);
     expect(await lifecycle(lead.personId)).toBe("contact");
     expect(await kit.count("deals", f.org, `person_id = '${lead.personId}'`)).toBe(1);
   }, 60_000);
 
-  it("(d) ingest filed under A with B's address, holding B's advisory lock, races a conversion of B: no lost reply, the conversion succeeds", async () => {
+  it("(d) ingest filed under A with B's address, holding B's conversation, races a conversion of B: no lost reply, the conversion succeeds", async () => {
     const f = await kit.organization();
     const a = await f.ingest();
     const b = await f.ingest();
@@ -154,21 +152,20 @@ describeDb("conversion races", () => {
     expect(await kit.count("follow_up_runs", f.org, `status = 'active' and conversation_id = '${b.conversationId}'`)).toBe(1);
     const bLive = await f.enrollment(await f.campaign(), b.personId, "active");
     const retries = lockRetryStats.retries;
-    // The gate holds B's live enrollment: the ingest stops at the reply stop, holding A's record and both advisory locks.
+    // The gate holds B's live enrollment: the ingest stops at the reply stop, holding both conversations and both advisory locks.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from campaign_enrollments where id = ${bLive} for update`);
     const input = f.mail({ providerThreadId: a.input.providerThreadId, from: b.input.from });
     const ingest = settle(threads.ingestInbound(input));
     await waitForLockWaiters(kit.sql, 1);
-    // The conversion of B locks B's record and waits for B's advisory lock.
+    // The conversion of B waits for B's conversation, holding nothing.
     const conversion = convert(f, b.personId);
     await waitForLockWaiters(kit.sql, 2);
-    // The ingest goes on to end B's run and asks for B's conversation: a cycle that the conversion breaks by giving way.
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
     expect(sqlState(ingested.error)).toBeNull();
     expect(ingested.error).toBeNull();
     expect(converted.error).toBeNull();
-    expect(lockRetryStats.retries - retries).toBeLessThanOrEqual(1);
+    expect(lockRetryStats.retries).toBe(retries);
     expect(await inboundCount(f, input.providerMessageId)).toBe(1);
     expect((await kit.one("select status from campaign_enrollments where id = $1", [bLive])).status).toBe("replied");
     expect(await kit.count("follow_up_runs", f.org, `status in ('active', 'paused') and conversation_id = '${b.conversationId}'`)).toBe(0);

@@ -1,6 +1,6 @@
-import { and, eq, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
-import { drafts, people, conversations } from "@/platform/db/schema";
+import { drafts, conversations, threads } from "@/platform/db/schema";
 import { sqlValues } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { ACTIVE_RUN_STATUSES, OPEN_STEP_STATUSES, RUN_FROM, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/follow-ups";
@@ -8,8 +8,8 @@ import { followUpRuns, followUpStepRuns } from "./follow-ups-schema";
 
 /**
  * Ending a follow-up run from inside another write's transaction, so the run stops and its unsent drafts retire in the
- * same commit as the trigger. `stopContactTx` (`stopping/infrastructure/stop-contact.ts`) calls the person and address
- * forms for everything that stops contact. A terminal reply type and a closed conversation end one conversation's runs
+ * same commit as the trigger. `stopContactTx` (`stopping/infrastructure/stop-contact.ts`) calls `interruptPersonRunsTx`
+ * for everything that stops contact. A terminal reply type and a closed conversation end one conversation's runs
  * here. The 60 second sweep stays as a safety net. The conversations core reaches Follow-ups after a reply through this
  * module and, to restart a run, `createRunOn` and `loadStartOn` in drizzle-follow-up-store.ts. Every other file here
  * depends on the core, not the other way.
@@ -152,25 +152,18 @@ export async function interruptConversationRunsTx(tx: Tx, organizationId: string
   return (await interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now)).runs;
 }
 
-/** The ids of the live runs whose conversation matches `where`, in id order. Every join stays inside the organization. */
-const liveRunsOf = (tx: Tx, organizationId: string, where: SQL) =>
-  tx
+/**
+ * Ends the runs of every conversation of the given people, in id order. `email_only` keeps a run on a LinkedIn thread going:
+ * a run's channel is its thread's. Every join stays inside the organization.
+ */
+export async function interruptPersonRunsTx(tx: Tx, organizationId: string, personIds: readonly string[], reason: string, now: Date, channels: "every_channel" | "email_only" = "every_channel"): Promise<RunStop> {
+  if (personIds.length === 0) return { runs: 0, drafts: 0 };
+  const runs = await tx
     .select({ id: followUpRuns.id })
     .from(followUpRuns)
     .innerJoin(conversations, and(eq(conversations.id, followUpRuns.conversationId), eq(conversations.organizationId, followUpRuns.organizationId)))
-    .innerJoin(people, and(eq(people.id, conversations.personId), eq(people.organizationId, followUpRuns.organizationId)))
-    .where(and(eq(followUpRuns.organizationId, organizationId), inArray(followUpRuns.status, [...ACTIVE_RUN_STATUSES]), where))
+    .innerJoin(threads, and(eq(threads.id, followUpRuns.threadId), eq(threads.organizationId, followUpRuns.organizationId)))
+    .where(and(eq(followUpRuns.organizationId, organizationId), inArray(followUpRuns.status, [...ACTIVE_RUN_STATUSES]), inArray(conversations.personId, [...personIds]), channels === "email_only" ? eq(threads.channel, "email") : undefined))
     .orderBy(followUpRuns.id);
-
-/** Ends the runs of every conversation of the given people. */
-export async function interruptPersonRunsTx(tx: Tx, organizationId: string, personIds: readonly string[], reason: string, now: Date): Promise<RunStop> {
-  if (personIds.length === 0) return { runs: 0, drafts: 0 };
-  const runs = await liveRunsOf(tx, organizationId, inArray(conversations.personId, [...personIds]));
-  return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
-}
-
-/** Ends the runs of every person in the organization with this address (case-insensitive). */
-export async function interruptEmailRunsTx(tx: Tx, organizationId: string, email: string, reason: string, now: Date): Promise<RunStop> {
-  const runs = await liveRunsOf(tx, organizationId, sql`lower(${people.email}) = ${email.trim().toLowerCase()}`);
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
