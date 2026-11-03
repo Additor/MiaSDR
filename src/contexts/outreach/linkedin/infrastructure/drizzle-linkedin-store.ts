@@ -205,7 +205,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
             values (${org}, ${candidate.id}, ${stepNumber}, 'linkedin', 'sending', ${account.id}, 1, ${nowIso}::timestamptz)
             on conflict (enrollment_id, step_number) do update
               set status = 'sending', attempt = sends.attempt + 1, claimed_at = excluded.claimed_at,
-                  linkedin_account_id = excluded.linkedin_account_id, error = null, rfc_message_id = null
+                  linkedin_account_id = excluded.linkedin_account_id, error = null, rfc_message_id = null, next_check_at = null
               where ${reclaimGuard}
             returning id, attempt
           `);

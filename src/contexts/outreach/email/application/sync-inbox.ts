@@ -74,7 +74,7 @@ export async function syncMailboxInbox(deps: InboxDeps, mailboxId: string): Prom
         counts[outcome] = (counts[outcome] ?? 0) + 1;
         if (failure) await deps.store.clearMessageFailure(mailbox, email.providerMessageId, deps.clock.now());
       } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = errorText(error);
         const state = await deps.store.recordMessageFailure(mailbox, email, reason, MAX_MESSAGE_ATTEMPTS, deps.clock.now());
         if (!state.deadLettered) throw new Error(`${reason} (message ${email.providerMessageId}, attempt ${state.attempts} of ${MAX_MESSAGE_ATTEMPTS})`);
         counts.dead_lettered = (counts.dead_lettered ?? 0) + 1;

@@ -178,7 +178,7 @@ export const createEnrollmentRestoreStore = (timeline: PersonTimeline): Enrollme
           eventType: "enrollment.restored",
           actorType: "human",
           actorUserId,
-          fromData: { status: "removed" },
+          fromData: { status: e.status },
           toData: { status: decision.status, campaignId, enrollmentId: e.id },
         });
         await recordAudit(tx, {

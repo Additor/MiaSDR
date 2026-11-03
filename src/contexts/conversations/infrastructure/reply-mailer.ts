@@ -1,4 +1,5 @@
 import { env } from "@/shared/env";
+import { errorText } from "@/shared/error-text";
 import { unsubscribeLinks } from "@/contexts/outreach/email/domain/unsubscribe-token";
 import { applySignature, toHtmlBody } from "@/contexts/outreach/domain/render";
 import { ProviderSendError, type MailboxProvider } from "@/contexts/outreach/email/application/ports";
@@ -39,7 +40,8 @@ export function createReplyMailer(provider: () => MailboxProvider): ReplyMailer 
         const message = error instanceof Error ? error.message : String(error);
         // A person sees the reply come back to review, and the mailbox shows why, as a campaign send would have marked it.
         if (error instanceof ProviderSendError && error.kind === "definite" && error.scope === "account") {
-          await markAddressUnavailable(request.organizationId, request.mailbox.emailAddress, message, new Date());
+          // The refusal below is the fact. A failed write here must not turn it into "may have been sent".
+          await markAddressUnavailable(request.organizationId, request.mailbox.emailAddress, message, new Date()).catch((markError) => console.error(`[reply-mailer] could not mark the mailbox: ${errorText(markError)}`));
         }
         throw new ReplySendError(message, error instanceof ProviderSendError && error.kind === "definite" ? "definite" : "unknown");
       }

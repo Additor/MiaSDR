@@ -441,7 +441,7 @@ function AccountRow({
       const result = await runApiAction(callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", body), { refresh: onChanged });
       if (!result.ok) return setError(result.error);
       adoptNext();
-    toast.success(`${name} saved.`);
+      toast.success(`${name} saved.`);
       for (const warning of result.data?.warnings ?? []) toast.warning(warning);
     });
   }

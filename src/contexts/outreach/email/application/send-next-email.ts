@@ -5,7 +5,7 @@ import { FAILED_MAILBOX_CHECK_MINUTES, MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTE
 import { resolveThreading } from "../domain/threading";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import { defaultWorkingHours } from "../../domain/working-hours";
-import type { MailboxDomainPolicy } from "./mailbox-management";
+import { mailboxPolicyViolation, type MailboxDomainPolicy } from "./mailbox-management";
 import { ProviderSendError, type Clock, type MailboxProvider, type OutreachStore, type SendClaim } from "./ports";
 
 export interface EngineDeps {
@@ -116,12 +116,18 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
  * Tries failed mailboxes again, at most hourly. Access comes back without anyone telling MiaSDR: an admin fixes delegation in
  * Google, and the mailbox's leads carry on from the step they were on. LinkedIn accounts recover the same way.
  */
-export async function recheckFailedMailboxes(deps: EngineDeps): Promise<{ checked: number; recovered: number }> {
+export async function recheckFailedMailboxes(deps: EngineDeps, deadline = Number.POSITIVE_INFINITY): Promise<{ checked: number; recovered: number }> {
   const now = deps.clock.now();
   const report = { checked: 0, recovered: 0 };
+  const policy = deps.domainPolicy ?? { allowedDomains: null, openSignup: false };
   for (const mailbox of await deps.store.failedMailboxes(new Date(now.getTime() - FAILED_MAILBOX_CHECK_MINUTES * 60_000))) {
+    // A provider outage makes each check wait out its timeout. The rest stay due, so the next tick takes them.
+    if (Date.now() >= deadline) break;
     report.checked += 1;
     try {
+      // The same rule as a person's Recheck: an address outside the policy never reaches the provider and never comes back.
+      const violation = mailboxPolicyViolation(policy, mailbox.emailAddress);
+      if (violation) throw new Error(violation);
       await deps.provider.verify(mailbox.emailAddress);
       await deps.store.recordMailboxCheck(mailbox.id, null, now);
       report.recovered += 1;

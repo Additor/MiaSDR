@@ -1,5 +1,5 @@
 import { markMailboxUnavailableTx } from "./mailbox-state";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
@@ -176,7 +176,7 @@ export const drizzleOutreachStore: OutreachStore = {
           values (${candidate.organization_id}, ${candidate.id}, ${stepNumber}, 'email', 'sending', ${mailbox.id}, ${candidate.taken_over_from}::uuid, 1, ${nowIso}::timestamptz)
           on conflict (enrollment_id, step_number) do update
             set status = 'sending', attempt = sends.attempt + 1, claimed_at = excluded.claimed_at,
-                mailbox_id = excluded.mailbox_id, taken_over_from_mailbox_id = excluded.taken_over_from_mailbox_id, error = null, rfc_message_id = null
+                mailbox_id = excluded.mailbox_id, taken_over_from_mailbox_id = excluded.taken_over_from_mailbox_id, error = null, rfc_message_id = null, next_check_at = null
             where ${reclaimGuard}
           returning id, attempt
         `);
@@ -245,6 +245,7 @@ export const drizzleOutreachStore: OutreachStore = {
       // A send that is already final (for example failed by a reconciler) stays as it is.
       if (moved.length === 0) return;
       await advanceEnrollment(tx, claim.enrollmentId, claim.stepNumber, claim.nextStep?.waitDays ?? null, now, claim.mailbox.id);
+      await tx.update(mailboxes).set({ unavailableSince: null }).where(and(eq(mailboxes.id, claim.mailbox.id), isNotNull(mailboxes.unavailableSince)));
     });
   },
 
@@ -278,9 +279,10 @@ export const drizzleOutreachStore: OutreachStore = {
   },
 
   async recordMailboxCheck(mailboxId, error, now) {
+    // The takeover clock keeps running until a send succeeds: verify reads the profile, and Gmail can answer that while it refuses every send.
     await db
       .update(mailboxes)
-      .set(error === null ? { status: "connected", lastError: null, lastTestedAt: now, unavailableSince: null } : { lastError: error, lastTestedAt: now })
+      .set(error === null ? { status: "connected", lastError: null, lastTestedAt: now } : { lastError: error, lastTestedAt: now })
       .where(and(eq(mailboxes.id, mailboxId), eq(mailboxes.status, "failed")));
   },
 

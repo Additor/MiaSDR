@@ -14,7 +14,7 @@ export function useServerDraft<T>(saved: T) {
   const [seen, setSeen] = useState(savedKey);
   const [value, setValue] = useState(saved);
   const [baseChanged, setBaseChanged] = useState(false);
-  // The text a save just sent. Text typed since then is a new edit, and the server's copy must not replace it.
+  // The text a save sent, while it waits for its refresh. Text typed since then is a new edit, and the server's copy must not replace it.
   const [adopting, setAdopting] = useState<string | null>(null);
   if (savedKey !== seen) {
     setSeen(savedKey);
@@ -23,7 +23,7 @@ export function useServerDraft<T>(saved: T) {
     if (adopting !== null ? valueKey === adopting : valueKey === seen) {
       setValue(saved);
       setBaseChanged(false);
-    } else if (adopting === null && valueKey !== savedKey) setBaseChanged(true);
+    } else if (adopting === null) setBaseChanged(valueKey !== savedKey);
     setAdopting(null);
   }
   return {

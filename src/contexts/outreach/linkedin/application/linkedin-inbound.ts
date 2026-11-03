@@ -1,4 +1,5 @@
 import { MAX_EVENT_ATTEMPTS, eventKey, eventRetrySeconds } from "../domain/linkedin";
+import { errorText } from "@/shared/error-text";
 import type { LedgerEvent, LinkedInInboundDeps } from "./linkedin-ports";
 
 export type WebhookResult =
@@ -7,8 +8,6 @@ export type WebhookResult =
   | { status: "done" | "skipped" }
   /** Stored, processing failed. The replay job retries it. */
   | { status: "failed"; error: string };
-
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * One authenticated delivery: write the ledger row first, then process synchronously. A failure is
@@ -46,7 +45,13 @@ export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: {
 async function process(deps: LinkedInInboundDeps, claim: LedgerEvent, organizationId: string, payload: unknown): Promise<WebhookResult> {
   try {
     const event = deps.parse(payload);
-    if (!event) {
+    if (!event || !eventKey(event, organizationId)) {
+      // An event this app acts on: a reply may be inside, and with no id it would share one idempotency key with every other like it.
+      if (event || deps.unreadable?.(payload)) {
+        const error = "MiaSDR still cannot read this delivery.";
+        await deps.store.fail(claim, error, deps.clock.now(), null);
+        return { status: "failed", error };
+      }
       await deps.store.finish(claim, "skipped", "Payload no longer parses.", deps.clock.now());
       return { status: "skipped" };
     }

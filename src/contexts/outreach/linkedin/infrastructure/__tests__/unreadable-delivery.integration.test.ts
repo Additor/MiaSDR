@@ -25,13 +25,22 @@ describeDb("an unreadable Unipile delivery", () => {
     const { inboxFiling } = await import("@/composition/inbox-filing");
     const deps = { store: createDrizzleLinkedInInboundStore(inboxFiling), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent };
     const result = await receiveLinkedInWebhook(deps, { organizationId: org.organizationId, payload });
-    return { result, rows: await sql`select status, event_type from inbound_events where organization_id = ${org.organizationId}` };
+    return { result, deps, organizationId: org.organizationId, rows: await sql`select status, event_type from inbound_events where organization_id = ${org.organizationId}` };
   }
 
   it("keeps a message with no id, which would otherwise vanish", async () => {
     const { result, rows } = await deliver({ event: "message_received", account_type: "LINKEDIN", account_id: "acct", chat_id: "c", message: "Stop" });
     expect(result.status).toBe("ignored");
     expect(rows).toEqual([expect.objectContaining({ status: "failed", event_type: "message_received" })]);
+  });
+
+  it("files nothing when a person retries a message with no id, and keeps it listed", async () => {
+    const { deps, organizationId } = await deliver({ event: "message_received", account_type: "LINKEDIN", account_id: "acct", chat_id: "c", message: "Stop" });
+    await sql`update inbound_events set attempts = 0, next_attempt_at = now() where organization_id = ${organizationId}`;
+    const { replayLinkedInEvents } = await import("../../application/linkedin-inbound");
+    expect(await replayLinkedInEvents(deps, 50, organizationId)).toMatchObject({ claimed: 1, failed: 1 });
+    expect(await sql`select status from inbound_events where organization_id = ${organizationId}`).toEqual([{ status: "failed" }]);
+    expect(await sql`select 1 from messages where organization_id = ${organizationId}`).toHaveLength(0);
   });
 
   it("keeps an event it acts on that fails to parse", async () => {

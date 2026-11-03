@@ -132,7 +132,7 @@ export interface MailboxRecord {
 export interface MailboxStore {
   list(organizationId: string, now: Date): Promise<MailboxRecord[]>;
   get(organizationId: string, id: string): Promise<MailboxRecord | null>;
-  /** Stores a mailbox the provider just verified. Throws ConflictError when the address is already connected anywhere. */
+  /** Stores a mailbox the provider verified. Throws ConflictError when the address is already connected anywhere. */
   insert(organizationId: string, input: { emailAddress: string; displayName: string | null; testedAt: Date }): Promise<string>;
   update(organizationId: string, id: string, patch: Partial<Pick<MailboxRecord, "displayName" | "dailySendLimit" | "signatureHtml" | "workingHours">>): Promise<void>;
   setStatus(organizationId: string, id: string, status: "connected" | "failed" | "disabled", error: string | null, testedAt: Date | null): Promise<void>;

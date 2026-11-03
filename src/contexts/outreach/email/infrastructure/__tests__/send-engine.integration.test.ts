@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { EngineDeps } from "../../application/send-next-email";
 import { FakeMailboxProvider } from "../fake-mailbox-provider";
@@ -257,8 +257,12 @@ describeDb("email send engine", () => {
       // The hourly check finds the access back, and the same lead sends the same step.
       provider.behavior = () => "ok";
       expect(await send.recheckFailedMailboxes(d)).toEqual({ checked: 1, recovered: 1 });
-      expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "connected", last_error: null, unavailable_since: null });
+      const recovered = await mailbox(f.mailboxIds[0]);
+      expect(recovered).toMatchObject({ status: "connected", last_error: null });
+      // Reading the profile proves less than sending, so the takeover clock runs on until a send succeeds.
+      expect(recovered.unavailable_since).not.toBeNull();
       expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("sent");
+      expect((await mailbox(f.mailboxIds[0])).unavailable_since).toBeNull();
       expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sent", attempt: 1 });
     });
 
@@ -273,6 +277,43 @@ describeDb("email send engine", () => {
       advance(61);
       expect(await send.recheckFailedMailboxes(d)).toEqual({ checked: 1, recovered: 0 });
       expect((await mailbox(f.mailboxIds[0])).status).toBe("failed");
+    });
+
+    it("keeps a mailbox outside the domain policy failed, and never asks the provider about it", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      await send.sendNextEmail(d, f.mailboxIds[0]);
+      advance(61);
+      provider.behavior = () => "ok";
+      const verify = vi.spyOn(provider, "verify");
+      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"], openSignup: false } });
+      expect(report).toEqual({ checked: 1, recovered: 0 });
+      expect(verify).not.toHaveBeenCalled();
+      expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "failed", last_error: expect.stringMatching(/not an allowed mailbox domain/) });
+    });
+
+    it("stops checking at the tick's deadline and leaves the rest due", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      await send.sendNextEmail(d, f.mailboxIds[0]);
+      advance(61);
+      expect(await send.recheckFailedMailboxes(d, Date.now() - 1)).toEqual({ checked: 0, recovered: 0 });
+      provider.behavior = () => "ok";
+      expect((await send.recheckFailedMailboxes(d)).checked).toBe(1);
+    });
+
+    it("reports a refused send as a failure of the job, though it charges no lead", async () => {
+      await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "outage";
+      const { createEmailJobs } = await import("../../application/email-jobs");
+      const { runTick } = await import("@/platform/jobs/tick");
+      const report = await runTick(createEmailJobs(deps(provider)).filter((job) => job.name === "email.send"));
+      expect(report.jobs[0].failures?.provider_unavailable).toBeGreaterThan(0);
     });
 
     it("holds the mailbox through a provider outage, spends no attempt, and leaves its status alone", async () => {

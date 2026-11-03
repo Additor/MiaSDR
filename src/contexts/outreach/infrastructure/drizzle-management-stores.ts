@@ -67,7 +67,7 @@ export async function unconfirmedSendsOf(channel: "email" | "linkedin", organiza
 const STOPPED: readonly EnrollmentStatus[] = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
 
 /**
- * Enrolls specific people into an email campaign. Skips people without an address and contacts; suppression and
+ * Enrolls specific people into an email campaign. Skips contacts and people with an open stop request; suppression and
  * do-not-contact are the caller's rules (the Grid handoff checks them first). Safe to repeat.
  */
 export async function enrollEmailPeopleCounted(organizationId: string, campaignId: string, personIds: string[], tx?: DbHandle): Promise<{ added: number; skippedContact: number }> {
@@ -80,7 +80,7 @@ export async function enrollEmailPeopleCounted(organizationId: string, campaignI
       const rows = await sp.execute<{ id: string }>(sql`
         insert into campaign_enrollments (organization_id, campaign_id, person_id, channel)
         select people.organization_id, ${campaignId}::uuid, people.id, 'email' from people
-        where people.organization_id = ${organizationId} and people.id in (${sql.join(keep.map((id) => sql`${id}::uuid`), sql`, `)}) and ${notContactSql}
+        where people.organization_id = ${organizationId} and people.id in (${sql.join(keep.map((id) => sql`${id}::uuid`), sql`, `)}) and ${notContactSql} and not ${personStopReviewOpenSql("people")}
         order by people.id
         on conflict do nothing
         returning id`);

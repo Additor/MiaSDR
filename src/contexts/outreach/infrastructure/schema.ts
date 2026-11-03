@@ -45,7 +45,7 @@ export const mailboxes = pgTable(
     status: text("status").notNull(),
     lastError: text("last_error"),
     lastTestedAt: tstz("last_tested_at"),
-    /** When the status last left `connected`; null while connected. Drives follow-up takeover by another mailbox. */
+    /** When the mailbox stopped sending. A send that succeeds or a person's check clears it, not the hourly check. Drives follow-up takeover by another mailbox. */
     unavailableSince: tstz("unavailable_since"),
     /** Gmail History cursor. Never overwritten by a watch renewal. */
     gmailHistoryCursor: text("gmail_history_cursor"),

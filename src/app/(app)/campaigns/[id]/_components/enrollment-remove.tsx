@@ -144,12 +144,12 @@ function RestoreRowButton({ id, name, retry = false }: { id: string; name: strin
       if (!result.ok) return void toast.error(result.error);
       const refusal = result.data.refused[0];
       if (refusal) toast.error(`${name ?? "This lead"} stays where it is. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);
-      else if (result.data.restored > 0) toast.success("Lead restored to this campaign.");
+      else if (result.data.restored > 0) toast.success(retry ? "The lead goes back in the queue." : "Lead restored to this campaign.");
       else toast.error("Lead not found in this campaign.");
     });
 
   return (
-    <Button size="sm" variant="ghost" onClick={() => void restore()} disabled={busy} aria-label={`Restore ${name ?? "lead"} to this campaign`}>
+    <Button size="sm" variant="ghost" onClick={() => void restore()} disabled={busy} aria-label={retry ? `Retry ${name ?? "lead"}` : `Restore ${name ?? "lead"} to this campaign`}>
       {busy ? (retry ? "Retrying…" : "Restoring…") : retry ? "Retry" : "Restore"}
     </Button>
   );

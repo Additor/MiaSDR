@@ -16,7 +16,7 @@ import { SettingsSection } from "../settings-section";
 /** The daily AI job limit for replies from senders the organization never wrote to. It is stored on the organization. */
 export function UnknownSenderLimitForm({ limit, timeZone, canManage }: { limit: number; timeZone: string; canManage: boolean }) {
   const router = useRouter();
-  const { value: value, setValue: setValue, baseChanged, discard, adoptNext } = useServerDraft(String(limit));
+  const { value, setValue, baseChanged, discard, adoptNext } = useServerDraft(String(limit));
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");

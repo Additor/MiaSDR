@@ -253,6 +253,8 @@ describeDb("restore of removed enrollments", () => {
       const out = await restore(f, c, [id]);
       expect(out.restored).toBe(1);
       expect((await sql`select status, stop_reason from campaign_enrollments where id = ${id}`)[0]).toMatchObject({ status: "pending", stop_reason: null });
+      const [event] = await sql`select from_data from events where event_type = 'enrollment.restored' and to_data->>'enrollmentId' = ${id}`;
+      expect(event.from_data).toEqual({ status: "failed" });
     });
 
     it("a lead that is not removed keeps its status", async () => {
