@@ -5,8 +5,6 @@ import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, Sync
 import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
-import { haltOutcome } from "../../domain/enrollment-status";
-import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 type Tx = DbTx;
@@ -157,7 +155,9 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
           const matched = await db.transaction(async (tx) => {
             const enrollmentId = await matchEnrollment(tx, mailbox, email);
             if (!enrollmentId) return false;
-            await endEnrollmentsTx(tx, and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)), haltOutcome("replied"), now);
+            const [matchedEnrollment] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)));
+            // The person-wide stop, ahead of filing: a message that fails to file must not leave their other campaigns running.
+            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, channel: "email", now });
             return true;
           });
           // After the sequence stopped: a replayed batch repeats both steps, and both are idempotent.

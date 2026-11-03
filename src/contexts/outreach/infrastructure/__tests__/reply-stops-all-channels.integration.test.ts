@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, describe } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { InboundStore, SyncMailbox } from "../../application/inbound-ports";
 import type { InboundEmail } from "../../email/application/ports";
@@ -122,6 +122,33 @@ describeDb("a genuine reply stops all outreach to the person", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ person_id: f.a, meta: { replyChannel: "email", channels: expect.arrayContaining(["email", "linkedin"]) } });
     expect((events[0].meta as { enrollmentIds: string[] }).enrollmentIds.sort()).toEqual([f.aEmail1, f.aEmail2, f.aLinkedin].sort());
+  });
+
+  describe("a threaded reply", () => {
+    async function threaded(f: F) {
+      const [{ id }] = await sql<{ id: string }[]>`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, subject, body, sent_at)
+        values (${f.o}, ${f.aEmail1}, 1, 'email', 'sent', ${f.mb.id}, 'Hello', 'Hi', ${now}) returning id`;
+      return mail(f.emails.a, { sendId: id });
+    }
+
+    it("stops every campaign of the person and writes one event that lists them", async () => {
+      const f = await fixture();
+      expect(await email.applyInbound(f.mb, await threaded(f), { kind: "message" }, now)).toBe("reply");
+      for (const id of [f.aEmail1, f.aEmail2, f.aLinkedin]) expect(await status(id)).toMatchObject({ status: "replied", stop_reason: "replied" });
+      const events = await stopEvents(f.o);
+      expect(events).toHaveLength(1);
+      expect((events[0].meta as { enrollmentIds: string[] }).enrollmentIds.sort()).toEqual([f.aEmail1, f.aEmail2, f.aLinkedin].sort());
+    });
+
+    it("stops them even when the message cannot be filed", async () => {
+      const f = await fixture();
+      const { inboxFiling } = await import("@/composition/inbox-filing");
+      const failing = { ...inboxFiling, email: async () => Promise.reject(new Error("filing failed")) };
+      const store = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore(failing, (await import("@/composition/inbox-filing")).followUps);
+      await expect(store.applyInbound(f.mb, await threaded(f), { kind: "message" }, now)).rejects.toThrow("filing failed");
+      for (const id of [f.aEmail1, f.aEmail2, f.aLinkedin]) expect(await status(id)).toMatchObject({ status: "replied" });
+      expect(await stopEvents(f.o)).toHaveLength(1);
+    });
   });
 
   it("a LinkedIn reply stops the person's email enrollments", async () => {

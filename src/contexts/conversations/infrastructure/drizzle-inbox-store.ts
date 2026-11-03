@@ -360,7 +360,7 @@ export const drizzleInboxStore: InboxStore = {
           at: m.sentAt,
           autoReply,
           possibleBounce,
-          unread: m.direction === "inbound" && m.openedAt === null && !autoReply,
+          unread: m.direction === "inbound" && m.openedAt === null && (!autoReply || possibleBounce),
           important: m.important,
           ...(typeof sentVia === "string" ? { sentVia } : {}),
         };

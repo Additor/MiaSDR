@@ -276,7 +276,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 - `leadStatus()` in `outreach/domain/lead-status.ts` gives one state per lead, first match wins: replied (an inbound message in a public conversation, or a `replied` enrollment), in sequence (`active` in an active campaign), paused (`active` or `pending` in a campaign that is not active), queued (`pending` in an active campaign), finished or stopped (the newest ended enrollment is `completed`, or bounced, suppressed, failed or cancelled), new (no enrollment, or removed ones only).
 - Within a rule the newest `updated_at` wins, then the id. Personal campaigns stay out. Last contact is the later of the latest outbound message and any enrollment's `last_sent_at`, removed enrollments included.
-- `readLeadStatuses` (`src/read-models/lead-activity.ts`, see [Read models](#read-models)) fills a page of ids in two organization-scoped queries. The Leads list and the lead page both read it through `readLeadActivity`, so they show the same state. A contact carries no lead status.
+- A reply means a genuine one (`genuineInboundSql`): an auto-reply or an unverified bounce makes nobody Replied, stops no sequence and counts in no analytics, and an unverified bounce still counts as unread. `readLeadStatuses` (`src/read-models/lead-activity.ts`, see [Read models](#read-models)) fills a page of ids in two organization-scoped queries. The Leads list and the lead page both read it through `readLeadActivity`, so they show the same state. A contact carries no lead status.
 
 ### Reachability and do not contact
 
@@ -582,7 +582,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### A reply stops all outreach
 
-`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `haltPersonEnrollmentsTx` end every `pending` or `active` enrollment of the person as `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
+`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. A threaded email reply runs it earlier, in the transaction that matches the send, so a message that fails to file still stops everything; filing then finds nothing left to stop. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `haltPersonEnrollmentsTx` end every `pending` or `active` enrollment of the person as `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
 
 ### AI providers
 

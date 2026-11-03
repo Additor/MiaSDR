@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { publicConversationText } from "@/platform/db/conversation-visibility";
+import { publicConversationText, genuineInboundSql } from "@/platform/db/conversation-visibility";
 import type { DbTx as Tx } from "@/platform/db/client";
 import { rowsOf } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
@@ -56,7 +56,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
   const [remaining] = rowsOf<{ id: string; sent_at: Date | string }>(
     await tx.execute(sql`
       select m.id, m.sent_at from messages m join conversations c on c.id = m.conversation_id
-      where c.record_id = ${input.recordId} and ${sql.raw(publicConversationText("c"))} and m.direction = 'inbound'
+      where c.record_id = ${input.recordId} and ${sql.raw(publicConversationText("c"))} and ${genuineInboundSql("m")}
       order by m.sent_at desc, m.id limit 1`),
   );
   // A type the AI applied for the private message goes back to what it replaced, with the lock it had then.
