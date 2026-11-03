@@ -1,3 +1,4 @@
+import { errorText } from "@/shared/error-text";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { jobRuns } from "@/platform/db/schema";
@@ -77,7 +78,7 @@ export function createDailyRolloverJob(steps: readonly RolloverStep[], zones: Or
             ran++;
           } catch (error) {
             failed++;
-            await finishSlot(claim, { status: "failed", error: error instanceof Error ? error.message : String(error), retryAfterMs: ROLLOVER_RETRY_MS });
+            await finishSlot(claim, { status: "failed", error: errorText(error), retryAfterMs: ROLLOVER_RETRY_MS });
           }
         }
       }

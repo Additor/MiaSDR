@@ -67,8 +67,8 @@ const COUNTED: Record<string, { unit: string; testId: string; waiting: boolean }
   "/inbox": { unit: "unread", testId: "inbox-unread", waiting: false },
 };
 
-/** Rows are 32px on a desktop pointer and 44px in the phone sheet. */
 const SIGN_IN = "/sign-in";
+/** Rows are 32px on a desktop pointer and 44px in the phone sheet. */
 const TOUCH = "max-md:h-11";
 
 /** A count that waits for a person: plain text in the brand hue, so it reads before the label does. */

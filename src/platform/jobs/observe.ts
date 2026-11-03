@@ -46,6 +46,12 @@ export function failureOf(job: TickReport["jobs"][number]): string | null {
   return failed.map(([key, n]) => `${n} ${key.replace(/_/g, " ")}`).join(", ");
 }
 
+/**
+ * Whether this pass says the job works. A starved job did not run, and a job whose failures are counts or that runs by slot
+ * (`needsWork`) may have had nothing due: a sync that waits out its retry delay reports no failure while the fault stands.
+ */
+const provedHealthy = (job: TickReport["jobs"][number]) => !(job.processed === 0 && (job.more || job.needsWork) && !job.error);
+
 export function createTickObserver(options: ObserverOptions = {}) {
   const log = options.log ?? ((level, line) => (level === "info" ? console.info : level === "warn" ? console.warn : console.error)(line));
   const persist = options.persist ?? recordTickFailure;
@@ -83,20 +89,20 @@ export function createTickObserver(options: ObserverOptions = {}) {
           await persist({ job: job.name, signature, message, occurrences: entry.occurrences, firstSeenAt: new Date(entry.firstSeenAt), now: new Date(t) });
         } catch (error) {
           // The log line above already carries the failure. A broken database must not stop the scheduler.
-          log("warn", line({ event: "job.failure_record_failed", job: job.name, error: error instanceof Error ? error.message : String(error) }));
+          log("warn", line({ event: "job.failure_record_failed", job: job.name, error: errorText(error) }));
         }
       }
 
       // A job that ran clean this tick closes its failure series.
       for (const [key, entry] of seen) {
         const name = key.slice(0, key.indexOf("\u0000"));
-        if (failing.has(name) || !report.jobs.some((j) => j.name === name && !(j.processed === 0 && j.more && !j.error))) continue;
+        if (failing.has(name) || !report.jobs.some((j) => j.name === name && provedHealthy(j))) continue;
         seen.delete(key);
         if (entry.lastLoggedAt > 0) log("info", line({ event: "job.recovered", job: name, occurrences: entry.occurrences }));
       }
 
       // A job that ran clean has nothing left to show: its rows leave the page and the badge, whichever process wrote them.
-      const clean = report.jobs.filter((j) => !failing.has(j.name) && !(j.processed === 0 && j.more && !j.error)).map((j) => j.name);
+      const clean = report.jobs.filter((j) => !failing.has(j.name) && provedHealthy(j)).map((j) => j.name);
       try {
         await clear(clean);
       } catch (error) {

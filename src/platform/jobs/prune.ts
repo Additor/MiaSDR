@@ -1,3 +1,4 @@
+import { errorText } from "@/shared/error-text";
 import { sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { env } from "@/shared/env";
@@ -114,6 +115,7 @@ export function createHistoryPruneJob(retention: () => RetentionDays = retention
   return {
     name: "platform.history-prune",
     failureKeys: [],
+    slotted: true,
     async run(ctx): Promise<JobResult> {
       const now = ctx.now();
       const claim = await claimSlot("history-prune", pruneSlotKey(now), { now, leaseMs: 10 * 60_000 });
@@ -125,7 +127,7 @@ export function createHistoryPruneJob(retention: () => RetentionDays = retention
         const processed = Object.values(result.deleted).reduce((a, b) => a + b, 0);
         return { processed, more: result.more, detail: result.deleted };
       } catch (error) {
-        await finishSlot(claim, { status: "failed", error: error instanceof Error ? error.message : String(error) });
+        await finishSlot(claim, { status: "failed", error: errorText(error) });
         throw error;
       }
     },

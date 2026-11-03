@@ -29,6 +29,12 @@ describe("runTick", () => {
     expect((await runTick([counted(0)])).jobs[0].failures).toBeUndefined();
   });
 
+  it("marks a job that has to do work before a pass says it is healthy", async () => {
+    const quiet = { run: async () => ({ processed: 0, more: false }) };
+    const report = await runTick([{ name: "counts", failureKeys: ["failed"], ...quiet }, { name: "slot", failureKeys: [], slotted: true, ...quiet }, { name: "plain", failureKeys: [], ...quiet }]);
+    expect(report.jobs.map((j) => j.needsWork)).toEqual([true, true, undefined]);
+  });
+
   it("isolates a failing job", async () => {
     const bad: Job = { name: "bad", failureKeys: [], run: async () => { throw new Error("boom"); } };
     const report = await runTick([bad, ok("good")]);

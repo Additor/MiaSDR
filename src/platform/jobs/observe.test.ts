@@ -65,6 +65,22 @@ describe("tick observer", () => {
     expect(cleared).toEqual([["ok"]]);
   });
 
+  it("keeps the rows while a job that must do work to prove itself did none", async () => {
+    const cleared: string[][] = [];
+    const h = harness({ clear: async (jobs: string[]) => void cleared.push(jobs) });
+    await h.observer.observe(h.report([{ name: "linkedin.sync-accounts", processed: 0, more: false, needsWork: true }, { name: "email.reconcile", processed: 0, more: false }]));
+    expect(cleared).toEqual([["email.reconcile"]]);
+    await h.observer.observe(h.report([{ name: "linkedin.sync-accounts", processed: 1, more: false, needsWork: true }]));
+    expect(cleared[1]).toEqual(["linkedin.sync-accounts"]);
+  });
+
+  it("does not call a job recovered on a pass that had nothing due", async () => {
+    const h = harness();
+    await h.observer.observe(h.report([{ name: "sync", processed: 0, more: false, needsWork: true, detail: { failed: 1 }, failures: { failed: 1 } }]));
+    await h.observer.observe(h.report([{ name: "sync", processed: 0, more: false, needsWork: true, detail: { failed: 0 } }]));
+    expect(h.parsed().filter((l) => l.event === "job.recovered")).toEqual([]);
+  });
+
   it("collapses a repeating failure and reports the skipped ticks on the next line", async () => {
     const h = harness({ repeatEveryMs: 600_000 });
     for (let i = 0; i < 5; i++) {

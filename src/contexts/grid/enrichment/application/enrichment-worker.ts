@@ -462,7 +462,7 @@ export function createGridRunJob(deps: WorkerDeps): Job {
   const concurrency = clampConcurrency(deps.concurrency);
   return {
     name: GRID_RUN_JOB,
-    failureKeys: ["failed"],
+    failureKeys: ["failed", "save_failed", "error"],
     async run(ctx) {
       const detail: Record<string, number> = {};
       const active = new Set<Promise<void>>();

@@ -86,7 +86,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
     },
     {
       name: "linkedin.run",
-      failureKeys: ["failed"],
+      failureKeys: ["failed", "resolve_failed"],
       async run(ctx) {
         // Queue build: while PAUSE_OUTBOUND is set, do not even list actionable accounts.
         if (isOutboundPaused()) return { processed: 0, more: false, detail: { paused: 1 } };
