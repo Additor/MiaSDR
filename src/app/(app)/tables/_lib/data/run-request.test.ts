@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRunBody, cellRunBody, centsCapIsInert, estimateByProvider, estimateHeadline, runCellSource, runSummary, wholeNumber, type RunForm, recalcSummary, retrySummary, stopSummary } from "./run-request";
+import { buildRunBody, cellRunBody, centsCapIsInert, estimateByProvider, estimateHeadline, runCellSource, runSummary, wholeNumber, type RunForm, retrySummary, stopSummary } from "./run-request";
 
 const col = (key: string, type: string, config: Record<string, unknown> = {}) => ({ key, name: key.toUpperCase(), type, config });
 const columns = [col("name", "text"), col("find", "enrichment"), col("email", "integration_output", { sourceColumnKey: "find" }), col("ask", "ai"), col("answer", "ai_output", { sourceColumnKey: "ask" }), col("orphan", "ai_output", { sourceColumnKey: "gone" }), col("bad", "ai_output", { sourceColumnKey: "name" })];
@@ -67,7 +67,6 @@ describe("toast texts", () => {
     expect(retrySummary(1_200)).toBe("Retrying 1,200 failed cells.");
     expect(stopSummary(1)).toBe("Stopped the run. 1 queued cell was removed.");
     expect(stopSummary(0)).toBe("Stopped the run. 0 queued cells were removed.");
-    expect(recalcSummary("Score x2", 1)).toBe('Recalculated "Score x2". 1 cell changed.');
   });
 });
 

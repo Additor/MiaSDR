@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { canMoveEnrollment, ENROLLMENT_FROM, ENROLLMENT_STATUSES, failedOutcome, haltOutcome, LIVE_ENROLLMENT_STATUSES, OUTREACH_HALTS } from "./enrollment-status";
+import { ENROLLMENT_FROM, ENROLLMENT_STATUSES, failedOutcome, haltOutcome, LIVE_ENROLLMENT_STATUSES, OUTREACH_HALTS } from "./enrollment-status";
 
 const OUTCOMES = ENROLLMENT_STATUSES.filter((s) => !(LIVE_ENROLLMENT_STATUSES as readonly string[]).includes(s));
 
 describe("enrollment transitions", () => {
   it("moves a live enrollment to any outcome", () => {
-    for (const from of LIVE_ENROLLMENT_STATUSES) for (const to of OUTCOMES) expect(canMoveEnrollment(from, to)).toBe(true);
+    for (const from of LIVE_ENROLLMENT_STATUSES) for (const to of OUTCOMES) expect(ENROLLMENT_FROM[to].includes(from)).toBe(true);
   });
 
   it("keeps an outcome, except that a removed lead can be restored", () => {
     for (const from of OUTCOMES) {
-      const exits = ENROLLMENT_STATUSES.filter((to) => canMoveEnrollment(from, to));
+      const exits = ENROLLMENT_STATUSES.filter((to) => ENROLLMENT_FROM[to].includes(from));
       expect(exits).toEqual(from === "removed" ? ["pending", "active"] : []);
     }
   });
@@ -25,7 +25,7 @@ describe("enrollment outcomes", () => {
     for (const halt of OUTREACH_HALTS) {
       const outcome = haltOutcome(halt);
       expect(outcome.reason).toBe(halt);
-      for (const from of LIVE_ENROLLMENT_STATUSES) expect(canMoveEnrollment(from, outcome.status), halt).toBe(true);
+      for (const from of LIVE_ENROLLMENT_STATUSES) expect(ENROLLMENT_FROM[outcome.status].includes(from), halt).toBe(true);
     }
   });
 
@@ -34,7 +34,6 @@ describe("enrollment outcomes", () => {
       replied: "replied",
       bounced: "bounced",
       unsubscribed: "suppressed",
-      complaint: "suppressed",
       manual: "suppressed",
       do_not_contact: "suppressed",
       converted: "cancelled",

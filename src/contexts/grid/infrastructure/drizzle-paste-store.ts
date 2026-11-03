@@ -102,5 +102,3 @@ export async function pasteBlock(
     };
   });
 }
-
-export const drizzlePasteStore = { paste: pasteBlock };

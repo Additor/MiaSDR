@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { ValidationError } from "@/shared/errors";
 import { identityPayloadSchema } from "./reply-handling";
 import { ingestInboundEmail } from "./ingest-inbound-email";
-import type { InboundConversationStore, InboundEmailInput, QuarantineInbound } from "./ports";
+import type { InboundThreadStore, InboundEmailInput, QuarantineInbound } from "./ports";
 
 function setup() {
   const seen: InboundEmailInput[] = [];
   const parked: Parameters<QuarantineInbound>[0][] = [];
-  const store: InboundConversationStore = {
+  const store: InboundThreadStore = {
     ingestEmail: async (input) => {
       seen.push(input);
-      return { status: "created", conversationId: "c", messageId: "m", personId: "p", personCreated: false };
+      return { status: "created", threadId: "c", messageId: "m", personId: "p", personCreated: false };
     },
   };
   const quarantine: QuarantineInbound = async (q) => {

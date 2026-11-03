@@ -46,7 +46,7 @@ test.describe("phone width in dark mode", () => {
     const tag = unique("s90");
     const lead = { email: `lena@${tag}.test`, firstName: "Lena", lastName: `Phone ${tag}`, title: "COO", company: `S90 Group ${tag}` };
     const { campaignId } = await seedReply(page.request, { key: tag, mailbox: `sdr-${tag}@e2e-corp.test`, lead, reply: { bodyText: "Can we talk on Thursday?" } });
-    const [thread] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email}`;
+    const [thread] = await sql()`select c.id from threads c join conversations r on r.id = c.conversation_id join people p on p.id = r.person_id where p.email = ${lead.email}`;
     const { workbookId, tableId } = await newWorkbook(page.request, `S90 table ${tag}`);
     await importCsv(page.request, tableId, [["Email", "Company"], [`ann@${tag}.test`, "Acme"], [`bo@${tag}.test`, "Beta"]]);
     const domain = `${tag}-co.test`;

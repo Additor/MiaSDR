@@ -101,3 +101,10 @@ export async function dropOrgs(sql: postgres.Sql, orgs: Array<Pick<TestOrg, "org
     if (userIds.length > 0) await tx`delete from users where id = any(${userIds})`;
   });
 }
+
+/** A follow-up flow and the campaign that owns it, for a test that needs the flow's rows and nothing else about the campaign. */
+export async function insertFollowUpFlow(sql: postgres.Sql, organizationId: string, name: string, status = "active"): Promise<string> {
+  const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, channel, name) values (${organizationId}, 'email', ${name}) returning id`;
+  const [{ id }] = await sql`insert into follow_up_flows (organization_id, name, campaign_id, status) values (${organizationId}, ${name}, ${campaignId}, ${status}) returning id`;
+  return id;
+}

@@ -1,14 +1,14 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
-import { campaignEnrollments, channelSettings, drafts, mailboxes, mcpTokens, records, sendAttempts, sends } from "@/platform/db/schema";
+import { campaignEnrollments, channelSettings, drafts, mailboxes, mcpTokens, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { readSendPause } from "@/contexts/outreach/domain/send-pause";
-import { readAgentSendGate } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
+import { readAgentSendGate } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import type { AgentVia } from "@/shared/errors";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { replyRefusal, type AgentReplyRefusal, type ReplyChannel } from "../domain/reply-send";
 import { utcDayStart } from "@/shared/utc-day";
-import { stopReviewOpen } from "./stop-requested-sql";
+import { stopReviewOpen } from "../stopping/infrastructure/stop-requested-sql";
 
 /** How long an agent waits between two replies in one reply handling, on either channel. */
 export const AGENT_REPLY_GAP_MS = 24 * 60 * 60 * 1000;
@@ -19,12 +19,12 @@ export interface AgentReplyCheck {
   /** The token's person: the per-person limit counts their agent sends. */
   actorUserId: string;
   channel: ReplyChannel;
+  threadId: string;
   conversationId: string;
-  recordId: string;
-  /** The record's person now. A campaign must have reached this same person. */
+  /** The conversation's person now. A campaign must have reached this same person. */
   personId: string;
   /** The conversation's provider thread: the email thread id, or the LinkedIn chat. */
-  threadId: string | null;
+  providerThreadId: string | null;
   /** The conversation's account: the mailbox address in lowercase, or the LinkedIn account id. */
   accountRef: string;
   cc: readonly string[];
@@ -44,18 +44,18 @@ async function recipientVerified(tx: DbTx, input: AgentReplyCheck): Promise<bool
     .select({ id: sendAttempts.id })
     .from(sendAttempts)
     .innerJoin(drafts, eq(drafts.id, sendAttempts.draftId))
-    .where(and(eq(drafts.conversationId, input.conversationId), eq(sendAttempts.origin, "person"), inArray(sendAttempts.status, ["sent", "reconciled"])))
+    .where(and(eq(drafts.threadId, input.threadId), eq(sendAttempts.origin, "person"), inArray(sendAttempts.status, ["sent", "reconciled"])))
     .limit(1);
   if (byPerson) return true;
   const reached = and(eq(sends.organizationId, input.organizationId), eq(sends.kind, "campaign"), eq(sends.status, "sent"), eq(campaignEnrollments.personId, input.personId));
   if (input.channel === "email") {
-    if (!input.threadId) return false;
+    if (!input.providerThreadId) return false;
     const [campaign] = await tx
       .select({ id: sends.id })
       .from(sends)
       .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
       .innerJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
-      .where(and(reached, eq(sends.threadId, input.threadId), sql`lower(${mailboxes.emailAddress}) = ${input.accountRef}`))
+      .where(and(reached, eq(sends.providerThreadId, input.providerThreadId), sql`lower(${mailboxes.emailAddress}) = ${input.accountRef}`))
       .limit(1);
     return Boolean(campaign);
   }
@@ -77,8 +77,8 @@ export async function checkAgentReply(tx: DbTx, input: AgentReplyCheck): Promise
   const { policy, settings } = await readAgentSendGate(tx, { organizationId: input.organizationId, tokenId: input.via.tokenId, lock: "exclusive", now });
   if (!policy.replies) throw refuse("agent_send_off", channel);
   if (!(await recipientVerified(tx, input))) throw refuse("agent_unverified_recipient", channel);
-  const [record] = await tx.select({ latest: records.latestInboundMessageId }).from(records).where(eq(records.id, input.recordId));
-  if (await stopReviewOpen(tx, record?.latest ?? null)) throw refuse("agent_stop_requested", channel);
+  const [conversation] = await tx.select({ latest: conversations.latestInboundMessageId }).from(conversations).where(eq(conversations.id, input.conversationId));
+  if (await stopReviewOpen(tx, conversation?.latest ?? null)) throw refuse("agent_stop_requested", channel);
   if (input.cc.length > 0) throw refuse("agent_cc_not_allowed", channel);
 
   const [general] = await tx
@@ -112,7 +112,7 @@ export async function checkAgentReply(tx: DbTx, input: AgentReplyCheck): Promise
         eq(sendAttempts.organizationId, input.organizationId),
         eq(sendAttempts.origin, "agent"),
         inArray(sendAttempts.status, [...ATTEMPT_COUNTED]),
-        eq(drafts.recordId, input.recordId),
+        eq(drafts.conversationId, input.conversationId),
         gte(sendAttempts.createdAt, new Date(now.getTime() - AGENT_REPLY_GAP_MS)),
       ),
     )

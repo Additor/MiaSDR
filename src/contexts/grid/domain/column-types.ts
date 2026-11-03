@@ -1,7 +1,7 @@
 /**
  * Column types of the grid. Static columns hold values a person typed or imported.
- * Runner columns get their value from something that executes (a formula, an
- * enrichment, an AI call). The list matches the CHECK constraint on grid_columns.
+ * Runner columns get their value from something that executes (an enrichment,
+ * an AI call). The list matches the CHECK constraint on grid_columns.
  */
 
 export const STATIC_COLUMN_TYPES = [
@@ -9,7 +9,7 @@ export const STATIC_COLUMN_TYPES = [
 ] as const;
 
 export const RUNNER_COLUMN_TYPES = [
-  "enrichment", "integration_output", "ai_output", "http", "ai", "functions", "message", "waterfall", "formula", "merge",
+  "enrichment", "integration_output", "ai_output", "http", "ai", "functions", "message", "waterfall", "merge",
 ] as const;
 
 export type StaticColumnType = (typeof STATIC_COLUMN_TYPES)[number];
@@ -23,9 +23,6 @@ export const isColumnType = (type: string): type is ColumnType => (ALL_COLUMN_TY
 
 /** Runner columns that call something per cell (a vendor, a model) and keep a run history in the cell. */
 export const RUNNABLE_TYPES: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
-
-/** Column types whose cells hold plain strings. A formula sees a blank one as "". */
-export const TEXT_LIKE_TYPES: ReadonlySet<string> = new Set(["text", "url", "email", "select", "image"]);
 
 /** The type a cell is displayed and filtered as: output columns carry their own value type in config. */
 export function effectiveColumnType(column: { type: string; config?: Record<string, unknown> }): string {

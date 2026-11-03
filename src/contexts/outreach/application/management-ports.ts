@@ -1,8 +1,11 @@
 import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import type { DbHandle } from "@/platform/db/client";
+import type { BouncePause } from "../domain/bounce-pause";
 import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
+import type { EnrollSkipCounts } from "../domain/enrollment-eligibility";
 import type { WorkingHours } from "../domain/working-hours";
+import type { MailboxStatus } from "../domain/mailbox-status";
 
 export interface CampaignSummary {
   id: string;
@@ -11,15 +14,17 @@ export interface CampaignSummary {
   steps: number;
   enrolled: number;
   sent: number;
-  /** Leads that answered. Also counted in `stopped`. */
+  /** Leads that answered. */
   replied: number;
-  /** Replied, bounced, suppressed, failed or cancelled: out of the sequence before finishing. */
+  /** Leads the lead status calls Stopped (`STOPPED_ENROLLMENT_STATUSES`). */
   stopped: number;
   completed: number;
   /** Sends the provider never confirmed, older than the grace period. A person has to settle them. */
   unconfirmed: number;
   archivedAt: Date | null;
   createdAt: Date;
+  /** The count behind a pause the bounce breaker made, or null. */
+  bouncePause: BouncePause | null;
 }
 
 /** A send in status `unknown`: the mail may or may not have gone out. */
@@ -42,13 +47,15 @@ export interface CampaignRecord {
   steps: StepInput[];
   archivedAt: Date | null;
   createdAt: Date;
+  /** The count behind a pause the bounce breaker made, or null. */
+  bouncePause: BouncePause | null;
 }
 
 export interface EnrollmentRow {
   enrollmentId: string;
   personId: string;
   /** The Inbox conversation of a lead that replied, or null. */
-  inboxConversationId: string | null;
+  inboxThreadId: string | null;
   personName: string | null;
   email: string | null;
   status: string;
@@ -58,19 +65,11 @@ export interface EnrollmentRow {
   stopReason: string | null;
 }
 
-export interface EnrollResult {
+export interface EnrollResult extends EnrollSkipCounts {
   /** People the query matched, or the ids a person picked. */
   requested: number;
-  skippedMissingIdentity: number;
-  skippedDuplicate: number;
   added: number;
   alreadyEnrolled: number;
-  skippedSuppressed: number;
-  skippedDoNotContact: number;
-  /** The latest reply reads as a request to stop and no person reviewed it. */
-  skippedStopRequest: number;
-  /** Contacts are not enrolled in campaigns. */
-  skippedContact: number;
   skippedNoEmail: number;
   /** Dry run only: people the same call would enroll, up to the limit. */
   wouldAdd?: number;
@@ -135,7 +134,8 @@ export interface MailboxStore {
   /** Stores a mailbox the provider verified. Throws ConflictError when the address is already connected anywhere. */
   insert(organizationId: string, input: { emailAddress: string; displayName: string | null; testedAt: Date }): Promise<string>;
   update(organizationId: string, id: string, patch: Partial<Pick<MailboxRecord, "displayName" | "dailySendLimit" | "signatureHtml" | "workingHours">>): Promise<void>;
-  setStatus(organizationId: string, id: string, status: "connected" | "failed" | "disabled", error: string | null, testedAt: Date | null): Promise<void>;
+  /** Changes nothing unless the mailbox is in one of `from`, so a person's Disable holds against a check that was already running. */
+  setStatus(organizationId: string, id: string, next: MailboxStatus, error: string | null, testedAt: Date | null, from: readonly MailboxStatus[]): Promise<void>;
   /** Enrollments that finished a step from this mailbox and are still going. */
   activeEnrollmentCount(organizationId: string, id: string): Promise<number>;
   /** Names of campaigns that are not completed and list this mailbox as their only assigned sender. */

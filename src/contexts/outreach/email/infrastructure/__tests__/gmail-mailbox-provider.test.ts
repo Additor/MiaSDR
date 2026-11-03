@@ -19,7 +19,7 @@ const email: OutgoingEmail = {
   rfcMessageId: "<abc@acme.com>",
   inReplyTo: null,
   references: [],
-  threadId: null,
+  providerThreadId: null,
   listUnsubscribeUrl: "https://app.example.com/u",
 };
 
@@ -98,8 +98,8 @@ describe("send", () => {
 
   it("posts base64url raw and returns the ids", async () => {
     const { provider, calls } = setup(sendHandler(() => json(200, { id: "m1", threadId: "t1" })));
-    const sent = await provider.send({ ...email, threadId: "t0" });
-    expect(sent).toEqual({ providerMessageId: "m1", threadId: "t1" });
+    const sent = await provider.send({ ...email, providerThreadId: "t0" });
+    expect(sent).toEqual({ providerMessageId: "m1", providerThreadId: "t1" });
     const call = calls[1]!;
     expect(call.url).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
     expect(call.init!.method).toBe("POST");
@@ -112,7 +112,7 @@ describe("send", () => {
 
   it("omits threadId when none is given", async () => {
     const { provider, calls } = setup(sendHandler(() => json(200, { id: "m1" })));
-    expect(await provider.send(email)).toEqual({ providerMessageId: "m1", threadId: null });
+    expect(await provider.send(email)).toEqual({ providerMessageId: "m1", providerThreadId: null });
     expect(JSON.parse(String(calls[1]!.init!.body))).not.toHaveProperty("threadId");
   });
 
@@ -204,7 +204,7 @@ describe("findSent", () => {
 
   it("finds the message whose send-id header matches within the window", async () => {
     const { provider, calls } = setup(sentMail({ m1: "<other@acme.com>", m2: "<abc@acme.com>" }));
-    expect(await provider.findSent(who, "abc@acme.com", SINCE)).toEqual({ status: "found", sent: { providerMessageId: "m2", threadId: "t2" } });
+    expect(await provider.findSent(who, "abc@acme.com", SINCE)).toEqual({ status: "found", sent: { providerMessageId: "m2", providerThreadId: "t2" } });
     const q = new URL(calls[1]!.url).searchParams.get("q");
     expect(q).toBe(`in:sent after:${Math.floor(SINCE.getTime() / 1000) - 3600}`);
     expect(new URL(calls[1]!.url).searchParams.get("includeSpamTrash")).toBe("true");
@@ -377,7 +377,7 @@ describe("fetchInbound", () => {
     expect(batch.cursor).toBe("620");
     expect(batch.reset).toBeUndefined();
     expect(batch.messages.map((m) => m.providerMessageId)).toEqual(["a", "b", "c"]);
-    expect(batch.messages[0]).toMatchObject({ subject: "s-a", bodyText: "body a", threadId: "t-a" });
+    expect(batch.messages[0]).toMatchObject({ subject: "s-a", bodyText: "body a", providerThreadId: "t-a" });
     const history = calls.filter((c) => c.url.includes("/history?"));
     expect(history).toHaveLength(2);
     expect(history[0]!.url).toContain("startHistoryId=600");

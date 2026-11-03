@@ -38,7 +38,7 @@ const toolLabel = (call: ActivityCall) => {
 
 /** The pages a call names that a person can open: the conversation and the deal. */
 function targetLink(target: Record<string, string>) {
-  if (target.conversationId) return { href: `/inbox/${target.conversationId}`, label: "Conversation" };
+  if (target.threadId) return { href: `/inbox/${target.threadId}`, label: "Conversation" };
   if (target.dealId) return { href: `/crm/deals/${target.dealId}`, label: "Deal" };
   return null;
 }

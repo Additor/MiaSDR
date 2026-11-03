@@ -114,10 +114,11 @@ export function toHtmlBody(text: string): string {
   return linked.replace(/\r?\n/g, "<br />");
 }
 
-export function unsubscribeFooter(url: string): { text: string; html: string } {
+/** The footer: the sender's postal address when the mail carries one, then the unsubscribe link. */
+export function unsubscribeFooter(url: string, postalAddress?: string | null): { text: string; html: string } {
   return {
-    text: `\n\n---\nDon't want to hear from us again? Unsubscribe: ${url}`,
-    html: `<br /><br /><span style="color:#888888;font-size:12px">Don't want to hear from us again? <a href="${escapeHtml(url)}" style="color:#888888">Unsubscribe</a></span>`,
+    text: `\n\n---\n${postalAddress ? `${postalAddress}\n` : ""}Don't want to hear from us again? Unsubscribe: ${url}`,
+    html: `<br /><br /><span style="color:#888888;font-size:12px">${postalAddress ? `${escapeHtml(postalAddress)}<br />` : ""}Don't want to hear from us again? <a href="${escapeHtml(url)}" style="color:#888888">Unsubscribe</a></span>`,
   };
 }
 
@@ -127,6 +128,8 @@ export interface RenderInput {
   variables: Record<string, string | null | undefined>;
   signatureHtml: string | null | undefined;
   unsubscribeUrl: string;
+  /** Campaign mail carries the organization's postal address. A test send has none. */
+  postalAddress?: string | null;
   random: () => number;
 }
 
@@ -140,7 +143,7 @@ export function renderEmail(input: RenderInput): RenderedEmail {
   const fill = (template: string) => applyMergeFields(applySpin(template, input.random), input.variables);
   const subject = fill(input.subjectTemplate).replace(/\s+/g, " ").trim();
   const body = applySignature(fill(input.bodyTemplate), input.signatureHtml);
-  const footer = unsubscribeFooter(input.unsubscribeUrl);
+  const footer = unsubscribeFooter(input.unsubscribeUrl, input.postalAddress);
   return {
     subject,
     bodyText: `${body}${footer.text}`,

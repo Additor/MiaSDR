@@ -26,7 +26,7 @@ describeDb("campaign and mailbox management", () => {
       actor: { userId, organizationId: id, role },
       member: { userId, organizationId: id, role: "member" },
       campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore },
-      mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null, openSignup: false } },
+      mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null } },
     };
   }
 
@@ -77,6 +77,17 @@ describeDb("campaign and mailbox management", () => {
       expect(await stores.drizzleMailboxStore.get(t.actor.organizationId, id)).toMatchObject({ status: "failed", lastError: expect.stringMatching(/not allowed/) });
       provider.unverifiable.delete(address);
       await mailboxUc.retestMailbox(t.mailboxDeps, t.actor, id);
+      expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("connected");
+    });
+
+    it("keeps a mailbox disabled when a person disables it while a check is running", async () => {
+      const t = await org();
+      const address = `busy${Math.random().toString(36).slice(2, 6)}@corp.test`;
+      const { id } = await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: address });
+      const racing = { ...t.mailboxDeps, provider: { ...t.mailboxDeps.provider, verify: () => mailboxUc.setMailboxEnabled(t.mailboxDeps, t.actor, id, false) } };
+      await mailboxUc.retestMailbox(racing, t.actor, id);
+      expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("disabled");
+      await mailboxUc.setMailboxEnabled(t.mailboxDeps, t.actor, id, true);
       expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("connected");
     });
 
@@ -161,6 +172,7 @@ describeDb("campaign and mailbox management", () => {
       const { id: unfinishedId } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "unfinished" });
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, unfinishedId, "active")).rejects.toThrow(/Replace the \[\[bracketed text\]\] in step 1/);
       await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: `go${Math.random().toString(36).slice(2, 6)}@corp.test` });
+      await expect(campaignsUc.changeCampaignStatus({ ...t.campaignDeps, unreachableUnsubscribe: true }, t.actor, id, "active")).rejects.toThrow(/APP_URL/);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active");
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toBeInstanceOf(ConflictError);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");
@@ -350,7 +362,7 @@ describeDb("campaign and mailbox management", () => {
       await sql`insert into contact_policies (person_id, organization_id, do_not_contact, source, set_at) values (${dnc}, ${orgId}, true, 'human', now())`;
 
       const first = await campaignsUc.enrollLeads(t.campaignDeps, t.actor, id, { query: "okay" });
-      expect(first).toEqual({ requested: 5, added: 2, alreadyEnrolled: 0, skippedDuplicate: 0, skippedMissingIdentity: 1, skippedSuppressed: 1, skippedDoNotContact: 1, skippedStopRequest: 0, skippedContact: 0, skippedNoEmail: 1 });
+      expect(first).toEqual({ requested: 5, added: 2, alreadyEnrolled: 0, skippedDuplicate: 0, skippedRemoved: 0, skippedMissingIdentity: 1, skippedSuppressed: 1, skippedDoNotContact: 1, skippedStopRequest: 0, skippedContact: 0, skippedNoEmail: 1 });
 
       const again = await campaignsUc.enrollLeads(t.campaignDeps, t.actor, id, { query: "okay" });
       expect(again.added).toBe(0);
@@ -377,12 +389,12 @@ describeDb("campaign and mailbox management", () => {
     it("lists per-campaign counts", async () => {
       const t = await org();
       const { id } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "counts" });
-      for (const [email, status] of [["a@l.test", "pending"], ["b@l.test", "completed"], ["c@l.test", "replied"]] as const) {
+      for (const [email, status] of [["a@l.test", "pending"], ["b@l.test", "completed"], ["c@l.test", "replied"], ["d@l.test", "bounced"], ["e@l.test", "removed"]] as const) {
         const person = await addPerson(t.actor.organizationId, email);
         await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${t.actor.organizationId}, ${id}, ${person}, 'email', ${status})`;
       }
       const [row] = await campaignsUc.listCampaigns(t.campaignDeps, t.actor);
-      expect(row).toMatchObject({ name: "counts", steps: 2, enrolled: 3, completed: 1, stopped: 1, sent: 0 });
+      expect(row).toMatchObject({ name: "counts", steps: 2, enrolled: 4, completed: 1, replied: 1, stopped: 1, sent: 0 });
     });
 
     it("previews with a real lead and its custom fields, or a sample when there are none", async () => {

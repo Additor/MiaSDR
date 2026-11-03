@@ -13,7 +13,7 @@ export interface NoticeDeps extends LinkedInCampaignDeps {
  * another campaign, and the leads of this campaign the account rule skipped. The enrollment itself is unchanged.
  */
 export async function enrollLinkedInLeadsWithNotices(deps: NoticeDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle) {
-  const { addedPersonIds, ...result } = await enrollLinkedInLeads(deps, actor, id, { ...input, collectIds: true }, options, tx);
+  const { addedPersonIds, ...result } = await enrollLinkedInLeads(deps, actor, id, input, options, tx);
   // A dry run enrolls nobody, so it has no notices to report.
   if (input.dryRun) return { ...result, notices: await noticesForPeople(deps.notices, actor.organizationId, id, []) };
   return { ...result, notices: await noticesForPeople(deps.notices, actor.organizationId, id, addedPersonIds ?? []) };

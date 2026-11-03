@@ -1,3 +1,5 @@
+import { enrollSkipLines } from "@/contexts/outreach/domain/enrollment-eligibility";
+
 /** Counts one enroll call returns. The add dialog sums them over its chunks and lists the reasons leads were skipped. */
 export interface EnrollCounts {
   requested: number;
@@ -33,17 +35,4 @@ export function addCounts(total: EnrollCounts, part: Partial<EnrollCounts>): Enr
 }
 
 /** One line per skip reason with a nonzero count, in the order the dialog lists them. */
-export function skipReasons(counts: EnrollCounts, channel: "email" | "linkedin" | undefined): string[] {
-  const identity = channel === "linkedin" ? "without a LinkedIn URL" : "without an email";
-  const lines: Array<[number, string]> = [
-    [counts.skippedDuplicate, "already in the campaign"],
-    [counts.skippedRemoved, "removed earlier from this campaign; restore them from the campaign page"],
-    [counts.skippedMissingIdentity, identity],
-    [counts.skippedSuppressed, "unsubscribed"],
-    [counts.skippedDoNotContact, "marked do not contact"],
-    [counts.skippedStopRequest, counts.skippedStopRequest === 1 ? "seems to ask to stop; review it in Actions" : "seem to ask to stop; review them in Actions"],
-    [counts.skippedContact, counts.skippedContact === 1 ? "is a contact" : "are contacts"],
-    [counts.skippedNotFound, "no longer exist"],
-  ];
-  return lines.filter(([n]) => n > 0).map(([n, text]) => `${n} ${text}`);
-}
+export const skipReasons = (counts: EnrollCounts, channel: "email" | "linkedin" | undefined): string[] => enrollSkipLines(counts, channel);

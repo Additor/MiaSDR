@@ -78,20 +78,11 @@ describeDb("deal routes", () => {
     expect(await callRoute("deals/[id]/route.ts", "GET", { params: { id: dealId }, as: world.other }).then((r) => r.status)).toBe(404);
   });
 
-  it("answers 422 for invalid input and 403 for another member's personal campaign", async () => {
+  it("answers 422 for invalid input", async () => {
     const personId = await lead("Bob Byte");
     const invalid = await callRoute("leads/[id]/convert/route.ts", "POST", { params: { id: personId }, json: { amount: "10" }, as: world.admin });
     expect(invalid.status).toBe(422);
     expect(invalid.body).toMatchObject({ error: "Pick the currency of the amount." });
-    const [{ id: campaign }] = await world.sql`insert into campaigns (organization_id, channel, name, type, status, created_by) values (${world.orgA.id}, 'linkedin', 'Mine', 'personal', 'active', ${world.admin.userId}) returning id`;
-    await world.sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${world.orgA.id}, ${campaign}, ${personId}, 'linkedin', 'active')`;
-    const refused = await callRoute("leads/[id]/convert/route.ts", "POST", { params: { id: personId }, json: {}, as: world.member });
-    expect(refused.status).toBe(403);
-    expect(refused.body).toMatchObject({ code: "personal_campaign" });
-    const preview = await callRoute("leads/convert/preview/route.ts", "POST", { json: { ids: [personId] }, as: world.member });
-    expect(preview.body).toEqual({ people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 1 });
-    const adminPreview = await callRoute("leads/convert/preview/route.ts", "POST", { json: { ids: [personId] }, as: world.admin });
-    expect(adminPreview.body).toEqual({ people: 1, alreadyContacts: 0, enrollments: 1, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 0 });
   });
 
   it("moves, edits and deletes a deal through its routes", async () => {
@@ -149,12 +140,5 @@ describeDb("deal routes", () => {
     const empty = await callRoute("deals/route.ts", "GET", { query: { stage, cursor: pastEnd }, as: world.admin });
     expect(empty.status).toBe(200);
     expect((empty.body as { columns: Array<{ cards: unknown[]; nextCursor: string | null }> }).columns).toMatchObject([{ cards: [], nextCursor: null }]);
-
-    const contacts = await callRoute("contacts/route.ts", "GET", { query: { q: "Bulk" }, as: world.admin });
-    expect(contacts.body).toMatchObject({ total: 2, page: 1, pageSize: 25, rows: [{ name: "Eve Bulk", openDeals: 1 }, { name: "Dee Bulk", openDeals: 1 }] });
-    expect((await callRoute("contacts/route.ts", "GET", { query: { sort: "nope" }, as: world.admin })).status).toBe(422);
-    const companies = await callRoute("companies/route.ts", "GET", { as: world.admin });
-    expect(companies.status).toBe(200);
-    expect(companies.body).toMatchObject({ page: 1, pageSize: 25 });
   });
 });

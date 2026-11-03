@@ -28,13 +28,13 @@ function RowState({ row }: { row: InboxRow }) {
  * right, a line of text under it), so a person who learned one list can read the other. The unread dot has its own gutter, so
  * names line up whether or not a row has one. The channel is said only when it is not email, which most rows are.
  */
-export function ConversationRow({ row, href, time }: { row: InboxRow; href: string; time: string }) {
+export function ThreadRow({ row, href, time }: { row: InboxRow; href: string; time: string }) {
   const unread = row.unreadCount > 0;
   const subject = row.subject ?? (row.channel === "linkedin" ? "LinkedIn" : "(no subject)");
   const state = <RowState row={row} />;
   const showsChannel = row.channel !== "email";
   return (
-    <li data-list-row={row.conversationId} data-href={href} className={cn(rowLinkClasses, LIST_ROW_FRAME)}>
+    <li data-list-row={row.threadId} data-href={href} className={cn(rowLinkClasses, LIST_ROW_FRAME)}>
       <div className="flex items-baseline gap-2">
         <span className="flex w-3 shrink-0 justify-center">
           {/* Neutral: lavender stays with the sidebar's count of work that waits (DESIGN.md Colors). The bold name says unread too. */}

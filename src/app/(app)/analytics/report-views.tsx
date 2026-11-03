@@ -405,7 +405,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
       <section className={REPORT_BLOCK}>
         <div className="stack-field">
           <h2 className="heading-section">{formatCount(report.total)} replies</h2>
-          <p className="text-sm text-muted-foreground">{report.classifiedShare === null ? "-" : percent(report.classifiedShare)} have an applied reply type.</p>
+          <p className="text-sm text-muted-foreground">{report.replyTypeShare === null ? "-" : percent(report.replyTypeShare)} have an applied reply type.</p>
         </div>
         <BarList label="Replies by group" max={report.total} bars={report.byBucket.map((b) => ({ key: b.bucket, label: b.label, value: b.replies }))} />
       </section>
@@ -461,7 +461,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
       )}
       {report.suppressions ? (
         <p className="text-sm text-muted-foreground">
-          Suppressions added in this window: {formatCount(report.suppressions.unsubscribed)} unsubscribed, {formatCount(report.suppressions.bounced)} bounced, {formatCount(report.suppressions.complaint)} complaints, {formatCount(report.suppressions.manual)} manual.
+          Suppressions added in this window: {formatCount(report.suppressions.unsubscribed)} unsubscribed, {formatCount(report.suppressions.bounced)} bounced, {formatCount(report.suppressions.manual)} manual.
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">Suppressions belong to the organization, not a campaign, so they are hidden while a campaign filter is on.</p>

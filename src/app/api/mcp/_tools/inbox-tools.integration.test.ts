@@ -13,8 +13,8 @@ describeDb("get_work_queue and list_inbox", () => {
   let POST: (request: Request) => Promise<Response>;
   const orgs: TestOrg[] = [];
   let caller: McpCaller;
-  let thread: { conversationId: string; personId: string };
-  let recordId: string;
+  let thread: { threadId: string; personId: string };
+  let conversationId: string;
 
   async function inbound(org: TestOrg, n: number, body: string) {
     const { ingestInbound } = await import("@/contexts/conversations/infrastructure/composition");
@@ -41,7 +41,7 @@ describeDb("get_work_queue and list_inbox", () => {
     for (const org of orgs) await enableMcp(sql, org.organizationId);
     thread = await inbound(orgs[0], 1, INJECTION);
     await inbound(orgs[1], 2, "Other organization's secret reply");
-    [{ id: recordId }] = await sql<{ id: string }[]>`select record_id as id from conversations where id = ${thread.conversationId}`;
+    [{ id: conversationId }] = await sql<{ id: string }[]>`select conversation_id as id from threads where id = ${thread.threadId}`;
     caller = await mcpCaller(sql, POST, orgs[0]);
   });
 
@@ -57,8 +57,8 @@ describeDb("get_work_queue and list_inbox", () => {
     const result = await caller.tool("list_inbox", {});
     expect(result.isError, result.text).toBe(false);
     expect(result.structured).toMatchObject({ view: "all", total: 1, page: 1 });
-    const [row] = result.structured.conversations as Array<Record<string, string>>;
-    expect(row).toMatchObject({ conversationId: thread.conversationId, recordId, personId: thread.personId, lastDirection: "inbound", appUrl: `http://localhost:3000/inbox/${thread.conversationId}` });
+    const [row] = result.structured.threads as Array<Record<string, string>>;
+    expect(row).toMatchObject({ threadId: thread.threadId, conversationId, personId: thread.personId, lastDirection: "inbound", appUrl: `http://localhost:3000/inbox/${thread.threadId}` });
     expect(row.lastMessage).toMatch(/^<untrusted_email_[0-9a-f]+>\n[^]*\n<\/untrusted_email_[0-9a-f]+>$/);
     expect(row.lastMessage).not.toContain("</untrusted_email_x>");
     expect(row.subject).toMatch(/^<untrusted_email_/);
@@ -68,7 +68,7 @@ describeDb("get_work_queue and list_inbox", () => {
 
   it("list_inbox filters by search and turns an unknown view into a tool error", async () => {
     expect((await caller.tool("list_inbox", { query: "nothing matches this" })).structured.total).toBe(0);
-    expect((await caller.tool("list_inbox", { view: "scheduled" })).structured).toMatchObject({ view: "scheduled", conversations: [] });
+    expect((await caller.tool("list_inbox", { view: "scheduled" })).structured).toMatchObject({ view: "scheduled", threads: [] });
     const refused = await caller.tool("list_inbox", { view: "spam" });
     expect(refused.isError).toBe(true);
   });
@@ -78,9 +78,9 @@ describeDb("get_work_queue and list_inbox", () => {
     expect(result.isError, result.text).toBe(false);
     const groups = result.structured.groups as Array<{ group: string; total: number; items: Array<Record<string, unknown>> }>;
     const items = groups.flatMap((g) => g.items);
-    expect(items.map((i) => i.recordId)).toContain(recordId);
-    const item = items.find((i) => i.recordId === recordId)!;
-    expect(item.conversationId).toBe(thread.conversationId);
+    expect(items.map((i) => i.conversationId)).toContain(conversationId);
+    const item = items.find((i) => i.conversationId === conversationId)!;
+    expect(item.threadId).toBe(thread.threadId);
     expect(String(item.lastInbound)).toMatch(/^<untrusted_email_/);
     expect(result.structured.counts).toMatchObject({ total: expect.any(Number) });
     expect(JSON.stringify(result.structured)).not.toContain("secret reply");

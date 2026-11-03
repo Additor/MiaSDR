@@ -6,9 +6,9 @@ import type { InboundLinkedInInput } from "../application/linkedin-ports";
 import type { InboxDeps } from "../application/inbox";
 import type { InboundEmailInput, IngestOutcome, IngestResult, QuarantineInbound } from "../application/ports";
 import { drizzleReplyHandlingStore } from "./drizzle-reply-handling-store";
-import { drizzleConversationStore } from "./drizzle-conversation-store";
+import { drizzleThreadStore } from "./drizzle-thread-store";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
-import { drizzleLinkedInConversationStore } from "./drizzle-linkedin-conversation-store";
+import { drizzleLinkedInThreadStore } from "./drizzle-linkedin-thread-store";
 import { organizationTimeZone } from "./org-time-zone";
 
 /** The knowledge base store. The knowledge use cases take it directly. */
@@ -27,11 +27,11 @@ const quarantine: QuarantineInbound = (input) =>
   quarantineInbound({ exceptions: drizzleReplyHandlingStore }, input);
 
 /** Files one received email in the master inbox, or parks it for review. Production callers use this one. */
-export const receiveInbound = (input: InboundEmailInput): Promise<IngestOutcome> => ingestInboundEmail({ store: drizzleConversationStore, quarantine }, input);
+export const receiveInbound = (input: InboundEmailInput): Promise<IngestOutcome> => ingestInboundEmail({ store: drizzleThreadStore, quarantine }, input);
 
 /** Files one received LinkedIn message in the master inbox, or parks it for review. Production callers use this one. */
 export const receiveInboundLinkedIn = (input: InboundLinkedInInput): Promise<IngestOutcome> =>
-  ingestInboundLinkedIn({ store: drizzleLinkedInConversationStore, quarantine }, input);
+  ingestInboundLinkedIn({ store: drizzleLinkedInThreadStore, quarantine }, input);
 
 /** Strict forms for a reviewer's replay and for tests: the message is filed, or the call throws. A parked message still stays parked. */
 async function filed(outcome: Promise<IngestOutcome>): Promise<IngestResult> {
@@ -42,5 +42,5 @@ async function filed(outcome: Promise<IngestOutcome>): Promise<IngestResult> {
 export const ingestInbound = (input: InboundEmailInput): Promise<IngestResult> => filed(receiveInbound(input));
 export const ingestInboundLinkedInMessage = (input: InboundLinkedInInput): Promise<IngestResult> => filed(receiveInboundLinkedIn(input));
 
-/** Reply handling of one person or record, for the record pages and the old record URL. */
-export { activeConversationOfRecord, personReplyHandling } from "./person-handling";
+/** Reply handling of one person or conversation, for the conversation pages and the old conversation URL. */
+export { personReplyHandling } from "./person-handling";

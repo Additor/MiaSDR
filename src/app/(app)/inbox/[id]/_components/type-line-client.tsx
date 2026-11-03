@@ -14,22 +14,22 @@ import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import type { NextInQueue } from "../_lib/next-queue";
 import { replyTypeSourceTip } from "../../labels";
 import { afterSavingEdits } from "../_lib/draft-edits";
-import { confidenceText, decisionKey, decisionView, holdText, LOOKS_RIGHT_DONE, type DecisionKind } from "../_lib/type-line";
+import { confidenceText, decisionKey, decisionView, holdText, type DecisionKind } from "../_lib/type-line";
 import { ChangeTypeButton, type TypeOption } from "./change-type-button";
 import { openStopContacting, type StopTarget } from "./stop-contacting";
 
 export interface TypeLineProps {
-  recordId: string;
   conversationId: string;
+  threadId: string;
   contextVersion: number;
   personName: string;
-  /** The record's reply type, or null before anything picked one. */
+  /** The conversation's reply type, or null before anything picked one. */
   type: { name: string; group: string | null; rules: string | null; source: string | null; locked: boolean } | null;
   currentReplyTypeId: string | null;
   types: TypeOption[];
   /** The AI's pick of the latest reply, behind Why. */
   why: { failed: string | null; name: string | null; group: string | null; confidence: number | null; reasoning: string | null } | null;
-  decision: { kind: DecisionKind; pickId: string; proposed: string | null; proposedGroup: string | null; confidence: number | null; holdReason: HoldReason | null } | null;
+  decision: { kind: DecisionKind; pickId: string | null; proposed: string | null; proposedGroup: string | null; confidence: number | null; holdReason: HoldReason | null } | null;
   draftAwaits: boolean;
   closed: boolean;
   stop: StopTarget & { doNotContact: boolean };
@@ -42,8 +42,8 @@ const named = (name: string | null, group: string | null) => [name, group].filte
 /**
  * One line under the latest message, the same for email and LinkedIn: who set the reply type (sparkle or person), the type,
  * its group and what its rules do, Why for the AI's reasoning, and Change type. It opens in place, under the same line, when
- * the AI's pick waits for a person: a held pick (Accept), an applied pick nobody checked (Looks right) or a stop request
- * (Review stop request, which opens Stop contacting). A held pick whose type an admin archived since leads with Change type.
+ * the AI's pick waits for a person: a held pick (Accept) or a stop request (Review stop request, which opens Stop
+ * contacting).
  * The button is filled unless a draft waits for approval, so one filled button leads the page. An answer hides the decision
  * at once, so a second click cannot send it again while the refresh lands.
  */
@@ -78,8 +78,8 @@ export function TypeLineClient(props: TypeLineProps) {
   const changeType = (variant: "link" | "outline" | "default") =>
     !props.closed && (
       <ChangeTypeButton
-        recordId={props.recordId}
         conversationId={props.conversationId}
+        threadId={props.threadId}
         personName={props.personName}
         contextVersion={props.contextVersion}
         currentReplyTypeId={props.currentReplyTypeId}
@@ -145,18 +145,10 @@ export function TypeLineClient(props: TypeLineProps) {
                 <strong className="font-medium text-warning">Possible stop request.</strong> {props.personName} seems to ask you to stop. Nothing stops until you choose.
               </p>
             </div>
-          ) : decision.kind === "archived" ? (
-            <p>
-              The AI picked <strong className="font-medium">{named(decision.proposed, decision.proposedGroup)}</strong>, but an admin archived that type since. Choose another type.
-            </p>
-          ) : decision.kind === "held" ? (
+          ) : (
             <p>
               The AI picked <strong className="font-medium">{named(decision.proposed, decision.proposedGroup)}</strong>
               {decision.confidence != null && `, ${confidenceText(decision.confidence)}`}. {holdText(decision.holdReason)}
-            </p>
-          ) : (
-            <p>
-              The AI applied this type{decision.confidence != null && `, ${confidenceText(decision.confidence)}`}, and it waits for your check.
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -164,23 +156,19 @@ export function TypeLineClient(props: TypeLineProps) {
               <Button size="sm" variant={lead} touch disabled={busy} onClick={openStopContacting}>
                 Review stop request
               </Button>
-            ) : decision.kind === "held" ? (
+            ) : (
               <Button
                 size="sm"
                 variant={lead}
                 touch
                 disabled={busy}
                 // Accept retires the open draft, so the editor's unsaved edits are saved first.
-                onClick={() => void decide(() => afterSavingEdits(() => runApiAction(callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }))), "AI pick accepted.")}
+                onClick={() => void decide(() => afterSavingEdits(() => runApiAction(callApi(`/api/inbox/${props.threadId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }))), "AI pick accepted.")}
               >
                 {busy ? "Accepting…" : decision.holdReason === "protected_customer" ? "Accept and unlock" : "Accept"}
               </Button>
-            ) : decision.kind === "archived" ? null : (
-              <Button size="sm" variant={lead} touch disabled={busy} onClick={() => void decide(() => runApiAction(callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST")), LOOKS_RIGHT_DONE)}>
-                {busy ? "Saving…" : "Looks right"}
-              </Button>
             )}
-            {changeType(decision.kind === "archived" ? lead : "outline")}
+            {changeType("outline")}
           </div>
         </div>
       )}

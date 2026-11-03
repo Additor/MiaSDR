@@ -1,45 +1,43 @@
 import { pickMayBecome } from "./reply-store-shared";
 import { PICK_FROM } from "../domain/reply-type-pick";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
-import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
 import { db } from "@/platform/db/client";
-import { personTypeDecisionTx, queuePickDraftTx, restartRecordWorkTx } from "./restart-record-work";
-import { personReviewedStopsTx } from "./stop-review";
-import { replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
+import { personTypeDecisionTx, queuePickDraftTx, restartConversationWorkTx } from "./restart-conversation-work";
+import { personReviewedStopsTx } from "../stopping/infrastructure/stop-review";
+import { replyTypePicks, threads, events, people, conversations, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
 import { typeRulesOf } from "../domain/reply-type";
 import { lockAfterPersonMove } from "../domain/reply-handling";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
-/** What a person decides about a reply: a classification of their own, or suppressing the sender. */
+/** What a person decides about a reply: a pick of their own, or suppressing the sender. */
 export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | "suppressSender"> = {
   async applyHumanReplyTypePick(input) {
     return db.transaction(async (tx) => {
       const [head] = await tx
         .select({
-          recordId: records.id,
-          personId: records.personId,
-          replyTypeSetId: records.replyTypeSetId,
-          version: records.contextVersion,
-          latest: records.latestInboundMessageId,
-          groupKey: records.groupKey,
-          replyTypeId: records.replyTypeId,
-          locked: records.replyTypeLocked,
-          state: records.workflowState,
+          conversationId: conversations.id,
+          personId: conversations.personId,
+          replyTypeSetId: conversations.replyTypeSetId,
+          version: conversations.contextVersion,
+          latest: conversations.latestInboundMessageId,
+          groupKey: conversations.groupKey,
+          replyTypeId: conversations.replyTypeId,
+          locked: conversations.replyTypeLocked,
+          state: conversations.workflowState,
         })
-        .from(conversations)
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
-        .for("no key update", { of: records });
+        .from(threads)
+        .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+        .where(and(eq(threads.id, input.threadId), eq(threads.organizationId, input.organizationId)))
+        .for("no key update", { of: conversations });
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
       if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the type again.");
       if (head.state === "closed") throw new ConflictError("Reply handling is marked done. Reopen it before you change the type.");
 
-      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the record
+      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the history
       // of what went wrong, and the person's pick goes in as a row of its own.
       const [existing] = await tx
         .select()
@@ -60,13 +58,12 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         const [found] = await tx
           .select({ id: replyTypes.id })
           .from(replyTypes)
-          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey), eq(replyTypes.active, true)));
-        if (!found) throw new ValidationError("That reply type is not active.");
+          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey)));
+        if (!found) throw new ValidationError("That reply type does not exist.");
         targetId = found.id;
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
       const accepted = input.replyTypeKey === null;
-      if (accepted && !target.active) throw new ConflictError("The AI picked a reply type that was archived since. Choose another type.");
       // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
       // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
       if (accepted && target.systemRole === "stop_request") {
@@ -75,8 +72,8 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const rules = typeRulesOf(target);
       const decision = await personTypeDecisionTx(tx, {
         organizationId: input.organizationId,
-        record: { id: head.recordId, latestInboundMessageId: head.latest, replyTypeLocked: head.locked },
-        target: { groupKey: target.groupKey, rules },
+        conversation: { id: head.conversationId, latestInboundMessageId: head.latest, replyTypeLocked: head.locked },
+        target: { groupKey: target.groupKey, systemRole: target.systemRole, rules },
       });
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
       const locked = lockAfterPersonMove(target);
@@ -90,7 +87,6 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
             rules,
-            acknowledgedAt: new Date(),
             // The lock before the first pick of this row stays: undo goes back to it. A stop request read from the text
             // is kept on the row, so the start sweep sees it (`stopRequestedSql`).
             response: sql`(case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
@@ -104,16 +100,16 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const { wantsDraft } = decision;
       const nextState = afterTypeChange(head.state, decision);
       await tx
-        .update(records)
+        .update(conversations)
         .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
-        .where(eq(records.id, head.recordId));
+        .where(eq(conversations.id, head.conversationId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
-      // sequence of the corrected subcategory starts. The pick follows to the new version so the fresh draft job accepts it.
+      // flow of the corrected reply type starts. The pick follows to the new version so the fresh draft job accepts it.
       const now = new Date();
-      const restart = await restartRecordWorkTx(tx, {
+      const restart = await restartConversationWorkTx(tx, {
         organizationId: input.organizationId,
-        recordId: head.recordId,
-        reason: "classification_corrected",
+        conversationId: head.conversationId,
+        reason: "type_corrected",
         draftReason: "A person corrected the reply type after this draft was written.",
         followUps: decision.followUps,
         now,
@@ -127,7 +123,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           .insert(replyTypePicks)
           .values({
             organizationId: input.organizationId,
-            recordId: head.recordId,
+            conversationId: head.conversationId,
             messageId: head.latest,
             expectedContextVersion: restart.contextVersion,
             previousGroupKey: head.groupKey,
@@ -142,16 +138,15 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             reasoning: "Set by a person.",
             status: "overridden",
             provider: "human",
-            acknowledgedAt: new Date(),
           })
           .returning({ id: replyTypePicks.id });
         replyTypePickId = row.id;
       }
-      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: head.recordId, actorUserId: input.actorUserId, via: input.via, now });
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, conversationId: head.conversationId, actorUserId: input.actorUserId, via: input.via, now });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
-        recordId: head.recordId,
+        conversationId: head.conversationId,
         eventType: accepted ? "reply_type_pick.accepted" : "reply_type_pick.overridden",
         actorType: "human",
         actorUserId: input.actorUserId,
@@ -161,7 +156,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         contextVersion: restart.contextVersion,
       });
       const draftQueued = wantsDraft ? await queuePickDraftTx(tx, { organizationId: input.organizationId, replyTypePickId, contextVersion: restart.contextVersion }) : false;
-      return { personId: head.personId, recordId: head.recordId, contextVersion: restart.contextVersion, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued, draftsRetired: restart.draftsRetired, runStarted: restart.runStarted, runEnded: restart.runsEnded > 0 };
+      return { personId: head.personId, conversationId: head.conversationId, contextVersion: restart.contextVersion, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued, draftsRetired: restart.draftsRetired, runStarted: restart.runStarted, runEnded: restart.runsEnded > 0 };
     });
   },
 
@@ -169,26 +164,15 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
     // One transaction: the suppression, the retired draft and the event commit together or not at all.
     return db.transaction(async (tx) => {
       const [head] = await tx
-        .select({ recordId: records.id, personId: records.personId, email: people.email })
-        .from(conversations)
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation));
+        .select({ conversationId: conversations.id, personId: conversations.personId, email: people.email })
+        .from(threads)
+        .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+        .innerJoin(people, eq(people.id, conversations.personId))
+        .where(and(eq(threads.id, input.threadId), eq(threads.organizationId, input.organizationId)));
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.email) throw new ConflictError("This person has no email address to suppress.");
       const email = head.email.toLowerCase();
-      await createSuppressionStore(followUpStop).suppressEmailTx(tx, { organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
-      // A reply that is waiting for review would be refused at send time anyway; retire it now.
-      await tx.update(drafts).set({ status: "stale", error: "The sender was suppressed." }).where(and(eq(drafts.recordId, head.recordId), eq(drafts.status, "awaiting_review")));
-      await tx.insert(events).values({
-        organizationId: input.organizationId,
-        personId: head.personId,
-        recordId: head.recordId,
-        eventType: "contact.suppressed",
-        actorType: "human",
-        actorUserId: input.actorUserId,
-        meta: { conversationId: input.conversationId },
-      });
+      await stopContactTx(tx, { organizationId: input.organizationId, email }, { kind: "sender_suppressed", conversationId: head.conversationId, personId: head.personId, threadId: input.threadId, actorUserId: input.actorUserId, note: "Asked to stop in a reply.", now: new Date() });
       return { email };
     });
   },

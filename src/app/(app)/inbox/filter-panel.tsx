@@ -60,8 +60,8 @@ export function InboxFilters({ params, options, count }: { params: InboxParams; 
       <TextField label="Person name or email" name="lead" defaultValue={params.leadQuery} placeholder="Ada or ada@example.com" />
       <SelectField label="Campaign" name="campaign" defaultValue={first(params.campaignIds)} options={[{ value: "", label: "Any campaign" }, ...options.campaigns.map((c) => ({ value: c.id, label: c.label }))]} />
       <SelectField label="Mailbox" name="mailbox" defaultValue={first(params.mailboxIds)} options={[{ value: "", label: "Any mailbox" }, ...options.mailboxes.map((m) => ({ value: m.id, label: m.label }))]} />
-      <SelectField label="Reply group" name="category" defaultValue={first(params.groupKeys)} options={[{ value: "", label: "Any group" }, ...INBOX_GROUPS.map((k) => ({ value: k, label: groupLabel(k) }))]} />
-      <SelectField label="Reply type" name="subcategory" defaultValue={first(params.replyTypeKeys)} options={[{ value: "", label: "Any reply type" }, ...options.replyTypes.map((s) => ({ value: s.key, label: s.label }))]} />
+      <SelectField label="Reply group" name="group" defaultValue={first(params.groupKeys)} options={[{ value: "", label: "Any group" }, ...INBOX_GROUPS.map((k) => ({ value: k, label: groupLabel(k) }))]} />
+      <SelectField label="Reply type" name="type" defaultValue={first(params.replyTypeKeys)} options={[{ value: "", label: "Any reply type" }, ...options.replyTypes.map((s) => ({ value: s.key, label: s.label }))]} />
       <SelectField label="Last message" name="range" defaultValue={params.dateMode} options={DATE_MODES} />
       <DateRangeField label="Custom range" from={{ name: "from", value: params.dateFrom }} to={{ name: "to", value: params.dateTo }} />
     </FilterPopover>

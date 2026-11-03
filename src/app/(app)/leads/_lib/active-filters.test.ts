@@ -79,8 +79,8 @@ describe("lifecycle chip", () => {
   });
 });
 
-describe("reply category chip", () => {
-  it("reads Reply group, never CRM category", () => {
-    expect(activeFilterChips({ category: "interested" }, options).map((c) => `${c.name}: ${c.value}`)).toEqual(["Reply group: Interested"]);
+describe("reply group chip", () => {
+  it("reads Reply group", () => {
+    expect(activeFilterChips({ replyGroup: "interested" }, options).map((c) => `${c.name}: ${c.value}`)).toEqual(["Reply group: Interested"]);
   });
 });

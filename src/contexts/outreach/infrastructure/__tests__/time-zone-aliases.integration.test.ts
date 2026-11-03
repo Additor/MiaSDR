@@ -84,7 +84,7 @@ describeDb("time zone aliases at every write point", () => {
 
   it("mailbox working hours store the current name", async () => {
     const t = await org();
-    const deps = { mailboxes: m.stores.drizzleMailboxStore, provider: new FakeMailboxProvider(), now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null, openSignup: false } };
+    const deps = { mailboxes: m.stores.drizzleMailboxStore, provider: new FakeMailboxProvider(), now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null } };
     const { id } = await m.mailboxUc.connectMailbox(deps, t.actor, { emailAddress: `tz${t.tag}@corp.test` });
     await m.mailboxUc.updateMailbox(deps, t.actor, id, { workingHours: { timeZone: "Asia/Katmandu", days: { "1": [{ start: "09:00", end: "17:00" }] } } });
     expect(await m.stores.drizzleMailboxStore.get(t.id, id)).toMatchObject({ workingHours: { timeZone: "Asia/Kathmandu" } });

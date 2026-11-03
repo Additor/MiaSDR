@@ -29,11 +29,11 @@ describe("Create deal effects text", () => {
   it("sums bulk previews and says what it skips", () => {
     const sum = sumPreviews([
       { ...EMPTY_PREVIEW, people: 400, enrollments: 10 },
-      { ...EMPTY_PREVIEW, people: 30, alreadyContacts: 20, skippedPersonalCampaign: 1, runs: 2 },
+      { ...EMPTY_PREVIEW, people: 30, alreadyContacts: 20, runs: 2 },
     ]);
-    expect(sum).toEqual({ people: 430, alreadyContacts: 20, enrollments: 10, runs: 2, followUpDraftsToRetire: 0, skippedPersonalCampaign: 1 });
+    expect(sum).toEqual({ people: 430, alreadyContacts: 20, enrollments: 10, runs: 2, followUpDraftsToRetire: 0 });
     expect(bulkEffectsText(sum)).toBe(
-      "Moves 430 leads to Contacts. Stops 10 campaign enrollments. Ends 2 follow-ups in progress. Skips 20 people who are already contacts. Skips 1 lead in another member's personal campaign. These 430 people cannot go back to Leads or join a campaign again, even if you delete their deals.",
+      "Moves 430 leads to Contacts. Stops 10 campaign enrollments. Ends 2 follow-ups in progress. Skips 20 people who are already contacts. These 430 people cannot go back to Leads or join a campaign again, even if you delete their deals.",
     );
     expect(bulkEffectsText({ ...EMPTY_PREVIEW, alreadyContacts: 1 })).toBe("No lead here can get a deal. Skips 1 person who is already a contact.");
   });
@@ -67,10 +67,10 @@ describe("Create deal effects text", () => {
   it("merges reports that add up", () => {
     const merged = mergeReports([
       { created: [{ personId: "a", dealId: "d1" }], skipped: [{ personId: "b", reason: "already_converted" }] },
-      { created: [{ personId: "c", dealId: "d2" }], skipped: [{ personId: "e", reason: "already_converted" }, { personId: "f", reason: "personal_campaign" }] },
+      { created: [{ personId: "c", dealId: "d2" }], skipped: [{ personId: "e", reason: "already_converted" }, { personId: "f", reason: "not_found" }] },
     ]);
     expect(merged.created).toHaveLength(2);
-    expect(bulkReportText(merged)).toBe("Created 2 deals. Skipped 3: 2 were already contacts, 1 is in another member's personal campaign.");
+    expect(bulkReportText(merged)).toBe("Created 2 deals. Skipped 3: 2 were already contacts, 1 was not found.");
     expect(bulkReportText({ created: [{ personId: "a", dealId: "d" }], skipped: [] })).toBe("Created 1 deal.");
   });
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
@@ -9,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Access = "read" | "write" | "send";
 
@@ -35,15 +33,13 @@ export interface ConsentFormProps {
   choices: Access[];
   /** What the app asked for on top of its access. A person ticks each one; none starts ticked. */
   extras: Extra[];
-  organizations: Array<{ id: string; name: string }>;
-  organizationId: string;
+  organizationName: string;
 }
 
 /** Sending stays a choice a person makes: it is never preselected, even when the app asks for it. */
 const firstChoice = (choices: Access[]): Access => (choices.includes("write") ? "write" : (choices[0] ?? "read"));
 
-export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcpOn, choices, extras, organizations, organizationId }: ConsentFormProps) {
-  const router = useRouter();
+export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcpOn, choices, extras, organizationName }: ConsentFormProps) {
   const [access, setAccess] = useState<Access>(firstChoice(choices));
   const [ticked, setTicked] = useState<Extra[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -52,20 +48,13 @@ export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcp
   async function answer(accept: boolean) {
     setPending(true);
     setError(null);
-    const result = await runApiAction(callApi<{ url: string }>("/api/oauth/consent", "POST", { oauthQuery: window.location.search.slice(1), accept, organizationId, access, extras: access === "read" ? [] : ticked }), { expectData: true });
+    const result = await runApiAction(callApi<{ url: string }>("/api/oauth/consent", "POST", { oauthQuery: window.location.search.slice(1), accept, access, extras: access === "read" ? [] : ticked }), { expectData: true });
     if (result.ok) {
       window.location.assign(result.data.url);
       return;
     }
     setPending(false);
     setError(result.error);
-  }
-
-  async function switchOrganization(id: string) {
-    setPending(true);
-    const result = await runApiAction(callApi("/api/organizations/active", "POST", { organizationId: id }), { refresh: () => router.refresh() });
-    setPending(false);
-    if (!result.ok) setError(result.error);
   }
 
   if (!found || !mcpOn) {
@@ -89,25 +78,7 @@ export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcp
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {organizations.length > 1 ? (
-          <Field>
-            <FieldLabel id="consent-organization">Organization</FieldLabel>
-            <Select items={organizations.map((o) => ({ value: o.id, label: o.name }))} value={organizationId} disabled={pending} onValueChange={(id) => id && void switchOrganization(id)}>
-              <SelectTrigger aria-labelledby="consent-organization" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {organizations.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>
-                    {o.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        ) : (
-          <p className="text-sm">Organization: {organizations[0]?.name}</p>
-        )}
+        <p className="text-sm">Organization: {organizationName}</p>
         <div className="space-y-2 text-sm">
           <p id="consent-access" className="font-medium">
             What it may do as you

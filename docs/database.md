@@ -7,7 +7,7 @@ MiaSDR supports **PostgreSQL 17 or newer**. The bundled Compose file runs Postgr
 Two schema features need PostgreSQL 15, so the schema itself would apply on 15 and 16. The floor is a support statement, and the startup check enforces it:
 
 - `UNIQUE NULLS NOT DISTINCT` on `job_runs_job_slot_org_uq`, added in PostgreSQL 15.
-- `ON DELETE SET NULL (column)` on fourteen composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
+- `ON DELETE SET NULL (column)` on twenty-one composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
 
 On PostgreSQL 14 or older the first migration fails with a bare syntax error. The app reads `server_version_num` when the server starts. It prints the detected and required versions and exits with code 1 on a server older than 17. `src/platform/db/postgres-version.ts` holds the check. It runs before migrations and whether or not `RUN_MIGRATIONS` is on.
 
@@ -25,7 +25,7 @@ Migrations live in `drizzle/` and run at boot under an advisory lock (`src/platf
 
 `0000_baseline.sql` creates the whole schema in one file. The part above its marker comes from `drizzle-kit generate` over `src/platform/db/schema.ts`, with two kinds of edit: `ON DELETE SET NULL (column)` on composite foreign keys and the deferred unique key on `deal_stages`. Below the marker sits SQL that Drizzle cannot express: three foreign keys that would make the table types circular, and the functions and triggers that the sections below describe.
 
-A database built before this baseline holds the same tables under older migration records, so the baseline fails on it with `already exists`. Start that one from an empty database.
+A database built before this baseline holds the same tables under older migration conversations, so the baseline fails on it with `already exists`. Start that one from an empty database.
 
 ### Adding a migration
 
@@ -46,21 +46,21 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 
 ## Claims and drafts in flight
 
-`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason.
+`ai_jobs`, `follow_up_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason.
 
 `drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505.
 
 ## Lock modes
 
-A row lock that serializes writers on `records` or `conversations` takes `FOR NO KEY UPDATE`. It conflicts with itself, so the writers still queue, but it lets through the `FOR KEY SHARE` that a foreign key check takes when a draft or a message is inserted. Two orders meet on these rows: a reply send locks the conversation and its draft insert takes a key share on the record, while an AI draft write, a typed draft, the sequence engine, a reclassification and ingest lock the record and their inserts take a key share on the conversation. With `FOR UPDATE` on both sides the two waited on each other (40P01); `linkedin-reply.integration.test.ts` holds the case.
+A row lock that serializes writers on `conversations` or `threads` takes `FOR NO KEY UPDATE`. It conflicts with itself, so the writers still queue, but it lets through the `FOR KEY SHARE` that a foreign key check takes when a draft or a message is inserted. Two orders meet on these rows: a reply send locks the thread and its draft insert takes a key share on the conversation, while an AI draft write, a typed draft, the follow-up engine, a reclassification and ingest lock the conversation and their inserts take a key share on the thread. With `FOR UPDATE` on both sides the two waited on each other (40P01); `linkedin-reply.integration.test.ts` holds the case.
 
 `FOR UPDATE` stays where a row goes away or must hold back key shares:
-- A contact delete locks the person's records and conversations `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
+- A contact delete locks the person's conversations and threads `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
 - A reply send locks its conversation `FOR UPDATE` on both channels. It holds back an ingest's message insert, whose transaction would go on to retire drafts and update the conversation, a cycle with the send's draft lock.
 
-One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
+One order for the conflicting locks: the conversation before its threads. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its threads, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the thread first, but on the conversation it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then threads, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
-The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
+The organization's `agent-send:<organization id>` advisory lock (`agent-access/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
 
 | Path | Order |
 | --- | --- |
@@ -96,24 +96,24 @@ The flag lasts for that transaction. `TRUNCATE` is not guarded.
 
 Triggers freeze the rows that other rows point at by value or by version. Each rule is a trigger that raises SQLSTATE 23000:
 
-- `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status`, `private_campaign_id` and `updated_at` stay writable.
-- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. Name, description, guidance, the type rules (`check_mode`, `reply_draft`, `follow_ups`), `active` and `sort_order` stay writable.
+- `threads`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status` and `updated_at` stay writable.
+- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. The app writes the other columns only when it seeds a set: name, description, guidance, the type rules (`reply_draft`, `follow_ups`) and `sort_order`.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
-- `sequence_versions` and `sequence_steps`: `organization_id`, `sequence_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
+- `follow_up_versions` and `follow_up_steps`: `organization_id`, `flow_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a flow, which cascades.
 
-To change a frozen value, insert a new row (a new knowledge version, a new sequence draft). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
+To change a frozen value, insert a new row (a new knowledge version, a new draft version of a flow). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
 
-## After a reply storage
+## Follow-ups after a reply storage
 
-The campaign setting Follow-ups after a reply (After a reply in code) lives in the sequence tables. `sequences.campaign_id` is nullable, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`), a partial unique index on `(organization_id, name) WHERE campaign_id IS NULL` and a partial unique index on `(campaign_id) WHERE campaign_id IS NOT NULL`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
+The campaign setting Follow-ups after a reply (`after-reply` in code) lives in the `follow_up_*` tables. `follow_up_flows.campaign_id` is required, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`) and a unique index on `(campaign_id)`. A campaign is in `ai_drafts` mode when it owns a flow with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
 
-`sequences.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
+`follow_up_flows.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
 
 ## Reply type rules
 
-`reply_types.check_mode` (`before`, `after` or `skip`, default `after`), `reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
+`reply_types.reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
 
-`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type.
+`reply_type_picks.rules` is a JSON object with the rules the pick used (`replyDraft`, `followUps`), or null for a pick that names no type.
 
 ## Leads and the CRM
 
@@ -129,7 +129,7 @@ These columns and tables back add, merge and delete ("Contacts and Companies CRU
 
 `company_domain_aliases` holds the other domains a merge gives a company: `(company_id, organization_id)` references `companies` with `ON DELETE CASCADE`, so a deleted company takes its aliases with it, and `(organization_id, domain)` is unique. A domain is either a company domain or an alias in one organization. The application serializes every writer of a domain on an advisory lock; two triggers back it up and raise SQLSTATE 23505 with the constraint names `company_domain_is_alias` (a company insert or domain change onto an alias) and `alias_is_company_domain` (an alias onto a company domain).
 
-`identity_exceptions_resolution_ck` lets a `resolved` row keep its status with a null `resolved_person_id`, so deleting a person who resolved an unmatched sender succeeds. Indexes cover the foreign keys a contact delete deletes through (`records.latest_inbound_message_id`, `drafts.reply_for_message_id`, `drafts.conversation_id`, `lead_ccs.source_message_id`, `sequence_runs.trigger_message_id`, `sequence_runs.conversation_id`, `sequence_step_runs.sent_message_id`).
+`identity_exceptions_resolution_ck` lets a `resolved` row keep its status with a null `resolved_person_id`, so deleting a person who resolved an unmatched sender succeeds. Indexes cover the foreign keys a contact delete deletes through (`conversations.latest_inbound_message_id`, `drafts.reply_for_message_id`, `drafts.thread_id`, `lead_ccs.source_message_id`, `follow_up_runs.trigger_message_id`, `follow_up_runs.thread_id`, `follow_up_step_runs.sent_message_id`).
 
 ## Knowledge versions
 
@@ -143,10 +143,10 @@ These columns and tables back add, merge and delete ("Contacts and Companies CRU
 
 Five triggers hold rules a foreign key cannot express. Each raises SQLSTATE 23000:
 
-- `reply_type_picks.message_id` is an inbound message of the pick's own record.
-- `reply_type_picks.previous_`, `proposed_` and `applied_reply_type_id` belong to the record's reply type set and to the matching `*_group_key`. A null key accepts any group.
+- `reply_type_picks.message_id` is an inbound message of the pick's own conversation.
+- `reply_type_picks.previous_`, `proposed_` and `applied_reply_type_id` belong to the conversation's reply type set and to the matching `*_group_key`. A null key accepts any group.
 - `drafts.channel` equals the channel of the draft's conversation.
-- `drafts.reply_for_message_id` is an inbound message of the draft's own record, in the same organization. It may live in another conversation of that record, because the reply target is the record's latest inbound message. The update trigger also checks when `record_id` changes.
+- `drafts.reply_for_message_id` is an inbound message of the draft's own conversation, in the same organization. It may live in another conversation of that conversation, because the reply target is the conversation's latest inbound message. The update trigger also checks when `conversation_id` changes.
 - `send_attempts.account_ref` equals the account of the draft's conversation, compared with `lower()` on both sides. A blank value goes to `send_attempts_refs_ck`.
 
 A reference to a row that does not exist is left to the foreign key, so its own constraint name appears in the error. The update triggers fire only when a checked column changes, so the `ON DELETE SET NULL` actions never trip them.
@@ -173,12 +173,13 @@ Every table that holds customer data carries `organization_id uuid not null` wit
 Each context declares its tables in `src/contexts/<context>/infrastructure/schema.ts`. Analytics owns no tables and reads the others through its read model.
 
 - identity: `users`, `sessions`, `accounts`, `verifications`
-- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`, `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
+- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
+- agent-access: `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
-- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `records`, `conversations`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`
-- conversations, sequences (`sequences-schema.ts`): `sequences`, `sequence_versions`, `sequence_steps`, `sequence_runs`, `sequence_step_runs`
+- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `ai_jobs`, `notes`, `tasks`
+- conversations, follow-ups (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
 - deals: `deal_stages`, `deals`
-- grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`, `grid_provider_credentials`
+- grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`
 - integrations: `integration_accounts`, `integration_credentials`
 - shared jobs (`src/platform/jobs/schema.ts`): `job_runs`

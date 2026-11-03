@@ -1,10 +1,12 @@
 import { UNCONFIRMED_AFTER_MINUTES } from "../../application/campaign-management";
 import type { UnconfirmedSend } from "../../application/management-ports";
 import type { EnrollOptions } from "../../application/enroll-options";
+import type { EnrollSkipCounts } from "../../domain/enrollment-eligibility";
+import { isLiveEnrollment } from "../../domain/enrollment-status";
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { parseCampaignType, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
+import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import type { ArchiveFilter, CampaignStatus, CampaignStatusChange } from "../../domain/campaign";
 import { archiveOn, changeStatusOn, createCampaignOn, deleteOn, enrollOn, enrollPickedOn, loadCampaign, removeLeadOn, removeLeadsOn, sendersOn, startProblemsOn, unarchiveOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps } from "../../application/campaign-lifecycle";
 import type { EnrollmentAdminStore, PickedEnrollCounts, RemoveCounts, SenderRef } from "../../application/enrollment-admin";
 import { DEFAULT_LINKEDIN_STEPS, INVITE_NOTE_MAX, inviteNoteLength, renderLinkedInText, validateLinkedInSteps, type LinkedInStep } from "../domain/linkedin";
@@ -15,31 +17,21 @@ import type { LeadCrossContext } from "../../application/cross-campaign-notices"
 export interface LinkedInCampaignRecord {
   id: string;
   name: string;
-  type: CampaignType;
   status: CampaignStatus;
   steps: LinkedInStep[];
   archivedAt: Date | null;
   createdAt: Date;
-  /** Who created it. Null once that user is deleted. The creator may read a personal campaign's threads. */
+  /** Who created it. Null once that user is deleted. */
   createdBy: string | null;
 }
 
-export interface LinkedInEnrollResult {
+export interface LinkedInEnrollResult extends EnrollSkipCounts {
   /** People the query matched, or the ids a person picked. */
   requested: number;
-  skippedMissingIdentity: number;
-  skippedDuplicate: number;
-  /** LinkedIn has no suppression list; do-not-contact is counted in `skippedDoNotContact`. */
-  skippedSuppressed: number;
   added: number;
   alreadyEnrolled: number;
   skippedNoProfile: number;
-  skippedDoNotContact: number;
-  /** The latest reply reads as a request to stop and no person reviewed it. */
-  skippedStopRequest: number;
-  /** Contacts are not enrolled in campaigns. */
-  skippedContact: number;
-  /** People this call enrolled. Present only when the caller passed `collectIds`. */
+  /** People this call enrolled. Absent on a dry run. */
   addedPersonIds?: string[];
   /** Dry run only: people the same call would enroll, up to the limit. */
   wouldAdd?: number;
@@ -48,8 +40,8 @@ export interface LinkedInEnrollResult {
 export interface LinkedInEnrollmentRow {
   enrollmentId: string;
   personId: string;
-  /** The Inbox conversation of a lead that replied (never a personal campaign's private thread), or null. */
-  inboxConversationId: string | null;
+  /** The Inbox conversation of a lead that replied, or null. */
+  inboxThreadId: string | null;
   personName: string | null;
   profileUrl: string | null;
   status: string;
@@ -62,8 +54,6 @@ export interface LinkedInEnrollmentRow {
   variables: Record<string, string | null>;
   /** Row panel: what went out, the retry state and the account behind it. */
   detail: LinkedInLeadDetail;
-  /** The person has a private conversation under this (personal) campaign, whatever the enrollment status is now. */
-  hasPrivateThread: boolean;
 }
 
 export interface LinkedInLeadDetail {
@@ -109,12 +99,10 @@ export interface LinkedInCampaignStore {
   /** Runs `fn` in one transaction, as a savepoint inside `within` when the caller already holds one. */
   transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
   get(organizationId: string, id: string, tx?: DbHandle): Promise<LinkedInCampaignRecord | null>;
-  create(organizationId: string, input: { name: string; type?: CampaignType; createdBy: string; steps: LinkedInStep[] }, tx?: DbHandle): Promise<string>;
+  create(organizationId: string, input: { name: string; createdBy: string; steps: LinkedInStep[] }, tx?: DbHandle): Promise<string>;
   furthestStep(organizationId: string, id: string, tx?: DbHandle): Promise<number>;
-  /** Whether any send row exists for the campaign, in any status. */
-  hasSends(organizationId: string, id: string, tx?: DbHandle): Promise<boolean>;
   /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
-  update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
+  update(organizationId: string, id: string, patch: { name?: string; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
   /** Deletes a draft. Returns false when no draft matched. */
@@ -125,10 +113,9 @@ export interface LinkedInCampaignStore {
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** People with a LinkedIn profile become enrollments with their LinkedIn progress row, in one transaction. */
-  /** `collectIds` asks for `addedPersonIds` in the result. */
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
   /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<LinkedInEnrollResult>;
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<LinkedInEnrollResult>;
   countConnectedAccounts(organizationId: string, tx?: DbHandle): Promise<number>;
   /** `total` counts the rows of the active tab and search. `counts` and `sent` cover the whole campaign. */
   listEnrollments(organizationId: string, id: string, query: EnrollmentListQuery): Promise<{ rows: LinkedInEnrollmentRow[]; total: number; counts: TabCounts; sent: number }>;
@@ -163,17 +150,12 @@ export const listLinkedInCampaigns = (deps: LinkedInCampaignDeps, actor: Actor, 
 
 export const getLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string) => load(deps, actor, id);
 
-export function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, input: { name: string; type?: CampaignType; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
-  return createCampaignOn(lifecycle(deps), linkedin(deps), actor, input, (name) => ({ name, type: parseCampaignType(input.type), createdBy: actor.userId, steps: DEFAULT_LINKEDIN_STEPS }), tx);
+export function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, input: { name: string; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
+  return createCampaignOn(lifecycle(deps), linkedin(deps), actor, input, (name) => ({ name, createdBy: actor.userId, steps: DEFAULT_LINKEDIN_STEPS }), tx);
 }
 
-/** The type can change until the campaign has sent something. */
-export function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
-  return updateCampaignOn(lifecycle(deps), linkedin(deps), actor, id, patch, tx, async (campaign) => {
-    if (patch.type === undefined || patch.type === campaign.type) return {};
-    if (!typeEditable(await deps.campaigns.hasSends(actor.organizationId, id, tx))) throw new ConflictError("The campaign type cannot change once the campaign has sent something.");
-    return { type: parseCampaignType(patch.type) };
-  });
+export function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: LinkedInStep[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
+  return updateCampaignOn(lifecycle(deps), linkedin(deps), actor, id, patch, tx);
 }
 
 /** The start problems of a draft or paused LinkedIn campaign, for a preview. Changes nothing. */
@@ -191,7 +173,7 @@ export const unarchiveLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Act
 
 export const deleteLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> => deleteOn(lifecycle(deps), "linkedin", actor, id);
 
-export function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<LinkedInEnrollResult> {
+export function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<LinkedInEnrollResult> {
   return enrollOn(lifecycle(deps).campaigns, actor, id, input, options, tx);
 }
 
@@ -228,7 +210,7 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
   ]);
   const invitation = campaign.steps[0]?.kind === "invitation" ? campaign.steps[0] : null;
   const rows: LinkedInEnrollmentView[] = enrollments.rows.map(({ variables, ...row }) => {
-    const pending = invitation !== null && row.connectionState === "none" && (row.status === "pending" || row.status === "active");
+    const pending = invitation !== null && row.connectionState === "none" && isLiveEnrollment(row.status);
     const noteLength = pending && invitation.body.trim() !== "" ? inviteNoteLength(invitation.body, variables) : null;
     return { ...row, noteLength, noteOverLimit: noteLength !== null && noteLength > INVITE_NOTE_MAX };
   });

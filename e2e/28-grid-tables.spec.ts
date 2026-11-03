@@ -155,7 +155,7 @@ test.describe("grid tables: export and import", () => {
     await expect(page.getByRole("row", { name: /^251\b/ }).or(page.locator('[role="row"][aria-rowindex="252"]'))).toBeVisible();
   });
 
-  test("Duplicate column copies a data column's values and a formula's expression", async ({ page }) => {
+  test("Duplicate column copies a data column's values", async ({ page }) => {
     await signInAdmin(page);
     const seeded = await seedGrid(page.request, { rows: 30, name: "S28 duplicate column" });
     await page.goto(`/tables/${seeded.workbookId}`);
@@ -163,20 +163,12 @@ test.describe("grid tables: export and import", () => {
     await page.getByRole("button", { name: "Column menu for 회사" }).click();
     await page.getByRole("menuitem", { name: "Duplicate column" }).click();
     await expect(page.getByText('Duplicated "회사".')).toBeVisible();
-    let data = await gridPage(page.request, seeded.tableId);
+    const data = await gridPage(page.request, seeded.tableId);
     const names = data.columns.map((c) => c.name);
     expect(names.indexOf("회사 (copy)")).toBe(names.indexOf("회사") + 1);
     const copy = data.columns.find((c) => c.name === "회사 (copy)")!;
     expect(data.rows[3].cells[copy.key]).toBe("회사 3");
     await expect(page.getByRole("gridcell", { name: "회사 (copy): 회사 3", exact: true }).first()).toBeVisible();
-
-    await page.getByRole("button", { name: "Column menu for Score x2" }).click();
-    await page.getByRole("menuitem", { name: "Duplicate column" }).click();
-    await expect(page.getByText('Duplicated "Score x2".')).toBeVisible();
-    data = await gridPage(page.request, seeded.tableId);
-    const formulaCopy = data.columns.find((c) => c.name === "Score x2 (copy)")!;
-    expect(formulaCopy.type).toBe("formula");
-    expect(Number(data.rows[4].cells[formulaCopy.key])).toBe(10);
   });
 
   test("The table menu edits the description and moves a table to another workbook", async ({ page }) => {

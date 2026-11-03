@@ -2,18 +2,17 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { normalizeEmail } from "@/contexts/people/domain/normalize";
 import { canonicalTimeZone } from "@/shared/time-zone";
+import { MAILBOX_CHECK_FROM, MAILBOX_DISABLE_FROM, MAILBOX_ENABLE_FROM, type MailboxStatus } from "../../domain/mailbox-status";
 import { type WorkingHours } from "../../domain/working-hours";
 import type { MailboxProvider } from "./ports";
 import type { MailboxRecord, MailboxStore } from "../../application/management-ports";
 
 /**
- * The service account can impersonate every address in the Workspace domain, so which addresses a tenant
- * may connect is an operator decision. `allowedDomains` null means the operator set no list.
+ * The service account can impersonate every address in the Workspace domain, so the operator may limit which
+ * addresses an organization connects. `allowedDomains` null means the operator set no list, and any address may connect.
  */
 export interface MailboxDomainPolicy {
   allowedDomains: string[] | null;
-  /** True when anyone can create an organization (AUTH_SIGNUP=open). */
-  openSignup: boolean;
 }
 
 export interface MailboxDeps {
@@ -34,16 +33,9 @@ export function parseAllowedDomains(raw: string | undefined): string[] | null {
 
 /** Returns why this address cannot be connected, or null when it can. */
 export function mailboxPolicyViolation(policy: MailboxDomainPolicy, emailAddress: string): string | null {
+  if (!policy.allowedDomains) return null;
   const domain = emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase();
-  if (policy.allowedDomains) {
-    return policy.allowedDomains.includes(domain)
-      ? null
-      : `${domain} is not an allowed mailbox domain. Allowed: ${policy.allowedDomains.join(", ")}.`;
-  }
-  if (policy.openSignup) {
-    return "This instance allows open sign-up, so mailboxes cannot be connected until the operator sets MAILBOX_ALLOWED_DOMAINS to the domains tenants may use.";
-  }
-  return null;
+  return policy.allowedDomains.includes(domain) ? null : `${domain} is not an allowed mailbox domain. Allowed: ${policy.allowedDomains.join(", ")}.`;
 }
 
 /** Connected accounts send as the organization, so only owners and admins manage them. */
@@ -61,14 +53,14 @@ export function listMailboxes(deps: MailboxDeps, actor: Actor) {
   return deps.mailboxes.list(actor.organizationId, deps.now());
 }
 
-async function verifyAndRecord(deps: MailboxDeps, actor: Actor, id: string, emailAddress: string) {
+async function verifyAndRecord(deps: MailboxDeps, actor: Actor, id: string, emailAddress: string, from: readonly MailboxStatus[]) {
   try {
     const violation = mailboxPolicyViolation(deps.policy, emailAddress);
     if (violation) throw new Error(violation);
     await deps.provider.verify(emailAddress);
-    await deps.mailboxes.setStatus(actor.organizationId, id, "connected", null, deps.now());
+    await deps.mailboxes.setStatus(actor.organizationId, id, "connected", null, deps.now(), from);
   } catch (error) {
-    await deps.mailboxes.setStatus(actor.organizationId, id, "failed", error instanceof Error ? error.message : "Could not verify this mailbox.", deps.now());
+    await deps.mailboxes.setStatus(actor.organizationId, id, "failed", error instanceof Error ? error.message : "Could not verify this mailbox.", deps.now(), from);
   }
 }
 
@@ -91,7 +83,8 @@ export async function connectMailbox(deps: MailboxDeps, actor: Actor, input: { e
 export async function retestMailbox(deps: MailboxDeps, actor: Actor, id: string): Promise<void> {
   requireAdmin(actor);
   const mailbox = await load(deps, actor, id);
-  await verifyAndRecord(deps, actor, id, mailbox.emailAddress);
+  if (mailbox.status === "disabled") throw new ConflictError("This mailbox is disabled. Enable it to check the connection.");
+  await verifyAndRecord(deps, actor, id, mailbox.emailAddress, MAILBOX_CHECK_FROM);
 }
 
 export interface MailboxSettings {
@@ -126,8 +119,8 @@ export async function updateMailbox(deps: MailboxDeps, actor: Actor, id: string,
 export async function setMailboxEnabled(deps: MailboxDeps, actor: Actor, id: string, enabled: boolean): Promise<void> {
   requireAdmin(actor);
   const mailbox = await load(deps, actor, id);
-  if (!enabled) await deps.mailboxes.setStatus(actor.organizationId, id, "disabled", null, mailbox.lastTestedAt);
-  else await verifyAndRecord(deps, actor, id, mailbox.emailAddress);
+  if (!enabled) await deps.mailboxes.setStatus(actor.organizationId, id, "disabled", null, mailbox.lastTestedAt, MAILBOX_DISABLE_FROM);
+  else await verifyAndRecord(deps, actor, id, mailbox.emailAddress, MAILBOX_ENABLE_FROM);
 }
 
 export async function removeMailbox(deps: MailboxDeps, actor: Actor, id: string): Promise<void> {

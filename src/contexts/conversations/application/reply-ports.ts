@@ -45,7 +45,7 @@ export interface ClaimedJob {
 
 /** What the classification worker needs to build a prompt and judge the answer. */
 export interface ClassifyContext {
-  recordId: string;
+  conversationId: string;
   contextVersion: number;
   latestInboundMessageId: string | null;
   operatorInstructions: string;
@@ -54,7 +54,8 @@ export interface ClassifyContext {
   taxonomy: Array<ReplyType & { id: string; systemRole: SystemRole | null; rules: TypeRules }>;
   person: AiPersonContext;
   thread: ThreadEntry[];
-  messageText: string;
+  /** Ingest read the reply's own words as asking to stop (`raw.stopAsked`). */
+  stopAsked: boolean;
 }
 
 export interface FinishClassification {
@@ -74,8 +75,8 @@ export interface FinishClassification {
 export interface DraftContext {
   channel: DraftChannel;
   organizationId: string;
-  recordId: string;
   conversationId: string;
+  threadId: string;
   contextVersion: number;
   replyForMessageId: string | null;
   person: AiPersonContext;
@@ -92,8 +93,8 @@ export interface NewDraft {
   organizationId: string;
   /** The MCP token whose agent asked for the draft. */
   writtenViaTokenId?: string | null;
-  recordId: string;
   conversationId: string;
+  threadId: string;
   replyForMessageId: string | null;
   expectedContextVersion: number;
   /** Null for LinkedIn: a chat message has no subject. */
@@ -105,10 +106,9 @@ export interface NewDraft {
   model: string;
   request: unknown;
   response: unknown;
-  citations: Array<{ documentVersionId: string; excerpt: string }>;
   /** Draft this one replaces: it becomes `discarded`, and the lineage is recorded in `request`. */
   regeneratesDraftId?: string;
-  /** Any other open draft of the record turns `stale`. */
+  /** Any other open draft of the conversation turns `stale`. */
 }
 
 export type { DraftStatus };
@@ -116,8 +116,8 @@ export type { DraftStatus };
 export interface DraftRow {
   id: string;
   organizationId: string;
-  recordId: string;
   conversationId: string;
+  threadId: string;
   status: DraftStatus;
   revision: number;
   expectedContextVersion: number;
@@ -152,8 +152,8 @@ export interface AttemptRow {
 export interface SendContext {
   attempt: AttemptRow;
   organizationId: string;
+  threadId: string;
   conversationId: string;
-  recordId: string;
   personId: string;
   recipient: string;
   /** CC addresses approved with the draft. */
@@ -161,7 +161,7 @@ export interface SendContext {
   subject: string;
   bodyText: string;
   rfcMessageId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
   inReplyTo: string | null;
   references: string[];
   mailbox: { emailAddress: string; displayName: string | null; signatureHtml: string | null; status: string } | null;
@@ -180,8 +180,8 @@ export interface KnownCc {
 }
 
 export interface PanelData {
+  threadId: string;
   conversationId: string;
-  recordId: string;
   channel: string;
   workflowState: string;
   contextVersion: number;
@@ -203,29 +203,29 @@ export interface PanelData {
 
 /** Everything the reply use cases persist. Each method is one atomic step; none talks to a provider. */
 export interface ReplyStore {
-  panel(organizationId: string, conversationId: string): Promise<PanelData | null>;
+  panel(organizationId: string, threadId: string): Promise<PanelData | null>;
   /** Null when the conversation does not exist. */
-  draftContext(organizationId: string, conversationId: string): Promise<DraftContext | null>;
-  /** With the record's `workflowState`, so Regenerate refuses reply handling marked done. */
+  draftContext(organizationId: string, threadId: string): Promise<DraftContext | null>;
+  /** With the conversation's `workflowState`, so Regenerate refuses reply handling marked done. */
   draftContextForDraft(organizationId: string, draftId: string): Promise<(DraftContext & { draft: DraftRow; workflowState: string }) | null>;
-  /** Writes an AI draft. `stale` is true when the record's version moved past the draft's, so it went in stale. */
+  /** Writes an AI draft. `stale` is true when the conversation's version moved past the draft's, so it went in stale. */
   /** `handling_closed`, with nothing written, when reply handling is marked done (`insertDraftTx`). */
   insertDraft(draft: NewDraft & { feedback?: string | null }): Promise<{ id: string; stale: boolean } | "handling_closed">;
   getDraft(organizationId: string, draftId: string): Promise<DraftRow | null>;
   /**
-   * A draft a person typed (source `manual`), written in `awaiting_review` for the record's current context version.
-   * Older open drafts of the record turn `stale`. Refuses a conversation that is not an open email thread, a suppressed
+   * A draft a person typed (source `manual`), written in `awaiting_review` for the conversation's current context version.
+   * Older open drafts of the conversation turn `stale`. Refuses a conversation that is not an open email thread, a suppressed
    * address, a do-not-contact person, and a thread with a send in flight. 404 when the conversation is not in this organization.
    */
   /** Saves a typed draft on a conversation of `channel`; a conversation of the other channel answers `wrong_channel`. LinkedIn drafts have no subject or CC. */
   /**
-   * The new draft turns the record's open one stale. With `expectedOpenRevision`, that happens only when the open draft is the
+   * The new draft turns the conversation's open one stale. With `expectedOpenRevision`, that happens only when the open draft is the
    * one the caller read: null says it read none. Every draft starts at revision 1, so `expectedOpenDraftId` names which draft
-   * that revision belongs to. Any other open draft answers 409 `draft_open`, checked under the record lock.
+   * that revision belongs to. Any other open draft answers 409 `draft_open`, checked under the conversation lock.
    */
-  createManualDraft(input: { organizationId: string; conversationId: string; channel: ReplyChannel; subject: string | null; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia; expectedOpenRevision?: number | null; expectedOpenDraftId?: string }): Promise<{ id: string; revision: number }>;
+  createManualDraft(input: { organizationId: string; threadId: string; channel: ReplyChannel; subject: string | null; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia; expectedOpenRevision?: number | null; expectedOpenDraftId?: string }): Promise<{ id: string; revision: number }>;
   /** Like `ccContext`, for a conversation that has no draft yet. */
-  ccContextForConversation(organizationId: string, conversationId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
+  ccContextForThread(organizationId: string, threadId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
   /** `writtenViaTokenId` replaces the draft's: an agent's edit sets it, a person's clears it. */
   updateDraft(organizationId: string, draftId: string, input: { expectedRevision: number; subject: string | null; bodyText: string; cc?: string[]; writtenViaTokenId: string | null }): Promise<DraftRow>;
   /** What a CC choice is checked against. Null when the draft does not exist in this organization. */
@@ -241,7 +241,7 @@ export interface ReplyStore {
    */
   beginSend(input: { organizationId: string; draftId: string; expectedRevision: number; idempotencyKey: string; actorUserId: string; messageIdToken: string; now: Date; via?: AgentVia }): Promise<BeginSend>;
   checkBlockers(send: SendContext): Promise<SendBlocker | null>;
-  markSent(send: SendContext, sent: { providerMessageId: string; threadId: string | null }, now: Date, note?: string): Promise<void>;
+  markSent(send: SendContext, sent: { providerMessageId: string; providerThreadId: string | null }, now: Date, note?: string): Promise<void>;
   /** A definite refusal: nothing was sent. The draft goes back to review (or to `failed` for a blocker). */
   markFailed(send: SendContext, error: string, draftStatus: "awaiting_review" | "failed"): Promise<void>;
   markUncertain(send: SendContext, error: string): Promise<void>;
@@ -253,8 +253,8 @@ export interface ReplyStore {
    * A person's pick for the latest reply: `replyTypeKey: null` accepts the held AI pick, a key overrides it. The type's
    * rules decide the draft and follow-ups (`decideReplyType`). Accepting a held stop request answers 409 `stop_review`.
    */
-  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; via?: AgentVia }): Promise<{ personId: string; recordId: string; contextVersion: number; groupKey: string; replyTypeKey: string; draftQueued: boolean; draftsRetired: number; runStarted: boolean; runEnded: boolean }>;
-  suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
+  applyHumanReplyTypePick(input: { organizationId: string; threadId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; via?: AgentVia }): Promise<{ personId: string; conversationId: string; contextVersion: number; groupKey: string; replyTypeKey: string; draftQueued: boolean; draftsRetired: number; runStarted: boolean; runEnded: boolean }>;
+  suppressSender(input: { organizationId: string; threadId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 
 /**
@@ -289,14 +289,14 @@ export interface AiJobWorkerStore {
 export type RequeueAudit = (ids: string[]) => { organizationId: string; actorUserId: string | null; action: string; entityType?: string; entityId?: string; meta?: Record<string, unknown> };
 
 export interface AiJobQueueStore {
-  /** Queues a classification job for every record whose latest inbound message has none. */
+  /** Queues a classification job for every conversation whose latest inbound message has none. */
   enqueueMissing(now: Date): Promise<number>;
 
   /** Failed jobs of one organization, newest first, with the requeue state the jobs page shows. */
   listFailed(organizationId: string, limit: number): Promise<{ total: number; rows: FailedAiJob[] }>;
   /**
    * Admin requeue: failed jobs of this organization go back to queued with a fresh attempt budget, and a
-   * classification job's `failed` record is removed so the new result can be stored. Only rows that are failed
+   * classification job's `failed` conversation is removed so the new result can be stored. Only rows that are failed
    * now change, so a second call finds nothing. Returns the ids requeued.
    */
   requeueFailed(organizationId: string, filter: { jobId: string } | { since: Date }, now: Date, limit: number, audit: RequeueAudit): Promise<string[]>;
@@ -326,7 +326,7 @@ export interface ReplySendRequest {
   rfcMessageId: string;
   inReplyTo: string | null;
   references: string[];
-  threadId: string | null;
+  providerThreadId: string | null;
   /** Used to build the one-click unsubscribe header the adapter adds. */
   organizationId: string;
 }
@@ -343,7 +343,7 @@ export class ReplySendError extends Error {
 
 /** Sends one reply. Only the send deps (`reply-send-composition.ts`) hold one. */
 export interface ReplySender {
-  send(request: ReplySendRequest): Promise<{ providerMessageId: string; threadId: string | null }>;
+  send(request: ReplySendRequest): Promise<{ providerMessageId: string; providerThreadId: string | null }>;
 }
 
 /** Looks in a mailbox for a reply that may have gone out. It never sends. */
@@ -355,7 +355,7 @@ export interface SentFinder {
     since: Date,
     hint?: { to?: string },
   ): Promise<
-    | { status: "found"; sent: { providerMessageId: string; threadId: string | null } }
+    | { status: "found"; sent: { providerMessageId: string; providerThreadId: string | null } }
     | { status: "absent" }
     | { status: "inconclusive"; reason: string }
   >;

@@ -5,6 +5,7 @@ import { actionToken, actionTokenMatches, actionTokenStale } from "@/shared/acti
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
 import { AGENT_CAMPAIGN_REFUSALS, agentCampaignRefusal, launchToken, launchTokenMatches, type AgentCampaignRefusal, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
+import { bouncePauseReason, type BouncePause } from "../domain/bounce-pause";
 import { canTransition, type CampaignStatus } from "../domain/campaign";
 import { changeLinkedInCampaignStatus, deleteLinkedInCampaign, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
 import type { UnresolvedToken } from "../domain/variables";
@@ -13,8 +14,7 @@ import { campaignStartProblems, changeCampaignStatus, deleteCampaign, previewSte
 /**
  * Agents starting and resuming campaigns and enrolling leads (docs/decisions.md, "Agent campaigns"). Each function
  * runs a person's rules through the same use case a person's button calls, then the agent rules: the organization lets
- * agents run campaigns, sending is not paused, a Personal campaign sends only from accounts the token's person owns,
- * the campaign still matches the preview the agent saw, and agents stay under the daily enroll limit.
+ * agents run campaigns, sending is not paused, the campaign still matches the preview the agent saw, and agents stay under the daily enroll limit.
  */
 
 export type AgentChannel = "email" | "linkedin";
@@ -23,27 +23,26 @@ export interface AgentCampaignRow {
   id: string;
   name: string;
   channel: AgentChannel;
-  type: string;
   status: CampaignStatus;
   steps: unknown;
   archivedAt: Date | null;
   /** A person paused it; only a person resumes it. */
   personPaused: boolean;
+  /** Set when the bounce breaker paused it. `personPaused` is true then too. */
+  bouncePause: BouncePause | null;
 }
 
 export interface AgentSender {
   id: string;
   status: string;
   name: string;
-  /** LinkedIn only: the member who owns the account. */
-  ownerUserId: string | null;
   /** LinkedIn only: invitations a day. */
   dailyLimit: number | null;
   limitReachedUntil: Date | null;
 }
 
 export interface AgentCampaignStore {
-  transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
+  transaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T>;
   /** A read-only repeatable-read transaction, so a preview's checks and token come from one moment. */
   snapshot<T>(organizationId: string, campaignId: string, fn: (tx: DbHandle) => Promise<T>): Promise<T>;
   campaign(tx: DbHandle, organizationId: string, campaignId: string): Promise<AgentCampaignRow | null>;
@@ -89,13 +88,6 @@ async function find(load: Promise<AgentCampaignRow | null>, channel: AgentChanne
 }
 
 const stateOf = (row: AgentCampaignRow, senders: AgentSender[]): LaunchState => ({ id: row.id, channel: row.channel, status: row.status, steps: row.steps, senders: senders.map((s) => ({ id: s.id, status: s.status })) });
-
-/** Why the token's person may not send from this Personal campaign's accounts, or null when they may. */
-function ownershipProblem(actor: Actor, row: AgentCampaignRow, senders: { assigned: boolean; senders: AgentSender[] }): string | null {
-  if (row.type !== "personal") return null;
-  if (!senders.assigned || senders.senders.length === 0) return "agent_sender_not_owned";
-  return senders.senders.every((s) => s.ownerUserId === actor.userId) ? null : "agent_sender_not_owned";
-}
 
 /** The status a purpose starts from: a start leaves a draft, a resume a paused campaign. */
 const FROM: Record<Exclude<LaunchPurpose, "enroll">, CampaignStatus> = { start: "draft", resume: "paused" };
@@ -146,11 +138,11 @@ export async function previewLaunch(deps: AgentCampaignDeps, actor: Actor, input
   const startsNow = input.purpose !== "enroll" || row.status === "active";
   if (row.archivedAt) problems.push("The campaign is archived. A person unarchives it first.");
   if (input.purpose !== "enroll" && row.status !== FROM[input.purpose]) problems.push(`A ${row.status} campaign cannot be ${input.purpose === "start" ? "started" : "resumed"}.`);
-  if (input.purpose === "resume" && row.status === "paused" && row.personPaused) problems.push("A person paused this campaign, so only a person resumes it (agent_resume_person_paused).");
+  if (input.purpose === "resume" && row.status === "paused" && row.bouncePause) problems.push(`${bouncePauseReason(row.bouncePause)} Only a person resumes it (agent_resume_bounce_paused).`);
+  else if (input.purpose === "resume" && row.status === "paused" && row.personPaused) problems.push("A person paused this campaign, so only a person resumes it (agent_resume_person_paused).");
   if (input.purpose === "enroll" && row.status === "completed") problems.push("The campaign is completed.");
   if (startsNow && !gate.campaigns) problems.push("Agents may not start campaigns or enroll leads in running ones here (agent_campaigns_off).");
   if (startsNow && paused) problems.push("Sending is paused for this organization (agent_send_paused).");
-  if (startsNow && ownershipProblem(actor, row, senders)) problems.push("This Personal campaign sends from accounts the token's person does not own, or names no senders (agent_sender_not_owned).");
   // A start or resume lists the checks the status change runs, so a preview that passes them starts.
   let emptySubjectLeads: number | null = null;
   if (input.purpose !== "enroll") {
@@ -187,7 +179,6 @@ async function checkAgentRun(deps: AgentCampaignDeps, tx: DbHandle, actor: Actor
   if (!gate.campaigns) throw agentCampaignRefusal("agent_campaigns_off");
   if (await deps.store.sendPaused(tx, actor.organizationId)) throw agentCampaignRefusal("agent_send_paused");
   const senders = await deps.store.senders(tx, actor.organizationId, row);
-  if (ownershipProblem(actor, row, senders)) throw agentCampaignRefusal("agent_sender_not_owned");
   const pending = await deps.store.pending(tx, row.id);
   if (!token || !launchTokenMatches(token, purpose, stateOf(row, senders.senders), pending)) throw agentCampaignRefusal("launch_token_stale");
 }
@@ -206,6 +197,7 @@ export async function launchCampaign(
     const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
     if (row.archivedAt) throw new ConflictError("An archived campaign cannot be started. Unarchive it first.");
     if (row.status !== FROM[input.action] || !canTransition(row.status, "active")) throw new ConflictError(`A ${row.status} campaign cannot be ${input.action === "start" ? "started" : "resumed"}.`);
+    if (input.action === "resume" && row.bouncePause) throw agentCampaignRefusal("agent_resume_bounce_paused");
     if (input.action === "resume" && row.personPaused) throw agentCampaignRefusal("agent_resume_person_paused");
     const gate = await deps.store.gate(tx, actor.organizationId, tokenId, deps.now());
     await checkAgentRun(deps, tx, actor, row, input.action, input.launchToken, gate);
@@ -224,15 +216,15 @@ export type AgentCampaignEnd = "complete_campaign" | "delete_draft_campaign";
 const endState = (row: AgentCampaignRow) => ({ name: row.name, status: row.status, personPaused: row.personPaused });
 
 /** Why an agent may not end this campaign, as refusal codes or a person's rule. Empty when it may. */
-function endRefusals(actor: Actor, kind: AgentCampaignEnd, row: AgentCampaignRow, senders: { assigned: boolean; senders: AgentSender[] }): Array<{ code: string; message: string }> {
+function endRefusals(kind: AgentCampaignEnd, row: AgentCampaignRow): Array<{ code: string; message: string }> {
   const refusals: Array<{ code: string; message: string }> = [];
   const refuse = (code: AgentCampaignRefusal) => refusals.push({ code, message: AGENT_CAMPAIGN_REFUSALS[code] });
   if (kind === "complete_campaign") {
     if (row.status === "draft") refusals.push({ code: "campaign_not_started", message: "A draft campaign cannot be completed. Delete it instead." });
-    if (row.personPaused) refuse("agent_complete_person_paused");
+    if (row.bouncePause) refuse("agent_complete_bounce_paused");
+    else if (row.personPaused) refuse("agent_complete_person_paused");
   }
   if (kind === "delete_draft_campaign" && row.status !== "draft") refusals.push({ code: "campaign_not_draft", message: "Only a draft campaign can be deleted. Pause it or complete it instead." });
-  if (ownershipProblem(actor, row, senders)) refuse("agent_sender_not_owned");
   return refusals;
 }
 
@@ -250,7 +242,7 @@ export async function previewAgentCampaignEnd(deps: AgentCampaignDeps, actor: Ac
   return deps.store.snapshot(actor.organizationId, input.campaignId, async (tx) => {
     const row = await find(deps.store.campaign(tx, actor.organizationId, input.campaignId), input.channel);
     const alreadyCompleted = input.kind === "complete_campaign" && row.status === "completed";
-    const refusals = alreadyCompleted ? [] : endRefusals(actor, input.kind, row, await deps.store.senders(tx, actor.organizationId, row));
+    const refusals = alreadyCompleted ? [] : endRefusals(input.kind, row);
     return { name: row.name, status: row.status, alreadyCompleted, refusals, actionToken: alreadyCompleted || refusals.length > 0 ? null : actionToken(input.kind, input.campaignId, endState(row)) };
   });
 }
@@ -263,7 +255,7 @@ export async function agentCompleteCampaign(deps: AgentCampaignDeps, actor: Acto
   await deps.store.transaction(async (tx) => {
     const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
     if (!actionTokenMatches(input.token, "complete_campaign", input.campaignId, endState(row))) throw actionTokenStale();
-    const [refusal] = endRefusals(actor, "complete_campaign", row, await deps.store.senders(tx, actor.organizationId, row));
+    const [refusal] = endRefusals("complete_campaign", row);
     if (refusal) throw new ConflictError(refusal.message, { code: refusal.code });
     if (row.channel === "email") await changeCampaignStatus(deps.email, actor, row.id, "completed", tx);
     else await changeLinkedInCampaignStatus(deps.linkedin, actor, row.id, "completed", tx);
@@ -278,7 +270,7 @@ export async function agentDeleteDraftCampaign(deps: AgentCampaignDeps, actor: A
   const row = await deps.store.transaction(async (tx) => {
     const found = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
     if (!actionTokenMatches(input.token, "delete_draft_campaign", input.campaignId, endState(found))) throw actionTokenStale();
-    const [refusal] = endRefusals(actor, "delete_draft_campaign", found, await deps.store.senders(tx, actor.organizationId, found));
+    const [refusal] = endRefusals("delete_draft_campaign", found);
     if (refusal) throw new ConflictError(refusal.message, { code: refusal.code });
     return found;
   });

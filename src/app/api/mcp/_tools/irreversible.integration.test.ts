@@ -21,8 +21,8 @@ describeDb("MCP actions that cannot be undone", () => {
   let org: TestOrg;
   let owner: Actor;
   let agent: McpCaller;
-  let tokens: typeof import("@/contexts/tenancy/application/mcp-tokens");
-  let deps: import("@/contexts/tenancy/application/mcp-tokens").McpTokenDeps;
+  let tokens: typeof import("@/contexts/agent-access/application/mcp-tokens");
+  let deps: import("@/contexts/agent-access/application/mcp-tokens").McpTokenDeps;
   let n = 0;
 
   const codeOf = (result: { structured: Record<string, unknown> }) => (result.structured.error as { code?: string } | undefined)?.code;
@@ -108,8 +108,8 @@ describeDb("MCP actions that cannot be undone", () => {
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
-    tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    deps = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).mcpTokenDeps();
+    tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    deps = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).mcpTokenDeps();
     org = await createTestOrg(sql, "Irreversible");
     orgs.push(org);
     owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
@@ -262,7 +262,7 @@ describeDb("MCP actions that cannot be undone", () => {
     const args = { kind: "delete_contact", personId: id };
     const seen = await preview(args);
     expect(seen.structured.refusals).toEqual([]);
-    expect(seen.structured.erases).toMatchObject({ conversations: 1, messages: 1 });
+    expect(seen.structured.erases).toMatchObject({ threads: 1, messages: 1 });
     expect(seen.structured.effect).toContain("1 conversations with 1 messages");
     await sql`insert into notes (organization_id, person_id, body) values (${org.organizationId}, ${id}, 'New note')`;
     expect(codeOf(await apply(args, seen.structured.actionToken as string))).toBe("action_token_stale");
@@ -271,7 +271,7 @@ describeDb("MCP actions that cannot be undone", () => {
 
     done(await apply(args, await tokenOf(args)));
     expect(await exists("people", id)).toBe(false);
-    expect(await sql`select 1 from records where person_id = ${id}`).toHaveLength(0);
+    expect(await sql`select 1 from conversations where person_id = ${id}`).toHaveLength(0);
     const [audit] = await sql<{ meta: { lifecycle: string; via?: { tokenId: string } } }[]>`select meta from audit_log where organization_id = ${org.organizationId} and action = 'person.deleted' and entity_id = ${id}`;
     expect(audit.meta).toMatchObject({ lifecycle: "contact", via: { tokenId: agent.tokenId } });
   });
@@ -324,6 +324,9 @@ describeDb("MCP actions that cannot be undone", () => {
     const seen = await preview({ kind: "complete_campaign", channel: "email", campaignId: paused });
     expect(seen.structured.refusals).toEqual([expect.objectContaining({ code: "agent_complete_person_paused" })]);
     expect((await sql`select status from campaigns where id = ${paused}`)[0].status).toBe("paused");
+
+    await sql`update campaigns set bounce_pause = ${sql.json({ at: new Date().toISOString(), sent: 40, bounced: 3 })} where id = ${paused}`;
+    expect((await preview({ kind: "complete_campaign", channel: "email", campaignId: paused })).structured.refusals).toEqual([expect.objectContaining({ code: "agent_complete_bounce_paused" })]);
 
     const draft = await campaign("draft");
     expect((await preview({ kind: "complete_campaign", channel: "email", campaignId: draft })).structured.refusals).toEqual([expect.objectContaining({ code: "campaign_not_started" })]);

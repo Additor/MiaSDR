@@ -1,13 +1,13 @@
+import { wordsAskToStopSql } from "../../stopping/infrastructure/stop-review-sql";
 import { isAppliedPick } from "../../domain/reply-type-pick";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { aiJobs, replyTypePicks, conversations, drafts, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
+import { aiJobs, replyTypePicks, threads, drafts, messages, replyHandlingSettings, conversations, replyTypes } from "@/platform/db/schema";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import type { AiJobQueueStore, AiJobStore, ClassifyContext, DraftContext, FailedAiJob, JobKind, RequeueAudit, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
-import { publicConversation } from "@/platform/db/conversation-visibility";
-import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
+import { ANSWERING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { typeRulesOf } from "../../domain/reply-type";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { DUE_NOW, drizzleAiJobWorkerStore } from "./drizzle-ai-job-worker-store";
@@ -72,9 +72,9 @@ const queueStore: AiJobQueueStore = {
     const rows = (await db.execute(sql`
       insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, run_after)
       select r.organization_id, 'classification', 'message', r.latest_inbound_message_id, 'classification:message:' || r.latest_inbound_message_id, ${DUE_NOW}
-      from records r
+      from conversations r
       where r.latest_inbound_message_id is not null
-        and r.workflow_state not in ('paused', 'closed')
+        and r.workflow_state <> 'closed'
         and not exists (select 1 from ai_jobs j where j.kind = 'classification' and j.entity_type = 'message' and j.entity_id = r.latest_inbound_message_id)
         and not exists (select 1 from reply_type_picks c where c.message_id = r.latest_inbound_message_id and c.expected_context_version = r.context_version)
       on conflict do nothing
@@ -150,31 +150,31 @@ const queueStore: AiJobQueueStore = {
   async loadClassifyContext(organizationId, messageId) {
     const [row] = await db
       .select({
+        threadId: threads.id,
+        stopAsked: sql<boolean>`${wordsAskToStopSql("messages")}`,
         conversationId: conversations.id,
-        body: messages.bodyText,
-        recordId: records.id,
-        replyTypeSetId: records.replyTypeSetId,
-        contextVersion: records.contextVersion,
-        latest: records.latestInboundMessageId,
+        replyTypeSetId: conversations.replyTypeSetId,
+        contextVersion: conversations.contextVersion,
+        latest: conversations.latestInboundMessageId,
       })
       .from(messages)
-      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-      .innerJoin(records, eq(records.id, conversations.recordId))
-      .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId), publicConversation));
+      .innerJoin(threads, eq(threads.id, messages.threadId))
+      .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+      .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)));
     if (!row) return null;
 
     const taxonomyRows = await db
       .select()
       .from(replyTypes)
-      .where(and(eq(replyTypes.replyTypeSetId, row.replyTypeSetId), eq(replyTypes.active, true)))
+      .where(eq(replyTypes.replyTypeSetId, row.replyTypeSetId))
       .orderBy(replyTypes.sortOrder);
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
-    const thread = await threadEntries(organizationId, row.conversationId);
+    const thread = await threadEntries(organizationId, row.threadId);
     if (!thread) return null;
     const knowledge = await knowledgeFor(organizationId, { alwaysOnly: true });
 
     const ctx: ClassifyContext = {
-      recordId: row.recordId,
+      conversationId: row.conversationId,
       contextVersion: row.contextVersion,
       latestInboundMessageId: row.latest,
       operatorInstructions: renderInstructions(settings?.classificationInstructions),
@@ -191,7 +191,7 @@ const queueStore: AiJobQueueStore = {
       })),
       person: thread.person,
       thread: thread.entries,
-      messageText: row.body,
+      stopAsked: row.stopAsked,
     };
     return ctx;
   },
@@ -202,26 +202,26 @@ const queueStore: AiJobQueueStore = {
         status: replyTypePicks.status,
         expected: replyTypePicks.expectedContextVersion,
         messageId: replyTypePicks.messageId,
-        recordId: replyTypePicks.recordId,
-        conversationId: messages.conversationId,
+        conversationId: replyTypePicks.conversationId,
+        threadId: messages.threadId,
         response: replyTypePicks.response,
       })
       .from(replyTypePicks)
       .innerJoin(messages, eq(messages.id, replyTypePicks.messageId))
       .where(and(eq(replyTypePicks.id, replyTypePickId), eq(replyTypePicks.organizationId, organizationId)));
     if (!cls) return null;
-    const ctx = await buildDraftContext(organizationId, cls.conversationId);
+    const ctx = await buildDraftContext(organizationId, cls.threadId);
     if (!ctx) return null;
 
     const skip = await (async (): Promise<string | null> => {
       if (!isAppliedPick(cls.status)) return "not_applied";
       if (ctx.contextVersion !== cls.expected) return "stale";
-      const [rec] = await db.select({ out: records.lastOutboundAt, inb: records.lastInboundAt, personId: records.personId }).from(records).where(eq(records.id, cls.recordId));
+      const [rec] = await db.select({ out: conversations.lastOutboundAt, inb: conversations.lastInboundAt, personId: conversations.personId }).from(conversations).where(eq(conversations.id, cls.conversationId));
       if (rec.out && rec.inb && rec.out >= rec.inb) return "answered";
       const [open] = await db
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, ctx.conversationId), eq(drafts.expectedContextVersion, ctx.contextVersion), inArray(drafts.status, [...PENDING_DRAFT_STATUSES, "sent"])))
+        .where(and(eq(drafts.threadId, ctx.threadId), eq(drafts.expectedContextVersion, ctx.contextVersion), inArray(drafts.status, [...ANSWERING_DRAFT_STATUSES])))
         .limit(1);
       if (open) return "has_draft";
       if (ctx.channel === "linkedin") {

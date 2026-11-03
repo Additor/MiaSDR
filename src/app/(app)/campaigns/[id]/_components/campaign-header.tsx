@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { SummaryLine, type SummaryItem } from "@/components/shell/summary-line";
-import { InfoTip } from "@/components/shell/info-tip";
 import type { OutreachChannelName } from "@/contexts/outreach/domain/campaign-view";
 import { countOf } from "@/shared/format-number";
 import { MetaLine, RecordHeader } from "@/app/(app)/_components/record/record-header";
@@ -26,7 +25,6 @@ export function CampaignHeader({
   status,
   archived,
   channel,
-  personal = false,
   steps,
   senders,
   summary,
@@ -36,7 +34,6 @@ export function CampaignHeader({
   status: string;
   archived: boolean;
   channel: OutreachChannelName;
-  personal?: boolean;
   steps: number;
   /** Labels of the assigned senders; none means every connected one sends. */
   senders: string[];
@@ -56,12 +53,6 @@ export function CampaignHeader({
             testId="campaign-facts"
             items={[
               <ChannelName key="channel" channel={channel} />,
-              personal && (
-                <span key="personal" className="inline-flex items-center gap-1">
-                  Personal
-                  <InfoTip label="Personal campaign">Replies stay out of the Inbox, Actions and the AI.</InfoTip>
-                </span>
-              ),
               <span key="steps" className="tabular-nums">
                 {countOf(steps, "step")}
               </span>,

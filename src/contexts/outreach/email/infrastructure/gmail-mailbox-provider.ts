@@ -139,7 +139,7 @@ export class GmailMailboxProvider implements MailboxProvider {
       response = await this.fetchImpl(`${API}/messages/send`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify(email.threadId ? { raw, threadId: email.threadId } : { raw }),
+        body: JSON.stringify(email.providerThreadId ? { raw, threadId: email.providerThreadId } : { raw }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
@@ -156,7 +156,7 @@ export class GmailMailboxProvider implements MailboxProvider {
       if (!body || typeof body.id !== "string") {
         throw new ProviderSendError("Gmail accepted the request but the response could not be read. The message may have been sent.", "unknown", "message");
       }
-      return { providerMessageId: body.id, threadId: typeof body.threadId === "string" ? body.threadId : null };
+      return { providerMessageId: body.id, providerThreadId: typeof body.threadId === "string" ? body.threadId : null };
     }
 
     const detail = await apiMessage(response);
@@ -224,7 +224,7 @@ export class GmailMailboxProvider implements MailboxProvider {
             if (!res.ok) throw await fail("message lookup", res);
             const detail = (await res.json()) as { payload?: { headers?: Array<{ name?: string; value?: string }> } };
             const header = detail.payload?.headers?.find((h) => h.name?.toLowerCase() === SEND_ID_HEADER.toLowerCase());
-            return header?.value?.trim().replace(/^<|>$/g, "") === wanted ? { providerMessageId: m.id, threadId: m.threadId ?? null } : null;
+            return header?.value?.trim().replace(/^<|>$/g, "") === wanted ? { providerMessageId: m.id, providerThreadId: m.threadId ?? null } : null;
           }),
         );
         const found = hits.find((h) => h !== null);

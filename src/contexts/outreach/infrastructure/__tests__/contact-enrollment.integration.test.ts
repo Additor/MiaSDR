@@ -1,11 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { DbHandle } from "@/platform/db/client";
 import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTestEnv } from "@/test-support/db";
 
 /**
  * Contacts cannot be enrolled ("Leads and CRM" in docs/decisions.md): every candidate select skips a contact, the
- * savepoint path absorbs a conversion that commits after the candidate read, `stopPersonEnrollmentsTx` and the read helpers of
+ * savepoint path absorbs a conversion that commits after the candidate read, `haltEnrollmentsTx` and the read helpers of
  * the conversion, and the send engine against a conversion-like transaction. Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
 const ALL_DAY = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ start: "00:00", end: "23:59" }]]));
@@ -27,6 +28,7 @@ describeDb("contacts and campaign enrollment", () => {
   let admin: typeof import("../drizzle-enrollment-admin").drizzleEnrollmentAdminStore;
   let guard: typeof import("../contact-guard");
   let conversion: typeof import("../drizzle-conversion-outreach");
+  let enrollmentEnd: typeof import("../enrollment-end");
   let outreachStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   let linkedinEngineStore: typeof import("../../linkedin/infrastructure/drizzle-linkedin-store");
   let inboundStore: ReturnType<typeof import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
@@ -40,11 +42,11 @@ describeDb("contacts and campaign enrollment", () => {
     const created = await createTestOrg(sql, "K");
     orgs.push(created);
     const { organizationId: org, userId } = created;
-    const campaign = async (channel: "email" | "linkedin", over: { type?: string; createdBy?: string | null; status?: string } = {}) =>
+    const campaign = async (channel: "email" | "linkedin", over: { createdBy?: string | null; status?: string } = {}) =>
       (
         await sql`
-          insert into campaigns (organization_id, channel, name, type, status, steps, created_by)
-          values (${org}, ${channel}, ${`${channel}-${over.type ?? "regular"}`}, ${over.type ?? "regular"}, ${over.status ?? "active"}, ${sql.json((channel === "email" ? EMAIL_STEPS : LINKEDIN_STEPS) as never)}, ${over.createdBy === undefined ? userId : over.createdBy})
+          insert into campaigns (organization_id, channel, name, status, steps, created_by)
+          values (${org}, ${channel}, ${channel}, ${over.status ?? "active"}, ${sql.json((channel === "email" ? EMAIL_STEPS : LINKEDIN_STEPS) as never)}, ${over.createdBy === undefined ? userId : over.createdBy})
           returning id`
       )[0].id as string;
     // `name` is a word of the search text, so a query for this fixture's tag matches every person of it.
@@ -66,6 +68,12 @@ describeDb("contacts and campaign enrollment", () => {
     return { org, tag, userId, campaign, person, enrollment };
   }
   type F = Awaited<ReturnType<typeof fixture>>;
+
+  /** The picked enroll of email, in the shape the search sink answers for LinkedIn. */
+  const enrollEmail = async (org: string, campaignId: string, ids: string[], tx?: DbHandle) => {
+    const { added, skippedContact } = await admin.enrollPicked(org, campaignId, "email", ids, { viaTokenId: null }, tx);
+    return { added, skippedContact };
+  };
 
   const enrolled = async (campaignId: string) => (await sql`select person_id from campaign_enrollments where campaign_id = ${campaignId} order by person_id`).map((r) => r.person_id as string);
   const rowOf = async (id: string) => (await sql`select status, stop_reason, next_send_at from campaign_enrollments where id = ${id}`)[0];
@@ -128,6 +136,7 @@ describeDb("contacts and campaign enrollment", () => {
     ({ drizzleEnrollmentAdminStore: admin } = await import("../drizzle-enrollment-admin"));
     guard = await import("../contact-guard");
     conversion = await import("../drizzle-conversion-outreach");
+    enrollmentEnd = await import("../enrollment-end");
     ({ drizzleOutreachStore: outreachStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
     linkedinEngineStore = await import("../../linkedin/infrastructure/drizzle-linkedin-store");
     inboundStore = (await import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
@@ -168,7 +177,7 @@ describeDb("contacts and campaign enrollment", () => {
       const dry = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100, dryRun: true });
       expect(dry).toMatchObject({ requested: 3, wouldAdd: 2, added: 0, skippedContact: 1 });
 
-      const result = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100, collectIds: true });
+      const result = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100 });
       expect(result).toMatchObject({ requested: 3, added: 2, skippedContact: 1, skippedDoNotContact: 0, skippedNoProfile: 0 });
       expect([...(result.addedPersonIds ?? [])].sort()).toEqual([a, b].sort());
       expect(await enrolled(c)).toEqual([a, b].sort());
@@ -189,18 +198,18 @@ describeDb("contacts and campaign enrollment", () => {
       await sql`insert into contact_policies (organization_id, person_id, do_not_contact, source, set_at) values (${f.org}, ${dnc}, true, 'human', now())`;
       const retries = guard.contactGuardStats.retries;
 
-      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc], null);
+      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc], { viaTokenId: null });
       expect(out).toEqual({
         requested: 6,
         added: 1,
         skippedMissingIdentity: 1,
         skippedDuplicate: 1,
         skippedRemoved: 0,
-        skippedSuppressed: channel === "email" ? 1 : 0,
-        // LinkedIn has no suppression list, so the suppressed contact falls through to the contact bucket there.
+        // An unsubscribed address blocks both channels, and suppressed reads before contact.
+        skippedSuppressed: 1,
         skippedDoNotContact: 1,
         skippedStopRequest: 0,
-        skippedContact: channel === "email" ? 1 : 2,
+        skippedContact: 1,
         skippedNotFound: 0,
       });
       expect((await enrolled(c)).sort()).toEqual([lead, duplicate].sort());
@@ -224,16 +233,16 @@ describeDb("contacts and campaign enrollment", () => {
       expect(dry).toMatchObject({ requested: 6, wouldAdd: 1, skippedNoEmail: 1, skippedDuplicate: 1, skippedSuppressed: 1, skippedDoNotContact: 1, skippedContact: 1 });
     });
 
-    it("enrollEmailPeople and enrollPeople enroll the leads and report the contact", async () => {
+    it("the picked enroll and the search sink enroll the leads and report the contact", async () => {
       const f = await fixture();
       const [mail, li] = [await f.campaign("email"), await f.campaign("linkedin")];
       const [a, b] = [await f.person("ada"), await f.person("bob")];
       const c = await f.person("cora", { contact: true });
       const retries = guard.contactGuardStats.retries;
 
-      expect(await stores.enrollEmailPeopleCounted(f.org, mail, [a, b, c, a])).toEqual({ added: 2, skippedContact: 1 });
-      expect(await linkedinStore.enrollPeopleCounted(f.org, li, [a, b, c])).toEqual({ added: 2, skippedContact: 1 });
-      expect(await stores.enrollEmailPeople(f.org, mail, [a, b, c])).toBe(0);
+      expect(await enrollEmail(f.org, mail, [a, b, c, a])).toEqual({ added: 2, skippedContact: 1 });
+      expect(await linkedinStore.enrollFoundPeople(f.org, li, [a, b, c])).toEqual({ added: 2, skippedContact: 1 });
+      expect((await enrollEmail(f.org, mail, [a, b, c])).added).toBe(0);
       expect(await enrolled(mail)).toEqual([a, b].sort());
       expect(await enrolled(li)).toEqual([a, b].sort());
       expect(guard.contactGuardStats.retries).toBe(retries);
@@ -268,27 +277,27 @@ describeDb("contacts and campaign enrollment", () => {
       const f = await fixture();
       const c = await f.campaign(channel);
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer], null));
+      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer], { viaTokenId: null }));
       expect(retries).toBeGreaterThan(0);
       expect(result).toMatchObject({ requested: 3, added: 2, skippedContact: 1, skippedDuplicate: 0 });
       expect(await enrolled(c)).toEqual([a, b].sort());
       if (channel === "linkedin") expect((await sql`select count(*)::int as n from linkedin_enrollment_details where organization_id = ${f.org}`)[0].n).toBe(2);
     });
 
-    it("enrollEmailPeople", async () => {
+    it("email enroll inside a caller's transaction", async () => {
       const f = await fixture();
       const c = await f.campaign("email");
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result } = await raceConversion(racer, () => appDb.transaction((tx) => stores.enrollEmailPeopleCounted(f.org, c, [a, b, racer], tx)));
+      const { result } = await raceConversion(racer, () => appDb.transaction((tx) => enrollEmail(f.org, c, [a, b, racer], tx)));
       expect(result).toEqual({ added: 2, skippedContact: 1 });
       expect(await enrolled(c)).toEqual([a, b].sort());
     });
 
-    it("enrollPeople (the Grid handoff and the search sink)", async () => {
+    it("the LinkedIn search sink", async () => {
       const f = await fixture();
       const c = await f.campaign("linkedin");
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result, retries } = await raceConversion(racer, () => linkedinStore.enrollPeopleCounted(f.org, c, [a, b, racer]));
+      const { result, retries } = await raceConversion(racer, () => linkedinStore.enrollFoundPeople(f.org, c, [a, b, racer]));
       expect(retries).toBeGreaterThan(0);
       expect(result).toEqual({ added: 2, skippedContact: 1 });
       expect(await enrolled(c)).toEqual([a, b].sort());
@@ -300,8 +309,8 @@ describeDb("contacts and campaign enrollment", () => {
       const [a, racer] = [await f.person("ada"), await f.person("race")];
       const { result } = await raceConversion(racer, () =>
         appDb.transaction(async (tx) => {
-          const one = await stores.enrollEmailPeopleCounted(f.org, first, [a], tx);
-          const two = await stores.enrollEmailPeopleCounted(f.org, second, [a, racer], tx);
+          const one = await enrollEmail(f.org, first, [a], tx);
+          const two = await enrollEmail(f.org, second, [a, racer], tx);
           return { one, two };
         }),
       );
@@ -311,15 +320,18 @@ describeDb("contacts and campaign enrollment", () => {
     });
   });
 
-  describe("stopPersonEnrollmentsTx", () => {
+  const haltConverted = (tx: Parameters<typeof enrollmentEnd.haltEnrollmentsTx>[0], organizationId: string, personId: string, now: Date) =>
+    enrollmentEnd.haltEnrollmentsTx(tx, { organizationId, personIds: [personId], channels: "every_channel", halt: "converted", now });
+
+  describe("haltEnrollmentsTx for a conversion", () => {
     it("cancels only the person's pending and active rows and clears the LinkedIn retry time", async () => {
       const f = await fixture();
-      const [mail, li, personal, other] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("linkedin", { type: "personal" }), await f.campaign("email")];
+      const [mail, li, li2, other] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("linkedin"), await f.campaign("email")];
       const p = await f.person("target");
       const bystander = await f.person("bystander");
       const pending = await f.enrollment(mail, p, "email", "pending");
       const active = await f.enrollment(li, p, "linkedin", "active");
-      const inPersonal = await f.enrollment(personal, p, "linkedin", "pending");
+      const secondLinkedIn = await f.enrollment(li2, p, "linkedin", "pending");
       const removed = await f.enrollment(other, p, "email", "removed", { stopReason: "removed" });
       const replied = await f.enrollment(await f.campaign("email"), p, "email", "replied", { stopReason: "replied" });
       const completed = await f.enrollment(await f.campaign("email"), p, "email", "completed");
@@ -330,23 +342,23 @@ describeDb("contacts and campaign enrollment", () => {
       const foreignPerson = await foreign.person("target");
       const foreignEnrollment = await foreign.enrollment(await foreign.campaign("email"), foreignPerson, "email", "pending");
 
-      const out = await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }));
-      expect(out).toEqual({ stopped: 3 });
-      for (const id of [pending, active, inPersonal]) expect(await rowOf(id)).toMatchObject({ status: "cancelled", stop_reason: "converted", next_send_at: null });
+      const out = await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW));
+      expect(out).toHaveLength(3);
+      for (const id of [pending, active, secondLinkedIn]) expect(await rowOf(id)).toMatchObject({ status: "cancelled", stop_reason: "converted", next_send_at: null });
       expect(await rowOf(removed)).toMatchObject({ status: "removed", stop_reason: "removed" });
       expect(await rowOf(replied)).toMatchObject({ status: "replied", stop_reason: "replied" });
       expect(await rowOf(completed)).toMatchObject({ status: "completed" });
       expect(await rowOf(others)).toMatchObject({ status: "pending", stop_reason: null });
       expect(await rowOf(foreignEnrollment)).toMatchObject({ status: "pending" });
-      const retry = await sql`select enrollment_id, resolve_next_attempt_at from linkedin_enrollment_details where enrollment_id in ${sql([active, inPersonal, otherLinkedIn])}`;
+      const retry = await sql`select enrollment_id, resolve_next_attempt_at from linkedin_enrollment_details where enrollment_id in ${sql([active, secondLinkedIn, otherLinkedIn])}`;
       const byId = new Map(retry.map((r) => [r.enrollment_id as string, r.resolve_next_attempt_at]));
       expect(byId.get(active)).toBeNull();
-      expect(byId.get(inPersonal)).toBeNull();
+      expect(byId.get(secondLinkedIn)).toBeNull();
       expect(byId.get(otherLinkedIn), "the other person's retry time stays").not.toBeNull();
       const updated = await sql`select updated_at from campaign_enrollments where id = ${pending}`;
       expect(new Date(updated[0].updated_at).toISOString()).toBe(NOW.toISOString());
 
-      expect(await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }))).toEqual({ stopped: 0 });
+      expect(await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW))).toEqual([]);
     });
 
     it("the cancelled rows show under Suppressed / stopped with the label Became a contact", async () => {
@@ -355,7 +367,7 @@ describeDb("contacts and campaign enrollment", () => {
       const p = await f.person("target");
       await f.enrollment(mail, p, "email", "pending");
       await f.enrollment(li, p, "linkedin", "pending");
-      await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }));
+      await appDb.transaction((tx) => haltConverted(tx, f.org, p, NOW));
       const { stopReasonNote } = await import("../../domain/campaign-view");
       const { describeLinkedInProgress } = await import("../../linkedin/domain/linkedin");
 
@@ -374,31 +386,22 @@ describeDb("contacts and campaign enrollment", () => {
   });
 
   describe("read helpers of the conversion", () => {
-    it("liveEnrollmentSummary splits live enrollments by campaign type and lists the personal creators", async () => {
+    it("liveEnrollmentCounts counts the live enrollments of each requested person", async () => {
       const f = await fixture();
       const other = await fixture();
-      const [regular, regular2, personal, personalOrphan, closed] = [
-        await f.campaign("email"),
-        await f.campaign("linkedin"),
-        await f.campaign("linkedin", { type: "personal" }),
-        await f.campaign("linkedin", { type: "personal", createdBy: null }),
-        await f.campaign("email"),
-      ];
+      const [email, linkedin, closed] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("email")];
       const [p, q, none] = [await f.person("p"), await f.person("q"), await f.person("none")];
-      await f.enrollment(regular, p, "email", "pending");
-      await f.enrollment(regular2, p, "linkedin", "active");
-      await f.enrollment(personal, p, "linkedin", "pending");
-      await f.enrollment(personalOrphan, p, "linkedin", "active");
+      await f.enrollment(email, p, "email", "pending");
+      await f.enrollment(linkedin, p, "linkedin", "active");
       await f.enrollment(closed, p, "email", "removed");
-      await f.enrollment(personal, q, "linkedin", "replied");
-      // A creator who also made the other personal campaign appears once.
-      const out = await conversion.liveEnrollmentSummary(f.org, [p, q, none, p]);
-      expect(out.get(p)).toEqual({ regular: 2, personal: { count: 2, createdBy: [f.userId] } });
-      expect(out.get(q)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
-      expect(out.get(none)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
+      await f.enrollment(linkedin, q, "linkedin", "replied");
+      const out = await conversion.liveEnrollmentCounts(f.org, [p, q, none, p]);
+      expect(out.get(p)).toBe(2);
+      expect(out.get(q)).toBe(0);
+      expect(out.get(none)).toBe(0);
       expect([...out.keys()].sort()).toEqual([p, q, none].sort());
       // Another organization's rows never count.
-      expect((await conversion.liveEnrollmentSummary(other.org, [p])).get(p)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
+      expect((await conversion.liveEnrollmentCounts(other.org, [p])).get(p)).toBe(0);
     });
 
     it("latestRepliedEnrollment picks the newest updated replied enrollment, ties by id", async () => {
@@ -424,13 +427,13 @@ describeDb("contacts and campaign enrollment", () => {
 
     it("enrollmentSources names the campaign of each enrollment and skips other organizations", async () => {
       const f = await fixture();
-      const [regular, personal] = [await f.campaign("email"), await f.campaign("linkedin", { type: "personal" })];
+      const [mail, li] = [await f.campaign("email"), await f.campaign("linkedin")];
       const p = await f.person("p");
-      const a = await f.enrollment(regular, p, "email", "replied");
-      const b = await f.enrollment(personal, p, "linkedin", "replied");
+      const a = await f.enrollment(mail, p, "email", "replied");
+      const b = await f.enrollment(li, p, "linkedin", "replied");
       const out = await conversion.enrollmentSources(f.org, [a, b, "00000000-0000-4000-8000-000000000000"]);
-      expect(out.get(a)).toEqual({ campaignId: regular, name: "email-regular", type: "regular" });
-      expect(out.get(b)).toEqual({ campaignId: personal, name: "linkedin-personal", type: "personal" });
+      expect(out.get(a)).toEqual({ campaignId: mail, name: expect.stringMatching(/^email/) });
+      expect(out.get(b)).toEqual({ campaignId: li, name: expect.stringMatching(/^linkedin/) });
       expect(out.size).toBe(2);
       expect((await conversion.enrollmentSources((await fixture()).org, [a])).size).toBe(0);
     });
@@ -442,7 +445,7 @@ describeDb("contacts and campaign enrollment", () => {
       appDb.transaction(async (tx) => {
         await tx.update(schema.people).set({ lifecycle: "contact", convertedAt: new Date() }).where(and(eq(schema.people.organizationId, org), eq(schema.people.id, personId)));
         await sleep(Math.random() * 3);
-        await conversion.stopPersonEnrollmentsTx(tx, { organizationId: org, personId, reason: "converted", now: new Date() });
+        await haltConverted(tx, org, personId, new Date());
       });
     const settleAll = async (runs: Array<Promise<unknown>>) => {
       const results = await Promise.allSettled(runs);
@@ -469,7 +472,7 @@ describeDb("contacts and campaign enrollment", () => {
         const [{ id: sendId }] = await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id) values (${f.org}, ${enrollmentId}, 2, 'email', 'sending', ${mailbox}) returning id`;
         claims.push({ personId, claim: { sendId, attempt: 1, enrollmentId, stepNumber: 2, nextStep: { waitDays: 2 }, mailbox: { id: mailbox } } });
       }
-      const sendLoop = inSlices(claims, ({ claim }) => outreachStore.markSent(claim as never, { providerMessageId: `pm-${Math.random()}`, threadId: "t" }, new Date()));
+      const sendLoop = inSlices(claims, ({ claim }) => outreachStore.markSent(claim as never, { providerMessageId: `pm-${Math.random()}`, providerThreadId: "t" }, new Date()));
       const convertLoop = inSlices([...claims].reverse(), ({ personId }) => convert(f.org, personId));
       const errors = await settleAll([...sendLoop, ...convertLoop]);
       expect(errors).toEqual([]);

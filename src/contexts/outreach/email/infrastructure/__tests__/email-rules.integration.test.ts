@@ -35,10 +35,10 @@ describeDb("email rules", () => {
 
   it("reads defaults, then saves the gap in the shape the send engine reads and shows the organization's zone", async () => {
     const t = await org();
-    expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [18, 24], takeoverAfterHours: 24, timeZone: "UTC" });
-    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul" })})`;
+    expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [18, 24], takeoverAfterHours: 24, timeZone: "UTC", senderPostalAddress: null });
+    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul", senderPostalAddress: null })})`;
     await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9 });
-    expect(await uc.getEmailRules(deps(), { ...t.actor, role: "member" })).toEqual({ sendGapMinutes: [5, 9], takeoverAfterHours: 24, timeZone: "Asia/Seoul" });
+    expect(await uc.getEmailRules(deps(), { ...t.actor, role: "member" })).toEqual({ sendGapMinutes: [5, 9], takeoverAfterHours: 24, timeZone: "Asia/Seoul", senderPostalAddress: null });
     const [email] = await sql`select values from channel_settings where organization_id = ${t.id} and channel = 'email'`;
     expect(policy.emailRules(email.values).sendGapMinutes).toEqual([5, 9]);
   });
@@ -64,9 +64,9 @@ describeDb("email rules", () => {
 
   it("leaves the organization time zone to Settings > Organization", async () => {
     const t = await org();
-    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul" })})`;
+    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul", senderPostalAddress: null })})`;
     await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 7, maxGapMinutes: 11, timeZone: "Europe/Berlin" } as never);
-    expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [7, 11], takeoverAfterHours: 24, timeZone: "Asia/Seoul" });
+    expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [7, 11], takeoverAfterHours: 24, timeZone: "Asia/Seoul", senderPostalAddress: null });
     const [row] = await sql`select timezone from organizations where id = ${t.id}`;
     expect(row.timezone).not.toBe("Europe/Berlin");
   });

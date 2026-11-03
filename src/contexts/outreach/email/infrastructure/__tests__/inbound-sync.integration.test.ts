@@ -93,7 +93,7 @@ describeDb("inbound mail sync", () => {
     sync = await import("../../application/sync-inbox");
     jobs = await import("../../application/inbox-jobs");
     ({ drizzleOutreachStore: outreachStore } = await import("../drizzle-outreach-store"));
-    inboundStore = (await import("../drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).followUps);
+    inboundStore = (await import("../drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).contactStop, (await import("@/composition/inbox-filing")).personTimeline);
   });
 
   afterAll(async () => {
@@ -134,7 +134,7 @@ describeDb("inbound mail sync", () => {
     const first = f.provider.delivered[0];
     const second = await sendRow(f.enrollmentIds[1]);
     f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, inReplyTo: first.rfcMessageId });
-    f.provider.deliverInbound(f.address, { from: { email: f.emails[1], name: null }, threadId: second.thread_id });
+    f.provider.deliverInbound(f.address, { from: { email: f.emails[1], name: null }, providerThreadId: second.thread_id });
     const outcome = await sync.syncMailboxInbox(inbox(f.provider), f.mailbox);
     expect(outcome).toMatchObject({ kind: "synced", counts: { reply: 2 } });
     expect((await enrollment(f.enrollmentIds[0])).status).toBe("replied");
@@ -177,7 +177,7 @@ describeDb("inbound mail sync", () => {
   it("stores a matched reply under the lead who was enrolled, once, even when the batch replays", async () => {
     const f = await sentFixture();
     const row = await sendRow(f.enrollmentIds[0]);
-    f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, sendId: row.id, threadId: row.thread_id });
+    f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, sendId: row.id, providerThreadId: row.thread_id });
     const cursorBefore = (await mailboxRow(f.mailbox)).gmail_history_cursor;
     await sync.syncMailboxInbox(inbox(f.provider), f.mailbox);
     await sql`update mailboxes set gmail_history_cursor = ${cursorBefore} where id = ${f.mailbox}`;
@@ -185,14 +185,14 @@ describeDb("inbound mail sync", () => {
     expect(await inboxMessages(f.org)).toHaveLength(1);
     // The lead already existed, so no second person appears.
     expect(await sql`select id from people where organization_id = ${f.org}`).toHaveLength(1);
-    const [conversation] = await sql`select provider_thread_id from conversations where organization_id = ${f.org}`;
-    expect(conversation.provider_thread_id).toBe(row.thread_id);
+    const [thread] = await sql`select provider_thread_id from threads where organization_id = ${f.org}`;
+    expect(thread.provider_thread_id).toBe(row.thread_id);
   });
 
   it("leaves an enrollment made after the reply running when the batch replays", async () => {
     const f = await sentFixture();
     const row = await sendRow(f.enrollmentIds[0]);
-    f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, sendId: row.id, threadId: row.thread_id });
+    f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, sendId: row.id, providerThreadId: row.thread_id });
     const cursorBefore = (await mailboxRow(f.mailbox)).gmail_history_cursor;
     await sync.syncMailboxInbox(inbox(f.provider), f.mailbox);
     const status = async () => (await sql`select status from campaign_enrollments where id = ${f.enrollmentIds[0]}`)[0].status;

@@ -20,6 +20,10 @@ export function StartBlockers({ blockers, channel, base }: { blockers: StartBloc
                 <Link href={campaignTabHref(base, tab)} className="text-foreground underline underline-offset-4">
                   Open {CAMPAIGN_TAB_LABELS[tab]}
                 </Link>
+              ) : b.code === "no_postal_address" ? (
+                <Link href="/settings/mailboxes#sending-rules" className="text-foreground underline underline-offset-4">
+                  Open Sending rules
+                </Link>
               ) : (
                 <Link href={channel === "linkedin" ? "/settings/linkedin" : "/settings/mailboxes"} className="text-foreground underline underline-offset-4">
                   {channel === "linkedin" ? "Connect an account" : "Connect a mailbox"}

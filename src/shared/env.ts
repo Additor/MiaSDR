@@ -115,9 +115,8 @@ const schema = z.object({
   RETENTION_AI_JOBS_DAYS: z.coerce.number().int().min(1).default(30),
   RETENTION_MCP_TOOL_CALLS_DAYS: z.coerce.number().int().min(1).default(90),
 
-  /** Comma list of email domains tenants may connect as mailboxes. Required when AUTH_SIGNUP=open. */
+  /** Comma list of email domains an organization may connect as mailboxes. Unset allows any address. */
   MAILBOX_ALLOWED_DOMAINS: z.string().optional(),
-  AUTH_SIGNUP: z.enum(["invite-only", "open"]).default("invite-only"),
   RESEND_API_KEY: z.string().optional(),
   AUTH_EMAIL_FROM: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),

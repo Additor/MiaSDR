@@ -1,5 +1,5 @@
-import { revokeMcpToken } from "@/contexts/tenancy/application/mcp-tokens";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { revokeMcpToken } from "@/contexts/agent-access/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { withActor } from "@/app/_lib/api";
 
 export const DELETE = async (_request: Request, { params }: RouteContext<"/api/settings/mcp/tokens/[id]">) => {

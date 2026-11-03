@@ -60,8 +60,8 @@ describeDb("append-only tables", () => {
   it("messages_no_delete_trg: a direct delete of a message raises", async () => {
     const w = await world();
     const orphan = (
-      await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-                values (${w.org}, ${w.conversation}, 'email', ${"me@" + w.tag + ".test"}, 'outbound', ${"o-" + w.tag}, 'bye', now()) returning id`
+      await sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+                values (${w.org}, ${w.thread}, 'email', ${"me@" + w.tag + ".test"}, 'outbound', ${"o-" + w.tag}, 'bye', now()) returning id`
     )[0].id;
     await expect(sql`delete from messages where id = ${orphan}`).rejects.toThrow(APPEND_ONLY);
   });

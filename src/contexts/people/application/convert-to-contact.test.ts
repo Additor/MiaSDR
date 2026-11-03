@@ -4,10 +4,8 @@ import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
   convertToContact,
   MAX_CONVERT_PREVIEW_IDS,
-  personalCampaignSkip,
   previewConvert,
   type ConvertDeps,
-  type LiveEnrollmentSummary,
   type Lifecycle,
   type PreviewDeps,
 } from "./convert-to-contact";
@@ -27,7 +25,7 @@ interface World {
   events: Array<Record<string, unknown>>;
 }
 
-type Step = "lockPerson" | "lifecycleOf" | "markConverted" | "stopEnrollments" | "interruptRuns" | "appendEvent";
+type Step = "lockPerson" | "lifecycleOf" | "markConverted" | "stopContact" | "appendEvent";
 
 /** An in-memory stand-in for Postgres: the ports write to `world`, and `transaction` undoes every write when the callback throws. */
 function fakeWorld() {
@@ -76,19 +74,15 @@ function fakeWorld() {
       person.convertedAt = at;
       return true;
     },
-    async stopEnrollments(_tx, input) {
-      enter("stopEnrollments", input);
-      let stopped = 0;
+    async stopContact(_tx, input) {
+      enter("stopContact", input);
+      let enrollments = 0;
       for (const e of world.enrollments) {
         if (e.organizationId === input.organizationId && e.personId === input.personId && (e.status === "pending" || e.status === "active")) {
           e.status = "cancelled";
-          stopped += 1;
+          enrollments += 1;
         }
       }
-      return { stopped };
-    },
-    async interruptRuns(_tx, input) {
-      enter("interruptRuns", input);
       let runs = 0;
       let drafts = 0;
       for (const r of world.runs) {
@@ -99,7 +93,7 @@ function fakeWorld() {
           r.draftsLeft = 0;
         }
       }
-      return { runs, drafts };
+      return { enrollments, runs, drafts };
     },
     async appendEvent(_tx, input) {
       enter("appendEvent", input);
@@ -184,27 +178,6 @@ describe("convertToContact", () => {
     expect(t.world.events).toEqual([]);
   });
 
-  it("runs the guard under the locks after the lifecycle re-read and before any write", async () => {
-    const t = fakeWorld();
-    const guard = async () => {
-      t.calls.push({ step: "guard" as Step });
-    };
-    await t.transaction((tx) => convertToContact(t.deps, tx, { ...input("ada"), guard }));
-    expect(t.calls.map((c) => c.step)).toEqual(["lockPerson", "lifecycleOf", "guard", "markConverted", "stopEnrollments", "interruptRuns", "appendEvent"]);
-  });
-
-  it("stops at a throwing guard and writes nothing; a contact never reaches the guard", async () => {
-    const t = fakeWorld();
-    const refused = new Error("guard refused");
-    await expect(t.transaction((tx) => convertToContact(t.deps, tx, { ...input("ada"), guard: async () => Promise.reject(refused) }))).rejects.toBe(refused);
-    expect(t.calls.map((c) => c.step)).toEqual(["lockPerson", "lifecycleOf"]);
-    expect(t.world.people.get("ada")?.lifecycle).toBe("lead");
-    expect(t.world.enrollments.filter((e) => e.personId === "ada").map((e) => e.status)).toEqual(["active", "pending", "replied"]);
-    let reached = false;
-    await t.transaction((tx) => convertToContact(t.deps, tx, { ...input("cy"), guard: async () => void (reached = true) }));
-    expect(reached).toBe(false);
-  });
-
   it("answers NotFound for an unknown person and for another organization's person, and writes nothing", async () => {
     for (const personId of ["nobody", "eve"]) {
       const t = fakeWorld();
@@ -214,7 +187,7 @@ describe("convertToContact", () => {
     }
   });
 
-  it.each(["markConverted", "stopEnrollments", "interruptRuns", "appendEvent"] as const)("rolls every step back when %s throws", async (step) => {
+  it.each(["markConverted", "stopContact", "appendEvent"] as const)("rolls every step back when %s throws", async (step) => {
     const t = fakeWorld();
     const before = structuredClone({ people: [...t.world.people], enrollments: t.world.enrollments, runs: t.world.runs, events: t.world.events });
     t.failAt(step);
@@ -227,10 +200,9 @@ describe("convertToContact", () => {
   it("passes the organization and the person to every port and stops only that person's rows", async () => {
     const t = fakeWorld();
     await t.transaction((tx) => convertToContact(t.deps, tx, input("ada")));
-    const stop = { organizationId: ORG, personId: "ada", reason: "converted", now: NOW };
+    const stop = { organizationId: ORG, personId: "ada", now: NOW };
     expect(t.calls.find((c) => c.step === "lockPerson")?.input).toEqual({ organizationId: ORG, personId: "ada" });
-    expect(t.calls.find((c) => c.step === "stopEnrollments")?.input).toEqual(stop);
-    expect(t.calls.find((c) => c.step === "interruptRuns")?.input).toEqual(stop);
+    expect(t.calls.find((c) => c.step === "stopContact")?.input).toEqual(stop);
     // The person's replied enrollment stays; the other person and the other organization keep every row.
     expect(t.world.enrollments.map((e) => `${e.id}:${e.status}`)).toEqual(["e1:cancelled", "e2:cancelled", "e3:replied", "e4:active", "e5:active"]);
     expect(t.world.runs.map((r) => `${r.id}:${r.status}:${r.draftsLeft}`)).toEqual(["r1:interrupted:0", "r2:active:2"]);
@@ -239,42 +211,18 @@ describe("convertToContact", () => {
   });
 });
 
-describe("personalCampaignSkip", () => {
-  const member = { userId: "u1", role: "member" };
-  const personal = (count: number, createdBy: string[]): LiveEnrollmentSummary => ({ regular: 3, personal: { count, createdBy } });
-
-  it("never skips a person without a live personal-campaign enrollment", () => {
-    expect(personalCampaignSkip(member, undefined)).toBe(false);
-    expect(personalCampaignSkip(member, personal(0, []))).toBe(false);
-  });
-
-  it("lets the creator of every personal campaign convert", () => {
-    expect(personalCampaignSkip(member, personal(2, ["u1"]))).toBe(false);
-  });
-
-  it("skips a member who did not create the personal campaign, also when they created another one", () => {
-    expect(personalCampaignSkip(member, personal(1, ["u2"]))).toBe(true);
-    expect(personalCampaignSkip(member, personal(2, ["u1", "u2"]))).toBe(true);
-    expect(personalCampaignSkip(member, personal(1, []))).toBe(true);
-  });
-
-  it("lets an owner or admin convert, also with a combined role", () => {
-    for (const role of ["owner", "admin", "member,admin"]) expect(personalCampaignSkip({ userId: "u9", role }, personal(1, ["u2"])), role).toBe(false);
-  });
-});
-
 describe("previewConvert", () => {
   const actor = (role = "member", userId = "u1"): Actor => ({ userId, organizationId: ORG, role });
 
-  function previewDeps(options: { lifecycles?: Record<string, Lifecycle>; enrollments?: Record<string, LiveEnrollmentSummary>; runs?: Record<string, { runs: number; drafts: number }> }) {
+  function previewDeps(options: { lifecycles?: Record<string, Lifecycle>; enrollments?: Record<string, number>; runs?: Record<string, { runs: number; drafts: number }> }) {
     const asked: Array<{ method: string; organizationId: string; ids: readonly string[] }> = [];
     const deps: PreviewDeps = {
       async lifecycles(organizationId, ids) {
         asked.push({ method: "lifecycles", organizationId, ids });
         return new Map(ids.filter((id) => options.lifecycles?.[id]).map((id) => [id, options.lifecycles![id]]));
       },
-      async liveEnrollmentSummary(organizationId, ids) {
-        asked.push({ method: "liveEnrollmentSummary", organizationId, ids });
+      async liveEnrollmentCounts(organizationId, ids) {
+        asked.push({ method: "liveEnrollmentCounts", organizationId, ids });
         return new Map(ids.filter((id) => options.enrollments?.[id]).map((id) => [id, options.enrollments![id]]));
       },
       async previewRunStop(organizationId, ids) {
@@ -288,7 +236,7 @@ describe("previewConvert", () => {
   it("sums enrollments, runs and the follow-up drafts that conversion retires", async () => {
     const { deps } = previewDeps({
       lifecycles: { a: "lead", b: "lead", c: "contact" },
-      enrollments: { a: { regular: 2, personal: { count: 0, createdBy: [] } }, b: { regular: 1, personal: { count: 0, createdBy: [] } } },
+      enrollments: { a: 2, b: 1 },
       runs: { a: { runs: 1, drafts: 2 } },
     });
     expect(await previewConvert(deps, actor(), ["a", "b", "c", "missing"])).toEqual({
@@ -297,7 +245,6 @@ describe("previewConvert", () => {
       enrollments: 3,
       runs: 1,
       followUpDraftsToRetire: 2,
-      skippedPersonalCampaign: 0,
     });
   });
 
@@ -306,30 +253,15 @@ describe("previewConvert", () => {
     expect(await previewConvert(deps, actor(), ["a"])).toMatchObject({ people: 1, enrollments: 0, runs: 0, followUpDraftsToRetire: 0 });
   });
 
-  it("counts a personal-campaign enrollment for its creator and for an admin, and skips the person for another member", async () => {
-    const lifecycles = { a: "lead", b: "lead" } as const;
-    const enrollments = {
-      a: { regular: 1, personal: { count: 1, createdBy: ["u1"] } },
-      b: { regular: 1, personal: { count: 2, createdBy: ["u2"] } },
-    };
-    const runs = { a: { runs: 1, drafts: 1 }, b: { runs: 5, drafts: 5 } };
-
-    const asCreator = await previewConvert(previewDeps({ lifecycles, enrollments, runs }).deps, actor("member", "u1"), ["a", "b"]);
-    expect(asCreator).toMatchObject({ people: 1, enrollments: 2, runs: 1, followUpDraftsToRetire: 1, skippedPersonalCampaign: 1 });
-
-    const asAdmin = await previewConvert(previewDeps({ lifecycles, enrollments, runs }).deps, actor("admin", "u9"), ["a", "b"]);
-    expect(asAdmin).toMatchObject({ people: 2, enrollments: 5, runs: 6, followUpDraftsToRetire: 6, skippedPersonalCampaign: 0 });
-  });
-
-  it("asks the ports for the actor's organization only, and never asks about contacts or skipped people", async () => {
+  it("asks the ports for the actor's organization only, and never asks about contacts", async () => {
     const { deps, asked } = previewDeps({
       lifecycles: { a: "lead", b: "lead", c: "contact" },
-      enrollments: { b: { regular: 0, personal: { count: 1, createdBy: ["u2"] } } },
+      enrollments: { b: 1 },
     });
     await previewConvert(deps, actor(), ["a", "b", "c"]);
     expect(asked.every((call) => call.organizationId === ORG)).toBe(true);
-    expect(asked.find((call) => call.method === "liveEnrollmentSummary")?.ids).toEqual(["a", "b"]);
-    expect(asked.find((call) => call.method === "previewRunStop")?.ids).toEqual(["a"]);
+    expect(asked.find((call) => call.method === "liveEnrollmentCounts")?.ids).toEqual(["a", "b"]);
+    expect(asked.find((call) => call.method === "previewRunStop")?.ids).toEqual(["a", "b"]);
   });
 
   it("answers an empty preview for no ids, deduplicates, and refuses more than 500", async () => {

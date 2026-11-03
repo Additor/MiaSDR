@@ -17,7 +17,7 @@ const task = z.object({
   dueAt: z.string().nullable(),
   assigneeId: z.string().nullable(),
   assigneeName: z.string().nullable(),
-  recordId: z.string().nullable(),
+  conversationId: z.string().nullable(),
   personId: z.string(),
   personName: z.string().nullable(),
 });
@@ -31,8 +31,8 @@ export const manageTaskTool = defineTool({
   name: "manage_task",
   title: "Manage tasks",
   description: [
-    "Lists and changes tasks, as on the Actions page. `list` filters by `recordId`, `personId`, `state` (open, completed, all) and `mine`;",
-    "`create` adds one on a reply handling (`recordId`) or a person (`personId`) with `name`, optional `description`, `dueDay` (YYYY-MM-DD, ends in the organization's time zone unless `timeZone`) and `assigneeId`;",
+    "Lists and changes tasks, as on the Actions page. `list` filters by `conversationId`, `personId`, `state` (open, completed, all) and `mine`;",
+    "`create` adds one on a reply handling (`conversationId`) or a person (`personId`) with `name`, optional `description`, `dueDay` (YYYY-MM-DD, ends in the organization's time zone unless `timeZone`) and `assigneeId`;",
     "`update` changes those fields (`taskId`); `complete` sets `completed` (`taskId`). A member changes tasks they created or hold.",
   ].join(" "),
   scope: "mcp:write",
@@ -40,7 +40,7 @@ export const manageTaskTool = defineTool({
   input: z.object({
     action: z.enum(ACTIONS),
     taskId: z.string().optional(),
-    recordId: z.string().optional(),
+    conversationId: z.string().optional(),
     personId: z.string().optional(),
     state: z.enum(["open", "completed", "all"]).optional(),
     mine: z.boolean().optional(),
@@ -58,7 +58,7 @@ export const manageTaskTool = defineTool({
   async run({ actor }, input) {
     switch (input.action) {
       case "list": {
-        const rows = await listTasks(taskDeps(), actor, { recordId: input.recordId, personId: input.personId, state: input.state, mine: input.mine });
+        const rows = await listTasks(taskDeps(), actor, { conversationId: input.conversationId, personId: input.personId, state: input.state, mine: input.mine });
         const limited = rows.slice(0, listLimit(input.limit, DEFAULT_LIST_LIMIT));
         const { items, omitted } = fitItems(
           limited.map((t) => ({
@@ -69,7 +69,7 @@ export const manageTaskTool = defineTool({
             dueAt: iso(t.dueAt),
             assigneeId: t.assigneeId,
             assigneeName: t.assigneeName,
-            recordId: t.recordId,
+            conversationId: t.conversationId,
             personId: t.personId,
             personName: t.personName,
           })),
@@ -78,9 +78,9 @@ export const manageTaskTool = defineTool({
         return { summary: `${items.length} task(s)${more > 0 ? `, ${more} more not shown` : ""}.`, structured: { action: input.action, taskId: null, tasks: items, omitted: more } };
       }
       case "create": {
-        if (input.recordId && input.personId) throw new ValidationError("Pass recordId or personId, not both.");
-        const target = input.recordId ?? (input.personId ? { personId: input.personId } : undefined);
-        if (!target) throw new ValidationError("create needs recordId or personId.");
+        if (input.conversationId && input.personId) throw new ValidationError("Pass conversationId or personId, not both.");
+        const target = input.conversationId ?? (input.personId ? { personId: input.personId } : undefined);
+        if (!target) throw new ValidationError("create needs conversationId or personId.");
         const created = await createTask(taskDeps(), actor, target, {
           name: need(input.name, "name", "create"),
           description: input.description,

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { MCP_BAD_TOKEN_LIMIT } from "@/contexts/tenancy/domain/mcp-rate-limit";
+import { MCP_BAD_TOKEN_LIMIT } from "@/contexts/agent-access/domain/mcp-rate-limit";
 import { describeDb, useTestEnv } from "@/test-support/db";
 import { callMcp } from "@/test-support/mcp-client";
 

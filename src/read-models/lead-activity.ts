@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { publicConversation, genuineInboundSql } from "@/platform/db/conversation-visibility";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { db } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, conversations, messages, people, records, sends } from "@/platform/db/schema";
+import { campaignEnrollments, campaigns, threads, messages, people, conversations, sends } from "@/platform/db/schema";
 import type { EnrollmentStatus } from "@/contexts/outreach/domain/enrollment-status";
 import { leadStatus, type LeadEnrollmentFact, type LeadStatus, type ReadLeadStatuses } from "@/contexts/outreach/domain/lead-status";
 import type { LeadFilter } from "@/contexts/people/domain/lead-filter";
@@ -17,44 +17,43 @@ const REMOVED = "removed" satisfies EnrollmentStatus;
 const REPLIED = "replied" satisfies EnrollmentStatus;
 
 /**
- * Membership in a campaign. "Any campaign" and "none" count regular campaigns only, like the list's Status column:
- * a personal campaign (`type = 'personal'`) is a private thread and never shows there. A named campaign matches its own id.
+ * Membership in a campaign. `null` matches any campaign; a named campaign matches its own id.
  */
 const inCampaign = (campaignId: string | null) =>
   campaignId === null
-    ? sql`exists (select 1 from ${campaignEnrollments} inner join ${campaigns} on ${campaigns.id} = ${campaignEnrollments.campaignId} and ${campaigns.organizationId} = ${campaignEnrollments.organizationId} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} <> ${REMOVED} and ${campaigns.type} = 'regular')`
+    ? sql`exists (select 1 from ${campaignEnrollments} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} <> ${REMOVED})`
     : sql`exists (select 1 from ${campaignEnrollments} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} <> ${REMOVED} and ${campaignEnrollments.campaignId} = ${campaignId}::uuid)`;
 
 /**
- * The time of the lead's latest outreach that went out on any channel: the later of an outbound message (records,
- * conversations, messages) and a campaign step (`campaign_enrollments.last_sent_at`, regular campaigns only, removed
- * enrollments included), as one aggregate. Personal (private) threads stay out. Null when nothing was sent.
+ * The time of the lead's latest outreach that went out on any channel: the later of an outbound message (conversations,
+ * conversations, messages) and a campaign step (`campaign_enrollments.last_sent_at`, removed enrollments included), as one
+ * aggregate. Null when nothing was sent.
  * `readLeadStatuses` takes the same maximum for a page of leads (`latestContact` in `outreach/domain/lead-status.ts`).
  */
 const lastSentAt = sql`select max(t.at) as at from (
-  select ${messages.sentAt} as at from ${records} inner join ${conversations} on ${conversations.recordId} = ${records.id} and ${conversations.organizationId} = ${records.organizationId} inner join ${messages} on ${messages.conversationId} = ${conversations.id} and ${messages.organizationId} = ${conversations.organizationId} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${publicConversation} and ${messages.direction} = 'outbound'
+  select ${messages.sentAt} as at from ${conversations} inner join ${threads} on ${threads.conversationId} = ${conversations.id} and ${threads.organizationId} = ${conversations.organizationId} inner join ${messages} on ${messages.threadId} = ${threads.id} and ${messages.organizationId} = ${threads.organizationId} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId} and ${messages.direction} = 'outbound'
   union all
-  select ${campaignEnrollments.lastSentAt} as at from ${campaignEnrollments} inner join ${campaigns} on ${campaigns.id} = ${campaignEnrollments.campaignId} and ${campaigns.organizationId} = ${campaignEnrollments.organizationId} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaigns.type} = 'regular'
+  select ${campaignEnrollments.lastSentAt} as at from ${campaignEnrollments} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId}
 ) as t`;
 
-/** An enrollment of the lead in a regular campaign has been stopped by a reply. */
-const repliedEnrollment = sql`exists (select 1 from ${campaignEnrollments} inner join ${campaigns} on ${campaigns.id} = ${campaignEnrollments.campaignId} and ${campaigns.organizationId} = ${campaignEnrollments.organizationId} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} = ${REPLIED} and ${campaigns.type} = 'regular')`;
+/** An enrollment of the lead has been stopped by a reply. */
+const repliedEnrollment = sql`exists (select 1 from ${campaignEnrollments} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} = ${REPLIED})`;
 
-/** The person wrote at least one genuine message in a public conversation (a personal campaign's private thread never counts). */
-const inboundMessage = sql`exists (select 1 from ${records} inner join ${conversations} on ${conversations.recordId} = ${records.id} and ${conversations.organizationId} = ${records.organizationId} inner join ${messages} on ${messages.conversationId} = ${conversations.id} and ${messages.organizationId} = ${conversations.organizationId} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${publicConversation} and ${genuineInboundSql("messages")})`;
+/** The person wrote at least one genuine message. */
+const inboundMessage = sql`exists (select 1 from ${conversations} inner join ${threads} on ${threads.conversationId} = ${conversations.id} and ${threads.organizationId} = ${conversations.organizationId} inner join ${messages} on ${messages.threadId} = ${threads.id} and ${messages.organizationId} = ${threads.organizationId} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId} and ${genuineInboundSql("messages")})`;
 
 /**
- * Replied: an enrollment has status `replied`, or the person has a genuine inbound message in a public conversation. The lead
+ * Replied: an enrollment has status `replied`, or the person has a genuine inbound message. The lead
  * status (`readLeadStatuses` below) uses the same definition, so an unknown sender who wrote first shows Replied.
  */
 const replied = sql`(${repliedEnrollment} or ${inboundMessage})`;
 
-/** The person has a record with a public conversation, inbound or outbound. */
-const hasPublicConversation = sql`exists (select 1 from ${records} inner join ${conversations} on ${conversations.recordId} = ${records.id} and ${conversations.organizationId} = ${records.organizationId} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${publicConversation})`;
+/** The person has a conversation with a conversation, inbound or outbound. */
+const hasAnyConversation = sql`exists (select 1 from ${conversations} inner join ${threads} on ${threads.conversationId} = ${conversations.id} and ${threads.organizationId} = ${conversations.organizationId} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId})`;
 
 /**
  * The conditions of the lead filter on outreach and conversations tables: campaign membership, Replied, conversation,
- * last contact and CRM category. The people context adds its own conditions on `people` and `companies`, and
+ * last contact and reply group. The people context adds its own conditions on `people` and `companies`, and
  * `src/composition/leads.ts` hands this function to the lead list, the repository and the neighbor read.
  */
 export function activityCondition(filter: LeadFilter): SQL | undefined {
@@ -64,7 +63,7 @@ export function activityCondition(filter: LeadFilter): SQL | undefined {
   else if (filter.campaign) conditions.push(inCampaign(filter.campaign));
   if (filter.notInCampaign) conditions.push(sql`not ${inCampaign(filter.notInCampaign)}`);
   if (filter.replied !== undefined) conditions.push(filter.replied ? replied : sql`not ${replied}`);
-  if (filter.hasConversation !== undefined) conditions.push(filter.hasConversation ? hasPublicConversation : sql`not ${hasPublicConversation}`);
+  if (filter.hasConversation !== undefined) conditions.push(filter.hasConversation ? hasAnyConversation : sql`not ${hasAnyConversation}`);
   // The aggregate is a single-row derived table, so the joins run once per lead whichever bounds are set. A lead never
   // contacted has a null maximum, and a null fails both comparisons.
   if (filter.lastContactFrom || filter.lastContactTo) {
@@ -73,19 +72,19 @@ export function activityCondition(filter: LeadFilter): SQL | undefined {
     if (filter.lastContactTo) bounds.push(sql`last_contact.at < (${filter.lastContactTo}::date + 1)::timestamp at time zone 'UTC'`);
     conditions.push(sql`exists (select 1 from (${lastSentAt}) as last_contact where ${sql.join(bounds, sql` and `)})`);
   }
-  if (filter.category) {
+  if (filter.replyGroup) {
     conditions.push(
-      sql`exists (select 1 from ${records} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${records.groupKey} = ${filter.category})`,
+      sql`exists (select 1 from ${conversations} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId} and ${conversations.groupKey} = ${filter.replyGroup})`,
     );
   }
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
 /**
- * The enrollments of these people in regular campaigns, with the campaign's name and status, newest first. The lead
+ * The enrollments of these people, with the campaign's name and status, newest first. The lead
  * status and the lead detail both read them here (`enrollments_person_idx`).
  */
-function regularEnrollments(organizationId: string, personIds: readonly string[]) {
+function enrollmentsOfPeople(organizationId: string, personIds: readonly string[]) {
   return db
     .select({
       id: campaignEnrollments.id,
@@ -103,21 +102,19 @@ function regularEnrollments(organizationId: string, personIds: readonly string[]
     })
     .from(campaignEnrollments)
     .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-    .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, [...personIds]), eq(campaigns.type, "regular")))
+    .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, [...personIds])))
     .orderBy(desc(campaignEnrollments.createdAt));
 }
 
 /**
  * The lead status of a page of person ids, keyed by person id. The lead list and the lead page both read it, so they
  * show the same state. Two reads, each one query for the whole page and each scoped to the organization: the enrollments
- * in regular campaigns with their campaign status, and the latest sent message and the inbound flag per lead. The last
+ * with their campaign status, and the latest sent message and the inbound flag per lead. The last
  * contact is the later of that message and the enrollments' `last_sent_at`: campaign sends are stored in `sends` and
- * advance the enrollment, they write no message. Replied is an enrollment with status `replied` or an inbound message in a
- * public conversation, as in `activityCondition`. No query runs per lead.
+ * advance the enrollment, they write no message. Replied is an enrollment with status `replied` or an inbound message, as in `activityCondition`. No query runs per lead.
  *
- * Index use: `enrollments_person_idx` for the enrollments; `records_person_reply_type_set_uq`, `conversations_record_idx` and
- * `messages_conversation_sent_idx` for the last contact. Personal (private) campaigns and their threads stay out, like
- * the Inbox leaves them out. A person with no enrollment and no message has no entry, and an id from another
+ * Index use: `enrollments_person_idx` for the enrollments; `conversations_person_reply_type_set_uq`, `threads_conversation_idx` and
+ * `messages_thread_sent_idx` for the last contact. A person with no enrollment and no message has no entry, and an id from another
  * organization finds nothing, so the caller falls back to `NEW_LEAD_STATUS`.
  */
 export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personIds) => {
@@ -126,18 +123,18 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
   const ids = [...new Set(personIds)];
 
   const [enrollmentRows, contactRows] = await Promise.all([
-    regularEnrollments(organizationId, ids),
+    enrollmentsOfPeople(organizationId, ids),
     db
       .select({
-        personId: records.personId,
+        personId: conversations.personId,
         lastContactAt: sql<Date | null>`max(${messages.sentAt}) filter (where ${messages.direction} = 'outbound')`,
         hasInbound: sql<boolean>`coalesce(bool_or(${genuineInboundSql("messages")}), false)`,
       })
-      .from(records)
-      .innerJoin(conversations, and(eq(conversations.recordId, records.id), eq(conversations.organizationId, records.organizationId)))
-      .innerJoin(messages, and(eq(messages.conversationId, conversations.id), eq(messages.organizationId, conversations.organizationId)))
-      .where(and(eq(records.organizationId, organizationId), inArray(records.personId, ids), publicConversation))
-      .groupBy(records.personId),
+      .from(conversations)
+      .innerJoin(threads, and(eq(threads.conversationId, conversations.id), eq(threads.organizationId, conversations.organizationId)))
+      .innerJoin(messages, and(eq(messages.threadId, threads.id), eq(messages.organizationId, threads.organizationId)))
+      .where(and(eq(conversations.organizationId, organizationId), inArray(conversations.personId, ids)))
+      .groupBy(conversations.personId),
   ]);
 
   const facts = new Map<string, LeadEnrollmentFact[]>();
@@ -165,29 +162,12 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
   return result;
 };
 
-/** Who reads sends: the actor, and whether they see every personal campaign (owner or admin). */
-export interface SendViewer {
-  userId: string;
-  seesAllPersonal: boolean;
-}
-
 /**
- * A campaign the viewer may read sends of: a regular campaign, their own personal campaign, or any for an owner or admin.
- * Without a viewer, regular campaigns only.
- */
-function visibleCampaign(viewer: SendViewer | undefined) {
-  if (!viewer) return sql`${campaigns.type} = 'regular'`;
-  if (viewer.seesAllPersonal) return sql`true`;
-  return sql`(${campaigns.type} = 'regular' or coalesce(${campaigns.createdBy} = ${viewer.userId}, false))`;
-}
-
-/**
- * The outreach and conversations part of one lead's detail page, scoped to the organization: the enrollments in regular
- * campaigns, the campaign sends the viewer may see (newest claim first, at most 100), whether a personal campaign the
- * viewer may not see sent to the lead, and the newest public conversation for the Inbox link. People's own fields come
+ * The outreach and conversations part of one lead's detail page, scoped to the organization: the enrollments, the campaign
+ * sends (newest claim first, at most 100), and the newest conversation for the Inbox link. People's own fields come
  * from the lead repository; `src/composition/leads.ts` joins the two.
  */
-export async function readLeadDetailActivity(organizationId: string, personId: string, viewer: SendViewer | undefined) {
+export async function readLeadDetailActivity(organizationId: string, personId: string) {
   const campaignSends = () =>
     db
       .select({
@@ -207,17 +187,16 @@ export async function readLeadDetailActivity(organizationId: string, personId: s
       .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)));
   const ofPerson = and(eq(sends.organizationId, organizationId), eq(sends.kind, "campaign"), eq(campaignEnrollments.personId, personId));
 
-  const [enrollments, sendRows, [conversation], [hidden]] = await Promise.all([
-    regularEnrollments(organizationId, [personId]),
-    campaignSends().where(and(ofPerson, visibleCampaign(viewer))).orderBy(desc(sends.claimedAt)).limit(100),
+  const [enrollments, sendRows, [thread]] = await Promise.all([
+    enrollmentsOfPeople(organizationId, [personId]),
+    campaignSends().where(ofPerson).orderBy(desc(sends.claimedAt)).limit(100),
     db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .innerJoin(records, and(eq(records.id, conversations.recordId), eq(records.organizationId, conversations.organizationId)))
-      .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, personId), publicConversation))
-      .orderBy(desc(conversations.updatedAt))
+      .select({ id: threads.id })
+      .from(threads)
+      .innerJoin(conversations, and(eq(conversations.id, threads.conversationId), eq(conversations.organizationId, threads.organizationId)))
+      .where(and(eq(threads.organizationId, organizationId), eq(conversations.personId, personId)))
+      .orderBy(desc(threads.updatedAt))
       .limit(1),
-    campaignSends().where(and(ofPerson, sql`not ${visibleCampaign(viewer)}`)).limit(1),
   ]);
 
   return {
@@ -233,9 +212,8 @@ export async function readLeadDetailActivity(organizationId: string, personId: s
       lastSentAt: e.lastSentAt,
       stopReason: e.stopReason,
     })),
-    conversationId: conversation?.id ?? null,
+    threadId: thread?.id ?? null,
     // Campaign sends always carry a step number (sends_kind_shape_ck); test sends are filtered out above.
     sends: sendRows.map((r) => ({ ...r, stepNumber: r.stepNumber as number })),
-    hiddenSends: hidden !== undefined,
   };
 }

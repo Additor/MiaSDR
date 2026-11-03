@@ -66,7 +66,7 @@ export function MoveTableDialog({ tableName, currentWorkbookId, onSubmit, onClos
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Move “${tableName}” to another workbook`}
-      description="Its columns, rows and view move with it. Formulas that look the table up by name resolve in the new workbook."
+      description="Its columns, rows and view move with it."
       confirmLabel="Move table"
       pendingLabel="Moving…"
       confirmDisabled={!dest}

@@ -17,9 +17,9 @@ function refuseUnreadable(input: { campaignIds?: string[]; mailboxIds?: string[]
   if (badDay !== undefined) throw new ValidationError(`"${badDay.slice(0, 60)}" is not a date. Use YYYY-MM-DD.`);
 }
 
-const conversation = z.object({
+const thread = z.object({
+  threadId: z.string(),
   conversationId: z.string(),
-  recordId: z.string(),
   personId: z.string(),
   personName: z.string().nullable(),
   personEmail: z.string().nullable(),
@@ -50,7 +50,7 @@ const output = z.object({
   page: z.number(),
   pageSize: z.number(),
   total: z.number(),
-  conversations: z.array(conversation),
+  threads: z.array(thread),
   scheduled: z.array(scheduled),
 });
 
@@ -59,7 +59,7 @@ export const listInboxTool = defineTool({
   title: "List inbox",
   description: [
     "Conversations, newest first, 25 a page. `view`: `all` (default, leaves out machine mail), `unread`, `important`, `sent`, `replied`, `ooo`, `automated`, or `scheduled` (campaign steps and follow-ups due to send, in `scheduled`).",
-    "`query` searches names, emails, subjects and every message body. Each conversation gives the `conversationId` for get_conversation and the `recordId` that notes, assignment and closing take.",
+    "`query` searches names, emails, subjects and every message body. Each conversation gives the `threadId` for get_conversation and the `conversationId` that notes, assignment and closing take.",
   ].join(" "),
   scope: "mcp:read",
   annotations: READ_ONLY,
@@ -87,8 +87,8 @@ export const listInboxTool = defineTool({
       lead: input.personIds,
       campaign: input.campaignIds,
       mailbox: input.mailboxIds,
-      subcategory: input.replyTypeKeys,
-      category: input.groups,
+      type: input.replyTypeKeys,
+      group: input.groups,
       range: input.dateMode,
       from: input.dateFrom,
       to: input.dateTo,
@@ -102,17 +102,16 @@ export const listInboxTool = defineTool({
       const structured = {
         ...base,
         total,
-        conversations: [],
-        // `sequence` is the code name of a follow-up after a reply.
-        scheduled: rows.map((r) => ({ kind: r.kind === "sequence" ? ("follow_up" as const) : r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: fencedField(out, r.subject), dueAt: r.dueAt.toISOString() })),
+        threads: [],
+        scheduled: rows.map((r) => ({ kind: r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: fencedField(out, r.subject), dueAt: r.dueAt.toISOString() })),
       };
       return { summary: `${counted(total, "scheduled send")}. Page ${params.page}.`, structured };
     }
 
     const { rows, total } = await listInbox(deps, actor, params);
-    const conversations = rows.map((r) => ({
+    const threads = rows.map((r) => ({
+      threadId: r.threadId,
       conversationId: r.conversationId,
-      recordId: r.recordId,
       personId: r.personId,
       personName: r.personName,
       personEmail: r.personEmail,
@@ -125,10 +124,10 @@ export const listInboxTool = defineTool({
       lastDirection: r.lastDirection,
       unreadCount: r.unreadCount,
       replyTypeName: r.replyTypeName,
-      appUrl: links.conversation(r.conversationId),
+      appUrl: links.thread(r.threadId),
     }));
     const pages = Math.max(1, Math.ceil(total / INBOX_PAGE_SIZE));
-    const summary = [`${counted(total, "conversation")} in ${params.view}. Page ${params.page} of ${pages}.`, ...(conversations.length > 0 ? [UNTRUSTED_NOTE] : [])].join("\n");
-    return { summary, structured: { ...base, total, conversations, scheduled: [] } };
+    const summary = [`${counted(total, "conversation")} in ${params.view}. Page ${params.page} of ${pages}.`, ...(threads.length > 0 ? [UNTRUSTED_NOTE] : [])].join("\n");
+    return { summary, structured: { ...base, total, threads, scheduled: [] } };
   },
 });

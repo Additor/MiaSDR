@@ -50,7 +50,7 @@ describe("takeover delay setting", () => {
 
 describe("threading after a takeover", () => {
   it("keeps the subject but drops thread fields when earlier sends belong to another mailbox", () => {
-    const t = resolveThreading("", [{ subject: "Hello", rfcMessageId: null, threadId: null }]);
-    expect(t).toEqual({ subject: "Re: Hello", inReplyTo: null, references: [], threadId: null });
+    const t = resolveThreading("", [{ subject: "Hello", rfcMessageId: null, providerThreadId: null }]);
+    expect(t).toEqual({ subject: "Re: Hello", inReplyTo: null, references: [], providerThreadId: null });
   });
 });

@@ -6,13 +6,13 @@ import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
-describeDb("knowledge tags, default subcategory guidance and the unknown-sender AI cap", () => {
+describeDb("knowledge tags, default reply type guidance and the unknown-sender AI cap", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");
   let knowledgeApp: typeof import("../../application/knowledge");
   let knowledgeStore: typeof import("../drizzle-knowledge-store").drizzleKnowledgeStore;
-  let engine: typeof import("../../../after-reply/infrastructure/drizzle-sequence-engine").drizzleSequenceEngine;
+  let engine: typeof import("../../../after-reply/infrastructure/drizzle-follow-up-engine").drizzleFollowUpEngine;
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let jobStore: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
   let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
@@ -72,7 +72,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     composition = await import("../../../infrastructure/composition");
     knowledgeApp = await import("../../application/knowledge");
     knowledgeStore = (await import("../drizzle-knowledge-store")).drizzleKnowledgeStore;
-    engine = (await import("../../../after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine;
+    engine = (await import("../../../after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine;
     aiJobsApp = await import("../../application/ai-jobs");
     jobStore = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
     FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
@@ -160,8 +160,8 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     });
   });
 
-  describe("default subcategory guidance", () => {
-    it("seeds a description and guidance on all 17 subcategories of a new organization", async () => {
+  describe("default reply type guidance", () => {
+    it("seeds a description and guidance on all 17 reply types of a new organization", async () => {
       const f = await fixture();
       await receive(f);
       const rows = await sql`select key, description, classification_guidance from reply_types where organization_id = ${f.org}`;
@@ -208,9 +208,9 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
       for (let i = 0; i < 2; i++) await receive(f);
       const known = `known-${f.tag}@acme.test`;
       expect(await receive(f, known)).toMatchObject({ status: "created", personCreated: true });
-      const [conv] = await sql`select c.id from conversations c join messages m on m.conversation_id = c.id where c.organization_id = ${f.org} and m.from_address = ${known}`;
+      const [conv] = await sql`select c.id from threads c join messages m on m.thread_id = c.id where c.organization_id = ${f.org} and m.from_address = ${known}`;
       await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, subject, from_address, to_address, body_text, sent_at)
+        insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, subject, from_address, to_address, body_text, sent_at)
         values (${f.org}, ${conv.id}, 'email', ${f.address}, 'outbound', ${"kg-out-" + f.tag}, 'hello', ${f.address}, ${known}, 'Earlier outreach', now() - interval '2 days')`;
       for (let i = 0; i < 2; i++) await receive(f); // two more unknown senders, over the cap of 2
       await jobStore.enqueueMissing(new Date());
@@ -249,10 +249,10 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
           join messages m on m.id = case when j.kind = 'classification' then j.entity_id else (select message_id from reply_type_picks where id = j.entity_id) end
           where j.organization_id = ${f.org} and j.kind = ${kind} and m.from_address = ${from}`)[0];
       expect(await statusOf("classification", c)).toMatchObject({ status: "skipped", payload: { skipReason: "daily_cap" } });
-      // A person corrects B's category: the new draft job carries the flag and runs although the cap is used up.
-      const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id join messages m on m.conversation_id = c.id where c.organization_id = ${f.org} and m.from_address = ${b}`;
+      // A person corrects B's reply type: the new draft job carries the flag and runs although the cap is used up.
+      const [conv] = await sql`select c.id, r.context_version from threads c join conversations r on r.id = c.conversation_id join messages m on m.thread_id = c.id where c.organization_id = ${f.org} and m.from_address = ${b}`;
       const replies = (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore;
-      const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId });
+      const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId });
       expect(corrected.draftQueued).toBe(true);
       expect((await statusOf("initial_draft", b)).payload).toMatchObject({ humanInitiated: true });
       const draftsBefore = ai.draftCalls;

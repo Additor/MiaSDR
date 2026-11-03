@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3Icon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, PlusIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BarChart3Icon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -26,9 +26,6 @@ import { cn } from "@/components/ui/utils";
 import { SETTINGS_GROUPS } from "@/app/(app)/settings/settings-nav-config";
 import { CommandPalette, type PaletteDestination } from "./command-palette";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
-import { HOME } from "@/app/_lib/home";
-import { runApiAction, type ActionFailure } from "@/app/_lib/api-action";
-import { callApi } from "@/app/_lib/api-client";
 
 type NavGroup = "Work" | "CRM" | "Insight" | "Admin";
 
@@ -101,32 +98,20 @@ export interface ShellUser {
   image: string | null;
 }
 
-export interface ShellOrganization {
-  id: string;
-  name: string;
-  active: boolean;
-}
-
-/**
- * The list page of each sidebar row, where an organization switch lands: a detail page of the old organization does not
- * exist in the new one. A deal page lands on Pipeline. Anything else (such as /organizations/new) lands on /leads.
- */
-const listPageOf = (pathname: string) => rowOf(pathname)?.href ?? HOME;
-
 interface AppSidebarProps {
   organizationName: string;
-  organizations?: ShellOrganization[];
-  canCreateOrganization?: boolean;
   user: ShellUser;
   inboxUnread?: number;
   /** Size of the Actions queue. */
   actionsPending?: number;
   setup?: SetupProgress | null;
+  /** The first send and the first reply happened, so the guide has done its job and leaves the sidebar and the palette. */
+  setupHidden?: boolean;
   /** Owners and admins also reach the operations pages in the palette. */
   isAdmin?: boolean;
 }
 
-export function AppSidebar({ organizationName, organizations = [], canCreateOrganization = false, user, inboxUnread = 0, actionsPending = 0, setup = null, isAdmin = false }: AppSidebarProps) {
+export function AppSidebar({ organizationName, user, inboxUnread = 0, actionsPending = 0, setup = null, setupHidden = false, isAdmin = false }: AppSidebarProps) {
   const pathname = usePathname();
   const { theme = "system", setTheme } = useTheme();
   const { setOpenMobile } = useSidebar();
@@ -135,29 +120,14 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
   const destinations = useMemo<PaletteDestination[]>(
     () => [
       ...NAV.map((item) => ({ href: item.href, label: item.label, group: item.group === "CRM" ? "CRM" : "Go to" })),
-      { ...SETUP_GUIDE, group: "Go to" },
+      ...(setupHidden ? [] : [{ ...SETUP_GUIDE, group: "Go to" }]),
       { href: "/leads/import", label: "Import leads", group: "Do" },
       { href: "/settings/mailboxes", label: "Connect a mailbox", group: "Do" },
       ...(isAdmin ? [{ href: "/settings/members", label: "Invite a member", group: "Do" }] : []),
       ...SETTINGS_GROUPS.flatMap((g) => g.items.filter((i) => isAdmin || !i.adminOnly).map((i) => ({ href: i.href, label: i.title, group: "Settings" }))),
     ],
-    [isAdmin],
+    [isAdmin, setupHidden],
   );
-  const [switchError, setSwitchError] = useState<string | null>(null);
-  const activeId = organizations.find((o) => o.active)?.id;
-
-  async function switchTo(organizationId: string) {
-    if (organizationId === activeId) return;
-    setSwitchError(null);
-    const result = await runApiAction(callApi("/api/organizations/active", "POST", { organizationId }));
-    if (!result.ok) {
-      setSwitchError(switchErrorText(result));
-      return;
-    }
-    // A full load: client state belongs to the organization it was read for, and Next keeps hidden pages mounted across a push.
-    window.location.assign(listPageOf(pathname));
-  }
-
   async function signOut() {
     const { error } = await authClient.signOut();
     if (error) {
@@ -209,51 +179,12 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            {organizations.length > 1 || canCreateOrganization ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="org-switcher" />}>
-                  <div className="grid flex-1 text-left leading-tight">
-                    <span className="text-sm font-semibold">MiaSDR</span>
-                    <span className="truncate text-xs text-muted-foreground">{organizationName}</span>
-                  </div>
-                  <ChevronsUpDownIcon className="ml-auto size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="min-w-56">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup value={activeId ?? ""} onValueChange={(id) => void switchTo(id)}>
-                      {organizations.map((o) => (
-                        <DropdownMenuRadioItem key={o.id} value={o.id} data-testid="org-option">
-                          <span className="truncate">{o.name}</span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuGroup>
-                  {canCreateOrganization && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem nativeButton={false} render={<Link href="/organizations/new" />}>
-                        <PlusIcon />
-                        New organization
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <div className="px-2 py-1.5">
-                <p className="text-sm font-semibold leading-tight">MiaSDR</p>
-                <p className="truncate text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">{organizationName}</p>
-              </div>
-            )}
+            <div className="px-2 py-1.5">
+              <p className="text-sm font-semibold leading-tight">MiaSDR</p>
+              <p className="truncate text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">{organizationName}</p>
+            </div>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* The menu closes on selection, so the error sits outside it. */}
-        {switchError && (
-          <p role="alert" className="px-2 text-xs text-destructive group-data-[collapsible=icon]:hidden">
-            {switchError}
-          </p>
-        )}
       </SidebarHeader>
       <SidebarContent role="navigation" aria-label="Main">
         <SidebarGroup className="pb-0">
@@ -275,7 +206,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
             <SidebarGroupContent>
               <SidebarMenu>
                 {NAV.filter((item) => item.group === group).map((item) => renderItem(item))}
-                {group === "Admin" && (
+                {group === "Admin" && !setupHidden && (
               <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={within(pathname, SETUP_GUIDE.href)}
@@ -355,12 +286,4 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
     </Sidebar>
     </>
   );
-}
-
-/** Why a switch failed: the session line for a lost session, the network line without an answer, else the server's reason. */
-function switchErrorText(result: ActionFailure): string {
-  if (result.code === "unauthenticated") return result.error;
-  if (result.status === 0) return "Could not switch organization. Check your connection and try again.";
-  const reason = result.details?.error;
-  return typeof reason === "string" ? `Could not switch organization: ${reason}` : "Could not switch organization. Try again.";
 }

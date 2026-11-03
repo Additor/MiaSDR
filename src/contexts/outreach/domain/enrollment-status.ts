@@ -7,6 +7,15 @@ export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number];
 /** An enrollment still in its sequence: waiting for the first step, or between steps. Every other status is an outcome. */
 export const LIVE_ENROLLMENT_STATUSES = ["pending", "active"] as const satisfies readonly EnrollmentStatus[];
 
+export const isLiveEnrollment = (status: string): boolean => (LIVE_ENROLLMENT_STATUSES as readonly string[]).includes(status);
+
+/**
+ * What the product calls Stopped: the sequence was cut short by a bounce, a suppression, a failure or a cancellation.
+ * Every count a person reads as Stopped uses this list: the lead status, the campaign's Stopped filter and summary, and
+ * the campaign list's progress line. A reply has its own count, and a removed lead has left the campaign.
+ */
+export const STOPPED_ENROLLMENT_STATUSES = ["bounced", "suppressed", "failed", "cancelled"] as const satisfies readonly EnrollmentStatus[];
+
 /**
  * Allowed status transitions of a `campaign_enrollments` row. A live enrollment moves to an outcome (a reply,
  * bounce, suppression, completion, failure, cancellation or removal) and outcomes are final, except that a person can
@@ -29,8 +38,6 @@ export const ENROLLMENT_FROM: Record<EnrollmentStatus, readonly EnrollmentStatus
   removed: LIVE,
 };
 
-export const canMoveEnrollment = (from: EnrollmentStatus, to: EnrollmentStatus): boolean => ENROLLMENT_FROM[to].includes(from);
-
 /** The statuses an enrollment ends in. */
 export type EnrollmentOutcomeStatus = Exclude<EnrollmentStatus, (typeof LIVE_ENROLLMENT_STATUSES)[number]>;
 
@@ -42,7 +49,7 @@ export interface EnrollmentOutcome {
 
 /**
  * Why outreach to a person, or to an address, stops on every campaign at once. The token is the stored `stop_reason`.
- * The suppression reasons (`bounced`, `unsubscribed`, `complaint`, `manual`) are the reasons of `suppression_list`.
+ * The suppression reasons (`bounced`, `unsubscribed`, `manual`) are the reasons of `suppression_list`.
  * Conversations ends the person's follow-up runs for the same halt and keeps its own run reason for it.
  */
 export const OUTREACH_HALTS = ["replied", ...SUPPRESSION_REASONS, "do_not_contact", "converted"] as const;
@@ -52,7 +59,6 @@ const HALT_STATUS: Record<OutreachHalt, EnrollmentOutcomeStatus> = {
   replied: "replied",
   bounced: "bounced",
   unsubscribed: "suppressed",
-  complaint: "suppressed",
   manual: "suppressed",
   do_not_contact: "suppressed",
   converted: "cancelled",
@@ -69,4 +75,4 @@ export const REMOVED_STATUS: EnrollmentStatus = "removed";
 /** Only a live lead can be removed. An outcome keeps its own history, so remove leaves it as it is. */
 export const REMOVABLE_STATUSES = LIVE_ENROLLMENT_STATUSES;
 
-export const canRemoveEnrollment = (status: string): boolean => (REMOVABLE_STATUSES as readonly string[]).includes(status);
+export const canRemoveEnrollment = isLiveEnrollment;

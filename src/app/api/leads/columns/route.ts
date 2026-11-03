@@ -1,26 +1,13 @@
 import { z } from "zod";
 import {
-  createCustomColumn,
-  listCustomColumns,
-  reorderCustomColumns,
+createCustomColumn,reorderCustomColumns
 } from "@/contexts/people/application/custom-columns";
 import { COLUMN_ENTITIES } from "@/contexts/people/domain/custom-columns";
 import { customColumnStore } from "@/contexts/people/infrastructure/composition";
-import { withActor, withAdmin } from "@/app/_lib/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const entity = z.enum(COLUMN_ENTITIES);
 const DENIED = "Only an owner or admin can manage custom fields.";
-
-/** Any member can read the registry: the lead form needs the labels. */
-export function GET(request: Request) {
-  return withActor((actor) => {
-    const params = new URL(request.url).searchParams;
-    return listCustomColumns(customColumnStore, actor, {
-      entity: entity.parse(params.get("entity") ?? "people"),
-      includeArchived: params.get("includeArchived") === "true",
-    });
-  });
-}
 
 export function POST(request: Request) {
   return withAdmin(

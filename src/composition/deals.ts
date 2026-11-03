@@ -1,6 +1,7 @@
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { CONVERSION_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
 import { lockPersonForConversion, personReplyHandling } from "@/contexts/conversations/infrastructure/person-handling";
+import { stopContactTx } from "@/contexts/conversations/stopping/infrastructure/stop-contact";
 import { drizzleMemberDirectory } from "@/contexts/tenancy/infrastructure/drizzle-member-directory";
 import { convertToContact, type ConvertDeps, type PreviewDeps } from "@/contexts/people/application/convert-to-contact";
 import { drizzleLeadLifecycle } from "@/contexts/people/infrastructure/drizzle-lead-lifecycle";
@@ -21,8 +22,7 @@ export const conversionDeps: ConvertDeps = {
   lockPerson: lockPersonForConversion,
   lifecycleOf: drizzleLeadLifecycle.lifecycleOf,
   markConverted: drizzleLeadLifecycle.markConverted,
-  stopEnrollments: conversionOutreach.stopPersonEnrollmentsTx,
-  interruptRuns: personReplyHandling.interruptPersonRuns,
+  stopContact: (tx, { organizationId, personId, now }) => stopContactTx(tx as DbTx, { organizationId, personId }, { kind: "conversion", now }),
   appendEvent: personReplyHandling.appendPersonEvent,
 };
 
@@ -31,7 +31,7 @@ export const convertLead: ConvertLead = (tx, input) => convertToContact(conversi
 /** What `previewConvert` reads. */
 export const convertPreviewDeps = (): PreviewDeps => ({
   lifecycles: drizzleLeadLifecycle.lifecycles,
-  liveEnrollmentSummary: (organizationId, ids) => conversionOutreach.liveEnrollmentSummary(organizationId, [...ids]),
+  liveEnrollmentCounts: (organizationId, ids) => conversionOutreach.liveEnrollmentCounts(organizationId, [...ids]),
   previewRunStop: (organizationId, ids) => personReplyHandling.previewPersonRunStop(organizationId, [...ids]),
 });
 

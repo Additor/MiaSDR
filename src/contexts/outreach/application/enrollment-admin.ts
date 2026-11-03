@@ -1,5 +1,6 @@
 import type { DbHandle } from "@/platform/db/client";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import type { EnrollSkipCounts } from "../domain/enrollment-eligibility";
 
 export type OutreachChannel = "email" | "linkedin";
 
@@ -10,24 +11,13 @@ export const MAX_PICKED_IDS = 500;
 export const MAX_CAMPAIGN_SENDERS = 50;
 
 /** Counts for an enroll of hand-picked people. Every requested id lands in exactly one bucket. */
-export interface PickedEnrollCounts {
+export interface PickedEnrollCounts extends EnrollSkipCounts {
   requested: number;
   added: number;
-  /** No email (email campaign) or no LinkedIn profile (LinkedIn campaign). */
-  skippedMissingIdentity: number;
-  /** Already enrolled and not removed. */
-  skippedDuplicate: number;
-  /** Removed earlier from this campaign. Enrolling does not bring it back; restore it (`restoreCampaignEnrollments`) instead. */
-  skippedRemoved: number;
-  /** On the suppression list. LinkedIn has no suppression list, so this stays 0 there. */
-  skippedSuppressed: number;
-  skippedDoNotContact: number;
-  /** The latest reply reads as a request to stop and no person reviewed it. */
-  skippedStopRequest: number;
-  /** The person is a contact (a deal exists or was created from the lead), and a contact is not enrolled in campaigns. */
-  skippedContact: number;
   /** Unknown ids and ids of another organization; the two look the same. */
   skippedNotFound: number;
+  /** Dry run only: people the same call would enroll. `added` stays 0. */
+  wouldAdd?: number;
 }
 
 export interface RemoveCounts {
@@ -50,9 +40,11 @@ export interface SenderRef {
 
 /** Hand-picked enrollment, enrollment removal and per-campaign senders, for both channels. */
 export interface EnrollmentAdminStore {
-  /** One transaction. Skips what cannot be enrolled and counts why. */
-  /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
-  enrollPicked(organizationId: string, campaignId: string, channel: OutreachChannel, personIds: string[], viaTokenId: string | null, tx?: DbHandle): Promise<PickedEnrollCounts>;
+  /**
+   * One transaction. Skips what cannot be enrolled and counts why. `viaTokenId` names the agent's token on each inserted
+   * row (`enrolled_via_token_id`); null for a person. With `dryRun` nothing is written and `wouldAdd` says how many.
+   */
+  enrollPicked(organizationId: string, campaignId: string, channel: OutreachChannel, personIds: string[], options: { viaTokenId: string | null; dryRun?: boolean }, tx?: DbHandle): Promise<PickedEnrollCounts>;
   /**
    * One transaction: every named `pending` or `active` enrollment of this campaign becomes `removed`, stops being
    * due and keeps its history. The person and the sends are not touched.

@@ -50,16 +50,16 @@ type Outcomes = { path: Path; lines: ReadonlyMap<string, TypeChangeOutcome>; err
  *
  * - The AI read the last reply wrong: a person's pick for the latest reply (`POST /api/inbox/[id]/reply-type` with the type's
  *   key). The new type's rules apply as for any pick, so a type set to write a draft gets one.
- * - Something happened off the thread: the record's type moves (`POST /api/records/[id]/reply-type`), the AI's pick stays, and
+ * - Something happened off the thread: the conversation's type moves (`POST /api/conversations/[id]/reply-type`), the AI's pick stays, and
  *   no draft is written.
  *
- * The three outcome lines come from `GET /api/records/[id]/reply-type/outcomes`, for the path of the chosen answer. Choosing the stop request type asks how far
+ * The three outcome lines come from `GET /api/conversations/[id]/reply-type/outcomes`, for the path of the chosen answer. Choosing the stop request type asks how far
  * the stop reaches inside this dialog: Stop contacting changes the type and stops contact, Only change the type does not
  * stop anything. Unsaved edits in the reply editor are saved first, so the out-of-date draft keeps them.
  */
 export function ChangeTypeButton({
-  recordId,
   conversationId,
+  threadId,
   personName,
   contextVersion,
   currentReplyTypeId,
@@ -69,9 +69,9 @@ export function ChangeTypeButton({
   stop,
   variant = "link",
 }: {
-  recordId: string;
+  conversationId: string;
   /** The conversation on screen. Without it only an off-thread change is offered. */
-  conversationId?: string;
+  threadId?: string;
   personName: string;
   contextVersion: number;
   currentReplyTypeId: string | null;
@@ -80,7 +80,7 @@ export function ChangeTypeButton({
   aiReading?: AiReading | null;
   /** What Stop contacting needs, and whether the person is already marked. */
   stop: StopTarget & { doNotContact: boolean };
-  /** A link at the end of the type line, an outline button beside Accept or Looks right, or the lead button when the AI's pick names an archived type. */
+  /** A link at the end of the type line, or an outline button beside Accept. */
   variant?: "link" | "outline" | "default";
 }) {
   const router = useRouter();
@@ -88,13 +88,13 @@ export function ChangeTypeButton({
   const [target, setTarget] = useState<Option | null>(null);
   const [note, setNote] = useState("");
   const [unlock, setUnlock] = useState(false);
-  const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
+  const [why, setWhy] = useState<"reply" | "offThread">(threadId ? "reply" : "offThread");
   const [outcomes, setOutcomes] = useState<Outcomes | null>(null);
   // The type this dialog already changed to. A retry after a failed stop only stops.
   const changedTo = useRef<string | null>(null);
   const stopScope = useStopScope(stop);
 
-  const correcting = why === "reply" && conversationId !== undefined;
+  const correcting = why === "reply" && threadId !== undefined;
   const groups = useMemo(
     () =>
       REPLY_TYPE_GROUPS.map((g) => ({
@@ -112,18 +112,18 @@ export function ChangeTypeButton({
   const outcome = chosen ? loaded?.lines?.get(chosen.id) : undefined;
   const outcomeError = loaded?.error ?? null;
 
-  // The outcome lines depend on the record as it is now and on the path, so they load when the dialog opens and again
+  // The outcome lines depend on the conversation as it is now and on the path, so they load when the dialog opens and again
   // when the answer to What changed? moves the change to the other path.
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    void callApi<{ outcomes: Array<{ replyTypeId: string; outcome: TypeChangeOutcome }> }>(`/api/records/${recordId}/reply-type/outcomes?path=${path}`, "GET", undefined, { signal: controller.signal }).then((result) => {
+    void callApi<{ outcomes: Array<{ replyTypeId: string; outcome: TypeChangeOutcome }> }>(`/api/conversations/${conversationId}/reply-type/outcomes?path=${path}`, "GET", undefined, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (result.ok && result.data) setOutcomes({ path, lines: new Map(result.data.outcomes.map((o) => [o.replyTypeId, o.outcome])), error: null });
       else setOutcomes({ path, lines: null, error: result.error ?? "What the change does did not load." });
     });
     return () => controller.abort();
-  }, [open, recordId, contextVersion, path]);
+  }, [open, conversationId, contextVersion, path]);
 
   function change(next: boolean) {
     setOpen(next);
@@ -134,7 +134,7 @@ export function ChangeTypeButton({
     setTarget(null);
     setNote("");
     setUnlock(false);
-    setWhy(conversationId ? "reply" : "offThread");
+    setWhy(threadId ? "reply" : "offThread");
     setOutcomes(null);
     changedTo.current = null;
     stopScope.reset();
@@ -145,7 +145,7 @@ export function ChangeTypeButton({
     const body = { groupKey: type.groupKey, replyTypeId: type.id, expectedContextVersion: contextVersion, confirmUnlock: unlock, note: note.trim() || null };
     orThrow(
       await runApiAction(
-        correcting ? callApi(`/api/inbox/${conversationId}/reply-type`, "POST", { replyTypeKey: type.key, expectedContextVersion: contextVersion }) : callApi(`/api/records/${recordId}/reply-type`, "POST", body),
+        correcting ? callApi(`/api/inbox/${threadId}/reply-type`, "POST", { replyTypeKey: type.key, expectedContextVersion: contextVersion }) : callApi(`/api/conversations/${conversationId}/reply-type`, "POST", body),
       ),
     );
   }
@@ -210,19 +210,19 @@ export function ChangeTypeButton({
                   {aiReading.reasoning ? `: ${aiReading.reasoning}` : "."}
                 </p>
               )}
-              {conversationId && (
+              {threadId && (
                 <FieldSet>
                   <FieldLegend variant="label">What changed?</FieldLegend>
                   <RadioGroup value={why} onValueChange={(v) => setWhy(v as "reply" | "offThread")}>
                     <Field orientation="horizontal">
-                      <RadioGroupItem value="reply" id={`why-reply-${recordId}`} />
-                      <FieldLabel htmlFor={`why-reply-${recordId}`} className="font-normal">
+                      <RadioGroupItem value="reply" id={`why-reply-${conversationId}`} />
+                      <FieldLabel htmlFor={`why-reply-${conversationId}`} className="font-normal">
                         The AI read the last reply wrong
                       </FieldLabel>
                     </Field>
                     <Field orientation="horizontal">
-                      <RadioGroupItem value="offThread" id={`why-off-${recordId}`} />
-                      <FieldLabel htmlFor={`why-off-${recordId}`} className="font-normal">
+                      <RadioGroupItem value="offThread" id={`why-off-${conversationId}`} />
+                      <FieldLabel htmlFor={`why-off-${conversationId}`} className="font-normal">
                         Something happened off the thread, like a meeting
                       </FieldLabel>
                     </Field>
@@ -230,9 +230,9 @@ export function ChangeTypeButton({
                 </FieldSet>
               )}
               <Field>
-                <FieldLabel htmlFor={`type-${recordId}`}>New type</FieldLabel>
+                <FieldLabel htmlFor={`type-${conversationId}`}>New type</FieldLabel>
                 <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${o.label} · ${groupLabel(o.type.groupKey)}`} autoHighlight>
-                  <ComboboxInput id={`type-${recordId}`} placeholder="Search reply types" className="w-full" />
+                  <ComboboxInput id={`type-${conversationId}`} placeholder="Search reply types" className="w-full" />
                   <ComboboxContent>
                     <ComboboxEmpty>No reply type matches.</ComboboxEmpty>
                     <ComboboxList>
@@ -276,15 +276,15 @@ export function ChangeTypeButton({
               )}
               {!correcting && (
                 <Field>
-                  <FieldLabel htmlFor={`note-${recordId}`}>Note (optional)</FieldLabel>
-                  <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
+                  <FieldLabel htmlFor={`note-${conversationId}`}>Note (optional)</FieldLabel>
+                  <Textarea id={`note-${conversationId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
                 </Field>
               )}
               {leavesCustomer && (
                 <Field orientation="horizontal">
-                  <Checkbox id={`unlock-${recordId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />
+                  <Checkbox id={`unlock-${conversationId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />
                   <FieldContent>
-                    <FieldLabel htmlFor={`unlock-${recordId}`} className="font-normal">
+                    <FieldLabel htmlFor={`unlock-${conversationId}`} className="font-normal">
                       This person is locked as Existing customer. Take them out of it.
                     </FieldLabel>
                     <FieldDescription>Existing customers stay locked so the AI cannot move them to another group. You can still change the type.</FieldDescription>

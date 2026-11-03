@@ -1,13 +1,13 @@
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
-import { AFTER_REPLY_OFF, followUpsContinue, startPosition, type InterruptReason, type RunStatus } from "./sequences";
+import { AFTER_REPLY_OFF, followUpsContinue, startPosition, type InterruptReason, type RunStatus } from "./follow-ups";
 
 export { AFTER_REPLY_OFF };
 
 /**
  * Pure rules and wording for a campaign's "Follow-ups after a reply" setting. A campaign either hands a classified reply to the
  * Inbox (`handoff`) or lets the AI draft timed follow-ups that a person approves (`ai_drafts`). The mode is not stored
- * in a column: `ai_drafts` is a campaign-owned sequence that is active and has a published version, `handoff` is no
- * sequence or an archived one. Nothing here reads data, and nothing here can send.
+ * in a column: `ai_drafts` is a campaign-owned flow that is active and has a published version, `handoff` is no
+ * flow or an archived one. Nothing here reads data, and nothing here can send.
  */
 
 export type AfterReplyMode = "handoff" | "ai_drafts";
@@ -21,17 +21,16 @@ export const AFTER_REPLY_MODE_LABELS: Record<AfterReplyMode, string> = {
 
 export const isAfterReplyMode = (value: unknown): value is AfterReplyMode => value === "handoff" || value === "ai_drafts";
 
-/** The mode a campaign is in, from the state of its Follow-ups after a reply sequence (null when it has none). */
+/** The mode a campaign is in, from the state of its Follow-ups after a reply flow (null when it has none). */
 export function afterReplyModeOf(flow: { status: string; hasPublishedVersion: boolean } | null): AfterReplyMode {
   return flow !== null && flow.status === "active" && flow.hasPublishedVersion ? "ai_drafts" : "handoff";
 }
 
-/** Name of the sequence a campaign owns for this setting. */
+/** Name of the flow a campaign owns for this setting. */
 export const afterReplyFlowName = (campaignName: string): string => `${campaignName.trim()} (after a reply)`;
 
 /** Why a campaign cannot draft follow-ups, or null when it can. */
-export function afterReplyLockedReason(campaign: { channel: string; type: string }): string | null {
-  if (campaign.type === "personal") return "Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.";
+export function afterReplyLockedReason(campaign: { channel: string }): string | null {
   if (campaign.channel !== "email") return "Follow-up drafts are available for email campaigns only. Replies on LinkedIn go to the Inbox.";
   return null;
 }
@@ -47,16 +46,16 @@ export const NEW_REPLY_MARGIN_MINUTES = 10;
 
 // Why a run cannot start -----------------------------------------------------------------------------------
 
-/** The facts that decide whether a run can start for a record, in the shape the use case loads them. */
+/** The facts that decide whether a run can start for a conversation, in the shape the use case loads them. */
 export interface StartBlockFacts {
-  record: {
+  conversation: {
     replyTypeId: string | null;
     groupKey: string | null;
     replyTypeKey: string | null;
     replyTypeName: string | null;
-    /** The Follow-ups rule of the record's reply type, or null without a type. */
+    /** The Follow-ups rule of the conversation's reply type, or null without a type. */
     followUps: FollowUpsRule | null;
-    /** The Reply draft rule of the record's reply type: false for Don't write, which skips step 1. Null without a type. */
+    /** The Reply draft rule of the conversation's reply type: false for Don't write, which skips step 1. Null without a type. */
     replyDraft?: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
@@ -65,15 +64,15 @@ export interface StartBlockFacts {
     /** The latest reply asked to stop. */
     stopRequested?: boolean;
   };
-  conversation: { channel: string } | null;
+  thread: { channel: string } | null;
   doNotContact: boolean;
   /** The person's address is on the suppression list. */
   suppressed: boolean;
   /** The person is a contact (`people.lifecycle`), who starts no follow-ups. */
   contact: boolean;
   /** The campaign that most recently emailed the person, or null. */
-  owner: { name: string; channel: string; type: string; status: string; archived: boolean } | null;
-  /** The owner's Follow-ups after a reply sequence, or null when it has none. */
+  owner: { name: string; channel: string; status: string; archived: boolean } | null;
+  /** The owner's Follow-ups after a reply flow, or null when it has none. */
   flow: { status: string; hasPublished: boolean } | null;
   stepCount: number;
   /** A person already answered the reply by hand. */
@@ -82,14 +81,14 @@ export interface StartBlockFacts {
 }
 
 /**
- * The first reason no run can start for this record, worded for the person who pressed Restart, or null when a run
+ * The first reason no run can start for this conversation, worded for the person who pressed Restart, or null when a run
  * can start. The checks follow what the engine requires: an email reply, an owning campaign that is running and has
- * AI drafts turned on with published steps, and a record the stop rules would not end at once.
+ * AI drafts turned on with published steps, and a conversation the stop rules would not end at once.
  */
 export function startBlockedReason(f: StartBlockFacts): string | null {
-  const { record, owner, flow } = f;
+  const { conversation, owner, flow } = f;
   if (f.contact) return "The person is a contact, so follow-ups do not apply.";
-  if (!record.latestInboundMessageId || !record.lastInboundAt || !f.conversation || f.conversation.channel !== "email") return "This conversation has no email reply to follow up on.";
+  if (!conversation.latestInboundMessageId || !conversation.lastInboundAt || !f.thread || f.thread.channel !== "email") return "This conversation has no email reply to follow up on.";
   if (!owner) return "No campaign has emailed this person, so no follow-ups apply.";
   const locked = afterReplyLockedReason(owner);
   if (locked) return locked;
@@ -98,15 +97,15 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (owner.status === "draft") return `The campaign ${owner.name} has not started yet. Start it to run follow-ups.`;
   if (!flow || flow.status !== "active") return `AI drafts are off for the campaign ${owner.name}. Turn them on in its Follow-ups after a reply setting.`;
   if (!flow.hasPublished) return `The campaign ${owner.name} has no published follow-up steps. Add them in its Follow-ups after a reply setting.`;
-  if (record.workflowState === "closed") return "Reply handling is closed, so follow-ups do not apply.";
+  if (conversation.workflowState === "closed") return "Reply handling is closed, so follow-ups do not apply.";
   if (f.doNotContact) return "This person is marked do not contact, so follow-ups do not apply.";
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
-  if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
-  if (!record.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
-  if (record.stopRequested) return "The reply asked to stop, so follow-ups do not start.";
-  if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
-  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply, replyDraft: record.replyDraft }) === null) {
-    if (record.replyDraft === false && !f.answered && !f.skipReply) return replyDraftSkipReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
+  if (!conversation.hasEmail) return "This person has no email address, so follow-ups cannot start.";
+  if (!conversation.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
+  if (conversation.stopRequested) return "The reply asked to stop, so follow-ups do not start.";
+  if (!followUpsContinue(conversation.followUps)) return followUpsStopReason(conversation.replyTypeName ?? conversation.replyTypeKey ?? "This reply type");
+  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply, replyDraft: conversation.replyDraft }) === null) {
+    if (conversation.replyDraft === false && !f.answered && !f.skipReply) return replyDraftSkipReason(conversation.replyTypeName ?? conversation.replyTypeKey ?? "This reply type");
     return "A person already answered, and the flow has no follow-up step after the reply.";
   }
   return null;
@@ -124,7 +123,7 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
 
 export const runStatusLabel = (status: RunStatus): string => RUN_STATUS_LABELS[status];
 
-/** `sequence_runs.started_by`. */
+/** `follow_up_runs.started_by`. */
 export type RunStartedBy = "ai_assignment" | "human_override";
 
 export const STARTED_BY_LABELS: Record<RunStartedBy, string> = {
@@ -146,7 +145,7 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
   bounce: "The email address bounced",
   suppressed: "The address is on the suppression list",
   terminal_stage: "The reply moved to a reply type that stops follow-ups",
-  record_closed: "A person closed reply handling",
+  conversation_closed: "A person closed reply handling",
   converted: "The person became a contact",
   [AFTER_REPLY_OFF]: "Follow-ups turned off for this campaign",
 };
@@ -158,9 +157,9 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
 export const OTHER_END_REASON_LABELS: Record<string, string> = {
   manual: "A person cancelled the follow-ups",
   replaced: "A person started a different flow",
-  stage_moved: "A person changed the reply type",
-  classification_corrected: "A person corrected the AI pick",
-  classification_undone: "A person undid the AI pick",
+  type_changed: "A person changed the reply type",
+  type_corrected: "A person corrected the AI pick",
+  pick_undone: "A person undid the AI pick",
 };
 
 /** Wording for any reason stored on a run. An unknown reason reads as a plain stop. */
@@ -173,7 +172,7 @@ export function stopReasonLabel(reason: string | null | undefined): string {
 
 // What always stops follow-ups ---------------------------------------------------------------------------
 
-/** A fact about the person or the record that ends a run whatever the reply type's rules say. */
+/** A fact about the person or the conversation that ends a run whatever the reply type's rules say. */
 export interface FixedStopRule {
   id: string;
   /** One line for the read-only list in the campaign's Follow-ups after a reply settings. */
@@ -189,7 +188,7 @@ export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "unsubscribe", label: "The person unsubscribes", reason: "unsubscribed" },
   { id: "bounce", label: "The address bounces", reason: "bounce" },
   { id: "suppressed", label: "The address is on the suppression list", reason: "suppressed" },
-  { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
+  { id: "conversation_closed", label: "Reply handling is closed", reason: "conversation_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
 ];
 

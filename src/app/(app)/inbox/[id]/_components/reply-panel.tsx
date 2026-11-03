@@ -4,16 +4,16 @@ import type { Actor } from "@/shared/errors";
 import { loadNextInQueue } from "../_lib/next-queue";
 import { draftState } from "../_lib/type-line";
 import { ReplyPanelClient } from "./reply-panel-client";
-import { recordDetail } from "./thread-data";
+import { conversationDetail } from "./thread-data";
 
 /**
  * Server side of the draft slot: loads the AI state for the thread. Renders nothing for non-email threads. A thread opened from
  * Actions also gets the next item of that queue, so a sent reply can offer the step after it.
  */
-export async function ReplyPanel({ conversationId, actor, queue }: { conversationId: string; actor: Actor; queue?: { recordId: string; view: Record<string, string> } }) {
-  const panel = await getReplyPanel(replyDeps(), actor, conversationId);
+export async function ReplyPanel({ threadId, actor, queue }: { threadId: string; actor: Actor; queue?: { conversationId: string; view: Record<string, string> } }) {
+  const panel = await getReplyPanel(replyDeps(), actor, threadId);
   if (!panel) return null;
-  const [next, detail] = await Promise.all([queue ? loadNextInQueue(actor, queue.recordId, queue.view) : undefined, recordDetail(actor, panel.recordId)]);
+  const [next, detail] = await Promise.all([queue ? loadNextInQueue(actor, queue.conversationId, queue.view) : undefined, conversationDetail(actor, panel.conversationId)]);
   const state = draftState(detail, panel.channel);
   return (
     <ReplyPanelClient

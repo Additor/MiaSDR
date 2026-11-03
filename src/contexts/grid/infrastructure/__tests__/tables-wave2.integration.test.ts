@@ -92,25 +92,13 @@ describeDb("grid rows, column duplicate and table move", () => {
       expect((await cellsOf(tableId))[0][text.key]).toBe("Acme");
     });
 
-    it("copies a formula's expression and calculates its own values", async () => {
-      const { actor } = await org();
-      const { tableId } = await workbook(actor);
-      const score = (await columnsUc.createColumn(deps, actor, tableId, { name: "Score", type: "number" })).column;
-      const rows = await rowsUc.getTablePage(deps, actor, tableId).then((p) => p.rows);
-      await deps.rows.applyEdits(actor.organizationId, tableId, [{ rowId: rows[0].id, set: { [score.key]: 21 } }]);
-      const double = (await columnsUc.createColumn(deps, actor, tableId, { name: "Double", type: "formula", config: { expression: `{{${score.key}}} * 2` } })).column;
-      const { column: copy } = await columnsUc.createColumn(deps, actor, tableId, { name: "Double (copy)", type: "formula", config: double.config, afterColumnId: double.id });
-      expect(copy.type).toBe("formula");
-      expect(copy.dependsOn).toEqual([score.key]);
-      expect(Number((await cellsOf(tableId))[0][copy.key])).toBe(42);
-    });
-
-    it("refuses to copy values from or into a runner or formula column", async () => {
+    it("refuses to copy values from or into a runner column", async () => {
       const { actor } = await org();
       const { tableId } = await workbook(actor);
       const text = (await columnsUc.createColumn(deps, actor, tableId, { name: "Name", type: "text" })).column;
-      const formula = (await columnsUc.createColumn(deps, actor, tableId, { name: "F", type: "formula", config: { expression: `UPPER({{${text.key}}})` } })).column;
-      await expect(columnsUc.createColumn(deps, actor, tableId, { name: "F copy", type: "text", copyValuesFrom: formula.key })).rejects.toThrow(/data column/);
+      await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position)
+        values (${actor.organizationId}, ${tableId}, 'summary', 'Summary', 'ai', ${sql.json({ prompt: `Summarize {{${text.key}}}` } as never)}, ${[text.key]}, 99)`;
+      await expect(columnsUc.createColumn(deps, actor, tableId, { name: "Summary copy", type: "text", copyValuesFrom: "summary" })).rejects.toThrow(/data column/);
       await expect(columnsUc.createColumn(deps, actor, tableId, { name: "AI copy", type: "ai", config: {} })).rejects.toThrow(/own setup dialog/);
     });
   });

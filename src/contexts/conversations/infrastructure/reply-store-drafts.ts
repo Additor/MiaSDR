@@ -1,11 +1,10 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { conversations, draftKnowledgeCitations, drafts, events, mcpTokens, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
+import { threads, drafts, events, mcpTokens, messages, people, conversations, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
-import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
-import { buildDraftContext, excerptHash } from "./thread-context";
-import { publicConversation } from "@/platform/db/conversation-visibility";
+import { checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
+import { buildDraftContext } from "./thread-context";
 import { toAttempt } from "./reply-attempt-ledger";
 import { toDraftRow, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
@@ -15,33 +14,33 @@ type AiDraft = NewDraft & { feedback?: string | null };
 type WrittenDraft = { id: string; stale: boolean } | typeof HANDLING_CLOSED;
 
 /**
- * Writes an AI draft in `tx` (`ReplyStore.insertDraft`). `held` runs once the record is locked: the AI worker passes its
- * claim check there, so the record lock comes before the job row lock, and a false answer writes nothing and returns null.
+ * Writes an AI draft in `tx` (`ReplyStore.insertDraft`). `held` runs once the conversation is locked: the AI worker passes its
+ * claim check there, so the conversation lock comes before the job row lock, and a false answer writes nothing and returns null.
  * Reply handling marked done writes nothing and returns `HANDLING_CLOSED`, for every writer: a person's request, the
- * draft job and the sequence engine (docs/decisions.md, "Reply send rules").
+ * draft job and the follow-up engine (docs/decisions.md, "Reply send rules").
  */
 export async function insertDraftTx(tx: DbTx, input: AiDraft): Promise<WrittenDraft>;
 export async function insertDraftTx(tx: DbTx, input: AiDraft, held: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null>;
 export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null> {
   // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
-  // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
-  const [record] = await tx
-    .select({ version: records.contextVersion, workflowState: records.workflowState })
-    .from(records)
-    .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
+  // that no longer holds. Its draft goes in as stale and leaves the conversation's open drafts alone.
+  const [conversation] = await tx
+    .select({ version: conversations.contextVersion, workflowState: conversations.workflowState })
+    .from(conversations)
+    .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
     // No key update, so a reply send that holds the conversation and inserts its own draft passes (docs/database.md,
     // "Lock modes").
     .for("no key update");
-  if (!record) throw new NotFoundError("Reply handling not found");
+  if (!conversation) throw new NotFoundError("Reply handling not found");
   if (held && !(await held(tx))) return null;
-  if (record.workflowState === "closed") return HANDLING_CLOSED;
-  if (record.version !== input.expectedContextVersion) {
+  if (conversation.workflowState === "closed") return HANDLING_CLOSED;
+  if (conversation.version !== input.expectedContextVersion) {
     const [stale] = await tx
         .insert(drafts)
         .values({
           organizationId: input.organizationId,
-          recordId: input.recordId,
           conversationId: input.conversationId,
+          threadId: input.threadId,
           replyForMessageId: input.replyForMessageId,
           expectedContextVersion: input.expectedContextVersion,
           channel: input.channel ?? "email",
@@ -62,8 +61,8 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
     .insert(drafts)
     .values({
       organizationId: input.organizationId,
-      recordId: input.recordId,
       conversationId: input.conversationId,
+      threadId: input.threadId,
       replyForMessageId: input.replyForMessageId,
       expectedContextVersion: input.expectedContextVersion,
       channel: input.channel ?? "email",
@@ -83,55 +82,49 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
       .set({ status: "discarded" })
       .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), draftCanBecome("discarded")));
   }
-  // One reviewable draft per record and channel: older open ones are superseded.
+  // One reviewable draft per conversation and channel: older open ones are superseded.
   await tx
     .update(drafts)
     .set({ status: "stale" })
-    .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
-  if (input.citations.length > 0) {
-    await tx
-      .insert(draftKnowledgeCitations)
-      .values(input.citations.map((c, rank) => ({ organizationId: input.organizationId, draftId: created.id, documentVersionId: c.documentVersionId, excerptHash: excerptHash(c.excerpt), excerpt: c.excerpt, rank: String(rank) })))
-      .onConflictDoNothing();
-  }
+    .where(and(eq(drafts.conversationId, input.conversationId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
   return { id: created.id, stale: false };
 }
 
 /** The reply panel and the draft lifecycle: load, write, edit, discard, and the CC and blocked-address checks. */
-export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "draftContextForDraft" | "insertDraft" | "getDraft" | "ccContext" | "ccContextForConversation" | "createManualDraft" | "blockedAddresses" | "updateDraft" | "discardDraft"> = {
-  async panel(organizationId, conversationId) {
+export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "draftContextForDraft" | "insertDraft" | "getDraft" | "ccContext" | "ccContextForThread" | "createManualDraft" | "blockedAddresses" | "updateDraft" | "discardDraft"> = {
+  async panel(organizationId, threadId) {
     const [head] = await db
       .select({
+        threadId: threads.id,
+        channel: threads.channel,
+        accountRef: threads.accountRef,
+        status: threads.status,
         conversationId: conversations.id,
-        channel: conversations.channel,
-        accountRef: conversations.accountRef,
-        status: conversations.status,
-        recordId: records.id,
-        replyTypeSetId: records.replyTypeSetId,
-        state: records.workflowState,
-        version: records.contextVersion,
-        lastIn: records.lastInboundAt,
-        lastOut: records.lastOutboundAt,
+        replyTypeSetId: conversations.replyTypeSetId,
+        state: conversations.workflowState,
+        version: conversations.contextVersion,
+        lastIn: conversations.lastInboundAt,
+        lastOut: conversations.lastOutboundAt,
         personId: people.id,
         email: people.email,
       })
-      .from(conversations)
-      .innerJoin(records, eq(records.id, conversations.recordId))
-      .innerJoin(people, eq(people.id, records.personId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .from(threads)
+      .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+      .innerJoin(people, eq(people.id, conversations.personId))
+      .where(and(eq(threads.organizationId, organizationId), eq(threads.id, threadId)));
     if (!head) return null;
 
     const taxonomyRows = await db
       .select({ id: replyTypes.id, key: replyTypes.key, name: replyTypes.name, groupKey: replyTypes.groupKey })
       .from(replyTypes)
-      .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.active, true)))
+      .where(eq(replyTypes.replyTypeSetId, head.replyTypeSetId))
       .orderBy(replyTypes.sortOrder);
 
     const [draftRow] = await db
       .select()
       .from(drafts)
       // A stale draft stays visible, flagged out of date, until a person regenerates or discards it or a newer draft replaces it.
-      .where(and(eq(drafts.conversationId, conversationId), sql`${drafts.status} <> 'discarded'`))
+      .where(and(eq(drafts.threadId, threadId), sql`${drafts.status} <> 'discarded'`))
       .orderBy(desc(drafts.createdAt))
       .limit(1);
     let draft: PanelData["draft"] = null;
@@ -152,13 +145,13 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     const [newest] = await db
       .select({ subject: messages.subject })
       .from(messages)
-      .where(and(eq(messages.conversationId, conversationId), sql`${messages.subject} is not null`))
+      .where(and(eq(messages.threadId, threadId), sql`${messages.subject} is not null`))
       .orderBy(desc(messages.sentAt))
       .limit(1);
 
     return {
+      threadId: head.threadId,
       conversationId: head.conversationId,
-      recordId: head.recordId,
       channel: head.channel,
       workflowState: head.state,
       contextVersion: head.version,
@@ -175,15 +168,15 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     };
   },
 
-  draftContext: (organizationId, conversationId) => buildDraftContext(organizationId, conversationId),
+  draftContext: (organizationId, threadId) => buildDraftContext(organizationId, threadId),
 
   async draftContextForDraft(organizationId, draftId) {
     const draft = await this.getDraft(organizationId, draftId);
     if (!draft) return null;
-    const ctx = await buildDraftContext(organizationId, draft.conversationId);
+    const ctx = await buildDraftContext(organizationId, draft.threadId);
     if (!ctx) return null;
-    const [record] = await db.select({ workflowState: records.workflowState }).from(records).where(eq(records.id, ctx.recordId));
-    return { ...ctx, draft, workflowState: record.workflowState };
+    const [conversation] = await db.select({ workflowState: conversations.workflowState }).from(conversations).where(eq(conversations.id, ctx.conversationId));
+    return { ...ctx, draft, workflowState: conversation.workflowState };
   },
 
   async insertDraft(input) {
@@ -197,72 +190,72 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
 
   async ccContext(organizationId, draftId) {
     const [row] = await db
-      .select({ conversationId: drafts.conversationId })
+      .select({ threadId: drafts.threadId })
       .from(drafts)
       .where(and(eq(drafts.id, draftId), eq(drafts.organizationId, organizationId)));
-    return row ? ccContextFor(organizationId, row.conversationId) : null;
+    return row ? ccContextFor(organizationId, row.threadId) : null;
   },
 
-  ccContextForConversation: (organizationId, conversationId) => ccContextFor(organizationId, conversationId),
+  ccContextForThread: (organizationId, threadId) => ccContextFor(organizationId, threadId),
 
   async createManualDraft(input) {
     return db.transaction(async (tx) => {
       const [head] = await tx
         .select({
-          recordId: records.id,
-          personId: records.personId,
-          version: records.contextVersion,
-          latest: records.latestInboundMessageId,
-          workflowState: records.workflowState,
+          conversationId: conversations.id,
+          personId: conversations.personId,
+          version: conversations.contextVersion,
+          latest: conversations.latestInboundMessageId,
+          workflowState: conversations.workflowState,
           email: people.email,
-          channel: conversations.channel,
-          status: conversations.status,
-          chat: conversations.providerThreadId,
-          accountRef: conversations.accountRef,
+          channel: threads.channel,
+          status: threads.status,
+          chat: threads.providerThreadId,
+          accountRef: threads.accountRef,
         })
-        .from(conversations)
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
-        // Serializes typed drafts with each other and with AI draft writes, which lock the record too.
-        .for("no key update", { of: records });
+        .from(threads)
+        .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+        .innerJoin(people, eq(people.id, conversations.personId))
+        .where(and(eq(threads.id, input.threadId), eq(threads.organizationId, input.organizationId)))
+        // Serializes typed drafts with each other and with AI draft writes, which lock the conversation too.
+        .for("no key update", { of: conversations });
       if (!head) throw new NotFoundError("Conversation not found");
       const { channel } = input;
       // A typed draft is not a send, but one written where a send is refused could never go out (docs/decisions.md,
       // "Reply send rules").
-      checkRecordOpen(head, channel);
+      checkConversationOpen(head, channel);
       checkThreadWritable(head, channel);
 
       if (channel === "email" && (await isSuppressed(tx, input.organizationId, head.email))) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
       if (await isDoNotContact(tx, input.organizationId, head.personId)) throw new ConflictError("This person is marked do not contact. A reply cannot be written.");
 
-      // The send rule's unit: the conversation. A reply in flight on another conversation of the record leaves this one free.
+      // The send rule's unit: the conversation. A reply in flight on another conversation of the conversation leaves this one free.
       const [inFlight] = await tx
         .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, input.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .where(and(eq(drafts.threadId, input.threadId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       checkNoneInFlight(inFlight, null, channel);
 
       if (input.expectedOpenRevision !== undefined) {
         // An edit holds the draft row, so this waits for one in progress and reads its revision.
         const open = await tx
-          .select({ id: drafts.id, conversationId: drafts.conversationId, revision: drafts.revision })
+          .select({ id: drafts.id, threadId: drafts.threadId, revision: drafts.revision })
           .from(drafts)
-          .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), eq(drafts.status, "awaiting_review")))
+          .where(and(eq(drafts.conversationId, head.conversationId), eq(drafts.channel, channel), eq(drafts.status, "awaiting_review")))
           .for("update");
         const expectedId = input.expectedOpenDraftId?.toLowerCase();
         const other = open.find((draft) => draft.revision !== input.expectedOpenRevision || (expectedId !== undefined && draft.id !== expectedId));
-        // A record holds one open draft per channel, so the one that goes stale can sit on another conversation of the person.
-        if (other) throw new ConflictError(`${other.conversationId === input.conversationId ? "This conversation" : `Conversation ${other.conversationId} of this person`} has an open draft, ${other.id}, at revision ${other.revision}. Read it, then pass its draftId and revision to replace it, or use edit.`, { code: "draft_open" });
+        // A conversation holds one open draft per channel, so the one that goes stale can sit on another conversation of the person.
+        if (other) throw new ConflictError(`${other.threadId === input.threadId ? "This conversation" : `Conversation ${other.threadId} of this person`} has an open draft, ${other.id}, at revision ${other.revision}. Read it, then pass its draftId and revision to replace it, or use edit.`, { code: "draft_open" });
       }
 
       const [created] = await tx
         .insert(drafts)
         .values({
           organizationId: input.organizationId,
-          recordId: head.recordId,
-          conversationId: input.conversationId,
+          conversationId: head.conversationId,
+          threadId: input.threadId,
           replyForMessageId: head.latest,
           expectedContextVersion: head.version,
           channel,
@@ -276,19 +269,19 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           writtenViaTokenId: input.via?.tokenId ?? null,
         })
         .returning({ id: drafts.id, revision: drafts.revision });
-      // One reviewable draft per record: older open ones are superseded.
+      // One reviewable draft per conversation: older open ones are superseded.
       await tx
         .update(drafts)
         .set({ status: "stale" })
-        .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
+        .where(and(eq(drafts.conversationId, head.conversationId), eq(drafts.channel, channel), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
-        recordId: head.recordId,
+        conversationId: head.conversationId,
         eventType: "draft.created_manual",
         actorType: "human",
         actorUserId: input.actorUserId,
-        meta: { draftId: created.id, conversationId: input.conversationId, ...viaMeta(input.via) },
+        meta: { draftId: created.id, threadId: input.threadId, ...viaMeta(input.via) },
       });
       return created;
     });
@@ -325,9 +318,9 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
   async discardDraft(organizationId, draftId, actorUserId, expectedRevision, via) {
     await db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ id: drafts.id, status: drafts.status, revision: drafts.revision, recordId: drafts.recordId, personId: records.personId })
+        .select({ id: drafts.id, status: drafts.status, revision: drafts.revision, conversationId: drafts.conversationId, personId: conversations.personId })
         .from(drafts)
-        .innerJoin(records, eq(records.id, drafts.recordId))
+        .innerJoin(conversations, eq(conversations.id, drafts.conversationId))
         .where(and(eq(drafts.id, draftId), eq(drafts.organizationId, organizationId)))
         .for("update", { of: drafts });
       if (!row) throw new NotFoundError("Draft not found");
@@ -336,7 +329,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       }
       if (expectedRevision !== undefined && row.revision !== expectedRevision) throw new ConflictError("The draft changed since you opened it. Reload and review it again.");
       await tx.update(drafts).set({ status: "discarded" }).where(and(eq(drafts.id, draftId), draftCanBecome("discarded")));
-      await tx.insert(events).values({ organizationId, personId: row.personId, recordId: row.recordId, eventType: "draft.discarded", actorType: "human", actorUserId, meta: { draftId, ...viaMeta(via) } });
+      await tx.insert(events).values({ organizationId, personId: row.personId, conversationId: row.conversationId, eventType: "draft.discarded", actorType: "human", actorUserId, meta: { draftId, ...viaMeta(via) } });
     });
   },
 };

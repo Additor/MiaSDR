@@ -312,32 +312,6 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     }
   });
 
-  it("starts a Personal LinkedIn campaign only from accounts the token's person owns", async () => {
-    const tag = randomBytes(4).toString("hex");
-    const [{ id: account }] = await sql`
-      insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status)
-      values (${org.organizationId}, ${`acct-${tag}`}, ${`ACo-${tag}`}, 'Jo', 'connected') returning id`;
-    const created = await agent.tool("draft_campaign", { action: "create", channel: "linkedin", name: `Personal ${tag}`, personal: true });
-    const campaignId = created.structured.campaignId as string;
-    const steps = [{ stepNumber: 1, kind: "invitation", body: "Hi {{firstName}}", waitDays: 0 }];
-    expect((await agent.tool("draft_campaign", { action: "update", channel: "linkedin", campaignId, steps })).isError).toBe(false);
-    const start = (purpose = "start") => agent.tool("preview_campaign_launch", { channel: "linkedin", campaignId, purpose });
-
-    // No senders named: an agent cannot tell whose LinkedIn would send.
-    let token = (await start()).structured.launchToken as string;
-    expect(codeOf(await agent.tool("launch_campaign", { channel: "linkedin", campaignId, action: "start", launchToken: token }))).toBe("agent_sender_not_owned");
-
-    expect((await agent.tool("draft_campaign", { action: "update", channel: "linkedin", campaignId, senderIds: [account] })).isError).toBe(false);
-    token = (await start()).structured.launchToken as string;
-    expect(codeOf(await agent.tool("launch_campaign", { channel: "linkedin", campaignId, action: "start", launchToken: token }))).toBe("agent_sender_not_owned");
-
-    await sql`update linkedin_accounts set owner_user_id = ${org.userId} where id = ${account}`;
-    const seen = await start();
-    expect(seen.structured.problems).toEqual([]);
-    const started = await agent.tool("launch_campaign", { channel: "linkedin", campaignId, action: "start", launchToken: seen.structured.launchToken as string });
-    expect(started.structured.status, started.text).toBe("active");
-  });
-
   it("lists what agents started and pauses every running campaign an agent started in one step", async () => {
     const campaignId = await campaign();
     await addLeads(campaignId, await leads(1));
@@ -370,6 +344,16 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     const seen = await preview(campaignId, "resume");
     expect(seen.structured.problems).toContainEqual(expect.stringContaining("agent_resume_person_paused"));
     expect(codeOf(await launch(campaignId, seen.structured.launchToken as string, "resume"))).toBe("agent_resume_person_paused");
+
+    // MiaSDR paused it for bounces: the same hold, with its own reason and numbers.
+    await sql`update campaigns set bounce_pause = ${sql.json({ at: new Date().toISOString(), sent: 40, bounced: 3 })} where id = ${campaignId}`;
+    const bounced = await preview(campaignId, "resume");
+    expect(bounced.structured.problems).toContainEqual(expect.stringContaining("agent_resume_bounce_paused"));
+    expect(codeOf(await launch(campaignId, bounced.structured.launchToken as string, "resume"))).toBe("agent_resume_bounce_paused");
+    const read = await agent.tool("get_campaign", { channel: "email", campaignId });
+    expect(read.structured.pausedReason).toContain("3 of 40 emails bounced (7.5%)");
+    await sql`update campaigns set bounce_pause = null where id = ${campaignId}`;
+
     await sql`update campaigns set person_paused = false where id = ${campaignId}`;
     expect((await agent.tool("pause_sending", { target: "campaign", channel: "email", campaignId })).structured.outcome).toBe("already_paused");
     const resumed = await launch(campaignId, (await preview(campaignId, "resume")).structured.launchToken as string, "resume");

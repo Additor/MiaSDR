@@ -8,7 +8,7 @@ import { isFilterActive } from "../domain/lead-filter";
 import { planLeadEdit, type LeadEditInput } from "../domain/lead-edit";
 import { leadDeleteBlock } from "../domain/person-delete-policy";
 import { BLOCK_MESSAGES } from "./lead-delete-terms";
-import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete, SendViewer } from "./lead-ports";
+import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete } from "./lead-ports";
 
 /*
  * Permissions: any member of the organization can read, edit, delete and export
@@ -22,10 +22,8 @@ export { BLOCK_MESSAGES };
 /** One line per reason in a bulk delete's answer, for `n` leads kept. Each says why, in the order of the per-lead reasons. */
 const KEPT_LINES: Record<BlockReason, (n: number) => string> = {
   has_sends: (n) => `${leads(n)} already got messages.`,
-  has_hidden_sends: (n) => `${leads(n)} got messages in another member's personal campaign.`,
   in_active_campaign: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in a running or paused campaign. Cancel the enrollment or finish the campaign first.`,
-  linked_records: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
-  personal_campaign_sends: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in another member's personal campaign. Ask its creator, an owner or an admin.`,
+  linked_conversations: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
   try_again: (n) => `${leads(n)} ${n === 1 ? "was" : "were"} busy with another change. Try again.`,
   agent_delete_protected: (n) => `${leads(n)} can be deleted only by a person.`,
 };
@@ -57,11 +55,8 @@ export function summarizeDelete(outcome: DeleteOutcome): DeleteSummary {
   };
 }
 
-/** The actor as a reader of personal-campaign sends: the campaign's creator, an owner or an admin sees them. */
-export const sendViewer = (actor: Pick<Actor, "userId" | "role">): SendViewer => ({ userId: actor.userId, seesAllPersonal: isOwnerOrAdmin(actor.role) });
-
 export async function getLead(deps: LeadDeps, actor: Actor, id: string): Promise<LeadDetail> {
-  const lead = await deps.leads.get(actor.organizationId, id, sendViewer(actor));
+  const lead = await deps.leads.get(actor.organizationId, id);
   if (!lead) throw new NotFoundError("Lead not found");
   return lead;
 }
@@ -116,7 +111,7 @@ export const LEAD_DELETE_STATEMENT_TIMEOUT = "30s";
 
 /**
  * Deletes leads that never had mail sent, are not in a running campaign and have
- * no CRM records. The rest stay and come back in `blocked` with a reason.
+ * no conversations. The rest stay and come back in `blocked` with a reason.
  * A filter delete needs the count the person confirmed, so a changed list is not deleted blind,
  * and it refuses an empty filter: "delete all matching" never means "delete everything".
  */
@@ -140,14 +135,11 @@ export async function deleteLeads(deps: LeadDeleteDeps, actor: Actor, selection:
   return deleteInBatches(deps, actor, await deps.people.idsMatching(actor.organizationId, filter));
 }
 
-/**
- * The reason a lead stays, from the facts of the three contexts. The viewer only picks between `has_sends` and
- * `has_hidden_sends`, and opens `personal_campaign_sends` to the campaign's creator, an owner or an admin.
- */
+/** The reason a lead stays, from the facts of the three contexts. */
 async function verdicts(deps: LeadDeleteDeps, tx: DbHandle, actor: Actor, rows: LeadForDelete[], lockPolicies: boolean): Promise<Map<string, BlockReason>> {
   const ids = rows.map((row) => row.id);
   const shielded = actor.via ? await deps.agentProtected(tx, actor.organizationId, ids, { lock: lockPolicies }) : new Set<string>();
-  const outreach = await deps.outreach.blockers(tx, actor, ids);
+  const outreach = await deps.outreach.blockers(tx, actor.organizationId, ids);
   const history = await deps.handling.peopleWithHistory(tx, actor.organizationId, ids);
   const blocked = new Map<string, BlockReason>();
   for (const row of rows) {
@@ -193,7 +185,7 @@ function deleteBatch(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise
   );
 }
 
-/** What a delete of one person would meet, as this actor may see it. Null when no such person is in the organization. */
+/** What a delete of one person would meet. Null when no such person is in the organization. */
 export async function previewLeadDelete(deps: LeadDeleteDeps, actor: Actor, id: string): Promise<{ id: string; name: string | null; contact: boolean; blocked: BlockReason | null } | null> {
   return deps.transaction(async (tx) => {
     const [row] = await deps.people.read(tx, actor.organizationId, [id]);
@@ -209,7 +201,7 @@ const blockedLead = (row: LeadForDelete, reason: BlockReason | undefined): Block
 const isBusy = (error: unknown) => (error instanceof ConflictError && error.details?.code === "try_again") || sqlState(error) === "57014";
 
 /** The people of a run that rolled back, with the reason they stay. */
-async function stayed(deps: LeadDeleteDeps, organizationId: string, ids: string[], reason: "try_again" | "linked_records"): Promise<BlockedLead[]> {
+async function stayed(deps: LeadDeleteDeps, organizationId: string, ids: string[], reason: "try_again" | "linked_conversations"): Promise<BlockedLead[]> {
   const rows = await deps.transaction((tx) => deps.people.read(tx, organizationId, ids));
   return rows.map((row) => ({ id: row.id, name: row.name, reason }));
 }
@@ -220,10 +212,10 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
     outcome.deleted += part.deleted;
     outcome.blocked.push(...part.blocked);
   };
-  /** A run of one lead that rolled back: busy is `try_again`, a foreign key violation `linked_records`. */
+  /** A run of one lead that rolled back: busy is `try_again`, a foreign key violation `linked_conversations`. */
   const keep = async (id: string, error: unknown) => {
     if (isBusy(error)) add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "try_again") });
-    else if (sqlState(error) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_records") });
+    else if (sqlState(error) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_conversations") });
     else throw error;
   };
   for (let i = 0; i < ids.length; i += LEAD_DELETE_BATCH) {
@@ -239,8 +231,8 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
       }
       // A busy batch (one held row, a lock timeout twice, the statement timeout) or a foreign key violation runs again one
       // lead at a time, so the others still go. A 23503 is the last guard: before the batch held its locks, a send claim or
-      // a new record could commit between the checks and the delete; under the locks no known writer can, so it catches
-      // only a reference no check covers, and the lead stays as `linked_records`. A lead still busy alone is `try_again`.
+      // a new conversation could commit between the checks and the delete; under the locks no known writer can, so it catches
+      // only a reference no check covers, and the lead stays as `linked_conversations`. A lead still busy alone is `try_again`.
       for (const id of part) {
         try {
           add(await deleteBatch(deps, actor, [id]));

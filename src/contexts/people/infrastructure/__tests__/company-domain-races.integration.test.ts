@@ -32,9 +32,8 @@ describeDb("company domain races", () => {
     const { drizzleContactStore, personTransaction } = await import("../drizzle-contact-store");
     const { appendPersonEvent } = await import("@/contexts/conversations/infrastructure/person-handling");
     const { conversionDeps } = await import("@/composition/deals");
-    const { conversionOutreach } = await import("@/contexts/outreach/infrastructure/drizzle-conversion-outreach");
     addDeps = { contacts: drizzleContactStore, appendEvent: appendPersonEvent };
-    makeDeps = { ...conversionDeps, liveEnrollmentSummary: conversionOutreach.liveEnrollmentSummary, transaction: personTransaction };
+    makeDeps = { ...conversionDeps, transaction: personTransaction };
   }, 60_000);
 
   afterAll(async () => {

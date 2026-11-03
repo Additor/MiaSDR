@@ -41,19 +41,19 @@ export interface OutgoingEmail {
   rfcMessageId: string;
   inReplyTo: string | null;
   references: string[];
-  threadId: string | null;
+  providerThreadId: string | null;
   /** The HTTPS endpoint a mail client POSTs to (RFC 8058), not the confirmation page. */
   listUnsubscribeUrl: string;
 }
 
 export interface SentEmail {
   providerMessageId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
 }
 
 export interface InboundEmail {
   providerMessageId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
   rfcMessageId: string | null;
   inReplyTo: string | null;
   references: string[];
@@ -124,6 +124,8 @@ export interface SendClaim {
   enrollmentId: string;
   campaignId: string;
   mailbox: { id: string; emailAddress: string; displayName: string | null; signatureHtml: string | null };
+  /** The organization's postal address for the footer. A start refuses without one on real mail. */
+  postalAddress: string | null;
   person: { id: string; email: string; variables: Record<string, string | null> };
   step: { subject: string; body: string; waitDays: number };
   /** The step after this one, if any, for scheduling the follow-up. */
@@ -165,7 +167,7 @@ export interface OutreachStore {
   claimNext(options: ClaimOptions): Promise<SendClaim | null>;
   /** Re-checks the enrollment status, the campaign, the suppression list and do-not-contact right before the provider call. */
   checkBlockers(claim: SendClaim): Promise<BlockReason | null>;
-  /** Records the blocker, ends the enrollment and releases the claim without a retry. */
+  /** Conversations the blocker, ends the enrollment and releases the claim without a retry. */
   abandon(claim: SendClaim, reason: BlockReason, now: Date): Promise<void>;
   /** Stores the rendered message on the claim so a crash after this point can be reconciled. */
   recordRendered(claim: SendClaim, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<void>;

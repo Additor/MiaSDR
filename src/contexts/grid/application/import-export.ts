@@ -2,14 +2,12 @@ import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { buildImportRecords, isInitialSeedColumn, normalizeMapping, planImportColumns, suggestMapping } from "../domain/import-plan";
 import type { GridQuery } from "../domain/view-query";
-import { refreshAfterSourceWrite } from "./formula-lookup-refresh";
-import { recalculateFormulasQuietly } from "./formula-recalc";
 import { GRID_LIMITS } from "./limits";
 import { queryOf, refsOf } from "./row-management";
 import { resolveView } from "./structure-management";
 import type { GridDeps } from "./ports";
 
-type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
+type Deps = Pick<GridDeps, "structure" | "columns" | "rows">;
 
 export interface ParsedSheet {
   headers: string[];
@@ -84,11 +82,6 @@ export async function runImport(deps: Deps, actor: Actor, tableId: string, sheet
     { maxRows: GRID_LIMITS.tableRows, maxColumns: GRID_LIMITS.columnsPerTable },
   );
   if (!result) throw new NotFoundError("Table not found");
-  if (result.rowsInserted > 0) {
-    const after = await deps.columns.list(actor.organizationId, tableId);
-    if (after.some((c) => c.type === "formula")) await recalculateFormulasQuietly(deps, actor.organizationId, tableId, { changedKeys: after.map((c) => c.key) });
-    await refreshAfterSourceWrite(deps, actor.organizationId, table);
-  }
   return { preview: false as const, rowsInserted: result.rowsInserted, columnsCreated: result.columnsCreated };
 }
 

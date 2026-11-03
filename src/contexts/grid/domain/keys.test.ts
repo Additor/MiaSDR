@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { evaluateFormula, parseFormula } from "./formula";
-import { SINGLE_TOKEN, TOKEN, scanKey, toColumnKey, uniqueColumnKey } from "./keys";
-import { configDependencies } from "./column-config";
+import { SINGLE_TOKEN, TOKEN, toColumnKey, uniqueColumnKey } from "./keys";
 import { render, renderValue, tokensIn } from "../enrichment/domain/enrichment-templates";
 import { suggestMapping } from "./import-plan";
 
@@ -78,20 +76,13 @@ describe("uniqueColumnKey with other scripts", () => {
 });
 
 describe("one shared key definition", () => {
-  it("is used by the parser, the column config and both template modules", () => {
+  it("is used by both template modules", () => {
     // Each consumer must read a Korean token.
     expect([...("{{업종}} {{ b }}").matchAll(TOKEN)].map((m) => m[1])).toEqual(["업종", "b"]);
     expect(SINGLE_TOKEN.exec("{{업종}}")?.[1]).toBe("업종");
-    expect(scanKey("업종2}}", 0)).toBe("업종2");
     expect(tokensIn("hi {{업종}}")).toEqual(["업종"]);
     expect(render("hi {{업종}}", { 업종: "SaaS" })).toBe("hi SaaS");
     expect(renderValue("{{업종}}", { 업종: 3 })).toBe(3);
-    expect(configDependencies({ prompt: "x {{업종}} y" })).toEqual(["업종"]);
-  });
-
-  it("reads Korean keys in formulas", () => {
-    expect(evaluateFormula('{{이름}} & " " & UPPER({{company}})', { 이름: "민수", company: "acme" })).toEqual({ ok: true, value: "민수 ACME" });
-    expect(() => parseFormula("{{업종 이름}}")).toThrow();
   });
 
   it("matches a Korean header to an existing column by key", () => {
@@ -105,37 +96,9 @@ describe("NFD tokens resolve NFC column keys", () => {
   const nfd = "업종".normalize("NFD");
   const row = { [nfc]: "SaaS" };
 
-  it("resolves in a formula", () => {
-    expect(evaluateFormula(`UPPER({{${nfd}}})`, row, { now: new Date("2026-03-05T12:00:00Z") })).toEqual({ ok: true, value: "SAAS" });
-  });
-
-  it("lists the NFC key as the formula reference", () => {
-    const parsed = parseFormula(`{{${nfd}}}`);
-    expect(JSON.stringify(parsed)).toContain(nfc);
-    expect(JSON.stringify(parsed)).not.toContain(nfd);
-  });
-
-  it("scans, then the parser normalizes, an NFD key", () => {
-    expect(scanKey(`{{${nfd}}}`, 2).normalize("NFC")).toBe(nfc);
-  });
-
   it("resolves in an AI prompt template through render, renderValue and tokensIn", () => {
     expect(render(`Industry: {{${nfd}}}`, row)).toBe("Industry: SaaS");
     expect(renderValue(`{{${nfd}}}`, row)).toBe("SaaS");
     expect(tokensIn(`{{${nfd}}} {{${nfc}}}`)).toEqual([nfc]);
-  });
-
-  it("reports the NFC key as a config dependency", () => {
-    expect(configDependencies({ prompt: `Describe {{${nfd}}}` })).toContain(nfc);
-  });
-});
-
-describe("formulaProblem with an NFD reference", () => {
-  it("accepts a column stored under the NFC key", async () => {
-    const { formulaProblem } = await import("../application/formula-management");
-    const nfc = "업종".normalize("NFC");
-    const nfd = nfc.normalize("NFD");
-    const column = { key: nfc, type: "text", config: {} } as never;
-    expect(formulaProblem(`UPPER({{${nfd}}})`, [column], { [nfc]: "x" })).toBeNull();
   });
 });

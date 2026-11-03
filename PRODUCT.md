@@ -15,7 +15,7 @@ Small sales teams that run outbound themselves. The people in the app are SDRs a
 MiaSDR is a self-hosted AI SDR. It imports leads, runs email sequences from the team's own Google Workspace mailboxes, and stops a sequence when a lead replies, bounces or unsubscribes. Success is outreach that reaches real people within strict send rules, with a person answerable for every AI-written message.
 
 ## Positioning
-Self-hosted (Docker Compose is the supported path), with each organization using its own mailboxes and its own AI provider key (Anthropic, Vercel AI Gateway or OpenRouter). Email, LinkedIn, campaigns with AI follow-ups after a reply, an Inbox, analytics and enrichment tables live in one app, together with a minimal CRM: a Pipeline of deals, Contacts and Companies. A person enters the CRM as a contact: Add contact creates one, and a lead becomes one when you create a deal from it or make it a contact.
+Self-hosted (Docker Compose is the supported path). One install serves one organization, which uses its own mailboxes and its own AI provider key (Anthropic, Vercel AI Gateway or OpenRouter). Email, LinkedIn, campaigns with AI follow-ups after a reply, an Inbox, analytics and enrichment tables live in one app, together with a minimal CRM: a Pipeline of deals, Contacts and Companies. A person enters the CRM as a contact: Add contact creates one, and a lead becomes one when you create a deal from it or make it a contact.
 
 ## Operating Context
 Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/actions`, `/crm/pipeline`, `/crm/contacts`, `/crm/companies`, `/analytics`, `/tables`, `/onboarding` and `/settings/*`. Gmail is polled every minute for replies and bounces. LinkedIn runs through Unipile. Sends respect working hours, daily limits and a randomized gap between messages, and a send pause exists.
@@ -24,11 +24,11 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Campaign:** the container for Leads, a Sequence and Settings.
 - **Sequence:** the tab and the campaign's own ordered outbound steps. They send automatically at their time. A reply, bounce or unsubscribe stops them.
 - **Step:** one message in the Sequence.
-- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves or an allowed agent sends. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply`.
+- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves or an allowed agent sends. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply` and its tables `follow_up_*`.
 - **Follow-ups in progress:** the runs of Follow-ups after a reply that have not ended.
 - **Lead status:** where a lead stands in outreach. One of New (in no campaign), Queued (waits for its first step), In sequence (inside the campaign's steps), Paused (its campaign is not running), Replied, Finished (every step went out, no reply) or Stopped (a bounce, a suppression, a failure or a cancellation cut it short). Leads only: a contact has no lead status.
 - **In sequence:** the lead status for a lead inside the campaign's steps.
-- **Reachability:** which channels can reach a person, kept apart from the lead status. The term stays internal; the UI shows "Do not contact" (no channel) and "Email suppressed" (email only, LinkedIn stays open).
+- **Reachability:** which channels can reach a person, kept apart from the lead status. The term stays internal; the UI shows "Do not contact" (no channel), "Email suppressed" and "LinkedIn blocked" (an address that unsubscribed or was added by hand; a bounced address leaves LinkedIn open).
 - **Lead:** a person you are trying to reach, including an unknown sender who wrote first. Leads live in Leads, outside the CRM.
 - **Contact:** a person you do business with. Add contact creates one, with or without a deal. A lead becomes a contact when you create a deal from it or make it a contact. Contacts cannot join a campaign and never go back to Leads. A contact without an open deal can be deleted.
 - **Company:** the employer of a lead or a contact, identified by its domain. Companies lists a company once it enters the CRM (see Listed in Companies). Two companies can merge, and a company with no people can be deleted.
@@ -37,17 +37,16 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Deal:** one sales opportunity with a contact, with a title, stage, owner, amount and expected close date.
 - **Stage:** a step of the deal Pipeline (New, Meeting, Proposal, Won, Lost by default). A stage never stops outreach.
 - **Pipeline:** the board of deals by stage. Reply handling never says pipeline.
-- **Reply type:** the label the AI picks for each reply, such as Meeting requested or Not now. An organization edits its reply types in Settings > Reply handling, and the AI picks one from its name, description and guidance. The code calls it `ReplyType` (`reply_types`). An organization's types form a set (`reply_type_sets`), which the UI never shows.
-- **Group:** one of the four fixed groups of reply types: Interested, Existing customer, Not interested and Other. A group carries no behavior, except the lock of Existing customer; the type rules do. Filters label it "Reply group". The code calls it `groupKey`.
-- **Type rules:** what happens when the AI picks a type, set in Settings under "When the AI picks {type}". Check is "Check before" (the pick waits until a person accepts it), "Check after" (it applies at once and waits for Looks right) or "No check"; the dialog offers them as Before it applies, After it applies and Skip. Reply draft is Write one or Don't write. Follow-ups is Keep going or Stop. Rules count at the moment of a pick, and each pick keeps a copy of the rules it used.
-- **Confidence floor:** one organization-wide percent in Settings > Reply handling. An AI pick below it waits for a person, whatever its type's Check says. The column keeps the name `auto_apply_confidence`.
-- **AI pick:** the AI's choice of a reply type for one reply, with its confidence and reasoning. The thread's history and the Actions section both read "AI picks". The code stores it in `reply_type_picks` (`replyTypePicks`). A person's own pick is a row with `provider = 'human'`.
-- **Asked to stop:** the reply type for a reply that asks you to stop (system role `stop_request`, key `do_not_contact`). Its rules are fixed at Check before, Don't write and Stop, and it cannot be archived. Picking it never marks the person do not contact: only Stop contacting does.
-- **Customer question:** the reply type for a sender who already pays (system role `customer`, key `customer`). Settings shows it as Locked: it cannot be archived, so Existing customer always has a type. Its rules stay editable.
-- **Existing customer:** the group of Customer question. A person moved into it by a person, with any of its types or the group alone, is locked there: the AI cannot move them out, and a person who moves them out unlocks them. It labels the reply and says nothing about deals: a Won deal does not set it, and it does not make anyone a contact. The code key stays `customer`.
-- **Looks right:** the button that confirms an AI pick that applied under Check after.
+- **Reply type:** the label the AI picks for each reply, such as Meeting requested or Not now. The types are fixed: Settings > Reply handling lists them with what each one does, and the AI picks one from its name, description and guidance. The code calls it `ReplyType` (`reply_types`). An organization's types form a set (`reply_type_sets`), which the UI never shows.
+- **Group:** one of the four fixed groups of reply types: Interested, Existing customer, Not interested and Other. A group carries no behavior, except the lock of Existing customer; the type rules do. Filters label it "Reply group". The code calls it `groupKey`, and the Leads URL param is `replyGroup`.
+- **Type rules:** what a type does once it applies, seeded and read-only. Reply draft says whether the AI writes one. Follow-ups say whether they keep going or stop. Each pick keeps a copy of the rules it used. Whether a pick waits for a person is one fixed rule for every type: see AI pick.
+- **Confidence floor:** the fixed 85 percent (`AI_PICK_CONFIDENCE_FLOOR`). An AI pick under it waits for a person.
+- **AI pick:** the AI's choice of a reply type for one reply, with its confidence and reasoning. A pick sends nothing, since the draft approval decides what goes out. It applies at once unless it is Asked to stop, it sits under the Confidence floor, or it would move a locked person out of Existing customer; those three wait for a person. A person corrects a wrong pick with Change type or Undo. The thread's history and the Actions section both read "AI picks". The code stores it in `reply_type_picks` (`replyTypePicks`). A person's own pick is a row with `provider = 'human'`.
+- **Asked to stop:** the reply type for a reply that asks you to stop (system role `stop_request`, key `do_not_contact`). The AI's pick of it always waits for a person, and it writes no draft and stops follow-ups. Picking it never marks the person do not contact: only Stop contacting does.
+- **Customer question:** the reply type for a sender who already pays (system role `customer`, key `customer`). Settings shows it as Locked.
+- **Existing customer:** the group of Customer question. A person moved into it by a person, with any of its types or the group alone, is locked there: the AI's pick to another group waits for a person, and a person who moves them out unlocks them. It labels the reply and says nothing about deals: a Won deal does not set it, and it does not make anyone a contact. The code key stays `customer`.
 - **Review stop request:** the button on a reply the AI read as a possible stop request. It opens Stop contacting, where you choose how far the stop reaches, or you change the type instead.
-- **Change type:** the dialog that changes a conversation's reply type, with three lines on what the change does to the reply draft, follow-ups and contact. Choosing Asked to stop adds the stop scope and reason, with Stop contacting and Only change the type. The code calls it `changeReplyType` and writes the `reply_type.changed` event.
+- **Change type:** the dialog that changes a conversation's reply type, and the way a person corrects a wrong AI pick, with three lines on what the change does to the reply draft, follow-ups and contact. Choosing Asked to stop adds the stop scope and reason, with Stop contacting and Only change the type. The code calls it `changeReplyType` and writes the `reply_type.changed` event.
 - **Remind me:** the Next step button that adds a task to come back to the person, due tomorrow and assigned to you.
 - **Custom fields:** the fields an organization adds to people and to companies, set in Settings > Custom fields. Person fields show on the lead and contact forms, company fields on the company page.
 - **Became a contact:** what a person sees when a lead converts to a contact, as a stop reason and a history line.
@@ -56,22 +55,22 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Owner:** the deal's field only (shown as Deal owner). A conversation has an assignee, not an owner.
 - **Actions:** the work to do now: replies to approve, AI picks to review, follow-ups due, next steps, problems and tasks. It is the home page and opens on Mine.
 - **Mine, Unassigned, Others:** the three scopes of Actions. Mine is what is assigned to you, Unassigned has no assignee, Others is assigned to someone else. Unconfirmed sends, unmatched senders and dead letters are Shared and sit outside the scopes.
-- **Waiting since:** the time of the last message from the person. Actions lists the longest wait first.
+- **Waiting since:** the time of the last message from the person. An Actions row reads it as "Waiting 2 d", and Actions lists the longest wait first. The code calls it `waitingSince`.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
-- **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `record` (`records` table); a `conversations` row is one channel's thread inside it.
+- **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `conversation` (`conversations` table); a `threads` row is one channel's thread inside it.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
 - **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
 - **Table:** one tab of a workbook, with typed columns and rows.
 - **Enrichment column:** a table column that asks a provider for each row, such as Find work emails or Verify emails. A column that tries several providers in order is a `waterfall` in the code; the UI says "tried in order". The code calls the lookup a provider offers an action (`actionKey`).
 - **Enrichment provider:** a data vendor an organization connects with its own key in Settings > Integrations. The AI provider is a separate connection on the same page.
 - **Code names:** names that stay different in code and tables, so a reader can map them:
-  - `records` holds Conversations.
-  - The AI job kind `classification` is the job that picks a reply type.
-  - The model output field `subcategoryKey` names the picked type.
-  - The stored run reasons `stage_moved`, `classification_corrected` and `classification_undone` mean a person changed the reply type, corrected an AI pick or undid one.
-  - The workflow states `unclassified` and `classifying` read as No type yet and Picking a type. The thread's type line says "No reply type yet", because no "Reply type" label stands next to it there.
+  - The AI job kind `classification` is the job that picks a reply type. The columns `reply_types.classification_guidance` and `reply_handling_settings.classification_instructions` feed that job.
+  - The model output field `replyTypeKey` names the picked type.
+  - The stored run reasons `type_changed`, `type_corrected` and `pick_undone` mean a person changed the reply type, corrected an AI pick or undid one.
+  - The Actions group `ai_pick` reads as AI picks.
+  - The workflow state `no_type` reads as No type yet. The thread's type line says "No reply type yet", because no "Reply type" label stands next to it there.
 - A lead becomes a contact when you create a deal from it or make it a contact.
-- "Sequence" never names the post-reply feature in user-facing text. Code and table names keep `sequence`.
+- "Sequence" never names the post-reply feature, in user-facing text or in code. Its events are `follow_up.*`.
 
 ## Capabilities and Constraints
 - Stack: Next.js 16.4 (App Router), React 19, Tailwind CSS 4.

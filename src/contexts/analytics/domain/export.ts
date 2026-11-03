@@ -43,7 +43,7 @@ export function linkedinTable(r: LinkedInReport): Table {
 
 export function repliesTable(r: RepliesReport): Table {
   return {
-    headers: ["Category", "Replies", "Share %"],
+    headers: ["Reply group", "Replies", "Share %"],
     rows: [...r.byBucket.map((b): Cell[] => [b.label, b.replies, pct(b.share)]), ["Total", r.total, null]],
   };
 }

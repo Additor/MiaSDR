@@ -19,24 +19,10 @@ export class FakeGridAi implements GridAnswerer {
     this.lastAnswerInput = input;
     if (this.failWith) throw this.failWith;
     if (this.answerWith) return { output: this.answerWith(input) as AnswerOutput };
-    const formula = fakeFormula(input);
-    if (formula) return { output: { formula, explanation: "Joins the first columns of the current table." } };
     const first = input.cells[0]?.value ?? "";
     const output: AnswerOutput = {};
     for (const f of input.outputs) output[f.key] = fakeValue(f.type, first);
     return { output };
-  }
-}
-
-/** Formula requests carry the workbook schema as the first cell. Joins the current table's first two column keys, so the answer parses. */
-function fakeFormula(input: AnswerInput): string | null {
-  if (!input.outputs.some((f) => f.key === "formula") || input.cells[0]?.key !== "workbook_schema") return null;
-  try {
-    const schema = JSON.parse(input.cells[0].value) as { current?: boolean; columns?: { key: string }[] }[];
-    const keys = (schema.find((t) => t.current)?.columns ?? []).slice(0, 2).map((c) => `{{${c.key}}}`);
-    return keys.length ? keys.join(' & " " & ') : null;
-  } catch {
-    return null;
   }
 }
 

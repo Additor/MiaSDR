@@ -10,7 +10,7 @@ import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-sup
  * asserts no wall-clock bound, so a slow runner does not fail it.
  */
 const CONVERSATIONS = 40;
-const MESSAGES_PER_CONVERSATION = 250;
+const MESSAGES_PER_THREAD = 250;
 const CAMPAIGNS = 200;
 const STEPS = 10;
 const EVENTS = 500;
@@ -42,34 +42,34 @@ describeDb("contact delete: purge size check", () => {
 
   const one = async (rows: PromiseLike<Array<{ id: string }>>) => (await rows)[0].id as string;
 
-  /** A contact with `conversations` email threads of `perConversation` messages each, `campaigns` enrollments of `steps` sends, and `events` history lines. */
-  async function seed(org: string, tag: string, label: string, size: { conversations: number; perConversation: number; campaigns: number; steps: number; events: number }) {
+  /** A contact with `threads` email threads of `perThread` messages each, `campaigns` enrollments of `steps` sends, and `events` history lines. */
+  async function seed(org: string, tag: string, label: string, size: { threads: number; perThread: number; campaigns: number; steps: number; events: number }) {
     const t = `${tag}-${label}`;
     const pipeline = await one(sql`select id from reply_type_sets where organization_id = ${org} and is_default`);
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
-    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
+    const conversationId = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
     await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref)
-      select ${org}, ${record}, 'email', ${`me-${t}-`} || g from generate_series(1, ${size.conversations}) g`;
+      insert into threads (organization_id, conversation_id, channel, account_ref)
+      select ${org}, ${conversationId}, 'email', ${`me-${t}-`} || g from generate_series(1, ${size.threads}) g`;
     await sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
       select ${org}, c.id, 'email', c.account_ref, case when g % 2 = 0 then 'inbound' else 'outbound' end,
              c.id::text || '-' || g, 'Message ' || g || ' about the proposal and the next call.', now() - make_interval(mins => g)
-      from conversations c cross join generate_series(1, ${size.perConversation}) g
-      where c.organization_id = ${org} and c.record_id = ${record}`;
-    // The latest inbound message of the record, which the message delete sets to null through its foreign key.
+      from threads c cross join generate_series(1, ${size.perThread}) g
+      where c.organization_id = ${org} and c.conversation_id = ${conversationId}`;
+    // The latest inbound message of the conversation, which the message delete sets to null through its foreign key.
     await sql`
-      update records set latest_inbound_message_id = (
-        select m.id from messages m join conversations c on c.id = m.conversation_id
-        where c.record_id = ${record} and m.direction = 'inbound' order by m.sent_at desc limit 1)
-      where id = ${record}`;
+      update conversations set latest_inbound_message_id = (
+        select m.id from messages m join threads c on c.id = m.thread_id
+        where c.conversation_id = ${conversationId} and m.direction = 'inbound' order by m.sent_at desc limit 1)
+      where id = ${conversationId}`;
     await sql`
-      insert into events (organization_id, person_id, record_id, event_type, actor_type)
-      select ${org}, ${person}, case when g % 2 = 0 then ${record}::uuid end, 'reply_type.changed', 'system' from generate_series(1, ${size.events}) g`;
+      insert into events (organization_id, person_id, conversation_id, event_type, actor_type)
+      select ${org}, ${person}, case when g % 2 = 0 then ${conversationId}::uuid end, 'reply_type.changed', 'system' from generate_series(1, ${size.events}) g`;
     await sql`
-      insert into notes (organization_id, person_id, record_id, body)
-      select ${org}, ${person}, ${record}, 'Note ' || g from generate_series(1, 20) g`;
+      insert into notes (organization_id, person_id, conversation_id, body)
+      select ${org}, ${person}, ${conversationId}, 'Note ' || g from generate_series(1, 20) g`;
     await sql`
       insert into tasks (organization_id, person_id, name)
       select ${org}, ${person}, 'Task ' || g from generate_series(1, 20) g`;
@@ -86,14 +86,14 @@ describeDb("contact delete: purge size check", () => {
       select ${org}, 'campaign', e.id, g, 'email', 'sent', ${mailbox}, 'Hello', 'A campaign email body.', now() - interval '30 days', now() - interval '30 days'
       from campaign_enrollments e cross join generate_series(1, ${size.steps}) g
       where e.organization_id = ${org} and e.person_id = ${person}`;
-    return { person, record };
+    return { person, conversationId };
   }
 
   async function countsOf(org: string, person: string) {
     const [row] = await sql`
       select
-        (select count(*)::int from messages m join conversations c on c.id = m.conversation_id join records r on r.id = c.record_id where r.person_id = ${person}) as messages,
-        (select count(*)::int from conversations c join records r on r.id = c.record_id where r.person_id = ${person}) as conversations,
+        (select count(*)::int from messages m join threads c on c.id = m.thread_id join conversations r on r.id = c.conversation_id where r.person_id = ${person}) as messages,
+        (select count(*)::int from threads c join conversations r on r.id = c.conversation_id where r.person_id = ${person}) as threads,
         (select count(*)::int from events where organization_id = ${org} and person_id = ${person}) as events,
         (select count(*)::int from sends s join campaign_enrollments e on e.id = s.enrollment_id where e.person_id = ${person}) as sends,
         (select count(*)::int from campaign_enrollments where person_id = ${person}) as enrollments,
@@ -109,12 +109,12 @@ describeDb("contact delete: purge size check", () => {
       const org = await one(sql`insert into organizations (name, slug) values ('Purge size', ${"purge-size-" + tag}) returning id`);
       orgs.push(org);
       await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true)`;
-      const size = { conversations: CONVERSATIONS, perConversation: MESSAGES_PER_CONVERSATION, campaigns: CAMPAIGNS, steps: STEPS, events: EVENTS };
+      const size = { threads: CONVERSATIONS, perThread: MESSAGES_PER_THREAD, campaigns: CAMPAIGNS, steps: STEPS, events: EVENTS };
       const target = await seed(org, tag, "target", size);
-      const bystander = await seed(org, tag, "bystander", { ...size, conversations: 10, campaigns: 20 });
+      const bystander = await seed(org, tag, "bystander", { ...size, threads: 10, campaigns: 20 });
       await sql`analyze`;
 
-      expect(await countsOf(org, target.person)).toEqual({ messages: 10_000, conversations: 40, events: 500, sends: 2_000, enrollments: 200, notes: 20, people: 1 });
+      expect(await countsOf(org, target.person)).toEqual({ messages: 10_000, threads: 40, events: 500, sends: 2_000, enrollments: 200, notes: 20, people: 1 });
       const bystanderBefore = await countsOf(org, bystander.person);
 
       const started = performance.now();
@@ -124,23 +124,23 @@ describeDb("contact delete: purge size check", () => {
         await handling.lockPersonForDelete(tx, org, target.person);
         await tx.execute(dsql`select id from people where id = ${target.person}::uuid for update`);
         await (await import("@/contexts/people/infrastructure/reachability")).lockDoNotContactTx(tx, org, target.person);
-        const conversations = await purge.purgePersonHandling(tx, org, target.person);
+        const threads = await purge.purgePersonHandling(tx, org, target.person);
         const enrollments = await outreach.purgePersonOutreach(tx, org, target.person);
         await tx.execute(dsql`delete from contact_policies where organization_id = ${org} and person_id = ${target.person}::uuid`);
         await tx.execute(dsql`delete from people where organization_id = ${org} and id = ${target.person}::uuid`);
-        return { conversations, enrollments };
+        return { threads, enrollments };
       });
       const elapsed = performance.now() - started;
       console.info(
-        `purge size check: ${result.conversations.messages} messages in ${result.conversations.conversations} conversations, ` +
-          `${result.enrollments.sends} sends in ${result.enrollments.enrollments} enrollments, ${result.conversations.events} events: ${Math.round(elapsed)} ms`,
+        `purge size check: ${result.threads.messages} messages in ${result.threads.threads} conversations, ` +
+          `${result.enrollments.sends} sends in ${result.enrollments.enrollments} enrollments, ${result.threads.events} events: ${Math.round(elapsed)} ms`,
       );
 
       expect(result).toEqual({
-        conversations: { records: 1, conversations: 40, messages: 10_000, events: 500 },
+        threads: { conversations: 1, threads: 40, messages: 10_000, events: 500 },
         enrollments: { enrollments: 200, sends: 2_000 },
       });
-      expect(await countsOf(org, target.person)).toEqual({ messages: 0, conversations: 0, events: 0, sends: 0, enrollments: 0, notes: 0, people: 0 });
+      expect(await countsOf(org, target.person)).toEqual({ messages: 0, threads: 0, events: 0, sends: 0, enrollments: 0, notes: 0, people: 0 });
       expect(await countsOf(org, bystander.person)).toEqual(bystanderBefore);
     },
     180_000,

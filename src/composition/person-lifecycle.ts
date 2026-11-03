@@ -1,5 +1,6 @@
-import { appendPersonEvent, lockPersonForDelete, peopleWhoAskedToStop, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
+import { appendPersonEvent, lockPersonForDelete, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
+import { peopleWhoAskedToStop } from "@/contexts/conversations/stopping/infrastructure/stop-requested-sql";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
 import { conversionDeps, dealsDeps } from "@/composition/deals";
@@ -15,7 +16,6 @@ import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/driz
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { peopleMarkedTx } from "@/contexts/people/infrastructure/reachability";
-import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import {
   leadOutreachBlockers,
   leadsInRunningCampaigns,
@@ -54,7 +54,6 @@ export const addContactWithDealDeps = (): AddContactWithDealDeps => ({
 /** Make contact: the conversion's ports and the live enrollments of outreach. */
 export const makeContactDeps: MakeContactDeps = {
   ...conversionDeps,
-  liveEnrollmentSummary: conversionOutreach.liveEnrollmentSummary,
   transaction: personTransaction,
 };
 

@@ -75,12 +75,16 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
         })}
       </ol>
       <div className="flex items-center gap-3">
-        {view.canDismiss && !view.dismissed && (
+        {view.canDismiss && !view.dismissed && !view.hidden && (
           <Button variant="ghost" onClick={() => setConfirmOpen(true)}>
             Hide setup guide
           </Button>
         )}
-        {view.dismissed && <p className="text-sm text-muted-foreground">The setup guide is hidden for this organization. This page stays available from Setup guide in the sidebar.</p>}
+        {view.hidden ? (
+          <p className="text-sm text-muted-foreground">Your first email went out and your first reply came back, so the setup guide has left the sidebar.</p>
+        ) : (
+          view.dismissed && <p className="text-sm text-muted-foreground">The setup guide is hidden for this organization. This page stays available from Setup guide in the sidebar.</p>
+        )}
       </div>
       <ConfirmDialog
         open={confirmOpen}

@@ -1,14 +1,14 @@
 import { planAgentRun, startAgentRun, type AgentRunPlan, type AgentRunTarget } from "@/contexts/grid/enrichment/application/agent-enrichment";
 import { cancelRun, type RunReport } from "@/contexts/grid/enrichment/application/enrichment-run";
 import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withAgentUsage } from "@/contexts/tenancy/application/mcp-agent-usage";
+import { withAgentUsage } from "@/contexts/agent-access/application/mcp-agent-usage";
 import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
-import { agentUsageDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { agentUsageDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { actionTokenStale } from "@/shared/action-token";
 import { ConflictError, viaMeta, type Actor } from "@/shared/errors";
 
 /*
- * An agent's enrichment run: the plan and the run live in grid, the daily limit in tenancy, and this file joins them. The
+ * An agent's enrichment run: the plan and the run live in grid, the daily limit in agent access, and this file joins them. The
  * run reserves its worst case, in cents at the prices an admin entered. Once queued, the cells run even if the limit
  * drops later; `stopAgentRun` and the app's Stop end what has not started.
  */

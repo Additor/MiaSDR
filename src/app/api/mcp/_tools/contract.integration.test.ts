@@ -24,7 +24,7 @@ const CHARS_PER_TOKEN = 3;
 
 /**
  * Code names an agent must not learn from the definitions: the product says follow-ups, reply handling and AI picks.
- * Identifiers in backticks (`recordId`) and tool names are exempt.
+ * Identifiers in backticks (`conversationId`) and tool names are exempt.
  */
 const CODE_NAMES = /\b(sequences?|records?|classifications?)\b/i;
 const prose = (text: string) => text.replace(/`[^`]*`/g, "").replace(/\b[a-z]+(?:_[a-z]+)+\b/g, "");

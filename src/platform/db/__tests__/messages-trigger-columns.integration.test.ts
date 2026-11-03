@@ -72,7 +72,7 @@ describeDb("messages_reject_immutable_update column coverage", () => {
     });
 
     it.each([
-      ["conversation_id", `uuid '00000000-0000-4000-8000-000000000001'`],
+      ["thread_id", `uuid '00000000-0000-4000-8000-000000000001'`],
       ["channel", `'linkedin'`],
       ["account_ref", `'other'`],
       ["direction", `'outbound'`],
@@ -83,7 +83,6 @@ describeDb("messages_reject_immutable_update column coverage", () => {
       ["to_address", `'a@b.test'`],
       ["cc", `array['a@b.test']`],
       ["body_text", `'rewritten'`],
-      ["body_html", `'<p>x</p>'`],
       ["raw", `'{"a":1}'::jsonb`],
       ["sent_at", `now() - interval '1 day'`],
       ["created_at", `now() - interval '1 day'`],

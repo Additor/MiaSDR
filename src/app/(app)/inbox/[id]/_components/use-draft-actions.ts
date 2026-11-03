@@ -37,7 +37,7 @@ export function useSendKey(draftState: string) {
  * The draft actions both reply cards share. `work` runs one action at a time and clears the last error; `change` also shows
  * a failure's sentence and answers whether the change went through. A send has its own rules, so each card passes it to `work`.
  */
-export function useDraftActions(conversationId: string) {
+export function useDraftActions(threadId: string) {
   const router = useRouter();
   const { run, busyTag } = useApiAction<"reply">();
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export function useDraftActions(conversationId: string) {
     work,
     change,
     refresh,
-    requestDraft: () => change("draft", () => runApiAction(callApi(`/api/inbox/${conversationId}/draft`, "POST"), { refresh })),
+    requestDraft: () => change("draft", () => runApiAction(callApi(`/api/inbox/${threadId}/draft`, "POST"), { refresh })),
     regenerate: (draftId: string, revision: number, note: string) => change("regen", () => runApiAction(callApi(`/api/drafts/${draftId}/regenerate`, "POST", { revision, note }), { refresh })),
     resolve: (draftId: string, outcome: "delivered" | "not_delivered", note: string) => change("resolve", () => runApiAction(callApi(`/api/drafts/${draftId}/resolve`, "POST", { outcome, note }), { refresh })),
     // A ConfirmDialog stays open with the failure's sentence.

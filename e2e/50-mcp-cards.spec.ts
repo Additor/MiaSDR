@@ -70,7 +70,7 @@ test("a reply draft card shows a stranger's text as text and opens MiaSDR to rev
     content: [{ type: "text", text: "Draft ready." }],
     structuredContent: {
       action: "create_manual",
-      conversationId: "c1",
+      threadId: "c1",
       reviewUrl: "https://app.example.com/inbox/c1",
       draft: { draftId: "d1", status: "awaiting_review", revision: 1, subject: "<untrusted_field_ab12>\nRe: pricing\n</untrusted_field_ab12>", text: LEAD_TEXT, truncated: false },
     },

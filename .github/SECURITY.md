@@ -32,7 +32,7 @@ In scope: this repository's code, its Docker image and Compose files, and the de
 Out of scope:
 
 - vulnerabilities in Google, Unipile, Anthropic, Resend or another service MiaSDR calls (report to that vendor),
-- an instance whose owner turned off a protection (for example `AUTH_SIGNUP=open`, a weak `CRON_SECRET`, or a public database),
+- an instance whose owner turned off a protection (for example a weak `CRON_SECRET` or a public database),
 - denial of service by sending large volumes of traffic,
 - missing hardening that needs a privileged position (root on the host, a leaked `.env`),
 - social engineering of the maintainer or of an instance's users.
@@ -43,4 +43,4 @@ We treat good-faith research that follows this policy as authorized. Stay within
 
 ## Operating an instance safely
 
-Instance owners protect their own deployment. The key points are in [Self-hosting](../docs/deploy/self-host.md) and [Operations](../docs/operations.md): generate every secret with `openssl rand -hex 32`, keep `.env` at mode `600`, back up `INTEGRATION_CREDENTIALS_KEY` off the server, serve the app over HTTPS, keep `AUTH_SIGNUP=invite-only`, and restrict mailbox domains with `MAILBOX_ALLOWED_DOMAINS`.
+Instance owners protect their own deployment. The key points are in [Self-hosting](../docs/deploy/self-host.md) and [Operations](../docs/operations.md): generate every secret with `openssl rand -hex 32`, keep `.env` at mode `600`, back up `INTEGRATION_CREDENTIALS_KEY` off the server, serve the app over HTTPS, and restrict mailbox domains with `MAILBOX_ALLOWED_DOMAINS`.

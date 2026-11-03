@@ -16,8 +16,8 @@ describe("isColumnActionOffered", () => {
     expect(isColumnActionOffered("unpin", ctx("text"))).toBe(false);
   });
 
-  it("offers duplicate for static and formula columns, not for runner or output columns", () => {
-    for (const type of ["text", "number", "formula"]) expect(isColumnActionOffered("duplicate", ctx(type))).toBe(true);
+  it("offers duplicate for data columns, not for runner or output columns", () => {
+    for (const type of ["text", "number"]) expect(isColumnActionOffered("duplicate", ctx(type))).toBe(true);
     for (const type of ["ai", "enrichment", "waterfall", "ai_output", "integration_output", "http"]) expect(isColumnActionOffered("duplicate", ctx(type))).toBe(false);
   });
 
@@ -37,12 +37,6 @@ describe("duplicate column", () => {
       afterColumnId: "c1",
       copyValuesFrom: "score",
     });
-  });
-
-  it("copies a formula's expression and leaves its values to the recalculation", () => {
-    const request = duplicateColumnRequest({ id: "c2", key: "double", name: "Double", type: "formula", config: { expression: "{{score}} * 2" } });
-    expect(request).toMatchObject({ type: "formula", config: { expression: "{{score}} * 2" }, afterColumnId: "c2" });
-    expect(request).not.toHaveProperty("copyValuesFrom");
   });
 
   it("returns nothing for a runner column", () => {

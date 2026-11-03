@@ -20,7 +20,7 @@ import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ReachLinks } from "@/app/(app)/_components/person/reach-links";
 import { AsideDisclosure, AsideSection } from "@/app/(app)/_components/record/record-header";
 import { AssigneeControls } from "./assignee-controls";
-import { recordAfterReply, recordDetail } from "./thread-data";
+import { conversationAfterReply, conversationDetail } from "./thread-data";
 
 /** The side panel while it loads: one block per section group inside the panel, so the layout does not jump when it arrives. */
 export function ThreadSideSkeleton() {
@@ -48,18 +48,18 @@ export function ThreadSideSkeleton() {
  * marked. What happens next (Remind me, Done, Stop contacting) sits under the reply in Next step (`next-step.tsx`), and
  * Follow-ups and the histories live in the work column (`thread-work.tsx`). Wrap it in Suspense.
  */
-export async function ThreadSide({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
+export async function ThreadSide({ actor, threadId, conversationId, personId }: { actor: Actor; threadId: string; conversationId: string; personId: string }) {
   await connection();
   const deps = dealsDeps();
   const [detail, afterReply, people, deals, dialog, reachMap] = await Promise.all([
-    recordDetail(actor, recordId),
-    recordAfterReply(actor, recordId),
+    conversationDetail(actor, conversationId),
+    conversationAfterReply(actor, conversationId),
     deps.people.summaries(actor.organizationId, [personId]),
     dealSummaryForPeople(deps, actor, [personId]),
     dealDialogData(actor),
     readReachability(actor.organizationId, [personId]),
   ]);
-  const { record, person } = detail;
+  const { conversation, person } = detail;
   const directory = people.get(personId);
   const isContact = directory?.lifecycle === "contact";
   const summary = deals.get(personId);
@@ -68,7 +68,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
   const dnc = detail.policy?.doNotContact === true;
   const reach = reachMap.get(personId) ?? NO_REACH;
   const contact = leadContactPoints({ email: person.email, linkedinSlug: directory?.linkedinSlug ?? null, linkedinUrl: directory?.linkedinUrl ?? person.linkedinUrl ?? null });
-  const others = detail.conversations.filter((c) => c.id !== conversationId);
+  const others = detail.threads.filter((c) => c.id !== threadId);
   const dealPerson = { id: personId, name: person.name, email: person.email, companyName: person.company, doNotContact: dnc, suppressed: detail.suppressed, openDeals: summary?.openDeals ?? 0 };
   // A campaign that hands replies to the Inbox says so in its Campaigns row; the work column then shows no follow-ups.
   const handoffCampaignId = !afterReply.run && afterReply.campaign?.mode === "handoff" ? afterReply.campaign.id : null;
@@ -81,7 +81,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         <div className="flex flex-wrap gap-2 max-sm:[&>*]:h-11">
           {!isContact && <CreateDealButton mode="lead" size="sm" variant="outline" person={dealPerson} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} />}
           {isContact && latestDealId && (
-            <Link href={dealHref(latestDealId, `/inbox/${conversationId}`)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={dealHref(latestDealId, `/inbox/${threadId}`)} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Open deal
             </Link>
           )}
@@ -95,12 +95,12 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
       </AsideSection>
 
       <AsideSection title="Assigned to" testId="thread-assignee">
-        <AssigneeControls recordId={record.id} assignedTo={record.assignedTo} members={dialog.members} currentUserId={dialog.currentUserId} />
+        <AssigneeControls conversationId={conversation.id} assignedTo={conversation.assignedTo} members={dialog.members} currentUserId={dialog.currentUserId} />
       </AsideSection>
 
       <section className="stack-group p-inset" data-testid="thread-tasks">
         <Suspense fallback={<Skeleton className="h-7 w-full" />}>
-          <TasksSection recordId={record.id} actor={actor} compact />
+          <TasksSection conversationId={conversation.id} actor={actor} compact />
         </Suspense>
       </section>
 

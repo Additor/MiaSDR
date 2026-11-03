@@ -21,8 +21,8 @@ describeDb("MCP agent enrichment", () => {
   let org: TestOrg;
   let owner: Actor;
   let agent: McpCaller;
-  let tokens: typeof import("@/contexts/tenancy/application/mcp-tokens");
-  let tokenDeps: import("@/contexts/tenancy/application/mcp-tokens").McpTokenDeps;
+  let tokens: typeof import("@/contexts/agent-access/application/mcp-tokens");
+  let tokenDeps: import("@/contexts/agent-access/application/mcp-tokens").McpTokenDeps;
   let m: {
     columns: typeof import("@/contexts/grid/enrichment/application/enrichment-columns");
     providers: typeof import("@/contexts/grid/enrichment/application/enrichment-providers");
@@ -73,8 +73,8 @@ describeDb("MCP agent enrichment", () => {
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
-    tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    tokenDeps = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).mcpTokenDeps();
+    tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    tokenDeps = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).mcpTokenDeps();
     m = {
       columns: await import("@/contexts/grid/enrichment/application/enrichment-columns"),
       providers: await import("@/contexts/grid/enrichment/application/enrichment-providers"),

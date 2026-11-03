@@ -1,7 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { ValidationError } from "@/shared/errors";
-import { publicConversationText } from "@/platform/db/conversation-visibility";
 import type { DealStageKind } from "../domain/stages";
 import type {
   BoardCardRow,
@@ -33,7 +32,6 @@ import { rowsOf } from "@/platform/db/sql-values";
  *   deal_stages    s
  *   events         e   (last activity of a contact, and of a company through its contacts)
  *   contact_policies cp (do not contact)
- *   conversations      (visibility only, through `publicConversationText`: an event of a record whose threads are all private is left out)
  *
  * It is read-only: no statement here writes, and writes never go through it. `crm-read.integration.test.ts` pins the columns
  * it reads, so a schema change that touches them shows up there. Every statement filters by organization. The Contacts list
@@ -47,11 +45,6 @@ const uuidList = (ids: readonly string[]) => sql.join(ids.map((id) => sql`${id}:
 
 /** Escapes LIKE wildcards so a search for "50%" matches the text. */
 const likePattern = (term: string) => `%${term.slice(0, 100).replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-
-/** An event the screens may show: no record, or a record with a public thread or none (the rule of `visibleRecordText`). */
-const visibleEvent = sql.raw(
-  `(e.record_id is null or exists (select 1 from conversations vc where vc.record_id = e.record_id and ${publicConversationText("vc")}) or not exists (select 1 from conversations vc2 where vc2.record_id = e.record_id))`,
-);
 
 // ---- Board ---------------------------------------------------------------------------------------------------
 
@@ -275,7 +268,7 @@ const contactSelect = sql`
          ld.id as latest_deal_id, ld.stage_id as latest_stage_id, ld.stage_name as latest_stage_name, ld.stage_kind as latest_stage_kind,
          ld.owner_user_id as latest_owner_user_id,
          (select count(*)::int from deals d where d.organization_id = p.organization_id and d.person_id = p.id and d.stage_kind = 'open') as open_deals,
-         (select max(e.created_at) from events e where e.organization_id = p.organization_id and e.person_id = p.id and ${visibleEvent}) as last_activity_at
+         (select max(e.created_at) from events e where e.organization_id = p.organization_id and e.person_id = p.id) as last_activity_at
   ${contactFrom}`;
 
 function toContact(row: Record<string, unknown>): ContactListRow {
@@ -383,7 +376,7 @@ async function* contactsForExport(organizationId: string, scope: ContactExportSc
                (select count(*)::int from deals d where d.organization_id = p.organization_id and d.person_id = p.id and d.stage_kind = 'open') as open_deals,
                p.converted_at::text as converted_at_text,
                to_char(p.converted_at at time zone ${timeZone}, 'YYYY-MM-DD') as contact_since,
-               to_char((select max(e.created_at) from events e where e.organization_id = p.organization_id and e.person_id = p.id and ${visibleEvent}) at time zone ${timeZone}, 'YYYY-MM-DD') as last_activity_on
+               to_char((select max(e.created_at) from events e where e.organization_id = p.organization_id and e.person_id = p.id) at time zone ${timeZone}, 'YYYY-MM-DD') as last_activity_on
         ${contactFrom}
         where p.organization_id = ${organizationId} and p.lifecycle = 'contact' ${scoped} ${after}
         order by p.converted_at desc, p.id desc
@@ -443,11 +436,11 @@ const companyCounts = (organizationId: string) => sql`
     group by p.company_id
   )`;
 
-/** The latest visible event of the company's contacts, the Contacts list's last activity taken over all of them. */
+/** The latest event of the company's contacts, the Contacts list's last activity taken over all of them. */
 const companyActivity = sql`(
   select max(e.created_at)
   from people p join events e on e.organization_id = p.organization_id and e.person_id = p.id
-  where p.organization_id = c.organization_id and p.company_id = c.id and p.lifecycle = 'contact' and ${visibleEvent})`;
+  where p.organization_id = c.organization_id and p.company_id = c.id and p.lifecycle = 'contact')`;
 
 /**
  * Sum per currency of the open deals of each company. The sum leaves Postgres as text: amounts that each fit 2^53 - 1 can add

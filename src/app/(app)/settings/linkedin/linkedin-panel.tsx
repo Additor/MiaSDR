@@ -170,9 +170,13 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
       <SettingsSection
         title="Unipile connection"
         description={
-          state.connected
-            ? `Connected to ${state.dsn}.`
-            : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."
+          <>
+            <Badge variant="outline" className="mr-2">
+              Preview
+            </Badge>
+            A full campaign has not run on a real LinkedIn account yet.{" "}
+            {state.connected ? `Connected to ${state.dsn}.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
+          </>
         }
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -500,7 +504,7 @@ function AccountRow({
                   ))}
                 </SelectContent>
               </Select>
-              <FieldDescription>Agents start a Personal campaign only from accounts their person owns.</FieldDescription>
+              <FieldDescription>An agent&apos;s LinkedIn search uses only accounts its person owns and accounts with no owner.</FieldDescription>
             </Field>
           </div>
           {(inviteWarning || messageWarning) && (

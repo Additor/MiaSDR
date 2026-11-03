@@ -8,22 +8,21 @@ import {
   jsonb,
   numeric,
   pgTable,
-  primaryKey,
   text,
   unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
-import { mcpTokens, members } from "@/contexts/tenancy/infrastructure/schema";
+import { mcpTokens } from "@/contexts/agent-access/infrastructure/schema";
+import { members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
-import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES, IN_FLIGHT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import type { AttemptStatus } from "../domain/send-attempt-status";
 import { PICK_STATUSES, type PickStatus } from "../domain/reply-type-pick";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
-import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
+import { FOLLOW_UPS_RULES, SYSTEM_ROLES, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
 import { AI_JOB_STATUSES, type AiJobStatus } from "../ai/domain/ai-job-status";
 
@@ -34,9 +33,9 @@ import { AI_JOB_STATUSES, type AiJobStatus } from "../ai/domain/ai-job-status";
  *
  * Every send has someone answerable: a person's approval, or an agent's
  * token where the organization allows agent sending. `send_attempts`
- * records which (`origin`, `mcp_token_id`).
+ * conversations which (`origin`, `mcp_token_id`).
  *
- * The Follow-ups after a reply flow keeps its tables in `after-reply/infrastructure/sequences-schema.ts`.
+ * The Follow-ups after a reply flow keeps its tables in `after-reply/infrastructure/follow-ups-schema.ts`.
  */
 
 export const REPLY_TYPE_GROUP_KEYS = ["customer", "interested", "not_interested", "other"] as const;
@@ -71,10 +70,8 @@ export const replyTypes = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     classificationGuidance: text("classification_guidance"),
-    active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
-    /** Type rules (`domain/reply-type.ts`): who checks the AI's pick, whether it drafts a reply, whether follow-ups go on. */
-    checkMode: text("check_mode").$type<CheckMode>().notNull().default("after"),
+    /** Type rules (`domain/reply-type.ts`): whether it drafts a reply, whether follow-ups go on. */
     replyDraft: boolean("reply_draft").notNull().default(true),
     followUps: text("follow_ups").$type<FollowUpsRule>().notNull().default("continue"),
     /** A fixed path this type drives. At most one type per role in a set, and it never changes. */
@@ -85,18 +82,18 @@ export const replyTypes = pgTable(
   (t) => [
     foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("restrict"),
     unique("reply_types_set_key_uq").on(t.replyTypeSetId, t.key),
-    // Target of the record's composite FK: a subcategory must belong to the record's pipeline and category.
+    // Target of the conversation's composite FK: a reply type must belong to the conversation's reply type set and group.
     unique("reply_types_id_set_group_uq").on(t.id, t.replyTypeSetId, t.groupKey),
     unique("reply_types_id_org_uq").on(t.id, t.organizationId),
     check("reply_types_group_ck", inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)),
     check("reply_types_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_]*$'`),
     check("reply_types_sort_ck", sql`${t.sortOrder} >= 0`),
-    check("reply_types_rules_ck", sql`${inList(t.checkMode, CHECK_MODES)} and ${inList(t.followUps, FOLLOW_UPS_RULES)}`),
+    check("reply_types_rules_ck", inList(t.followUps, FOLLOW_UPS_RULES)),
     check("reply_types_system_role_ck", sql`${t.systemRole} is null or ${inList(t.systemRole, SYSTEM_ROLES)}`),
-    // The stop request type keeps STOP_REQUEST_RULES and stays active; the customer type stays in the customer group.
+    // The stop request type writes no draft and stops follow-ups; the customer type stays in the customer group.
     check(
       "reply_types_stop_request_ck",
-      sql`${t.systemRole} is distinct from 'stop_request' or (${t.checkMode} = 'before' and not ${t.replyDraft} and ${t.followUps} = 'stop' and ${t.active})`,
+      sql`${t.systemRole} is distinct from 'stop_request' or (not ${t.replyDraft} and ${t.followUps} = 'stop')`,
     ),
     check("reply_types_customer_ck", sql`${t.systemRole} is distinct from 'customer' or ${t.groupKey} = 'customer'`),
     uniqueIndex("reply_types_set_system_role_uq").on(t.replyTypeSetId, t.systemRole).where(sql`${t.systemRole} is not null`),
@@ -114,15 +111,12 @@ export const replyHandlingSettings = pgTable(
   {
     replyTypeSetId: uuid("reply_type_set_id").primaryKey(),
     organizationId: orgId(),
-    /** The confidence floor: an AI pick below it waits for a person, whatever its type's Check rule says. */
-    autoApplyConfidence: numeric("auto_apply_confidence", { precision: 4, scale: 3 }).notNull().default("0.850"),
     draftInstructions: jsonb("draft_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     classificationInstructions: jsonb("classification_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("cascade"),
-    check("reply_handling_settings_confidence_ck", sql`${t.autoApplyConfidence} between 0 and 1`),
     // The API caps instructions at 20,000 characters of text; 100,000 leaves room for JSON escapes and titles.
     check(
       "reply_handling_settings_instructions_ck",
@@ -134,9 +128,9 @@ export const replyHandlingSettings = pgTable(
 
 export const CHANNELS = ["email", "linkedin", "whatsapp"] as const;
 
-/** One person's standing in one pipeline. `context_version` is the optimistic lock for AI work. */
-export const records = pgTable(
-  "records",
+/** One person's reply handling across email and LinkedIn, in one reply type set. `context_version` is the optimistic lock for AI work. */
+export const conversations = pgTable(
+  "conversations",
   {
     id: pk(),
     organizationId: orgId(),
@@ -144,7 +138,7 @@ export const records = pgTable(
     replyTypeSetId: uuid("reply_type_set_id").notNull(),
     groupKey: text("group_key"),
     replyTypeId: uuid("reply_type_id"),
-    workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("unclassified"),
+    workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("no_type"),
     replyTypeSource: text("reply_type_source"),
     replyTypeLocked: boolean("reply_type_locked").notNull().default(false),
     activeChannel: text("active_channel"),
@@ -155,7 +149,7 @@ export const records = pgTable(
     lastInteractionAt: tstz("last_interaction_at"),
     nextActionAt: tstz("next_action_at"),
     closedReason: text("closed_reason"),
-    /** The member who handles the replies of this record. Null: unassigned. Not the deal's owner and not a task's assignee. */
+    /** The member who handles the replies of this conversation. Null: unassigned. Not the deal's owner and not a task's assignee. */
     assignedTo: uuid("assigned_to"),
     /** How `assigned_to` was set: `auto` from the campaign creator, `human` by a person, `cleared` when a person chose Nobody. */
     assignedSource: text("assigned_source"),
@@ -165,64 +159,61 @@ export const records = pgTable(
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("restrict"),
-    // A member who leaves the organization unassigns the record. The migration writes `ON DELETE SET NULL (assigned_to)`, so
+    // A member who leaves the organization unassigns the conversation. The migration writes `ON DELETE SET NULL (assigned_to)`, so
     // organization_id stays set; `assigned_source` keeps its old value and is read only while `assigned_to` is set.
-    foreignKey({ name: "records_assigned_to_fk", columns: [t.organizationId, t.assignedTo], foreignColumns: [members.organizationId, members.userId] }).onDelete("set null"),
+    foreignKey({ name: "conversations_assigned_to_fk", columns: [t.organizationId, t.assignedTo], foreignColumns: [members.organizationId, members.userId] }).onDelete("set null"),
     foreignKey({
       columns: [t.replyTypeId, t.replyTypeSetId, t.groupKey],
       foreignColumns: [replyTypes.id, replyTypes.replyTypeSetId, replyTypes.groupKey],
     }),
     // `latest_inbound_message_id -> messages (id, organization_id) ON DELETE SET NULL (latest_inbound_message_id)` lives in
-    // the migration SQL only: `messages` is declared after this table through `conversations`, and a typed reference here
+    // the migration SQL only: `messages` is declared after this table through `threads`, and a typed reference here
     // would make the three tables' types circular.
-    unique("records_person_reply_type_set_uq").on(t.personId, t.replyTypeSetId),
-    unique("records_id_org_uq").on(t.id, t.organizationId),
-    check("records_group_ck", sql`${t.groupKey} is null or ${inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)}`),
-    check("records_workflow_ck", inList(t.workflowState, WORKFLOW_STATES)),
-    check("records_source_ck", sql`${t.replyTypeSource} is null or ${t.replyTypeSource} in ('ai', 'human', 'integration')`),
-    check("records_reply_type_source_pair_ck", sql`(${t.groupKey} is null) = (${t.replyTypeSource} is null)`),
-    check("records_locked_ck", sql`not ${t.replyTypeLocked} or ${t.groupKey} = 'customer'`),
-    check("records_reply_type_needs_group_ck", sql`${t.replyTypeId} is null or ${t.groupKey} is not null`),
-    check("records_version_ck", sql`${t.contextVersion} >= 0`),
-    check("records_active_channel_ck", sql`${t.activeChannel} is null or ${inList(t.activeChannel, CHANNELS)}`),
-    check("records_assigned_source_ck", sql`(${t.assignedSource} is null or ${t.assignedSource} in ('auto', 'human', 'cleared')) and (${t.assignedTo} is null or ${t.assignedSource} is not null)`),
-    index("records_org_assigned_idx").on(t.organizationId, t.assignedTo, t.workflowState),
-    index("records_org_state_idx").on(t.organizationId, t.workflowState, t.lastInteractionAt),
+    unique("conversations_person_reply_type_set_uq").on(t.personId, t.replyTypeSetId),
+    unique("conversations_id_org_uq").on(t.id, t.organizationId),
+    check("conversations_group_ck", sql`${t.groupKey} is null or ${inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)}`),
+    check("conversations_workflow_ck", inList(t.workflowState, WORKFLOW_STATES)),
+    check("conversations_closed_reason_ck", sql`${t.closedReason} is null or ${t.workflowState} = 'closed'`),
+    check("conversations_source_ck", sql`${t.replyTypeSource} is null or ${t.replyTypeSource} in ('ai', 'human', 'integration')`),
+    check("conversations_reply_type_source_pair_ck", sql`(${t.groupKey} is null) = (${t.replyTypeSource} is null)`),
+    check("conversations_locked_ck", sql`not ${t.replyTypeLocked} or ${t.groupKey} = 'customer'`),
+    check("conversations_reply_type_needs_group_ck", sql`${t.replyTypeId} is null or ${t.groupKey} is not null`),
+    check("conversations_version_ck", sql`${t.contextVersion} >= 0`),
+    check("conversations_active_channel_ck", sql`${t.activeChannel} is null or ${inList(t.activeChannel, CHANNELS)}`),
+    check("conversations_assigned_source_ck", sql`(${t.assignedSource} is null or ${t.assignedSource} in ('auto', 'human', 'cleared')) and (${t.assignedTo} is null or ${t.assignedSource} is not null)`),
+    index("conversations_org_assigned_idx").on(t.organizationId, t.assignedTo, t.workflowState),
+    index("conversations_org_state_idx").on(t.organizationId, t.workflowState, t.lastInteractionAt),
     // A deleted message sets this column null through that key; the contact delete deletes messages.
-    index("records_latest_inbound_message_idx").on(t.latestInboundMessageId).where(sql`${t.latestInboundMessageId} is not null`),
+    index("conversations_latest_inbound_message_idx").on(t.latestInboundMessageId).where(sql`${t.latestInboundMessageId} is not null`),
   ],
 );
 
-export const conversations = pgTable(
-  "conversations",
+export const threads = pgTable(
+  "threads",
   {
     id: pk(),
     organizationId: orgId(),
-    recordId: uuid("record_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     channel: text("channel").notNull(),
     /** Mailbox address, LinkedIn account id. By value, so conversations do not depend on the outreach schema. */
     accountRef: text("account_ref").notNull(),
     providerThreadId: text("provider_thread_id"),
     providerContactId: text("provider_contact_id"),
     status: text("status").notNull().default("active"),
-    /** Set when the thread belongs to a personal campaign. Such a conversation is hidden from every inbox read (conversation-visibility.ts). */
-    privateCampaignId: uuid("private_campaign_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
-    foreignKey({ name: "conversations_private_campaign_fk", columns: [t.privateCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }),
-    index("conversations_private_idx").on(t.organizationId, t.privateCampaignId).where(sql`${t.privateCampaignId} is not null`),
-    unique("conversations_id_org_uq").on(t.id, t.organizationId),
-    unique("conversations_id_channel_account_uq").on(t.id, t.channel, t.accountRef),
-    uniqueIndex("conversations_org_thread_uq")
+    foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
+    unique("threads_id_org_uq").on(t.id, t.organizationId),
+    unique("threads_id_channel_account_uq").on(t.id, t.channel, t.accountRef),
+    uniqueIndex("threads_org_thread_uq")
       .on(t.organizationId, t.channel, t.accountRef, t.providerThreadId)
       .where(sql`${t.providerThreadId} is not null`),
-    check("conversations_channel_ck", inList(t.channel, CHANNELS)),
-    check("conversations_status_ck", sql`${t.status} in ('active', 'closed')`),
-    check("conversations_account_ref_ck", sql`length(btrim(${t.accountRef})) > 0`),
-    index("conversations_record_idx").on(t.recordId),
+    check("threads_channel_ck", inList(t.channel, CHANNELS)),
+    check("threads_status_ck", sql`${t.status} in ('active', 'closed')`),
+    check("threads_account_ref_ck", sql`length(btrim(${t.accountRef})) > 0`),
+    index("threads_conversation_idx").on(t.conversationId),
   ],
 );
 
@@ -231,7 +222,7 @@ export const messages = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    conversationId: uuid("conversation_id").notNull(),
+    threadId: uuid("thread_id").notNull(),
     channel: text("channel").notNull(),
     accountRef: text("account_ref").notNull(),
     direction: text("direction").notNull(),
@@ -242,7 +233,6 @@ export const messages = pgTable(
     toAddress: text("to_address"),
     cc: text("cc").array(),
     bodyText: text("body_text").notNull(),
-    bodyHtml: text("body_html"),
     important: boolean("important").notNull().default(false),
     openedAt: tstz("opened_at"),
     raw: jsonb("raw").$type<unknown>(),
@@ -250,11 +240,11 @@ export const messages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.threadId, t.organizationId], foreignColumns: [threads.id, threads.organizationId] }).onDelete("restrict"),
     // Channel and account repeat the conversation's, so a message cannot disagree with its conversation.
     foreignKey({
-      columns: [t.conversationId, t.channel, t.accountRef],
-      foreignColumns: [conversations.id, conversations.channel, conversations.accountRef],
+      columns: [t.threadId, t.channel, t.accountRef],
+      foreignColumns: [threads.id, threads.channel, threads.accountRef],
     }),
     unique("messages_id_org_uq").on(t.id, t.organizationId),
     // With the organization: a mailbox address can leave one organization and join another, and its history stays behind.
@@ -265,7 +255,7 @@ export const messages = pgTable(
     check("messages_direction_ck", sql`${t.direction} in ('inbound', 'outbound')`),
     check("messages_body_ck", sql`length(btrim(${t.bodyText})) > 0`),
     check("messages_keys_ck", sql`length(btrim(${t.idempotencyKey})) > 0 and length(btrim(${t.accountRef})) > 0`),
-    index("messages_conversation_sent_idx").on(t.conversationId, t.sentAt),
+    index("messages_thread_sent_idx").on(t.threadId, t.sentAt),
     index("messages_org_direction_sent_idx").on(t.organizationId, t.direction, t.sentAt),
   ],
 );
@@ -337,19 +327,18 @@ export const leadCcs = pgTable(
   ],
 );
 
-/** Append-only audit of what changed a record and who changed it. */
+/** Append-only audit of what changed a conversation and who changed it. */
 export const events = pgTable(
   "events",
   {
     id: pk(),
     organizationId: orgId(),
     personId: uuid("person_id").notNull(),
-    recordId: uuid("record_id"),
+    conversationId: uuid("conversation_id"),
     eventType: text("event_type").notNull(),
     actorType: text("actor_type").notNull(),
     /** The real user for human actions. */
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-    actorRef: text("actor_ref"),
     fromData: jsonb("from_data").$type<unknown>(),
     toData: jsonb("to_data").$type<unknown>(),
     meta: jsonb("meta").$type<Record<string, unknown>>().default({}).notNull(),
@@ -358,11 +347,11 @@ export const events = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
-    foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
     check("events_actor_ck", sql`${t.actorType} in ('ai', 'human', 'system', 'integration')`),
     check("events_human_user_ck", sql`${t.actorType} <> 'human' or ${t.actorUserId} is not null`),
     check("events_type_ck", sql`length(btrim(${t.eventType})) > 0`),
-    index("events_record_idx").on(t.recordId, t.createdAt),
+    index("events_conversation_idx").on(t.conversationId, t.createdAt),
     index("events_person_created_idx").on(t.personId, t.createdAt),
   ],
 );
@@ -372,9 +361,9 @@ export const replyTypePicks = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    recordId: uuid("record_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     messageId: uuid("message_id").notNull(),
-    /** The record's context_version when the work started. A mismatch at apply time makes this `stale`. */
+    /** The conversation's context_version when the work started. A mismatch at apply time makes this `stale`. */
     expectedContextVersion: integer("expected_context_version").notNull(),
     previousGroupKey: text("previous_group_key"),
     previousReplyTypeId: uuid("previous_reply_type_id"),
@@ -392,11 +381,10 @@ export const replyTypePicks = pgTable(
     /** The type rules the pick was decided with. Null for a pick that names no type (a stale or failed one). */
     rules: jsonb("rules").$type<TypeRules>(),
     error: text("error"),
-    acknowledgedAt: tstz("acknowledged_at"),
     createdAt: createdAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.messageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("restrict"),
     unique("reply_type_picks_id_org_uq").on(t.id, t.organizationId),
     // The migration writes `ON DELETE SET NULL (<column>)` for these three; Drizzle cannot express the column list.
@@ -418,7 +406,7 @@ export const replyTypePicks = pgTable(
         and (${t.proposedGroupKey} is null or ${inList(t.proposedGroupKey, REPLY_TYPE_GROUP_KEYS)})
         and (${t.appliedGroupKey} is null or ${inList(t.appliedGroupKey, REPLY_TYPE_GROUP_KEYS)})`,
     ),
-    index("reply_type_picks_record_created_idx").on(t.recordId, t.createdAt),
+    index("reply_type_picks_conversation_created_idx").on(t.conversationId, t.createdAt),
   ],
 );
 
@@ -448,20 +436,18 @@ export const drafts = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    recordId: uuid("record_id").notNull(),
     conversationId: uuid("conversation_id").notNull(),
+    threadId: uuid("thread_id").notNull(),
     replyForMessageId: uuid("reply_for_message_id"),
     expectedContextVersion: integer("expected_context_version").notNull(),
     revision: integer("revision").notNull().default(1),
     channel: text("channel").notNull(),
     subject: text("subject"),
     aiBodyText: text("ai_body_text"),
-    aiBodyHtml: text("ai_body_html"),
     editedBodyText: text("edited_body_text"),
-    editedBodyHtml: text("edited_body_html"),
     /** CC recipients the human chose for this reply (lowercased addresses from lead_ccs). Empty by default. */
     cc: text("cc").array().notNull().default(sql`'{}'::text[]`),
-    status: text("status").$type<DraftStatus>().notNull().default("generating"),
+    status: text("status").$type<DraftStatus>().notNull().default("awaiting_review"),
     provider: text("provider"),
     model: text("model"),
     request: jsonb("request").$type<unknown>(),
@@ -473,8 +459,8 @@ export const drafts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.threadId, t.organizationId], foreignColumns: [threads.id, threads.organizationId] }).onDelete("restrict"),
     // The migration writes `ON DELETE SET NULL (written_via_token_id)`.
     foreignKey({ name: "drafts_written_via_token_fk", columns: [t.writtenViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
     // The migration writes `ON DELETE SET NULL (reply_for_message_id)`.
@@ -486,12 +472,12 @@ export const drafts = pgTable(
     check("drafts_revision_ck", sql`${t.revision} >= 1`),
     check("drafts_cc_email_only_ck", sql`${t.channel} = 'email' or cardinality(${t.cc}) = 0`),
     check("drafts_subject_ck", sql`${t.channel} = 'email' or ${t.subject} is null`),
-    index("drafts_record_status_idx").on(t.recordId, t.status),
+    index("drafts_conversation_status_idx").on(t.conversationId, t.status),
     // The SET NULL from a deleted message and the RESTRICT check of a deleted conversation.
     index("drafts_reply_for_message_idx").on(t.replyForMessageId).where(sql`${t.replyForMessageId} is not null`),
-    index("drafts_conversation_idx").on(t.conversationId),
+    index("drafts_thread_idx").on(t.threadId),
     // One draft per conversation with a provider call in flight or unresolved.
-    uniqueIndex("drafts_one_in_flight_uq").on(t.conversationId).where(inList(t.status, IN_FLIGHT_DRAFT_STATUSES)),
+    uniqueIndex("drafts_one_in_flight_uq").on(t.threadId).where(inList(t.status, IN_FLIGHT_DRAFT_STATUSES)),
   ],
 );
 
@@ -507,10 +493,8 @@ export const sendAttempts = pgTable(
     actorUserId: uuid("actor_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    requestId: text("request_id"),
     provider: text("provider"),
     accountRef: text("account_ref"),
-    providerRequestId: text("provider_request_id"),
     providerMessageId: text("provider_message_id"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
@@ -540,7 +524,6 @@ export const sendAttempts = pgTable(
     check(
       "send_attempts_refs_ck",
       sql`length(btrim(${t.idempotencyKey})) > 0
-        and (${t.requestId} is null or length(btrim(${t.requestId})) > 0)
         and (${t.provider} is null or length(btrim(${t.provider})) > 0)
         and (${t.accountRef} is null or length(btrim(${t.accountRef})) > 0)`,
     ),
@@ -592,25 +575,6 @@ export const knowledgeDocumentVersions = pgTable(
     unique("knowledge_versions_doc_version_uq").on(t.documentId, t.version),
     unique("knowledge_versions_id_org_uq").on(t.id, t.organizationId),
     check("knowledge_versions_ck", sql`${t.version} > 0 and length(btrim(${t.content})) > 0`),
-  ],
-);
-
-/** Which knowledge version a draft cited. */
-export const draftKnowledgeCitations = pgTable(
-  "draft_knowledge_citations",
-  {
-    organizationId: orgId(),
-    draftId: uuid("draft_id").notNull(),
-    documentVersionId: uuid("document_version_id").notNull(),
-    excerptHash: text("excerpt_hash").notNull(),
-    excerpt: text("excerpt").notNull(),
-    rank: numeric("rank").notNull().default("0"),
-  },
-  (t) => [
-    primaryKey({ columns: [t.draftId, t.documentVersionId, t.excerptHash] }),
-    foreignKey({ columns: [t.draftId, t.organizationId], foreignColumns: [drafts.id, drafts.organizationId] }).onDelete("cascade"),
-    foreignKey({ columns: [t.documentVersionId, t.organizationId], foreignColumns: [knowledgeDocumentVersions.id, knowledgeDocumentVersions.organizationId] }).onDelete("restrict"),
-    check("draft_citations_rank_ck", sql`${t.rank} >= 0`),
   ],
 );
 
@@ -672,7 +636,7 @@ export const notes = pgTable(
     id: pk(),
     organizationId: orgId(),
     personId: uuid("person_id").notNull(),
-    recordId: uuid("record_id"),
+    conversationId: uuid("conversation_id"),
     title: text("title"),
     body: text("body").notNull(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -681,8 +645,8 @@ export const notes = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
-    // The migration writes `ON DELETE SET NULL (record_id)`.
-    foreignKey({ name: "notes_record_fk", columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("set null"),
+    // The migration writes `ON DELETE SET NULL (conversation_id)`.
+    foreignKey({ name: "notes_conversation_fk", columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("set null"),
     index("notes_person_idx").on(t.personId, t.createdAt),
   ],
 );
@@ -693,7 +657,7 @@ export const tasks = pgTable(
     id: pk(),
     organizationId: orgId(),
     personId: uuid("person_id").notNull(),
-    recordId: uuid("record_id"),
+    conversationId: uuid("conversation_id"),
     name: text("name").notNull(),
     description: text("description"),
     isCompleted: boolean("is_completed").notNull().default(false),
@@ -708,8 +672,8 @@ export const tasks = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
-    // The migration writes `ON DELETE SET NULL (record_id)`.
-    foreignKey({ name: "tasks_record_fk", columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("set null"),
+    // The migration writes `ON DELETE SET NULL (conversation_id)`.
+    foreignKey({ name: "tasks_conversation_fk", columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("set null"),
     index("tasks_person_idx").on(t.personId, t.isCompleted),
     // Actions queue: open tasks by due date, overdue first.
     index("tasks_org_open_due_idx").on(t.organizationId, t.dueAt).where(sql`not ${t.isCompleted}`),

@@ -4,7 +4,7 @@ import { ingestInboundLinkedIn } from "./ingest-inbound-linkedin";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "./linkedin-ports";
 import type { IngestResult, QuarantineInbound, UnresolvedResult } from "./ports";
 
-function setup(answer: IngestResult | UnresolvedResult = { status: "created", conversationId: "c", messageId: "m", personId: "p", personCreated: false }) {
+function setup(answer: IngestResult | UnresolvedResult = { status: "created", threadId: "c", messageId: "m", personId: "p", personCreated: false }) {
   const seen: InboundLinkedInInput[] = [];
   const parked: Parameters<QuarantineInbound>[0][] = [];
   const store: InboundLinkedInStore = {

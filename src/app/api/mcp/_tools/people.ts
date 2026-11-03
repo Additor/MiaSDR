@@ -106,10 +106,8 @@ export const getPersonTool = defineTool({
     lastContactAt: z.string().nullable(),
     reach: z.object({ email: z.string(), linkedin: z.string(), doNotContact: z.boolean() }),
     customFields: z.record(z.string(), z.unknown()),
-    conversationId: z.string().nullable(),
+    threadId: z.string().nullable(),
     enrollments: z.array(z.object({ campaignId: z.string(), campaignName: z.string(), channel: z.string(), status: z.string(), currentStep: z.number(), nextSendAt: z.string().nullable() })),
-    /** Other people's Personal campaigns also sent to this person; those sends stay out of `sends`. */
-    hiddenSends: z.boolean(),
     sends: z.array(z.object({ campaignName: z.string(), stepNumber: z.number().nullable(), channel: z.string(), status: z.string(), subject: z.string().nullable(), sentAt: z.string().nullable() })),
     appUrl: z.string(),
   }),
@@ -137,10 +135,9 @@ export const getPersonTool = defineTool({
       lastContactAt: iso(activity?.status?.lastContactAt ?? null),
       reach: { email: activity?.reach.email.state ?? "missing", linkedin: activity?.reach.linkedin.state ?? "missing", doNotContact: lead.policy?.doNotContact ?? false },
       customFields,
-      conversationId: lead.conversationId,
+      threadId: lead.threadId,
       enrollments: lead.enrollments.map((e) => ({ campaignId: e.campaignId, campaignName: e.campaignName, channel: e.channel, status: e.status, currentStep: e.currentStep, nextSendAt: iso(e.nextSendAt) })),
       sends: lead.sends.map((s) => ({ campaignName: s.campaignName, stepNumber: s.stepNumber, channel: s.channel, status: s.status, subject: fencedField(out, s.subject), sentAt: iso(s.sentAt) })),
-      hiddenSends: lead.hiddenSends,
       appUrl: appLinks(out).person(p.id, p.lifecycle),
     };
     const summary = `${p.fullName ?? p.email ?? p.id}, ${p.lifecycle}${structured.status ? `, ${structured.status}` : ""}. ${counted(lead.enrollments.length, "enrollment")}, ${counted(lead.sends.length, "campaign send")}.`;

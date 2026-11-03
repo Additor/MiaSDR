@@ -27,7 +27,7 @@ describeDb("person delete races", () => {
   let leadDeps: LeadDeleteDeps;
   let contactDeps: ContactDeleteDeps;
   let emailStore: typeof import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
-  let replyStop: typeof import("@/contexts/conversations/after-reply/infrastructure/sequence-stop").stopPersonOutreachOnReplyTx;
+  let stopContactTx: typeof import("@/contexts/conversations/stopping/infrastructure/stop-contact").stopContactTx;
   let db: typeof import("@/platform/db/client").db;
 
   beforeAll(async () => {
@@ -36,7 +36,7 @@ describeDb("person delete races", () => {
     contacts = await import("../../application/contact-delete");
     ({ leadDeleteDeps: leadDeps, contactDeleteDeps: contactDeps } = await import("@/composition/person-lifecycle"));
     emailStore = (await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store")).drizzleOutreachStore;
-    replyStop = (await import("@/contexts/conversations/after-reply/infrastructure/sequence-stop")).stopPersonOutreachOnReplyTx;
+    stopContactTx = (await import("@/contexts/conversations/stopping/infrastructure/stop-contact")).stopContactTx;
     db = (await import("@/platform/db/client")).db;
   }, 60_000);
 
@@ -130,7 +130,7 @@ describeDb("person delete races", () => {
     notes: preview.counts.notes,
     tasks: preview.counts.tasks,
     events: preview.counts.events,
-    conversations: preview.counts.conversations,
+    threads: preview.counts.threads,
     messages: preview.counts.messages,
     sends: preview.counts.sends,
   });
@@ -253,7 +253,7 @@ describeDb("person delete races", () => {
   }
 
   const stopOnReply = (f: DealsOrg, personId: string) =>
-    db.transaction((tx) => replyStop(tx, { organizationId: f.org, personId, channel: "email", now: new Date() }));
+    db.transaction((tx) => stopContactTx(tx, { organizationId: f.org, personId }, { kind: "reply", channel: "email", now: new Date() }));
 
   const enrollmentStatus = async (id: string) => (await kit.sql`select status from campaign_enrollments where id = ${id}`)[0]?.status as string | undefined;
 
@@ -270,7 +270,7 @@ describeDb("person delete races", () => {
     expect(deleted.error).toBeNull();
     expect(stopped.error).toBeNull();
     expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "in_active_campaign" }] });
-    expect(stopped.value).toMatchObject({ enrollmentsStopped: 1 });
+    expect(stopped.value).toMatchObject({ enrollments: 1 });
     expect(await enrollmentStatus(w.enrollmentId)).toBe("replied");
   }, 30_000);
 
@@ -288,7 +288,7 @@ describeDb("person delete races", () => {
     await holder.release();
     const deleted = await deleting;
     expect(deleted.error).toBeNull();
-    expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "linked_records" }] });
+    expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "linked_conversations" }] });
   }, 30_000);
 
   it("unpaused reply stops and bulk deletes over the same people never deadlock", async () => {
@@ -304,20 +304,6 @@ describeDb("person delete races", () => {
       expect(await people(w.replier)).toBe(1);
     }
   }, 60_000);
-
-  it("refuses a member's delete of a lead sent to in a personal campaign whose creator left", async () => {
-    const f = await kit.organization();
-    const campaignId = await f.campaign({ type: "personal" });
-    // A deleted user sets `created_by` to null (ON DELETE SET NULL).
-    await kit.sql`update campaigns set created_by = null, status = 'completed' where id = ${campaignId}`;
-    const lead = await f.person();
-    const enrollmentId = await f.enrollment(campaignId, lead, "completed", "linkedin");
-    await kit.sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, sent_at) values (${f.org}, ${enrollmentId}, 1, 'linkedin', 'sent', now())`;
-    const outcome = await leads.deleteLeads(leadDeps, f.member, { ids: [lead] });
-    expect(outcome).toMatchObject({ deleted: 0, blocked: [{ id: lead, reason: "has_hidden_sends" }] });
-    expect((await leads.deleteLeads(leadDeps, f.owner, { ids: [lead] })).blocked).toMatchObject([{ id: lead, reason: "has_sends" }]);
-    expect(await sendsOf(enrollmentId)).toEqual(["sent"]);
-  }, 30_000);
 
   it("takes the same advisory lock for an id sent in uppercase as the reply stop takes for the stored id", async () => {
     const f = await kit.organization();

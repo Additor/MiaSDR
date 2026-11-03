@@ -14,7 +14,7 @@ Replies and unknown senders are stored in the Inbox (`/inbox`). A message whose 
 
 The first sync of a new mailbox stores a cursor and ingests nothing. If Gmail expires the cursor, the app resets it and writes a note in the mailbox's `last_error`. Replies and bounces in that gap are not synced.
 
-Every email carries an unsubscribe link and the `List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link opens a page with a confirm button. Confirming suppresses the address in that organization only and stops its pending and active email enrollments. Repeating it does nothing.
+Every email carries an unsubscribe link and the `List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058 one-click). The link opens a page with a confirm button. Confirming suppresses the address in that organization only and ends the pending and active enrollments of the people with that address on every channel. Repeating it does nothing.
 
 ## Limits and spacing
 
@@ -54,13 +54,13 @@ Pausing a single campaign or disabling a single mailbox stays available for a na
 - A tick that takes 30 seconds or more writes one `tick.slow` line (stderr) with the slowest jobs, at most every ten minutes.
 - A job states which of its counts mean failure (`Job.failureKeys`), so a run that returns normally can still show as failing. Its rows clear on the next run that shows it works: a job with such counts, or one that runs by slot, has to do some work first, since a pass with nothing due proves nothing.
 - `/settings/jobs` tells the operator when the scheduler stopped or a tick hung (`platform.heartbeat`, stale after 10 minutes) and when migrations were not applied. `/api/health` stays a liveness check of the app and its database.
-- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures, to owners and admins of the oldest organization: the operator on an install with several organizations. It stores the database's reason, never the failed statement or its values. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
+- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures, to the organization's owners and admins. It stores the database's reason, never the failed statement or its values. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
 
 | Field | Meaning |
 | --- | --- |
 | `startedAt` | ISO time the tick began. |
 | `durationMs` | Total time of the tick. |
-| `jobs[].name` | `email.inbox-sync`, `email.reconcile`, `email.send`, the LinkedIn jobs, the AI jobs, `conversations.sequences`, `grid.run`, `platform.daily-rollover` and `platform.history-prune`. |
+| `jobs[].name` | `email.inbox-sync`, `email.reconcile`, `email.send`, the LinkedIn jobs, the AI jobs, `threads.follow-ups`, `grid.run`, `platform.daily-rollover` and `platform.history-prune`. |
 | `jobs[].processed` | Items handled: mailboxes synced, uncertain sends settled, emails sent. |
 | `jobs[].more` | `true` when work remains or the job did not run because the 50 second budget ran out. A caller can tick again soon. |
 | `jobs[].detail` | Counts for `email.inbox-sync`: `hard_bounce`, `soft_bounce`, `reply`, `auto_reply`, `own_message`, `ignored_unknown_sender`, and `mailboxes_failed`. |
@@ -71,7 +71,7 @@ An empty `jobs` array means no jobs are registered. Without a mailbox provider t
 
 ## Follow-ups after a reply job
 
-`conversations.sequences` runs the follow-ups of the campaign setting Follow-ups after a reply on every tick. It first stops runs whose person replied, asked not to be contacted, unsubscribed, bounced, was suppressed or became a contact (reason `converted`), and runs whose reply handling a person closed or whose reply moved to a reply type set to stop follow-ups (`reply_types.follow_ups = 'stop'`). It then starts runs for replies whose applied pick keeps follow-ups going, and writes the draft for each due step. Any applied pick counts: one the AI applied, one a person accepted and a person's own pick. The start reads the rules the pick stored, so an edit of the type after the pick does not change that reply's run. A run on a type set to Don't write a reply draft starts at step 2. A run starts from the campaign that most recently emailed the person, and only when that campaign is an email campaign in "AI drafts, you approve" mode with a published flow. A paused campaign starts no new runs and holds draft writing for runs in progress. Switching the campaign back to "Off, hand to the Inbox" interrupts its runs in progress with the reason `after_reply_off`. A contact starts no run; creating a deal ends the person's runs in the same transaction. The job never sends: a person approves each draft on the Inbox thread, or an agent sends it with `send_reply` where the organization allows agent sending. One step is claimed at a time with a row lock, and a step stuck in `drafting` for longer than the lease is taken over, so overlapping ticks do not write two drafts. Whole-day delays follow the organization's time zone (Settings, Organization, UTC when unset). Retention: runs, step runs and their drafts are kept. No pruning step touches them.
+`threads.follow-ups` runs the follow-ups of the campaign setting Follow-ups after a reply on every tick. It first stops runs whose person replied, asked not to be contacted, unsubscribed, bounced, was suppressed or became a contact (reason `converted`), and runs whose reply handling a person closed or whose reply moved to a reply type set to stop follow-ups (`reply_types.follow_ups = 'stop'`). It then starts runs for replies whose applied pick keeps follow-ups going, and writes the draft for each due step. Any applied pick counts: one the AI applied, one a person accepted and a person's own pick. The start reads the rules the pick stored for that reply's run. A run on a type set to Don't write a reply draft starts at step 2. A run starts from the campaign that most recently emailed the person, and only when that campaign is an email campaign in "AI drafts, you approve" mode with a published flow. A paused campaign starts no new runs and holds draft writing for runs in progress. Switching the campaign back to "Off, hand to the Inbox" interrupts its runs in progress with the reason `after_reply_off`. A contact starts no run; creating a deal ends the person's runs in the same transaction. The job never sends: a person approves each draft on the Inbox thread, or an agent sends it with `send_reply` where the organization allows agent sending. One step is claimed at a time with a row lock, and a step stuck in `drafting` for longer than the lease is taken over, so overlapping ticks do not write two drafts. Whole-day delays follow the organization's time zone (Settings, Organization, UTC when unset). Retention: runs, step runs and their drafts are kept. No pruning step touches them.
 
 ## Upgrades and table locks
 
@@ -91,14 +91,14 @@ Provider keys are saved per provider in the app (encrypted with `INTEGRATION_CRE
 
 ## Rotating the credential key
 
-`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: AI provider keys (Anthropic, Vercel AI Gateway, OpenRouter), Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all. Older `v1:` envelopes (no key id) still decrypt.
+`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: AI provider keys (Anthropic, Vercel AI Gateway, OpenRouter), Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all.
 
 Rotate when the key leaked or on your own schedule. Nothing needs re-entering and the app stays up.
 
 1. Make the new key: `openssl rand -hex 32`. Keep a copy outside the server.
 2. In `.env`, move the current value into `INTEGRATION_CREDENTIALS_LEGACY_KEYS` (comma separated when you keep several) and put the new key in `INTEGRATION_CREDENTIALS_KEY`. Each key needs 32 characters or more.
 3. Deploy: `docker compose up -d`. New saves use the new key. Rows still on the old key keep working because the old key is on the legacy list.
-4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints, per table (`integration_credentials`, `grid_provider_credentials`), how many rows are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
+4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints how many rows of `integration_credentials` are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
 5. Apply: `docker compose exec app node scripts/rotate-credentials.mjs --apply`. Each row is decrypted with whichever known key fits, re-encrypted with the current key, checked, and written in its own transaction. Rows already on the current key are skipped, so you can run it again. Outside Docker the same run is `pnpm credentials:rotate` and `pnpm credentials:rotate --apply`.
 6. Run the dry run again. Every row should show as already on the current key and 0 undecryptable.
 7. Remove the old key from `INTEGRATION_CREDENTIALS_LEGACY_KEYS` and deploy again.
@@ -109,7 +109,7 @@ Back up the database before the first `--apply`. Keep the old key until step 6 s
 
 ## History retention
 
-`platform.history-prune` deletes only logs and old agent usage counts (`mcp_agent_usage`, after 7 days). Defaults in days: `RETENTION_JOB_RUNS_DAYS` 30, `RETENTION_INBOUND_EVENTS_DAYS` 30 (finished events), `RETENTION_INBOUND_FAILED_DAYS` 90 (dead-lettered events), `RETENTION_AI_JOBS_DAYS` 30 (succeeded AI jobs), `RETENTION_MCP_TOOL_CALLS_DAYS` 90 (MCP agent activity). Sends, messages, enrollments, suppression, sequence runs and grid data are never pruned.
+`platform.history-prune` deletes only logs and old agent usage counts (`mcp_agent_usage`, after 7 days). Defaults in days: `RETENTION_JOB_RUNS_DAYS` 30, `RETENTION_INBOUND_EVENTS_DAYS` 30 (finished events), `RETENTION_INBOUND_FAILED_DAYS` 90 (dead-lettered events), `RETENTION_AI_JOBS_DAYS` 30 (succeeded AI jobs), `RETENTION_MCP_TOOL_CALLS_DAYS` 90 (MCP agent activity). Sends, messages, enrollments, suppression, follow-up runs and grid data are never pruned.
 
 ## Logs
 

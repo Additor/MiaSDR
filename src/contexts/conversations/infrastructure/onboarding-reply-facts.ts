@@ -1,30 +1,23 @@
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNull, notLike, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { drafts, sendAttempts } from "@/platform/db/schema";
-import { visibleDraftSql } from "@/platform/db/conversation-visibility";
+import { messages } from "@/platform/db/schema";
+import { env } from "@/shared/env";
 
 /**
- * What the onboarding checklist's "Approve your first message" step reads: drafts waiting in the Inbox, and replies a
- * person sent. An agent's send (`origin = 'agent'`) does not count, so the step still asks a person to send one.
+ * What the setup guide's reply step reads: replies received on any channel. An auto-reply is not a person answering, and
+ * mail the fake provider delivered counts only on an install that runs it.
  */
-export async function onboardingReplyFacts(organizationId: string): Promise<{ draftsAwaiting: number; messagesApproved: number }> {
-  const [[awaiting], [approved]] = await Promise.all([
-    // The awaiting count must match what the Inbox shows, so private conversations stay out.
-    db
-      .select({ n: count() })
-      .from(drafts)
-      .where(and(eq(drafts.organizationId, organizationId), eq(drafts.status, "awaiting_review"), visibleDraftSql("drafts"))),
-    db
-      .select({ n: count() })
-      .from(drafts)
-      .where(
-        and(
-          eq(drafts.organizationId, organizationId),
-          eq(drafts.status, "sent"),
-          visibleDraftSql("drafts"),
-          sql`exists (select 1 from ${sendAttempts} where ${sendAttempts.draftId} = ${drafts.id} and ${sendAttempts.origin} = 'person' and ${sendAttempts.status} in ('sent', 'reconciled'))`,
-        ),
+export async function onboardingReplyFacts(organizationId: string, countDemoReplies = env().MAILBOX_PROVIDER === "fake"): Promise<{ replies: number }> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, organizationId),
+        eq(messages.direction, "inbound"),
+        sql`${messages.raw}->>'autoReply' is distinct from 'true'`,
+        countDemoReplies ? undefined : or(isNull(messages.providerMessageId), notLike(messages.providerMessageId, "fake-%")),
       ),
-  ]);
-  return { draftsAwaiting: awaiting?.n ?? 0, messagesApproved: approved?.n ?? 0 };
+    );
+  return { replies: row?.n ?? 0 };
 }

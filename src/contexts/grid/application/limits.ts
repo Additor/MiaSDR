@@ -29,6 +29,4 @@ export const GRID_LIMITS = {
   exportRows: 50_000,
   /** Rows one campaign handoff may push. */
   campaignRows: 5_000,
-  formulaChars: 5_000,
-  formulaPromptChars: 2_000,
 } as const;

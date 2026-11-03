@@ -1,10 +1,9 @@
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, companies, conversations, linkedinAccounts, mailboxes, messages, people, records, sends } from "@/platform/db/schema";
+import { campaignEnrollments, companies, threads, linkedinAccounts, mailboxes, messages, people, conversations, sends } from "@/platform/db/schema";
 import { OUT_OF_OFFICE_KEY } from "../domain/inbox-filter";
 import type { InboxFilter, InboxFilterOptions, InboxRow, InboxStore, ScheduledRow, ThreadMessage } from "../application/ports";
-import { publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
-import { automatedByPattern, autoReplyFlag, excludedFromUnread, likePattern } from "./inbox-sql";
+import { automatedByPattern, autoReplyFlag, likePattern, unreadMessageSql } from "./inbox-sql";
 
 /** CC addresses stored in a message's raw jsonb (inbound headers, or the list a reply went out with). */
 function ccOf(raw: unknown): string[] {
@@ -15,8 +14,8 @@ function ccOf(raw: unknown): string[] {
 const POSSIBLE_BOUNCE = sql`coalesce(m.raw->>'possibleBounce', 'false') = 'true'`;
 
 interface ListRow {
+  thread_id: string;
   conversation_id: string;
-  record_id: string;
   assigned_to: string | null;
   channel: string;
   account_ref: string;
@@ -38,7 +37,7 @@ interface ListRow {
 }
 
 interface ScheduledDbRow {
-  kind: "campaign" | "sequence";
+  kind: "campaign" | "follow_up";
   id: string;
   person_id: string;
   full_name: string | null;
@@ -59,7 +58,7 @@ const uuidList = (ids: string[]): SQL => sql.join(ids.map((id) => sql`${id}::uui
 const textList = (values: string[]): SQL => sql.join(values.map((v) => sql`${v}`), sql`, `);
 const present = <T,>(list: T[] | undefined): list is T[] => Array.isArray(list) && list.length > 0;
 
-/** Email addresses of the chosen mailboxes, lowercased like `conversations.account_ref`. */
+/** Email addresses of the chosen mailboxes, lowercased like `threads.account_ref`. */
 const mailboxAddresses = (organizationId: string, ids: string[]) =>
   sql`(select lower(mb.email_address) from mailboxes mb where mb.organization_id = ${organizationId} and mb.id in (${uuidList(ids)}))`;
 
@@ -75,12 +74,12 @@ function personFilters(f: InboxFilter): SQL[] {
 }
 
 function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
-  const out: SQL[] = [sql`c.organization_id = ${organizationId}`, publicConversationSql("c"), ...personFilters(f)];
+  const out: SQL[] = [sql`c.organization_id = ${organizationId}`, ...personFilters(f)];
   if (f.query) {
     const t = likePattern(f.query);
     // Any message of the thread can match, not only the latest.
     out.push(sql`(p.full_name ilike ${t} or p.first_name ilike ${t} or p.last_name ilike ${t} or p.email ilike ${t}
-      or exists (select 1 from messages mm where mm.conversation_id = c.id and (mm.subject ilike ${t} or mm.body_text ilike ${t})))`);
+      or exists (select 1 from messages mm where mm.thread_id = c.id and (mm.subject ilike ${t} or mm.body_text ilike ${t})))`);
   }
   if (present(f.campaignIds)) {
     out.push(sql`exists (select 1 from campaign_enrollments ce where ce.organization_id = ${organizationId} and ce.person_id = p.id and ce.campaign_id in (${uuidList(f.campaignIds)}))`);
@@ -94,23 +93,23 @@ function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
 }
 
 /** One row per conversation with the latest message and the per-row facts every view filters on. */
-function conversationSource(organizationId: string, f: InboxFilter): SQL {
+function threadSource(organizationId: string, f: InboxFilter): SQL {
   return sql`
-    select c.id as conversation_id, r.id as record_id, r.assigned_to, c.channel, c.account_ref, p.id as person_id, p.full_name, p.first_name, p.email,
+    select c.id as thread_id, r.id as conversation_id, r.assigned_to, c.channel, c.account_ref, p.id as person_id, p.full_name, p.first_name, p.email,
            r.group_key, s.key as reply_type_key, s.name as reply_type_name,
            lm.subject, lm.body_text, lm.sent_at, lm.direction, lm.auto_reply, lm.possible_bounce,
            (lm.direction = 'inbound' and (lm.auto_reply or lm.possible_bounce or lm.by_pattern)) as automated,
            (select count(*)::int from messages m
-             where m.conversation_id = c.id and m.direction = 'inbound' and m.opened_at is null and not ${excludedFromUnread("m")}) as unread,
-           exists (select 1 from messages m where m.conversation_id = c.id and m.important) as has_important
-    from conversations c
-    join records r on r.id = c.record_id
+             where m.thread_id = c.id and ${unreadMessageSql("m")}) as unread,
+           exists (select 1 from messages m where m.thread_id = c.id and m.important) as has_important
+    from threads c
+    join conversations r on r.id = c.conversation_id
     join people p on p.id = r.person_id
     left join reply_types s on s.id = r.reply_type_id
     join lateral (
       select m.subject, m.body_text, m.sent_at, m.direction, ${autoReplyFlag("m")} as auto_reply, ${POSSIBLE_BOUNCE} as possible_bounce,
              ${automatedByPattern("m")} as by_pattern
-      from messages m where m.conversation_id = c.id order by m.sent_at desc, m.id desc limit 1
+      from messages m where m.thread_id = c.id order by m.sent_at desc, m.id desc limit 1
     ) lm on true
     where ${sql.join(conversationFilters(organizationId, f), sql` and `)}`;
 }
@@ -138,12 +137,12 @@ function viewCondition(f: InboxFilter): SQL {
 
 export const drizzleInboxStore: InboxStore = {
   async list(organizationId, filter) {
-    const source = conversationSource(organizationId, filter);
+    const source = threadSource(organizationId, filter);
     const where = viewCondition(filter);
     const rows = (await db.execute(sql`
       select * from (${source}) t
       where ${where}
-      order by t.sent_at desc, t.conversation_id desc
+      order by t.sent_at desc, t.thread_id desc
       limit ${filter.pageSize} offset ${(filter.page - 1) * filter.pageSize}
     `)) as unknown as ListRow[];
 
@@ -155,8 +154,8 @@ export const drizzleInboxStore: InboxStore = {
     const hidden = filter.view === "all" && !filter.query ? counts.hidden : 0;
 
     const mapped: InboxRow[] = rows.map((r) => ({
+      threadId: r.thread_id,
       conversationId: r.conversation_id,
-      recordId: r.record_id,
       assignedTo: r.assigned_to,
       channel: r.channel,
       accountRef: r.account_ref,
@@ -184,27 +183,25 @@ export const drizzleInboxStore: InboxStore = {
       ...(filter.from ? [sql`${sql.raw(column)} >= ${filter.from.toISOString()}::timestamptz`] : []),
       ...(filter.to ? [sql`${sql.raw(column)} < ${filter.to.toISOString()}::timestamptz`] : []),
     ];
-    // Subcategory and category describe a conversation's record, not a campaign step, so they do not narrow this list.
+    // Reply type and group describe a conversation, not a campaign step, so they do not narrow this list.
     const campaignWhere = [
       sql`ce.organization_id = ${organizationId}`,
       sql`ce.status = 'active'`,
       sql`ce.next_send_at is not null`,
       sql`camp.status = 'active'`,
-      sql`camp.type = 'regular'`,
       ...person,
       ...(present(filter.campaignIds) ? [sql`ce.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
       ...(present(filter.mailboxIds) ? [sql`ce.mailbox_id in (${uuidList(filter.mailboxIds)})`] : []),
       ...dueRange("ce.next_send_at"),
     ];
-    const sequenceWhere = [
+    const followUpWhere = [
       sql`ssr.organization_id = ${organizationId}`,
-      publicConversationSql("c"),
       sql`ssr.status = 'scheduled'`,
       sql`sr.status = 'active'`,
-      // A paused campaign holds its follow-ups, so they are not scheduled to go out. A legacy sequence has no campaign and keeps running.
-      sql`seq_camp.status is distinct from 'paused'`,
+      // A paused campaign holds its follow-ups, so they are not scheduled to go out.
+      sql`flow_camp.status <> 'paused'`,
       ...person,
-      ...(present(filter.campaignIds) ? [sql`seq.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
+      ...(present(filter.campaignIds) ? [sql`flow.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
       ...(present(filter.mailboxIds) ? [sql`lower(c.account_ref) in ${mailboxAddresses(organizationId, filter.mailboxIds)}`] : []),
       ...dueRange("ssr.due_at"),
     ];
@@ -220,17 +217,17 @@ export const drizzleInboxStore: InboxStore = {
       join lateral (select e.v from jsonb_array_elements(camp.steps) as e(v) where (e.v->>'stepNumber')::int = ce.current_step + 1 limit 1) st on true
       where ${sql.join(campaignWhere, sql` and `)}
       union all
-      select 'sequence'::text, ssr.id, p.id, p.full_name, p.first_name, p.email, c.channel,
-             coalesce(seq_camp.name, seq.name), ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
-      from sequence_step_runs ssr
-      join sequence_runs sr on sr.id = ssr.sequence_run_id and sr.organization_id = ssr.organization_id
-      join sequence_steps ss on ss.id = ssr.sequence_step_id
-      join sequences seq on seq.id = sr.sequence_id and seq.organization_id = sr.organization_id
-      left join campaigns seq_camp on seq_camp.id = seq.campaign_id and seq_camp.organization_id = seq.organization_id
-      join conversations c on c.id = sr.conversation_id
-      join records r on r.id = sr.record_id
+      select 'follow_up'::text, ssr.id, p.id, p.full_name, p.first_name, p.email, c.channel,
+             flow_camp.name, ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
+      from follow_up_step_runs ssr
+      join follow_up_runs sr on sr.id = ssr.follow_up_run_id and sr.organization_id = ssr.organization_id
+      join follow_up_steps ss on ss.id = ssr.follow_up_step_id
+      join follow_up_flows flow on flow.id = sr.flow_id and flow.organization_id = sr.organization_id
+      join campaigns flow_camp on flow_camp.id = flow.campaign_id and flow_camp.organization_id = flow.organization_id
+      join threads c on c.id = sr.thread_id
+      join conversations r on r.id = sr.conversation_id
       join people p on p.id = r.person_id
-      where ${sql.join(sequenceWhere, sql` and `)}`;
+      where ${sql.join(followUpWhere, sql` and `)}`;
     const rows = (await db.execute(sql`
       select * from (${union}) u order by u.due_at asc, u.id asc
       limit ${filter.pageSize} offset ${(filter.page - 1) * filter.pageSize}
@@ -255,8 +252,8 @@ export const drizzleInboxStore: InboxStore = {
   async filterOptions(organizationId, leadIds): Promise<InboxFilterOptions> {
     const [boxes, camps, subs, leads] = await Promise.all([
       db.select({ id: mailboxes.id, label: mailboxes.emailAddress }).from(mailboxes).where(eq(mailboxes.organizationId, organizationId)).orderBy(mailboxes.emailAddress),
-      db.execute(sql`select id, name as label from campaigns where organization_id = ${organizationId} and status <> 'draft' and type = 'regular' order by name limit 200`),
-      db.execute(sql`select key, min(name) as label from reply_types where organization_id = ${organizationId} and active group by key order by min(name)`),
+      db.execute(sql`select id, name as label from campaigns where organization_id = ${organizationId} and status <> 'draft' order by name limit 200`),
+      db.execute(sql`select key, min(name) as label from reply_types where organization_id = ${organizationId} group by key order by min(name)`),
       leadIds.length > 0
         ? db.execute(sql`select id, coalesce(full_name, first_name, email) as label from people where organization_id = ${organizationId} and id in (${uuidList(leadIds)})`)
         : Promise.resolve([]),
@@ -269,15 +266,15 @@ export const drizzleInboxStore: InboxStore = {
     };
   },
 
-  async thread(organizationId, conversationId) {
+  async thread(organizationId, threadId) {
     const [head] = await db
       .select({
-        conversationId: conversations.id,
-        channel: conversations.channel,
-        accountRef: conversations.accountRef,
-        recordId: conversations.recordId,
-        providerThreadId: conversations.providerThreadId,
-        workflowState: records.workflowState,
+        threadId: threads.id,
+        channel: threads.channel,
+        accountRef: threads.accountRef,
+        conversationId: threads.conversationId,
+        providerThreadId: threads.providerThreadId,
+        workflowState: conversations.workflowState,
         personId: people.id,
         fullName: people.fullName,
         firstName: people.firstName,
@@ -286,17 +283,17 @@ export const drizzleInboxStore: InboxStore = {
         title: people.title,
         company: companies.name,
       })
-      .from(conversations)
-      .innerJoin(records, eq(records.id, conversations.recordId))
-      .innerJoin(people, eq(people.id, records.personId))
+      .from(threads)
+      .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+      .innerJoin(people, eq(people.id, conversations.personId))
       .leftJoin(companies, eq(companies.id, people.companyId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .where(and(eq(threads.organizationId, organizationId), eq(threads.id, threadId)));
     if (!head) return null;
 
     const stored = await db
-      .select()
+      .select({ ...getTableColumns(messages), unread: sql<boolean>`${unreadMessageSql("messages")}` })
       .from(messages)
-      .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId)));
+      .where(and(eq(messages.organizationId, organizationId), eq(messages.threadId, threadId)));
 
     // Outreach steps sent in the same mail thread belong to the conversation even though they live in `sends`.
     const sequence =
@@ -310,7 +307,7 @@ export const drizzleInboxStore: InboxStore = {
                 eq(sends.organizationId, organizationId),
                 eq(sends.channel, "email"),
                 eq(sends.status, "sent"),
-                eq(sends.threadId, head.providerThreadId),
+                eq(sends.providerThreadId, head.providerThreadId),
                 eq(sql`lower(${mailboxes.emailAddress})`, head.accountRef),
               ),
             )
@@ -323,11 +320,8 @@ export const drizzleInboxStore: InboxStore = {
             .select({ id: sends.id, body: sends.body, sentAt: sends.sentAt, claimedAt: sends.claimedAt })
             .from(sends)
             .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-            .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
             .where(
               and(
-                // What a personal campaign sent stays out of the shared thread.
-                eq(campaigns.type, "regular"),
                 eq(sends.organizationId, organizationId),
                 eq(sends.channel, "linkedin"),
                 eq(sends.status, "sent"),
@@ -360,7 +354,7 @@ export const drizzleInboxStore: InboxStore = {
           at: m.sentAt,
           autoReply,
           possibleBounce,
-          unread: m.direction === "inbound" && m.openedAt === null && (!autoReply || possibleBounce),
+          unread: m.unread,
           important: m.important,
           ...(typeof sentVia === "string" ? { sentVia } : {}),
         };
@@ -402,8 +396,8 @@ export const drizzleInboxStore: InboxStore = {
     ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
     return {
+      threadId: head.threadId,
       conversationId: head.conversationId,
-      recordId: head.recordId,
       channel: head.channel,
       accountRef: head.accountRef,
       accountLabel,
@@ -421,16 +415,16 @@ export const drizzleInboxStore: InboxStore = {
     };
   },
 
-  async markRead(organizationId, conversationId, at) {
+  async markRead(organizationId, threadId, at) {
     const [found] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .select({ id: threads.id })
+      .from(threads)
+      .where(and(eq(threads.organizationId, organizationId), eq(threads.id, threadId)));
     if (!found) return null;
     const changed = await db
       .update(messages)
       .set({ openedAt: at })
-      .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "inbound"), sql`${messages.openedAt} is null`))
+      .where(and(eq(messages.threadId, threadId), eq(messages.direction, "inbound"), sql`${messages.openedAt} is null`))
       .returning({ id: messages.id });
     return changed.length;
   },

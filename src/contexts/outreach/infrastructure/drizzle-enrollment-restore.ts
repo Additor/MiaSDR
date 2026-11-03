@@ -1,29 +1,30 @@
-import { genuineInboundSql } from "@/platform/db/conversation-visibility";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
+import type { OutreachChannel } from "../application/enrollment-admin";
 import type { EnrollmentRestoreStore, RestoreRefused } from "../application/enrollment-restore";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain/enrollment-restore";
 import { notContactSql } from "./contact-guard";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
-import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { doNotContactSql, suppressionBlocksSql } from "@/contexts/people/infrastructure/reachability";
 import type { PersonTimeline } from "../application/inbound-ports";
 import { SEND_PROGRESS } from "../domain/send-status";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 /** Facts about the people of the named enrollments, read inside the restore transaction. */
-async function personFacts(tx: DbHandle, organizationId: string, campaignId: string, channel: string, personIds: string[]) {
+async function personFacts(tx: DbHandle, organizationId: string, campaignId: string, channel: OutreachChannel, personIds: string[]) {
   const [replied, dnc, suppressed, contacts, elsewhere] = await Promise.all([
     tx.execute(sql`
       select e.person_id as "personId" from campaign_enrollments e
       where e.organization_id = ${organizationId} and e.person_id in (${uuidList(personIds)}) and e.status = 'replied'
       union
       select r.person_id from messages m
-      join conversations c on c.id = m.conversation_id and c.organization_id = m.organization_id
-      join records r on r.id = c.record_id and r.organization_id = c.organization_id
+      join threads c on c.id = m.thread_id and c.organization_id = m.organization_id
+      join conversations r on r.id = c.conversation_id and r.organization_id = c.organization_id
       where m.organization_id = ${organizationId} and ${genuineInboundSql("m")}
         and r.person_id in (${uuidList(personIds)})
     `),
@@ -31,13 +32,12 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
       select p.id as "personId" from people p
       where p.organization_id = ${organizationId} and p.id in (${uuidList(personIds)}) and ${doNotContactSql("p")}
     `),
-    channel === "email"
-      ? tx.execute(sql`
-          select p.id as "personId" from people p
-          where p.organization_id = ${organizationId} and p.id in (${uuidList(personIds)})
-            and ${suppressedSql("p")}
-        `)
-      : Promise.resolve([]),
+    // The fragment `enrollBlockSql` reads, so restore and a new enrollment agree on which reasons close the channel.
+    tx.execute(sql`
+      select p.id as "personId" from people p
+      where p.organization_id = ${organizationId} and p.id in (${uuidList(personIds)})
+        and ${suppressionBlocksSql("p", channel)}
+    `),
     tx
       .select({ personId: people.id })
       .from(people)

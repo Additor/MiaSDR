@@ -28,7 +28,7 @@ import { Count } from "@/components/shell/section";
 import { activeFilterChips, clearedInboxHref, InboxFilters } from "./filter-panel";
 import { HiddenAutomated, MoreViews } from "./more-views";
 import { KeyboardHint } from "@/components/shell/info-tip";
-import { ConversationRow } from "./conversation-row";
+import { ThreadRow } from "./conversation-row";
 import { groupByDayInZone, rowTimeLabel } from "./day-groups";
 import { ListKeys } from "@/components/shell/list-keys";
 import { ViewSwitch } from "@/components/shell/view-switch";
@@ -140,10 +140,10 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
         <input key={id} type="hidden" name="mailbox" value={id} />
       ))}
       {params.replyTypeKeys.map((k) => (
-        <input key={k} type="hidden" name="subcategory" value={k} />
+        <input key={k} type="hidden" name="type" value={k} />
       ))}
       {params.groupKeys.map((k) => (
-        <input key={k} type="hidden" name="category" value={k} />
+        <input key={k} type="hidden" name="group" value={k} />
       ))}
       {params.dateMode !== "all" && <input type="hidden" name="range" value={params.dateMode} />}
       {params.dateMode === "custom" && params.dateFrom && <input type="hidden" name="from" value={params.dateFrom} />}
@@ -253,7 +253,7 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
                   </h2>
                   <ul className="divide-y rounded-lg border text-sm">
                     {group.rows.map((row) => (
-                      <ConversationRow key={row.conversationId} row={row} href={threadHref(row.conversationId)} time={rowTimeLabel(row.lastMessageAt, group.group, timeZone)} />
+                      <ThreadRow key={row.threadId} row={row} href={threadHref(row.threadId)} time={rowTimeLabel(row.lastMessageAt, group.group, timeZone)} />
                     ))}
                   </ul>
                 </section>

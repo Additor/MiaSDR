@@ -3,13 +3,13 @@ import { createTask, listTasks } from "@/contexts/conversations/actions/applicat
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { withActor } from "@/app/_lib/api";
 
-/** Every task of the person, record-bound ones included. */
+/** Every task of the person, conversation-bound ones included. */
 export async function GET(_request: Request, ctx: RouteContext<"/api/people/[personId]/tasks">) {
   const { personId } = await ctx.params;
   return withActor(async (actor) => listTasks(taskDeps(), actor, { state: "all", personId }));
 }
 
-/** A task on the person without a reply record (`record_id` null). */
+/** A task on the person without a conversation (`conversation_id` null). */
 export async function POST(request: Request, ctx: RouteContext<"/api/people/[personId]/tasks">) {
   const { personId } = await ctx.params;
   const body = z

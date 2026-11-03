@@ -73,9 +73,9 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
     throw error;
   }
   const { person } = deal;
-  const [dialog, conversation, zone, reachMap, stop] = await Promise.all([
+  const [dialog, thread, zone, reachMap, stop] = await Promise.all([
     dealDialogData(actor),
-    personReplyHandling.activeConversationOfPerson(actor.organizationId, person.id),
+    personReplyHandling.activeThreadOfPerson(actor.organizationId, person.id),
     getOrgTimeZone(),
     readReachability(actor.organizationId, [person.id]),
     // The do not contact reason and date, and the suppression, for the stop block every person page ends with.
@@ -228,9 +228,9 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
                   <span className="[overflow-wrap:anywhere] text-muted-foreground">{person.email ?? "No email"}</span>
                 </div>
                 <ReachIcons reach={reach} contact={leadContactPoints(person)} person={contactName} />
-                {conversation && (
+                {thread && (
                   <div>
-                    <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline", size: "sm", touch: true })}>
+                    <Link href={`/inbox/${thread.threadId}`} className={buttonVariants({ variant: "outline", size: "sm", touch: true })}>
                       Open conversation
                     </Link>
                   </div>

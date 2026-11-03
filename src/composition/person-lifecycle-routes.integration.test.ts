@@ -65,9 +65,9 @@ describeDb("person lifecycle routes", () => {
     const personId = (created.body as { personId: string }).personId;
     const preview = await callRoute("contacts/[id]/delete-preview/route.ts", "GET", { params: { id: personId }, as: world.member });
     expect(preview.status).toBe(200);
-    expect(preview.body).toMatchObject({ person: { id: personId, fullName: "Gus", email: `gone-${tag}@routes.test`, doNotContact: false }, blockers: [], suppressionKept: false, hiddenExcluded: false });
+    expect(preview.body).toMatchObject({ person: { id: personId, fullName: "Gus", email: `gone-${tag}@routes.test`, doNotContact: false }, blockers: [], suppressionKept: false });
     const counts = (preview.body as { counts: Record<string, number> & { deals: { won: number; lost: number } } }).counts;
-    const query = { deals: "0", notes: String(counts.notes), tasks: String(counts.tasks), events: String(counts.events), conversations: "0", messages: "0", sends: "0" };
+    const query = { deals: "0", notes: String(counts.notes), tasks: String(counts.tasks), events: String(counts.events), threads: "0", messages: "0", sends: "0" };
 
     const { sends: _dropped, ...missing } = query;
     void _dropped;

@@ -94,11 +94,8 @@ describe("campaignSummary", () => {
 });
 
 describe("progress text", () => {
-  it("shows replied beside sent and takes replies out of stopped", () => {
-    expect(emailProgressText({ sent: 1200, replied: 30, completed: 4, stopped: 41 })).toBe("1,200 sent, 30 replied, 4 finished, 11 stopped");
-  });
-  it("never goes below zero when a count is stale", () => {
-    expect(emailProgressText({ sent: 0, replied: 3, completed: 0, stopped: 1 })).toContain("0 stopped");
+  it("shows replied beside sent, and stopped as the campaign page counts it", () => {
+    expect(emailProgressText({ sent: 1200, replied: 30, completed: 4, stopped: 11 })).toBe("1,200 sent, 30 replied, 4 finished, 11 stopped");
   });
   it("formats LinkedIn progress with the same grouping", () => {
     expect(linkedinProgressText({ invited: 2000, connected: 10, replied: 1 })).toBe("2,000 invited, 10 connected, 1 replied");
@@ -106,6 +103,11 @@ describe("progress text", () => {
 });
 
 describe("startBlockers", () => {
+  it("names a missing postal address on email only when it is flagged", () => {
+    const base: Parameters<typeof startBlockers>[0] = { channel: "email", status: "draft", leads: 3, connectedSenders: 1, offlineAssigned: [], stepIssues: 0, placeholderSteps: [] };
+    expect(startBlockers(base)).toEqual([]);
+    expect(startBlockers({ ...base, noPostalAddress: true })).toEqual([{ code: "no_postal_address", message: "Commercial email must carry your postal address, so add it under Sending rules to start." }]);
+  });
   const ready: Parameters<typeof startBlockers>[0] = { channel: "email", status: "draft", leads: 3, connectedSenders: 1, offlineAssigned: [], stepIssues: 0, placeholderSteps: [] };
   it("is empty when a draft is ready", () => {
     expect(startBlockers(ready)).toEqual([]);

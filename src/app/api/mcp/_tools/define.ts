@@ -1,10 +1,10 @@
 import type { McpServer, ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { clientNameFrom, logMcp, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
-import type { McpPrincipal, PrincipalAllowance } from "@/contexts/tenancy/application/mcp-principal";
-import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/application/mcp-tool-calls";
-import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
-import type { McpRateBucket } from "@/contexts/tenancy/domain/mcp-rate-limit";
+import type { McpPrincipal, PrincipalAllowance } from "@/contexts/agent-access/application/mcp-principal";
+import { callTarget, type McpToolCallEntry } from "@/contexts/agent-access/application/mcp-tool-calls";
+import { hasScope, type McpScope } from "@/contexts/agent-access/domain/mcp-policy";
+import type { McpRateBucket } from "@/contexts/agent-access/domain/mcp-rate-limit";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { CARD_MIME_TYPE, CARDS } from "./cards";
 import { estimateTokens, MAX_RESPONSE_TOKENS, toolOutputContext, type ToolOutputContext } from "./output";
@@ -89,7 +89,7 @@ export async function checkedOutput<T extends Record<string, unknown>>(tool: Pic
 export interface ToolHooks {
   /** Counts the call in a bucket; the seconds to wait when the token is over its limit, else null. */
   take: (bucket: McpRateBucket) => Promise<number | null>;
-  record: (entry: McpToolCallEntry) => Promise<void>;
+  conversation: (entry: McpToolCallEntry) => Promise<void>;
   now: () => number;
 }
 
@@ -167,7 +167,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
           logMcp(error.code === "rate_limited" ? "rate limited" : "agent action refused", { code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId });
         }
         await hooks
-          .record({
+          .conversation({
             organizationId: principal.organizationId,
             tokenId: principal.tokenId,
             tool: tool.name,

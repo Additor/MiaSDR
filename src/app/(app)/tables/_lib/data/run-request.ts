@@ -163,8 +163,3 @@ export function retrySummary(retried: number): string {
 export function stopSummary(cancelled: number): string {
   return `Stopped the run. ${count(cancelled, "queued cell was", "queued cells were")} removed.`;
 }
-
-/** Toast text after Recalculate on a formula column. */
-export function recalcSummary(columnName: string, changed: number): string {
-  return `Recalculated "${columnName}". ${count(changed, "cell", "cells")} changed.`;
-}

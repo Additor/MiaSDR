@@ -33,7 +33,6 @@ const CAP_LITERALS = [/\battempt\s*(?:<|<=|>|>=)\s*\d/g, /\battempt:\s*\d/g];
 
 /** Literal attempt comparisons that are not the send cap. Shrink-only: an entry leaves when its code goes. */
 const CAP_ALLOWED: Record<string, string> = {
-  "src/contexts/grid/application/formula-management.ts: attempt < 2": "A loop counter: the formula author gets a second try with feedback on the first.",
   "src/contexts/outreach/infrastructure/contact-guard.ts: attempt >= 2": "A loop counter: an enrollment insert that raced a person becoming a contact retries twice without that person.",
 };
 

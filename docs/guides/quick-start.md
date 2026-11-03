@@ -2,22 +2,25 @@
 
 This guide takes you from a running instance to a first email campaign. Install the app first with the [README quick start](../../README.md#quick-start). Read [Responsible use](../responsible-use.md) before you send to real people.
 
+To send real email, set `APP_URL` in `.env` to this server's public HTTPS address first. Every email's unsubscribe link uses it, and a campaign refuses to start on a local address.
+
 ## 1. Create your account and organization
 
-Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` shows what is connected and what is missing, and you can return to it at any time.
+Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` tracks the path to a first reply: a connected mailbox, leads, a started campaign, a first email sent and a first reply. It leaves the sidebar once the first email and the first reply have happened.
 
 ## 2. Connect a mailbox
 
 Campaigns send from mailboxes you connect.
 
 1. Follow [Gmail setup](../setup/gmail.md) once per Google Workspace domain. It creates a service account with domain-wide delegation.
-2. Open Settings, Mailboxes and add the address. Set its daily limit, working hours and signature. Put your postal address in the signature.
+2. Open Settings, Mailboxes and add the address. Set its daily limit, working hours and signature.
+3. Add the [SPF, DKIM and DMARC records](sender-dns.md) to the domain. The Sender DNS block on the same page shows which ones it finds.
 
 To try the app without Google, set `MAILBOX_PROVIDER=fake` in `.env` and restart. The fake provider keeps mail in memory and sends nothing.
 
 ## 3. Set the rules
 
-Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Mailboxes and find Sending rules at the end of the page to see the gap between sends. The default is 18 to 24 minutes.
+Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Mailboxes and find Sending rules at the end of the page to see the gap between sends. The default is 18 to 24 minutes. Enter your postal address there too. Campaign email carries it in the footer, because CAN-SPAM requires one, and a campaign on real mail does not start without it.
 
 ## 4. Import leads
 
@@ -40,7 +43,7 @@ The campaign sends one email per mailbox per tick inside working hours and the d
 
 Replies appear in the Inbox (`/inbox`). A reply stops that lead's sequence in the campaign. With an AI provider connected under Settings, Integrations (Anthropic, Vercel AI Gateway or OpenRouter), the AI picks a reply type for each reply and writes a draft when the type's rules ask for one. Vercel AI Gateway and OpenRouter have no default model: AI stays off until you pick one in the AI model card. Nothing sends until a person approves it; an owner or admin can later let MCP agents send replies under Settings, Organization. Without a key you write the reply yourself.
 
-The campaign's Settings tab has a Follow-ups after a reply section. The default, "Off, hand to the Inbox", leaves the reply to you. "AI drafts, you approve" lets the AI write follow-up drafts for that conversation, and you approve each one before it sends. LinkedIn and Personal campaigns keep the default.
+The campaign's Settings tab has a Follow-ups after a reply section. The default, "Off, hand to the Inbox", leaves the reply to you. "AI drafts, you approve" lets the AI write follow-up drafts for that conversation, and you approve each one before it sends. LinkedIn campaigns keep the default.
 
 ## 7. Watch it run
 

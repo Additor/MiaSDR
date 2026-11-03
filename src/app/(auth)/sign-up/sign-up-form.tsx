@@ -8,9 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { GoogleButton } from "../google-button";
-import { HOME } from "@/app/_lib/home";
 
-export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }: { invitedEmail?: string; invitationId?: string; googleEnabled?: boolean }) {
+export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }: { invitedEmail: string; invitationId: string; googleEnabled?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
       email,
       password: String(form.get("password")),
       // An invited person lands on the invitation after confirming, so accepting it is the next step.
-      ...(invitationId ? { callbackURL: `/accept-invitation/${invitationId}` } : {}),
+      callbackURL: `/accept-invitation/${invitationId}`,
     });
     setPending(false);
     if (error) {
@@ -65,7 +64,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
             </Field>
             <Field>
               <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" defaultValue={invitedEmail} readOnly={Boolean(invitedEmail)} required />
+              <Input id="email" name="email" type="email" autoComplete="email" defaultValue={invitedEmail} readOnly required />
             </Field>
             <Field>
               <FieldLabel htmlFor="password">Password</FieldLabel>
@@ -78,7 +77,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Creating…" : "Create account"}
           </Button>
-          {googleEnabled && <GoogleButton callbackURL={invitationId ? `/accept-invitation/${invitationId}` : HOME} />}
+          {googleEnabled && <GoogleButton callbackURL={`/accept-invitation/${invitationId}`} />}
           <p className="text-sm text-muted-foreground">
             Have an account? <Link href="/sign-in" className="underline">Sign in</Link>
           </p>

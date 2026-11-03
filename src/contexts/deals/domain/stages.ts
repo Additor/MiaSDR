@@ -3,7 +3,7 @@ import { ValidationError } from "@/shared/errors";
 /**
  * The organization's deal pipeline: one ordered list of stages. A stage's kind is `open`, `won` or `lost` and never
  * changes (a trigger on `deal_stages`). The list always holds at least one stage of each kind, and every open stage comes before
- * every won stage, which come before every lost stage. Deal stages carry no stop rule: those belong to reply categories.
+ * every won stage, which come before every lost stage. Deal stages carry no stop rule: those belong to reply types.
  */
 
 export const DEAL_STAGE_KINDS = ["open", "won", "lost"] as const;

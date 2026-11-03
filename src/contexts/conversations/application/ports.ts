@@ -28,7 +28,7 @@ export interface InboundEmailInput {
 export interface IngestResult {
   /** `duplicate`: this message was stored before and nothing changed. */
   status: "created" | "duplicate";
-  conversationId: string;
+  threadId: string;
   messageId: string;
   personId: string;
   personCreated: boolean;
@@ -57,7 +57,7 @@ export interface UnresolvedResult {
 export type QuarantineInbound = (input: { organizationId: string; sourceEventKey: string; identityValue: string | null; reason: string; payload: IdentityPayload }) => Promise<{ id: string; created: boolean }>;
 
 /** Port for inbound persistence. `ingestEmail` is one transaction and safe to run twice for the same message. */
-export interface InboundConversationStore {
+export interface InboundThreadStore {
   ingestEmail(input: InboundEmailInput): Promise<IngestResult>;
 }
 
@@ -65,7 +65,7 @@ export interface InboxFilter {
   /** Matches the person's name or email and the subject or body of any message in the thread. */
   query?: string;
   /**
-   * `unread`: has unread inbound mail. `action`: the record waits for a human. `sent`: the latest message is ours.
+   * `unread`: has unread inbound mail. `action`: the conversation waits for a human. `sent`: the latest message is ours.
    * `replied`: the latest message is a human reply that is not out of office. `ooo`: filed under out of office.
    * `automated`: machine mail. `all` hides automated threads unless a search is active. `scheduled` is served by `listScheduled`.
    */
@@ -88,14 +88,14 @@ export interface InboxFilter {
 }
 
 export interface ScheduledRow {
-  /** `campaign`: a campaign step. `sequence`: an Follow-ups after a reply follow-up step. */
-  kind: "campaign" | "sequence";
+  /** `campaign`: a campaign step. `follow_up`: a step of Follow-ups after a reply. */
+  kind: "campaign" | "follow_up";
   id: string;
   personId: string;
   personName: string | null;
   personEmail: string | null;
   channel: string;
-  /** Campaign or sequence name. */
+  /** Campaign name, or the flow's when it has no campaign. */
   sourceName: string;
   stepLabel: string;
   subject: string | null;
@@ -111,10 +111,10 @@ export interface InboxFilterOptions {
 }
 
 export interface InboxRow {
+  threadId: string;
+  /** The conversation the conversation belongs to: the tools that note, assign or close take it. */
   conversationId: string;
-  /** The record the conversation belongs to: the tools that note, assign or close take it. */
-  recordId: string;
-  /** The member the record is assigned to, or null. */
+  /** The member the conversation is assigned to, or null. */
   assignedTo: string | null;
   channel: string;
   accountRef: string;
@@ -161,8 +161,8 @@ export interface ThreadMessage {
 }
 
 export interface ThreadDetail {
+  threadId: string;
   conversationId: string;
-  recordId: string;
   channel: string;
   accountRef: string;
   /** What to show for the receiving account: the mailbox address, or the LinkedIn account's name. */
@@ -179,7 +179,7 @@ export interface InboxStore {
   /** Queued next steps of active enrollments and runs, soonest first. Honors lead, campaign, mailbox and date filters. */
   listScheduled(organizationId: string, filter: InboxFilter): Promise<{ rows: ScheduledRow[]; total: number }>;
   filterOptions(organizationId: string, leadIds: string[]): Promise<InboxFilterOptions>;
-  thread(organizationId: string, conversationId: string): Promise<ThreadDetail | null>;
+  thread(organizationId: string, threadId: string): Promise<ThreadDetail | null>;
   /** Returns how many messages changed. */
-  markRead(organizationId: string, conversationId: string, at: Date): Promise<number | null>;
+  markRead(organizationId: string, threadId: string, at: Date): Promise<number | null>;
 }

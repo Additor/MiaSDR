@@ -41,7 +41,7 @@ const displayName = (p: { fullName: string | null; email: string | null }) => p.
 export const createLeadRepository = ({ activity, detailActivity }: { activity: ActivityCondition; detailActivity: ReadLeadDetailActivity }): LeadRepository => {
   const filterWhere = (organizationId: string, filter: LeadFilter) => leadFilterWhere(organizationId, filter, activity);
   return {
-    async get(organizationId, id, viewer) {
+    async get(organizationId, id) {
       const [person] = await db
         .select({
           id: people.id,
@@ -87,7 +87,7 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
               .from(suppressionList)
               .where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, person.email.toLowerCase())))
           : Promise.resolve([]),
-        detailActivity(organizationId, id, viewer),
+        detailActivity(organizationId, id),
       ]);
 
       return {
@@ -96,9 +96,8 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
         policy: policy ?? null,
         suppression: suppression[0] ?? null,
         enrollments: outreach.enrollments,
-        conversationId: outreach.conversationId,
+        threadId: outreach.threadId,
         sends: outreach.sends,
-        hiddenSends: outreach.hiddenSends,
       };
     },
 
@@ -248,17 +247,6 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
         )
         .returning({ id: people.id });
       return rows.length;
-    },
-
-    async rawKeyStats(organizationId) {
-      const result = await db.execute<{ key: string; leads: number }>(sql`
-        select k.key as key, count(*)::int as leads
-        from ${people}, jsonb_object_keys(${people.raw}) as k(key)
-        where ${people.organizationId} = ${organizationId}
-        group by k.key
-        order by leads desc, k.key asc
-        limit 200`);
-      return [...result];
     },
 
     async *exportBatches(organizationId, filter) {

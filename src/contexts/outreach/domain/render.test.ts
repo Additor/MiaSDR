@@ -98,6 +98,12 @@ describe("renderEmail", () => {
     expect(out.bodyText).toContain("Unsubscribe: https://app.test/unsubscribe?token=t");
     expect(out.bodyHtml).toContain(">Unsubscribe</a>");
   });
+  it("puts the postal address in the footer of both bodies, escaped", () => {
+    const out = renderEmail({ ...input, postalAddress: "1 Main St <Suite 2>, Seoul" });
+    expect(out.bodyText).toContain("---\n1 Main St <Suite 2>, Seoul\nDon't want to hear from us again?");
+    expect(out.bodyHtml).toContain("1 Main St &lt;Suite 2&gt;, Seoul<br />Don't want");
+    expect(renderEmail(input).bodyText).toContain("---\nDon't want");
+  });
   it("does not let lead data inject spin text or HTML", () => {
     const out = renderEmail({ ...input, variables: { firstName: "{A|B}<i>", company: "x" } });
     expect(out.subject).toContain("{A|B}<i>");

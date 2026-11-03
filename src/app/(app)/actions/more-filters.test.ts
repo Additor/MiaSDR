@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { hasAnyFilter, hasMoreFilters } from "./more-filters";
 
 const none = { replyTypeId: "", campaignId: "", dueAfter: "", dueBefore: "" };
-const all = { ...none, category: "", channel: "", group: "", errorsOnly: false };
+const all = { ...none, group: "", channel: "", list: "", errorsOnly: false };
 
 describe("hasMoreFilters", () => {
   it("is false when the rare filters are empty", () => {
@@ -20,9 +20,9 @@ describe("hasAnyFilter", () => {
   });
 
   it("counts the common filters and the errors-only box", () => {
-    expect(hasAnyFilter({ ...all, category: "interested" })).toBe(true);
+    expect(hasAnyFilter({ ...all, group: "interested" })).toBe(true);
     expect(hasAnyFilter({ ...all, channel: "email" })).toBe(true);
-    expect(hasAnyFilter({ ...all, group: "reply" })).toBe(true);
+    expect(hasAnyFilter({ ...all, list: "reply" })).toBe(true);
     expect(hasAnyFilter({ ...all, errorsOnly: true })).toBe(true);
   });
 

@@ -4,11 +4,11 @@ import type { Mapping } from "@/contexts/people/domain/import-plan";
 import { leadImportDeps } from "@/contexts/people/infrastructure/composition";
 import { normalizeEmail, normalizeLinkedinSlug } from "@/contexts/people/domain/normalize";
 import { DEFAULT_STEPS } from "@/contexts/outreach/application/campaign-management";
-import { campaignDeps, enrollEmailPeople } from "@/contexts/outreach/infrastructure/composition";
-import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
+import { ENROLL_BLOCK_REASONS } from "@/contexts/outreach/domain/enrollment-eligibility";
+import { campaignDeps, enrollPickedTx, readEnrollBlocks } from "@/contexts/outreach/infrastructure/composition";
+import { suppressionBlocks } from "@/contexts/people/domain/reachability";
 import { db, type DbTx } from "@/platform/db/client";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
-import { campaignEnrollments, campaigns, contactPolicies, people, suppressionList } from "@/platform/db/schema";
+import { campaigns, people, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { CampaignHandoff, HandoffFailure } from "../application/ports";
 import { buildLeadImport } from "../domain/campaign-rows";
@@ -25,9 +25,8 @@ const textOf = (value: unknown): string | null => (typeof value === "string" ? v
 
 /**
  * Leads come from the people context (`importLeads`: the same validation, normalization and
- * de-duplication as a file import). Enrollment follows the outreach rules: a suppressed address,
- * a do-not-contact person and a person already in the campaign are skipped, and each skip is reported per row.
- * Nothing is sent here. A draft campaign stays a draft.
+ * de-duplication as a file import). Enrollment follows the rule of every enroll path (`readEnrollBlocks`), and each skip is
+ * reported per row in the words of its reason table. Nothing is sent here. A draft campaign stays a draft.
  *
  * The whole push runs in one transaction: the lead import, the new campaign and the enrollments commit together.
  * Any error, including one thrown after the campaign was created, leaves no campaign, no leads from this call and no enrollments.
@@ -67,13 +66,13 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
     }
   }
 
-  // Suppressed addresses never become leads through this path.
+  // An address this channel may not reach never becomes a lead through this path.
   const emails = [...new Set([...identity.values()].flatMap((i) => (i.email ? [i.email] : [])))];
-  const suppressed = await suppressedEmails(tx, org, emails);
+  const suppressed = await addressesBlocked(tx, org, emails, channel);
   const importable = usable.filter((row) => {
     const email = identity.get(row.id)?.email;
     if (email && suppressed.has(email)) {
-      failures.push({ rowId: row.id, reason: "Email is suppressed" });
+      failures.push({ rowId: row.id, reason: ENROLL_BLOCK_REASONS.suppressed.row(channel) });
       return false;
     }
     return true;
@@ -119,55 +118,16 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
       failures.push({ rowId: row.id, reason: "Same lead as an earlier selected row" });
       continue;
     }
-    if (channel === "email" && !person.email) {
-      failures.push({ rowId: row.id, reason: "The matching lead has no email" });
-      continue;
-    }
-    if (channel === "linkedin" && !person.slug) {
-      failures.push({ rowId: row.id, reason: "The matching lead has no LinkedIn profile" });
-      continue;
-    }
     seenPerson.add(person.id);
     personRows.push({ rowId: row.id, person });
   }
 
-  // A matched lead can carry an address that is suppressed even though the row's own cell was another one.
-  const lateSuppressed = channel === "email" ? await suppressedEmails(tx, org, personRows.flatMap((r) => (r.person.email ? [r.person.email.toLowerCase()] : []))) : new Set<string>();
-  const personIds = personRows.map((r) => r.person.id);
-  const doNotContact = new Set<string>();
-  const stopOpen = new Set<string>();
-  const contacts = new Set<string>();
-  const already = new Set<string>();
-  for (const part of chunked(personIds)) {
-    const dnc = await tx
-      .select({ id: contactPolicies.personId })
-      .from(contactPolicies)
-      .where(and(eq(contactPolicies.organizationId, org), inArray(contactPolicies.personId, part), eq(contactPolicies.doNotContact, true)));
-    for (const row of dnc) doNotContact.add(row.id);
-    const asked = await tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, org), inArray(people.id, part), personStopReviewOpenSql("people")));
-    for (const row of asked) stopOpen.add(row.id);
-    // A lead who became a contact cannot be enrolled in a campaign. The row still counts as a lead import above.
-    const converted = await tx
-      .select({ id: people.id })
-      .from(people)
-      .where(and(eq(people.organizationId, org), inArray(people.id, part), eq(people.lifecycle, "contact")));
-    for (const row of converted) contacts.add(row.id);
-    if (campaign) {
-      const enrolled = await tx
-        .select({ id: campaignEnrollments.personId })
-        .from(campaignEnrollments)
-        .where(and(eq(campaignEnrollments.organizationId, org), eq(campaignEnrollments.campaignId, campaign.id), inArray(campaignEnrollments.personId, part)));
-      for (const row of enrolled) already.add(row.id);
-    }
-  }
-
+  // A matched lead can carry another address than the row's own cell, so the rule reads the person, not the row.
+  const blocks = await readEnrollBlocks(tx, org, campaign?.id ?? null, channel, personRows.map((r) => r.person.id));
   const toEnroll: string[] = [];
   for (const { rowId, person } of personRows) {
-    if (person.email && lateSuppressed.has(person.email.toLowerCase())) failures.push({ rowId, reason: "Email is suppressed" });
-    else if (doNotContact.has(person.id)) failures.push({ rowId, reason: "Person is marked do not contact" });
-    else if (stopOpen.has(person.id)) failures.push({ rowId, reason: "The latest reply seems to ask to stop. Review it in Actions" });
-    else if (already.has(person.id)) failures.push({ rowId, reason: "Person is already in this campaign" });
-    else if (contacts.has(person.id)) failures.push({ rowId, reason: "Is a contact" });
+    const block = blocks.get(person.id)?.block ?? null;
+    if (block) failures.push({ rowId, reason: ENROLL_BLOCK_REASONS[block].row(channel) });
     else toEnroll.push(person.id);
   }
 
@@ -183,7 +143,7 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
     created = true;
   }
 
-  const enrolled = toEnroll.length === 0 ? 0 : channel === "linkedin" ? await enrollPeople(org, campaignId, toEnroll, tx) : await enrollEmailPeople(org, campaignId, toEnroll, tx);
+  const enrolled = toEnroll.length === 0 ? 0 : (await enrollPickedTx(tx, org, campaignId, channel, toEnroll, { viaTokenId: null })).added;
 
   return {
     campaignId,
@@ -196,14 +156,15 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
   };
 }
 
-async function suppressedEmails(tx: DbTx, organizationId: string, emails: readonly string[]): Promise<Set<string>> {
+/** The addresses among `emails` whose suppression reason blocks the channel. */
+async function addressesBlocked(tx: DbTx, organizationId: string, emails: readonly string[], channel: "email" | "linkedin"): Promise<Set<string>> {
   const out = new Set<string>();
   for (const part of chunked(emails)) {
     const rows = await tx
-      .select({ email: suppressionList.email })
+      .select({ email: suppressionList.email, reason: suppressionList.reason })
       .from(suppressionList)
       .where(and(eq(suppressionList.organizationId, organizationId), inArray(sql`lower(${suppressionList.email})`, part)));
-    for (const row of rows) out.add(row.email.toLowerCase());
+    for (const row of rows) if (suppressionBlocks(row.reason, channel)) out.add(row.email.toLowerCase());
   }
   return out;
 }

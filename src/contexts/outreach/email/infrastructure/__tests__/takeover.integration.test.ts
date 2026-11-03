@@ -113,7 +113,7 @@ describeDb("follow-up takeover by another mailbox", () => {
 
     const mail = provider.delivered[0];
     expect(mail.subject).toMatch(/^Re: Hi Lead0$/);
-    expect(mail.threadId).toBeNull();
+    expect(mail.providerThreadId).toBeNull();
     expect(mail.inReplyTo).toBeNull();
     expect(mail.references).toEqual([]);
     expect(mail.mailbox.emailAddress).toMatch(/^m1-/);
@@ -131,7 +131,7 @@ describeDb("follow-up takeover by another mailbox", () => {
     const claim = await store.claimNext(claimOptions(f.mailboxIds[1]));
     expect(claim).toMatchObject({ takenOverFrom: f.mailboxIds[0], stepNumber: 2 });
     expect((await enrollment(f.enrollmentIds[0])).mailbox_id).toBe(f.mailboxIds[0]);
-    await store.markSent(claim!, { providerMessageId: "p-1", threadId: "t-1" }, current);
+    await store.markSent(claim!, { providerMessageId: "p-1", providerThreadId: "t-1" }, current);
     expect((await enrollment(f.enrollmentIds[0])).mailbox_id).toBe(f.mailboxIds[1]);
   });
 
@@ -146,7 +146,7 @@ describeDb("follow-up takeover by another mailbox", () => {
     const [, step3] = provider.delivered;
     expect(step3.inReplyTo).toBe(provider.delivered[0].rfcMessageId);
     expect(step3.references).toEqual([provider.delivered[0].rfcMessageId]);
-    expect(step3.threadId).not.toBeNull();
+    expect(step3.providerThreadId).not.toBeNull();
     expect((await sendRow(f.enrollmentIds[0], 3)).taken_over_from_mailbox_id).toBeNull();
   });
 
@@ -221,7 +221,7 @@ describeDb("follow-up takeover by another mailbox", () => {
   it("the original mailbox coming back wins over a takeover and no one sends twice", async () => {
     const f = await fixture();
     await takeDown(f.mailboxIds[0], 48);
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, current);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, current, ["connected", "failed", "disabled"]);
     const provider = new FakeMailboxProvider();
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[1])).kind).toBe("idle");
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
@@ -257,16 +257,16 @@ describeDb("follow-up takeover by another mailbox", () => {
     expect(before.find((m) => m.id === f.mailboxIds[0])?.waitingLeads).toBe(2);
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(0);
 
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "disabled", null, null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "disabled", null, null, ["connected", "failed", "disabled"]);
     const [first] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(first.unavailable_since).not.toBeNull();
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "failed", "boom", null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "failed", "boom", null, ["connected", "failed", "disabled"]);
     const [second] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(second.unavailable_since).toEqual(first.unavailable_since); // the clock keeps running across disabled to failed
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(2);
     expect((await mailboxStore.get(f.org, f.mailboxIds[0]))?.waitingLeads).toBe(2);
 
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, null, ["connected", "failed", "disabled"]);
     const [third] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(third.unavailable_since).toBeNull();
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(0);

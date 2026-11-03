@@ -8,13 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { Actor } from "@/shared/errors";
 import { humanizeToken } from "@/shared/humanize";
 import { getLinkedInCampaignDetail, getLinkedInCampaignSenders } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
-import { canReadPersonalThread, privateThreadHref, stepsEditable } from "@/contexts/outreach/domain/campaign";
+import { stepsEditable } from "@/contexts/outreach/domain/campaign";
 import { campaignLeadStatus } from "@/contexts/outreach/domain/campaign-lead-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { enrollmentSelectionKey, type EnrollmentListQuery } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignSummary, enrollmentStatusLabel, leadsInProgress, sendingRulesLine, startBlockers, startSummaryLines, type CampaignTab } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
-import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
+import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
 import { INVITE_NOTE_MAX, describeLinkedInProgress, validateLinkedInSteps } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { MAX_SEND_ATTEMPTS } from "@/contexts/outreach/domain/send-policy";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
@@ -49,7 +49,6 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
   const everyone = enrollments.counts.all + enrollments.counts.removed;
   const base = `/campaigns/${campaign.id}`;
   const overCount = enrollments.rows.filter((r) => r.noteOverLimit).length;
-  const personal = campaign.type === "personal";
   const sendingAccounts = accounts.filter((a) => (senders.assigned.length === 0 ? a.status === "connected" : senders.assigned.some((s) => s.id === a.id)));
   const blockers = startBlockers({
     channel: "linkedin",
@@ -62,7 +61,6 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
   });
   const inviteLimits = sendingAccounts.map((a) => ({ daily: a.dailyLimit, weekly: a.weeklyLimit }));
   const startLines = startSummaryLines({ channel: "linkedin", leads: enrollments.counts.all, senders: senders.assigned.map((s) => s.label), inviteLimits });
-  const canReadThreads = campaign.type === "personal" && canReadPersonalThread({ isOwnerOrAdmin: isOwnerOrAdmin(actor.role), actorUserId: actor.userId, createdBy: campaign.createdBy });
 
   const campaignScope = { status: campaign.status, name: campaign.name };
 
@@ -75,7 +73,6 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
           status={campaign.status}
           archived={campaign.archivedAt !== null}
           channel="linkedin"
-          personal={personal}
           steps={campaign.steps.length}
           senders={senders.assigned.map((s) => s.label)}
           summary={campaignSummary({ channel: "linkedin", counts: enrollments.counts, sent: enrollments.sent })}
@@ -179,7 +176,6 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                 totalSteps: campaign.steps.length,
                                 stopReason: row.stopReason,
                               });
-                              const threadHref = privateThreadHref({ base, enrollmentId: row.enrollmentId, canRead: canReadThreads, hasPrivateThread: row.hasPrivateThread });
                               return (
                                 <Fragment key={row.enrollmentId}>
                                   <TableRow>
@@ -195,14 +191,9 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                           LinkedIn profile
                                         </a>
                                       )}
-                                      {!personal && row.inboxConversationId && (
-                                        <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
+                                      {row.inboxThreadId && (
+                                        <Link href={`/inbox/${row.inboxThreadId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
                                           Open in Inbox
-                                        </Link>
-                                      )}
-                                      {threadHref && (
-                                        <Link href={threadHref} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="private-thread-link">
-                                          Read the reply
                                         </Link>
                                       )}
                                     </TableCell>
@@ -242,7 +233,7 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                   </TableRow>
                                   <TableRow data-testid="lead-panel">
                                     <TableCell colSpan={8} className="py-0">
-                                      <LeadPanel row={row} totalSteps={campaign.steps.length} threadHref={threadHref} />
+                                      <LeadPanel row={row} totalSteps={campaign.steps.length} />
                                     </TableCell>
                                   </TableRow>
                                 </Fragment>
@@ -298,7 +289,7 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                   </ul>
                 </CampaignSection>
               )}
-              <AfterReplyPanel view={afterReply} personal={personal} />
+              <AfterReplyPanel view={afterReply} />
             </div>
           )}
         </div>
@@ -310,7 +301,7 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
 type PanelRow = Awaited<ReturnType<typeof getLinkedInCampaignDetail>>["enrollments"]["rows"][number];
 
 /** Per-lead panel: messages sent, retries, last error, step and account. Collapsed by default. */
-function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps: number; threadHref: string | null }) {
+function LeadPanel({ row, totalSteps }: { row: PanelRow; totalSteps: number }) {
   const { detail } = row;
   const sent = detail.sends.filter((s) => s.status === "sent");
   return (
@@ -330,14 +321,6 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
           <span className="ml-4 text-muted-foreground">Messages sent:</span> {sent.length}
           <span className="ml-4 text-muted-foreground">Retries:</span> {detail.retries} of {MAX_SEND_ATTEMPTS}
         </p>
-        {threadHref && (
-          <p>
-            <Link href={threadHref} className="underline underline-offset-4 focus-ring">
-              Read the reply
-            </Link>{" "}
-            <span className="text-xs text-muted-foreground">(private: not shown in the Inbox)</span>
-          </p>
-        )}
         {detail.lastError && (
           <p className="text-destructive">
             <span className="text-muted-foreground">Last error:</span> {detail.lastError}

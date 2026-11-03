@@ -13,7 +13,7 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
  */
 
 describeDb("DELETE /api/linkedin/search-batches/[id]/leads", () => {
-  useTestEnv({ AUTH_SIGNUP: "open", RESEND_API_KEY: undefined, AUTH_EMAIL_FROM: undefined });
+  useTestEnv({ RESEND_API_KEY: undefined, AUTH_EMAIL_FROM: undefined });
   const sql = testSql({ max: 3 });
   const tag = uniqueKey();
   const ROUTE = "linkedin/search-batches/[id]/leads/route.ts";

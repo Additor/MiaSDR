@@ -1,4 +1,4 @@
-/** URL state of the Pipeline board. The old reply-board params (`category`, `channel`, `closed`) are not read, so they drop off. */
+/** URL state of the Pipeline board. */
 export interface BoardUrlState {
   owner?: string;
   q?: string;

@@ -3,7 +3,6 @@ import { humanizeToken } from "@/shared/humanize";
 
 /** Reply draft statuses as the person reads them. `stale` shows as "Out of date" everywhere. */
 const DRAFT_STATUS_LABEL: Readonly<Record<string, string>> = {
-  generating: "Drafting",
   awaiting_review: "Awaiting review",
   sending: "Sending",
   sent: "Sent",

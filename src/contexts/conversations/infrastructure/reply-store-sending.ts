@@ -1,17 +1,16 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { threads, drafts, events, mailboxes, messages, people, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
 import { ATTEMPT_FROM } from "../domain/send-attempt-status";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt } from "./reply-attempt-ledger";
 import { type Snapshot, mailboxFor, sendContextFor, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
 import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
-import { checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
+import { checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 const STARTED_FIRST = "Another reply in this thread started sending first. Reload the thread.";
 
@@ -23,14 +22,14 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       // message insert before it retires drafts, so a draft locked first would deadlock with it. The checks run in the
       // order of docs/decisions.md, "Reply send rules".
       // `seen.id` is the stored id. The request may spell the uuid in uppercase, so the comparisons below use this one.
-      const [seen] = await tx.select({ id: drafts.id, conversationId: drafts.conversationId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
+      const [seen] = await tx.select({ id: drafts.id, threadId: drafts.threadId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
       if (!seen) throw new NotFoundError("Draft not found");
-      // Refused before the lock, so the email path never locks a LinkedIn conversation.
+      // Refused before the lock, so the email path never locks a LinkedIn thread.
       if (seen.channel !== "email") throw replyRefusal("wrong_channel", "email");
       // FOR UPDATE, the one writer lock on a conversation that is not no key update: it also holds back an ingest's message
       // insert, a key share, which would go on to retire drafts and update this row, a cycle with this send's draft lock
       // (docs/database.md, "Lock modes").
-      await tx.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, seen.conversationId)).for("update");
+      await tx.select({ id: threads.id }).from(threads).where(eq(threads.id, seen.threadId)).for("update");
 
       const [existing] = await tx.select().from(sendAttempts).where(and(eq(sendAttempts.organizationId, input.organizationId), eq(sendAttempts.idempotencyKey, input.idempotencyKey)));
       if (existing) {
@@ -40,23 +39,22 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
 
       const [ctx] = await tx
         .select({
-          recordId: records.id,
-          personId: records.personId,
-          workflowState: records.workflowState,
-          version: records.contextVersion,
+          conversationId: conversations.id,
+          personId: conversations.personId,
+          workflowState: conversations.workflowState,
+          version: conversations.contextVersion,
           email: people.email,
-          status: conversations.status,
-          channel: conversations.channel,
-          accountRef: conversations.accountRef,
-          threadId: conversations.providerThreadId,
+          status: threads.status,
+          channel: threads.channel,
+          accountRef: threads.accountRef,
+          providerThreadId: threads.providerThreadId,
         })
-        .from(conversations)
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, seen.conversationId), publicConversation));
-      // A private conversation answers as a foreign id does.
+        .from(threads)
+        .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+        .innerJoin(people, eq(people.id, conversations.personId))
+        .where(eq(threads.id, seen.threadId));
       if (!ctx) throw new NotFoundError("Draft not found");
-      checkRecordOpen(ctx, "email");
+      checkConversationOpen(ctx, "email");
       checkThreadWritable(ctx, "email");
 
       // One reply of a thread in flight at a time, the rule `drafts_one_in_flight_uq` holds. Checked before the draft lock,
@@ -64,13 +62,13 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       const [inFlight] = await tx
         .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, seen.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .where(and(eq(drafts.threadId, seen.threadId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       checkNoneInFlight(inFlight, seen.id, "email");
 
       const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
       if (!draft) throw new NotFoundError("Draft not found");
-      if (draft.conversationId !== seen.conversationId) throw replyRefusal("draft_changed", "email");
+      if (draft.threadId !== seen.threadId) throw replyRefusal("draft_changed", "email");
       const outdated = checkDraftCurrent(draft, { revision: input.expectedRevision, contextVersion: ctx.version }, "email");
       if (outdated) {
         await tx.update(drafts).set({ status: "stale", error: outdated }).where(and(eq(drafts.id, draft.id), eq(drafts.status, "awaiting_review")));
@@ -81,28 +79,28 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       const to = ctx.email as string;
       // An agent's send meets the agent rules after the person's (docs/decisions.md, "Agent sends").
       const { organizationId, actorUserId, via, now } = input;
-      if (via) await checkAgentReply(tx, { organizationId, via, actorUserId, now, channel: "email", conversationId: draft.conversationId, recordId: ctx.recordId, personId: ctx.personId, threadId: ctx.threadId, accountRef: ctx.accountRef, cc: draft.cc });
+      if (via) await checkAgentReply(tx, { organizationId, via, actorUserId, now, channel: "email", threadId: draft.threadId, conversationId: ctx.conversationId, personId: ctx.personId, providerThreadId: ctx.providerThreadId, accountRef: ctx.accountRef, cc: draft.cc });
 
       // Message ids of everything already in the thread, oldest first, for In-Reply-To and References.
       const stored = await tx
         .select({ id: messages.id, raw: messages.raw, sentAt: messages.sentAt })
         .from(messages)
-        .where(eq(messages.conversationId, draft.conversationId))
+        .where(eq(messages.threadId, draft.threadId))
         .orderBy(messages.sentAt);
       const rfcOf = (raw: unknown) => ((raw ?? {}) as { rfcMessageId?: string | null }).rfcMessageId ?? null;
-      const sequenceIds = ctx.threadId
+      const flowIds = ctx.providerThreadId
         ? (
             await tx
               .select({ rfc: sends.rfcMessageId })
               .from(sends)
               .innerJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
-              .where(and(eq(sends.organizationId, input.organizationId), eq(sends.status, "sent"), eq(sends.threadId, ctx.threadId), sql`lower(${mailboxes.emailAddress}) = ${ctx.accountRef}`))
+              .where(and(eq(sends.organizationId, input.organizationId), eq(sends.status, "sent"), eq(sends.providerThreadId, ctx.providerThreadId), sql`lower(${mailboxes.emailAddress}) = ${ctx.accountRef}`))
               .orderBy(sends.sentAt)
           )
             .map((r) => r.rfc)
             .filter((r): r is string => Boolean(r))
         : [];
-      const references = [...new Set([...sequenceIds, ...stored.map((m) => rfcOf(m.raw)).filter((r): r is string => Boolean(r))])];
+      const references = [...new Set([...flowIds, ...stored.map((m) => rfcOf(m.raw)).filter((r): r is string => Boolean(r))])];
       const anchor = draft.replyForMessageId ? rfcOf(stored.find((m) => m.id === draft.replyForMessageId)?.raw) : null;
       const inReplyTo = anchor ?? references.at(-1) ?? null;
 
@@ -115,10 +113,10 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         subject: draft.subject?.trim() || "Re: your message",
         bodyText: body,
         accountRef: ctx.accountRef,
-        conversationId: draft.conversationId,
-        recordId: ctx.recordId,
+        threadId: draft.threadId,
+        conversationId: ctx.conversationId,
         personId: ctx.personId,
-        threadId: ctx.threadId,
+        providerThreadId: ctx.providerThreadId,
         inReplyTo,
         references,
         revision: draft.revision,
@@ -190,7 +188,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       if (draft.status !== "delivery_uncertain") throw new ConflictError("Only a send with an uncertain outcome can be resolved.");
       if (!attempt) throw new ConflictError("No uncertain send was found for this draft.");
       if (input.outcome === "delivered") {
-        await settleAttemptSentTx(tx, attempt.id, { providerMessageId: null, threadId: null }, input.now, `Confirmed delivered by a person: ${input.note}`);
+        await settleAttemptSentTx(tx, attempt.id, { providerMessageId: null, providerThreadId: null }, input.now, `Confirmed delivered by a person: ${input.note}`);
         return;
       }
       const snap = attempt.request as Snapshot;
@@ -202,7 +200,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: snap.personId,
-        recordId: snap.recordId,
+        conversationId: snap.conversationId,
         eventType: "draft.not_delivered",
         actorType: "human",
         actorUserId: input.actorUserId,

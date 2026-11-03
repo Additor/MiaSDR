@@ -47,14 +47,14 @@ describeDb("LinkedIn conversation replies", () => {
     const ingested = await composition.ingestInboundLinkedInMessage(input);
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
     const deps: LinkedInReplySendDeps = { store, sender: makeSender(fake), now: () => new Date() };
-    return { org, user, account: account as string, actor, fake, deps, tag, conversationId: ingested.conversationId, personId: ingested.personId, input };
+    return { org, user, account: account as string, actor, fake, deps, tag, threadId: ingested.threadId, personId: ingested.personId, input };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
   const key = () => `key-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
   const one = async (query: string, params: unknown[]) => (await sql.unsafe(query, params as never[]))[0];
   const count = async (table: string, org: string, where = "true") => Number((await sql.unsafe(`select count(*)::int as n from ${table} where organization_id = $1 and ${where}`, [org]))[0].n);
-  const send = (f: Fx, text = "Happy to share more.", k = key()) => app.sendLinkedInReply(f.deps, f.actor, f.conversationId, { text, idempotencyKey: k });
+  const send = (f: Fx, text = "Happy to share more.", k = key()) => app.sendLinkedInReply(f.deps, f.actor, f.threadId, { text, idempotencyKey: k });
   /** Makes unsettled attempts old enough for the reconcile pass. */
   const age = (f: Fx, minutes: number) => sql`update send_attempts set created_at = created_at - ${minutes + " minutes"}::interval, updated_at = updated_at - ${minutes + " minutes"}::interval where organization_id = ${f.org}`;
 
@@ -77,19 +77,19 @@ describeDb("LinkedIn conversation replies", () => {
 
   it("a retry that spells the draft id in uppercase replays the send", async () => {
     const f = await fixture();
-    const [{ id: recordId, version }] = await sql`select r.id, r.context_version as version from records r join conversations c on c.record_id = r.id where c.id = ${f.conversationId}`;
+    const [{ id: conversationId, version }] = await sql`select r.id, r.context_version as version from conversations r join threads c on c.conversation_id = r.id where c.id = ${f.threadId}`;
     const [{ id: draftId }] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status)
-      values (${f.org}, ${recordId}, ${f.conversationId}, ${version}, 'linkedin', 'Happy to share more.', 'awaiting_review') returning id`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, ai_body_text, status)
+      values (${f.org}, ${conversationId}, ${f.threadId}, ${version}, 'linkedin', 'Happy to share more.', 'awaiting_review') returning id`;
     const k = key();
-    const first = await app.sendLinkedInReply(f.deps, f.actor, f.conversationId, { text: "Happy to share more.", idempotencyKey: k, draftId, revision: 1 });
+    const first = await app.sendLinkedInReply(f.deps, f.actor, f.threadId, { text: "Happy to share more.", idempotencyKey: k, draftId, revision: 1 });
     expect(first.status).toBe("sent");
-    const retry = await app.sendLinkedInReply(f.deps, f.actor, f.conversationId, { text: "Happy to share more.", idempotencyKey: k, draftId: (draftId as string).toUpperCase(), revision: 1 });
+    const retry = await app.sendLinkedInReply(f.deps, f.actor, f.threadId, { text: "Happy to share more.", idempotencyKey: k, draftId: (draftId as string).toUpperCase(), revision: 1 });
     expect(retry).toMatchObject({ status: "sent", replayed: true });
     expect(f.fake.messages).toHaveLength(1);
   });
 
-  it("claims before the call, sends once, stores the message and moves the record to waiting", async () => {
+  it("claims before the call, sends once, stores the message and moves the conversation to waiting", async () => {
     const f = await fixture();
     let seenDuringCall: unknown = null;
     const inner = f.deps.sender;
@@ -110,7 +110,7 @@ describeDb("LinkedIn conversation replies", () => {
     expect(await one("select status from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "sent" });
     const out = await one("select * from messages where organization_id = $1 and direction = 'outbound'", [f.org]);
     expect(out).toMatchObject({ channel: "linkedin", account_ref: f.account, body_text: "Happy to share more.", to_address: "Ada Lovelace" });
-    expect(await one("select workflow_state from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "waiting" });
+    expect(await one("select workflow_state from conversations where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "waiting" });
   });
 
   it("sends once for a double click with the same key, and for two clicks racing", async () => {
@@ -132,7 +132,7 @@ describeDb("LinkedIn conversation replies", () => {
     let calls = 0;
     const inner = f.deps.sender;
     const slow: LinkedInReplySender = { ...inner, send: async (input) => { calls += 1; await gate; return inner.send(input); } };
-    const first = app.sendLinkedInReply({ ...f.deps, sender: slow }, f.actor, f.conversationId, { text: "First", idempotencyKey: key() });
+    const first = app.sendLinkedInReply({ ...f.deps, sender: slow }, f.actor, f.threadId, { text: "First", idempotencyKey: key() });
     // Wait until the first holds its claim.
     for (let i = 0; i < 100 && calls === 0; i++) await new Promise((r) => setTimeout(r, 20));
     expect(calls).toBe(1);
@@ -190,7 +190,7 @@ describeDb("LinkedIn conversation replies", () => {
   it("turns a send stuck in sending uncertain after 30 minutes, and never sends it", async () => {
     const f = await fixture();
     // The claim committed and the process died before LinkedIn answered.
-    const begun = await store.begin({ organizationId: f.org, conversationId: f.conversationId, text: "Stuck one", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
+    const begun = await store.begin({ organizationId: f.org, threadId: f.threadId, text: "Stuck one", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
     expect(begun.kind).toBe("started");
     const state = async () => ({
       attempt: (await one("select status from send_attempts where organization_id = $1", [f.org])).status,
@@ -241,7 +241,7 @@ describeDb("LinkedIn conversation replies", () => {
     f.fake.messageBehavior = () => "ok";
     await expect(send(f, "Try again")).rejects.toMatchObject({ details: { code: "paused" } });
     expect(f.fake.messages).toHaveLength(0);
-    const panel = await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await app.getLinkedInReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel?.issue).toMatch(/limited this account/);
     expect(panel?.draft).toMatchObject({ status: "awaiting_review", text: "Too much" });
 
@@ -279,17 +279,17 @@ describeDb("LinkedIn conversation replies", () => {
     expect(await send(f)).toMatchObject({ status: "blocked" });
     expect(f.fake.messages).toHaveLength(0);
     expect(await one("select status from send_attempts where organization_id = $1", [f.org])).toMatchObject({ status: "failed" });
-    const panel = await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId);
+    const panel = await app.getLinkedInReplyPanel(f.deps, f.actor, f.threadId);
     expect(panel?.doNotContact).toBe(true);
   });
 
-  it("sends a typed reply while an AI draft write holds the record, without a deadlock", async () => {
-    // The send holds the conversation and inserts its draft, whose foreign key takes a key share on the record. The AI
-    // writer holds the record and inserts its draft, whose foreign key takes a key share on the conversation. Writer
+  it("sends a typed reply while an AI draft write holds the conversation, without a deadlock", async () => {
+    // The send holds the conversation and inserts its draft, whose foreign key takes a key share on the conversation. The AI
+    // writer holds the conversation and inserts its draft, whose foreign key takes a key share on the conversation. Writer
     // locks in NO KEY UPDATE let both key shares through (docs/database.md, "Lock modes").
     const f = await fixture();
-    const [{ record_id: recordId, version }] = await sql`
-      select c.record_id, r.context_version as version from conversations c join records r on r.id = c.record_id where c.id = ${f.conversationId}`;
+    const [{ conversation_id: conversationId, version }] = await sql`
+      select c.conversation_id, r.context_version as version from threads c join conversations r on r.id = c.conversation_id where c.id = ${f.threadId}`;
     let reply!: Promise<unknown>;
     let written!: Promise<unknown>;
     await sql.begin(async (tx) => {
@@ -300,8 +300,8 @@ describeDb("LinkedIn conversation replies", () => {
       await waitForLockWaiters(sql, 1, 10_000, "%linkedin_accounts%");
       written = replyStore.insertDraft({
         organizationId: f.org,
-        recordId,
-        conversationId: f.conversationId,
+        conversationId,
+        threadId: f.threadId,
         replyForMessageId: null,
         expectedContextVersion: version,
         channel: "linkedin",
@@ -311,7 +311,6 @@ describeDb("LinkedIn conversation replies", () => {
         model: "fake",
         request: {},
         response: {},
-        citations: [],
       });
       written.catch(() => undefined);
       // Either the AI write finishes, or it waits on the conversation the send holds; then the send goes on.
@@ -325,8 +324,8 @@ describeDb("LinkedIn conversation replies", () => {
   it("answers 409 when drafts_one_in_flight_uq refuses a second reply of the chat", async () => {
     const f = await fixture();
     const [{ id: draftId }] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status, provider)
-      select organization_id, record_id, id, 1, 'linkedin', 'Elsewhere', 'failed', 'human' from conversations where id = ${f.conversationId} returning id`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, edited_body_text, status, provider)
+      select organization_id, conversation_id, id, 1, 'linkedin', 'Elsewhere', 'failed', 'human' from threads where id = ${f.threadId} returning id`;
     let reply!: Promise<unknown>;
     await sql.begin(async (tx) => {
       // A writer that skips the conversation lock: the claim's check cannot see its uncommitted row, so the index refuses.
@@ -352,22 +351,22 @@ describeDb("LinkedIn conversation replies", () => {
     const a = await fixture();
     const b = await fixture();
     // Organization B's member cannot reply or read the panel in A's chat.
-    await expect(app.sendLinkedInReply(b.deps, b.actor, a.conversationId, { text: "Hi", idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
-    expect(await app.getLinkedInReplyPanel(b.deps, b.actor, a.conversationId)).toBeNull();
+    await expect(app.sendLinkedInReply(b.deps, b.actor, a.threadId, { text: "Hi", idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
+    expect(await app.getLinkedInReplyPanel(b.deps, b.actor, a.threadId)).toBeNull();
     expect(a.fake.messages).toHaveLength(0);
     expect(b.fake.messages).toHaveLength(0);
     const k = key();
     await send(a, "Mine", k);
     // The caller chooses the key, so B's own send with A's key goes out and does not read A's outcome.
-    expect(await app.sendLinkedInReply(b.deps, b.actor, b.conversationId, { text: "Mine", idempotencyKey: k })).toMatchObject({ status: "sent" });
+    expect(await app.sendLinkedInReply(b.deps, b.actor, b.threadId, { text: "Mine", idempotencyKey: k })).toMatchObject({ status: "sent" });
     expect(b.fake.messages).toHaveLength(1);
   });
 
   it("refuses an email conversation and shows no composer for it", async () => {
     const f = await fixture();
     const [email] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
-      select organization_id, record_id, 'email', 'me@corp.test', 'thread-x' from conversations where id = ${f.conversationId} returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id)
+      select organization_id, conversation_id, 'email', 'me@corp.test', 'thread-x' from threads where id = ${f.threadId} returning id`;
     await expect(app.sendLinkedInReply(f.deps, f.actor, email.id, { text: "Hi", idempotencyKey: key() })).rejects.toBeInstanceOf(ConflictError);
     expect(await app.getLinkedInReplyPanel(f.deps, f.actor, email.id)).toBeNull();
     expect(f.fake.messages).toHaveLength(0);
@@ -378,19 +377,19 @@ describeDb("LinkedIn conversation replies", () => {
     expect(await unread.counts(f.org)).toEqual({ total: 1, linkedin: 1, email: 0 });
     await send(f);
     expect(await unread.counts(f.org)).toMatchObject({ linkedin: 1 });
-    await inboxApp.markConversationRead({ store: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: () => new Date() }, f.actor, f.conversationId);
+    await inboxApp.markThreadRead({ store: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: () => new Date() }, f.actor, f.threadId);
     expect(await unread.counts(f.org)).toEqual({ total: 0, linkedin: 0, email: 0 });
   });
 
   it("shows the reply in the thread", async () => {
     const f = await fixture();
     await send(f, "In the thread");
-    const thread = await inboxApp.getThread({ store: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: () => new Date() }, f.actor, f.conversationId);
+    const thread = await inboxApp.getThread({ store: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: () => new Date() }, f.actor, f.threadId);
     expect(thread.messages.filter((m) => m.direction === "outbound").map((m) => m.bodyText)).toContain("In the thread");
   });
   describe("attempt status guard", () => {
     async function claimed(f: Fx) {
-      const r = await store.begin({ organizationId: f.org, conversationId: f.conversationId, text: "Guard me", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
+      const r = await store.begin({ organizationId: f.org, threadId: f.threadId, text: "Guard me", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
       if (r.kind !== "started") throw new Error("claim did not start");
       return r.send;
     }
@@ -468,13 +467,13 @@ describeDb("LinkedIn conversation replies", () => {
         await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at) values (${f.org}, ${enrollment}, 1, 'linkedin', 'sent', ${f.account}, 'Hi Ada', now() - interval '1 day')`;
       }
       const agent: Actor = { ...f.actor, via: { kind: "agent", tokenId: tokenId as string, tokenName: "Agent laptop", clientName: "claude-code" } };
-      const created = await resolveApp.createManualDraft({ store: replyStore } as never, agent, f.conversationId, { subject: null, bodyText: "Here is the deck.", channel: "linkedin" });
+      const created = await resolveApp.createManualDraft({ store: replyStore } as never, agent, f.threadId, { subject: null, bodyText: "Here is the deck.", channel: "linkedin" });
       return { ...f, agent, tokenId: tokenId as string, draft: created };
     }
 
     it("sends the saved draft as it stands, at its revision, and records the token", async () => {
       const f = await agentFixture({ reached: true });
-      const result = await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
+      const result = await app.sendLinkedInReply(f.deps, f.agent, f.threadId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
       expect(result.status).toBe("sent");
       expect(f.fake.messages.map((m) => m.text)).toEqual(["Here is the deck."]);
       expect(await one("select revision, status, written_via_token_id from drafts where id = $1", [f.draft.draftId])).toMatchObject({ revision: f.draft.revision, status: "sent", written_via_token_id: f.tokenId });
@@ -485,19 +484,19 @@ describeDb("LinkedIn conversation replies", () => {
     it("refuses a key that already sent another draft of the conversation", async () => {
       const f = await agentFixture({ reached: true });
       const k = key();
-      expect((await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: k })).status).toBe("sent");
-      const other = await resolveApp.createManualDraft({ store: replyStore } as never, f.agent, f.conversationId, { subject: null, bodyText: "A second one.", channel: "linkedin" });
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: other.draftId, revision: other.revision, idempotencyKey: k })).rejects.toThrow("another draft");
+      expect((await app.sendLinkedInReply(f.deps, f.agent, f.threadId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: k })).status).toBe("sent");
+      const other = await resolveApp.createManualDraft({ store: replyStore } as never, f.agent, f.threadId, { subject: null, bodyText: "A second one.", channel: "linkedin" });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { text: "ignored", draftId: other.draftId, revision: other.revision, idempotencyKey: k })).rejects.toThrow("another draft");
     });
 
     it("refuses an agent send without a draft, with another conversation's draft, or to a stranger", async () => {
       const f = await agentFixture({ reached: true });
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { idempotencyKey: key() })).rejects.toThrow(/saved draft/);
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { idempotencyKey: key() })).rejects.toThrow(/saved draft/);
       const other = await agentFixture({ reached: true });
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: other.draft.draftId, revision: 1, idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { draftId: other.draft.draftId, revision: 1, idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
 
       const stranger = await agentFixture({ reached: false });
-      await expect(app.sendLinkedInReply(stranger.deps, stranger.agent, stranger.conversationId, { draftId: stranger.draft.draftId, revision: stranger.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({
+      await expect(app.sendLinkedInReply(stranger.deps, stranger.agent, stranger.threadId, { draftId: stranger.draft.draftId, revision: stranger.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({
         details: { code: "agent_unverified_recipient" },
       });
       expect(stranger.fake.messages).toEqual([]);
@@ -506,17 +505,17 @@ describeDb("LinkedIn conversation replies", () => {
     it("ignores the mailbox limit on LinkedIn, and waits a day after an agent's email in the same reply handling", async () => {
       const f = await agentFixture({ reached: true });
       await sql`update channel_settings set values = values || ${sql.json({ agentReplyCaps: { org: 100, user: 50, mailbox: 0 } })} where organization_id = ${f.org} and channel = 'mcp'`;
-      const [{ record_id: recordId }] = await sql`select record_id from conversations where id = ${f.conversationId}`;
-      const [{ id: email }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${f.org}, ${recordId}, 'email', ${"sdr-" + f.tag + "@corp.test"}, ${"thread-" + f.tag}) returning id`;
-      const [{ id: emailDraft }] = await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status) values (${f.org}, ${recordId}, ${email}, 1, 'email', 'Earlier', 'sent') returning id`;
+      const [{ conversation_id: conversationId }] = await sql`select conversation_id from threads where id = ${f.threadId}`;
+      const [{ id: email }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${f.org}, ${conversationId}, 'email', ${"sdr-" + f.tag + "@corp.test"}, ${"thread-" + f.tag}) returning id`;
+      const [{ id: emailDraft }] = await sql`insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, edited_body_text, status) values (${f.org}, ${conversationId}, ${email}, 1, 'email', 'Earlier', 'sent') returning id`;
       const attempt = (createdAt: string) => sql`
         insert into send_attempts (organization_id, draft_id, idempotency_key, status, actor_user_id, origin, mcp_token_id, provider, account_ref, request, created_at)
         values (${f.org}, ${emailDraft}, ${key()}, 'sent', ${f.user}, 'agent', ${f.tokenId}, 'mailbox', ${"sdr-" + f.tag + "@corp.test"}, ${sql.json({})}, ${createdAt}::timestamptz)`;
       await attempt(new Date(Date.now() - 3_600_000).toISOString());
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_reply_gap" } });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_reply_gap" } });
 
       await sql`update send_attempts set created_at = now() - interval '25 hours' where draft_id = ${emailDraft}`;
-      const sent = await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
+      const sent = await app.sendLinkedInReply(f.deps, f.agent, f.threadId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
       expect(sent.status).toBe("sent");
     });
 
@@ -526,12 +525,12 @@ describeDb("LinkedIn conversation replies", () => {
       const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'linkedin', 'c', 'active', ${sql.json([])}) returning id`;
       const [{ id: enrollment }] = await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${f.org}, ${campaign}, ${someone}, 'linkedin') returning id`;
       await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at) values (${f.org}, ${enrollment}, 1, 'linkedin', 'sent', ${f.account}, 'Hi', now() - interval '1 day')`;
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_unverified_recipient" } });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_unverified_recipient" } });
     });
 
     it("marks a typed agent draft manual with the agent named, until a person's text replaces it", async () => {
       const f = await agentFixture({ reached: true });
-      expect((await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId))?.draft).toMatchObject({ source: "manual", writtenVia: "Agent laptop" });
+      expect((await app.getLinkedInReplyPanel(f.deps, f.actor, f.threadId))?.draft).toMatchObject({ source: "manual", writtenVia: "Agent laptop" });
       expect((await send(f, "My own words.")).status).toBe("sent");
       expect(await one("select edited_body_text, written_via_token_id from drafts where id = $1", [f.draft.draftId])).toEqual({ edited_body_text: "My own words.", written_via_token_id: null });
     });
@@ -539,7 +538,7 @@ describeDb("LinkedIn conversation replies", () => {
     it("refuses an empty saved draft", async () => {
       const f = await agentFixture({ reached: true });
       await sql`update drafts set edited_body_text = '   ' where id = ${f.draft.draftId}`;
-      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toThrow(/cannot be empty/);
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.threadId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toThrow(/cannot be empty/);
     });
   });
 });

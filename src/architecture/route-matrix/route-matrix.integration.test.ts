@@ -115,7 +115,10 @@ describeDb("route matrix", () => {
         rowCache.set(cacheKey, row ?? null);
       } else if (table === "reply_types") {
         // The reply type set and its types are created on first read, so read it as the organization's owner first.
-        await callRoute("reply-types/route.ts", "GET", { as: organizationId === world.orgA.id ? world.admin : world.other });
+        const owner = organizationId === world.orgA.id ? world.admin : world.other;
+        const { getReplyTypeCatalog } = await import("@/contexts/conversations/application/reply-handling");
+        const { replyHandlingDeps } = await import("@/contexts/conversations/infrastructure/reply-handling-composition");
+        await getReplyTypeCatalog(replyHandlingDeps(), { userId: owner.userId, organizationId: owner.organizationId, role: owner.role as "owner" });
         // A type with a system role refuses archive and delete, so the matrix takes a type without one.
         const [row] = await world.sql`select * from reply_types where organization_id = ${organizationId} and system_role is null order by ${fresh ? world.sql`random()` : world.sql`created_at`} limit 1`;
         rowCache.set(cacheKey, row ?? null);

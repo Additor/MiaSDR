@@ -20,7 +20,7 @@ import type { SuppressionReason } from "../domain/reachability";
 
 /**
  * One `people` row per human across all channels. Importing creates or
- * updates people only; a CRM record starts when a lead replies.
+ * updates people only; a conversation starts when a lead replies.
  */
 
 export const companies = pgTable(
@@ -184,24 +184,18 @@ export const importRuns = pgTable(
     id: pk(),
     organizationId: orgId(),
     filename: text("filename"),
-    destination: text("destination").notNull().default("database"),
-    /** Campaign to enroll into when destination is `campaign`. Reference by value, no FK across contexts. */
-    destinationCampaignId: uuid("destination_campaign_id"),
     mapping: jsonb("mapping").$type<Record<string, string>>().default({}).notNull(),
     stats: jsonb("stats").$type<Record<string, number>>().default({}).notNull(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [
-    check("import_runs_destination_ck", sql`${t.destination} in ('database', 'campaign')`),
-    // `destination_campaign_id -> campaigns (id, organization_id) ON DELETE SET NULL (destination_campaign_id)` lives in
-    // the migration SQL only: the target table is in the outreach schema, which imports this one.
     index("import_runs_org_created_idx").on(t.organizationId, t.createdAt),
   ],
 );
 
 // Reachability: whether the organization may contact a person (do not contact, every channel) or an address
-// (suppression, email only). The read model and the writers live in `infrastructure/reachability.ts`.
+// (suppression, email and for some reasons LinkedIn; `SUPPRESSION_BLOCKS`). The read model and the writers live in `infrastructure/reachability.ts`.
 
 /** Do-not-contact applies to every channel. Three legal shapes: never set, set, cleared. */
 export const contactPolicies = pgTable(
@@ -218,7 +212,7 @@ export const contactPolicies = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
-    check("contact_policies_source_ck", sql`${t.source} is null or ${t.source} in ('human', 'integration', 'inbound_request')`),
+    check("contact_policies_source_ck", sql`${t.source} is null or ${t.source} in ('human', 'integration')`),
     check(
       "contact_policies_state_ck",
       sql`(
@@ -251,6 +245,6 @@ export const suppressionList = pgTable(
   },
   (t) => [
     unique("suppression_org_email_uq").on(t.organizationId, t.email),
-    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual', 'complaint')`),
+    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual')`),
   ],
 );

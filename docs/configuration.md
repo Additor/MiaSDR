@@ -33,8 +33,7 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `AUTH_SIGNUP` | `invite-only` | `open` lets anyone create an account. Requires `MAILBOX_ALLOWED_DOMAINS`. |
-| `MAILBOX_ALLOWED_DOMAINS` | none | Comma list of domains whose addresses may be connected as mailboxes. |
+| `MAILBOX_ALLOWED_DOMAINS` | none | Comma list of domains whose addresses may be connected as mailboxes. With none set, an owner or admin can connect any address. |
 | `RESEND_API_KEY` | none | Sends invite and sign-in mail through Resend. |
 | `AUTH_EMAIL_FROM` | none | From address for that mail. |
 | `GOOGLE_CLIENT_ID` | none | Google sign-in client id. |

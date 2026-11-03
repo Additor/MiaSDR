@@ -79,7 +79,7 @@ export function readModelImports(file: string, source: string): string[] {
       const t = target(file, s);
       if (!t?.startsWith("contexts/")) return false;
       if (/^contexts\/[^/]+\/(?:[^/]+\/)*domain\//.test(t)) return false;
-      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|sequences-schema)$/.test(t)) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|follow-ups-schema)$/.test(t)) return false;
       return !(t in READ_MODEL_IMPORTS);
     })
     .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
@@ -89,7 +89,8 @@ export function readModelImports(file: string, source: string): string[] {
 const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
   // The schema barrel: the Drizzle client and migrations see every table through it.
   "src/platform/db/schema.ts": [
-    "@/contexts/conversations/after-reply/infrastructure/sequences-schema",
+    "@/contexts/agent-access/infrastructure/schema",
+    "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema",
     "@/contexts/conversations/infrastructure/schema",
     "@/contexts/deals/infrastructure/schema",
     "@/contexts/grid/infrastructure/schema",
@@ -138,7 +139,7 @@ describe("tier dependencies", () => {
     const source = [
       'import { leadStatus } from "@/contexts/outreach/domain/lead-status";',
       'import { people } from "@/contexts/people/infrastructure/schema";',
-      'import { runs } from "../contexts/conversations/after-reply/infrastructure/sequences-schema";',
+      'import { runs } from "../contexts/conversations/after-reply/infrastructure/follow-ups-schema";',
       'import { deleteDoNotContactTx } from "@/contexts/people/infrastructure/reachability";',
       'import type { LeadActivityDeps } from "@/contexts/outreach/application/read-lead-activity";',
       'import { leadImportDeps } from "@/contexts/people/infrastructure/composition";',
@@ -173,9 +174,8 @@ describe("tier dependencies", () => {
 const PUBLISHED_INFRASTRUCTURE = new Set([
   // Session readers and the auth handler.
   "identity/infrastructure/auth",
-  // A revoke in tenancy also ends the app's consent and refresh tokens, which identity owns.
+  // A revoke in agent access also ends the app's consent and refresh tokens, which identity owns.
   "identity/infrastructure/mcp-oauth-grants",
-  "identity/infrastructure/signup-facts",
   // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
   "identity/infrastructure/user-accounts",
   // Credential encryption and live checks, a generic service.
@@ -192,7 +192,7 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // The member directory: assignee and owner checks and pickers.
   "tenancy/infrastructure/drizzle-member-directory",
   // The agent send policy, which conversations and outreach read inside their send and start transactions.
-  "tenancy/infrastructure/mcp-policy-reader",
+  "agent-access/infrastructure/mcp-policy-reader",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.
@@ -204,9 +204,9 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
   "people/infrastructure/inbound-leads",
   "people/infrastructure/linkedin-profile",
-  // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
+  // The enrollment outcome writers, which conversations' contact stop runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
-  "outreach/infrastructure/suppression-store",
+  // Enrollment's gate on a stop request, which the table handoff to a campaign applies too.
 ]);
 
 /** Context files that import another context's private infrastructure. Keep it empty. A composition is published, so a context may wire from another's. */
@@ -220,7 +220,7 @@ export function privateCrossImports(file: string, source: string): string[] {
     const t = target(file, s)?.match(/^contexts\/(([^/]+)\/(?:[^/]+\/)*infrastructure\/(?:[^/]+\/)*([^/]+))$/);
     if (!t || t[2] === own) continue;
     const [, module, , name] = t;
-    if (name === "schema" || name === "sequences-schema" || /(^|-)composition$/.test(name) || PUBLISHED_INFRASTRUCTURE.has(module)) continue;
+    if (name === "schema" || name === "follow-ups-schema" || /(^|-)composition$/.test(name) || PUBLISHED_INFRASTRUCTURE.has(module)) continue;
     found.add(module);
   }
   return [...found].sort();

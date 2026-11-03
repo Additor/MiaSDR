@@ -288,7 +288,7 @@ describeDb("email send engine", () => {
       advance(61);
       provider.behavior = () => "ok";
       const verify = vi.spyOn(provider, "verify");
-      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"], openSignup: false } });
+      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"] } });
       expect(report).toEqual({ checked: 1, recovered: 0 });
       expect(verify).not.toHaveBeenCalled();
       expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "failed", last_error: expect.stringMatching(/not an allowed mailbox domain/) });
@@ -470,7 +470,7 @@ describeDb("email send engine", () => {
       const third = await store.claimNext({ mailboxId: f.mailboxIds[0], now: current, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
       expect(third).toMatchObject({ sendId: stale.sendId, attempt: 3 });
       await store.resolveUncertainAsNotSent(stale, current, 15, MAX_SEND_ATTEMPTS, "not_found");
-      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", threadId: "stale" }, current);
+      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", providerThreadId: "stale" }, current);
       expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
 
       // Attempt 3's own failure ends the enrollment at the cap, and no fourth claim follows.
@@ -679,7 +679,7 @@ describeDb("email send engine", () => {
       const claim = await claimFor(f);
       await sql`update campaign_enrollments set status = 'replied', next_send_at = null, stop_reason = 'replied' where id = ${f.enrollmentIds[0]}`;
       advance(1);
-      await store.markSent(claim, { providerMessageId: "late-1", threadId: "late-thread" }, current);
+      await store.markSent(claim, { providerMessageId: "late-1", providerThreadId: "late-thread" }, current);
       const [row] = await sendRows(f.enrollmentIds[0]);
       expect(row).toMatchObject({ status: "sent", provider_message_id: "late-1" });
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", current_step: 0, next_send_at: null });
@@ -716,7 +716,7 @@ describeDb("email send engine", () => {
     const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     const provider = new FakeMailboxProvider();
     await send.sendNextEmail(deps(provider), f.mailboxIds[0]); // lead 0 is now active
-    // Suppression blocks email only: lead 0's LinkedIn sequence keeps running.
+    // An unsubscribe says the person wants contact stopped, so lead 0's LinkedIn sequence ends too.
     const [{ id: person0 }] = await sql`update people set linkedin_slug = ${"lead0-" + f.org} where organization_id = ${f.org} and email = ${f.emails[0]} returning id`;
     const [{ id: linkedinCampaign }] = await sql`
       insert into campaigns (organization_id, channel, name, status, steps)
@@ -726,10 +726,10 @@ describeDb("email send engine", () => {
       values (${f.org}, ${linkedinCampaign}, ${person0}, 'linkedin', 'active', 1) returning id`;
 
     const first = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: ` ${f.emails[0].toUpperCase()} `, reason: "unsubscribed" });
-    expect(first.stopped).toBe(1);
+    expect(first.stopped).toBe(2);
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", next_send_at: null, stop_reason: "unsubscribed" });
     expect((await enrollment(f.enrollmentIds[1])).status).toBe("pending");
-    expect(await enrollment(linkedinEnrollment)).toMatchObject({ status: "active", stop_reason: null });
+    expect(await enrollment(linkedinEnrollment)).toMatchObject({ status: "suppressed", stop_reason: "unsubscribed" });
 
     const again = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: f.emails[0], reason: "unsubscribed" });
     expect(again.stopped).toBe(0); // idempotent

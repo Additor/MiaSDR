@@ -1,8 +1,8 @@
 import { ValidationError } from "@/shared/errors";
-import type { InboundConversationStore, InboundEmailInput, IngestOutcome, QuarantineInbound } from "./ports";
+import type { InboundThreadStore, InboundEmailInput, IngestOutcome, QuarantineInbound } from "./ports";
 
 export interface IngestDeps {
-  store: InboundConversationStore;
+  store: InboundThreadStore;
   quarantine: QuarantineInbound;
 }
 
@@ -11,7 +11,7 @@ const EMPTY_BODY = "(no text content)";
 
 /**
  * Files one received email under its sender: finds or creates the person (source `inbound`, an existing
- * person is never changed), their record in the default pipeline, the conversation for the mail thread
+ * person is never changed), their conversation in the default reply type set, the thread for the mail
  * and the message. Running it twice for the same provider message stores it once.
  *
  * A message whose sender address is unusable cannot be tied to anyone. It is parked as an identity

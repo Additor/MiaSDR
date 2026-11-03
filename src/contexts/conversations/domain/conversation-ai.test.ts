@@ -1,29 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { stopRequestedBy } from "./reply-type-pick-policy";
-import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES, decideReplyType, type ReplyType, type ReplyTypeFacts } from "./reply-type";
+import { decideReplyType, type ReplyType, type ReplyTypeFacts } from "./reply-type";
 import { normalizeSubject } from "./subject";
 import { replySubject } from "./reply-policy";
-import { detectsStopRequest, stripQuoted } from "./stop-request";
+import { detectsStopRequest, stripQuoted } from "../stopping/domain/stop-request";
+
+const DRAFTS: ReplyType["rules"] = { replyDraft: true, followUps: "continue" };
 
 interface AiPick {
-  proposal: Pick<ReplyType, "groupKey" | "rules">;
+  proposal: Pick<ReplyType, "groupKey" | "rules" | "systemRole">;
   confidence: number;
   current: { groupKey: string | null; replyTypeLocked: boolean };
-  floor: number;
   stopRequested?: boolean;
 }
 const base: AiPick = {
-  proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES } },
+  proposal: { groupKey: "interested", systemRole: null, rules: DRAFTS },
   confidence: 0.9,
   current: { groupKey: null, replyTypeLocked: false },
-  floor: 0.85,
 };
 const pick = (over: Partial<AiPick> = {}): AiPick => ({ ...base, ...over });
 /** An AI pick as the apply path decides it. Follow-ups are not under test here. */
-const decide = ({ proposal, confidence, current, floor, stopRequested = false }: AiPick) => {
+const decide = ({ proposal, confidence, current, stopRequested = false }: AiPick) => {
   const facts: ReplyTypeFacts = {
     confidence,
-    floor,
     locked: current.replyTypeLocked,
     currentType: { groupKey: current.groupKey },
     stopRequested,
@@ -41,33 +40,33 @@ describe("reply type pick policy", () => {
     expect(decide(pick({ confidence: 0.84 })).hold).toBe("low_confidence");
   });
 
-  it("holds a type checked before it applies, whatever the confidence", () => {
-    expect(decide(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES, checkMode: "before" } }, confidence: 1 })).hold).toBe("requires_review");
-    expect(decide(pick({ proposal: { groupKey: "not_interested", rules: { ...STOP_REQUEST_RULES } }, confidence: 1 })).hold).toBe("requires_review");
-    expect(decide(pick({ proposal: { groupKey: "other", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } } })).hold).toBeNull();
+  it("holds the stop request type whatever the confidence, and no other type at a high one", () => {
+    expect(decide(pick({ proposal: { groupKey: "not_interested", systemRole: "stop_request", rules: { replyDraft: false, followUps: "stop" } }, confidence: 1 })).hold).toBe("stop_request");
+    expect(decide(pick({ proposal: { groupKey: "customer", systemRole: "customer", rules: DRAFTS }, confidence: 1 })).hold).toBeNull();
+    expect(decide(pick({ proposal: { groupKey: "other", systemRole: null, rules: DRAFTS } })).hold).toBeNull();
   });
 
   it("protects a locked customer", () => {
     expect(decide(pick({ current: { groupKey: "customer", replyTypeLocked: true } })).hold).toBe("protected_customer");
-    expect(decide(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES } }, current: { groupKey: "customer", replyTypeLocked: true } })).hold).toBeNull();
+    expect(decide(pick({ proposal: { groupKey: "customer", systemRole: null, rules: DRAFTS }, current: { groupKey: "customer", replyTypeLocked: true } })).hold).toBeNull();
   });
 
   it("no longer holds a move to a lower position: progress belongs to deal stages", () => {
-    expect(decide(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } })).hold).toBeNull();
+    expect(decide(pick({ proposal: { groupKey: "not_interested", systemRole: null, rules: DRAFTS }, current: { groupKey: "interested", replyTypeLocked: false } })).hold).toBeNull();
   });
 
   it("wants a draft when the type writes one and the reply asks nothing to stop", () => {
     expect(decide(pick())).toEqual({ hold: null, wantsDraft: true });
     expect(decide(pick({ stopRequested: true }))).toEqual({ hold: null, wantsDraft: false });
-    expect(decide(pick({ proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES, replyDraft: false } } })).wantsDraft).toBe(false);
+    expect(decide(pick({ proposal: { groupKey: "interested", systemRole: null, rules: { ...DRAFTS, replyDraft: false } } })).wantsDraft).toBe(false);
     expect(decide(pick({ confidence: 0.5 }))).toEqual({ hold: "low_confidence", wantsDraft: true });
   });
 
   it("reads a stop request from the sender's words or from the stop request type, never from the key", () => {
-    expect(stopRequestedBy("Please unsubscribe me.", { systemRole: null })).toBe(true);
-    expect(stopRequestedBy("Sounds good.", { systemRole: "stop_request" })).toBe(true);
-    expect(stopRequestedBy("Sounds good.", { systemRole: null })).toBe(false);
-    expect(stopRequestedBy("Sounds good.", { systemRole: "customer" })).toBe(false);
+    expect(stopRequestedBy(true, { systemRole: null })).toBe(true);
+    expect(stopRequestedBy(false, { systemRole: "stop_request" })).toBe(true);
+    expect(stopRequestedBy(false, { systemRole: null })).toBe(false);
+    expect(stopRequestedBy(false, { systemRole: "customer" })).toBe(false);
   });
 });
 

@@ -123,7 +123,7 @@ export const SEED_COLUMN_KEY = "name";
 export const SEED_COLUMN_NAME = "New Column";
 /**
  * True for the table's only column when it is still the untouched starter. A seed with `config` or `dependsOn`
- * (someone made it a formula) or any sibling column is kept as is: the import renames the seed's key and migrates nothing else.
+ * (someone made it a runner column) or any sibling column is kept as is: the import renames the seed's key and migrates nothing else.
  */
 export const isInitialSeedColumn = (columns: ReadonlyArray<{ key: string; name: string; config?: Record<string, unknown>; dependsOn?: readonly string[] }>): boolean =>
   columns.length === 1 &&

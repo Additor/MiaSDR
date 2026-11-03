@@ -8,8 +8,7 @@ import {
   earlierVersionNote,
   FIXED_STOPS_LINE_COVERS,
   formChanged,
-  handoffOption,
-  lockedNote,
+  HANDOFF_OPTION,
   parseTags,
   splitDelay,
   stepsFromApi,
@@ -107,13 +106,6 @@ describe("formChanged", () => {
 });
 
 describe("notes", () => {
-  it("adds the private reply line for a personal campaign only when missing", () => {
-    expect(lockedNote(null, true)).toBeNull();
-    expect(lockedNote("AI follow-up drafts are available for email campaigns.", true)).toBe("AI follow-up drafts are available for email campaigns. Replies stay out of the Inbox.");
-    expect(lockedNote("AI follow-up drafts are available for email campaigns.", false)).toBe("AI follow-up drafts are available for email campaigns.");
-    const own = "Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.";
-    expect(lockedNote(own, true)).toBe(own);
-  });
   it("counts follow-ups on an earlier version", () => {
     expect(earlierVersionNote(0)).toBeNull();
     expect(earlierVersionNote(1)).toBe("1 follow-up uses an earlier version");
@@ -132,16 +124,9 @@ describe("what stops follow-ups", () => {
   });
 });
 
-describe("handoffOption", () => {
+describe("HANDOFF_OPTION", () => {
   it("hands replies to the Inbox, where the AI still drafts a first reply", () => {
-    const option = handoffOption(false);
-    expect(option.title).toBe("Off, hand to the Inbox");
-    expect(option.description).toContain("The AI still drafts a first reply for reply types set to Write one.");
-  });
-
-  it("keeps a personal campaign's replies out of the Inbox", () => {
-    const option = handoffOption(true);
-    expect(option.title).toBe("Off");
-    expect(option.description).not.toMatch(/waits in the Inbox|drafts/);
+    expect(HANDOFF_OPTION.title).toBe("Off, hand to the Inbox");
+    expect(HANDOFF_OPTION.description).toContain("The AI still drafts a first reply for reply types that write one.");
   });
 });

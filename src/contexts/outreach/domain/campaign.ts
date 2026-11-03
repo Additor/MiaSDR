@@ -119,25 +119,3 @@ export function emptyFirstSubjectMessage(steps: StepInput[], variables: Record<s
   if (renderSubject(first.subject, variables) !== "") return null;
   return "The subject of step 1 renders empty. Write a subject, or check that the merge fields in it exist and have values.";
 }
-
-/** `personal` is private LinkedIn outreach: replies stay out of the Inbox, the AI and the CRM. */
-export type CampaignType = "regular" | "personal";
-
-export const parseCampaignType = (value: unknown): CampaignType => (value === "personal" ? "personal" : "regular");
-
-/** The type can change until the campaign has sent anything. Afterwards, replies already filed under it would change visibility. */
-export const typeEditable = (hasSends: boolean): boolean => !hasSends;
-
-/** Who may read the replies of a personal campaign: an owner or admin, or the person who created the campaign. */
-export function canReadPersonalThread(input: { isOwnerOrAdmin: boolean; actorUserId: string; createdBy: string | null }): boolean {
-  return input.isOwnerOrAdmin || (input.createdBy !== null && input.createdBy === input.actorUserId);
-}
-
-/**
- * The link from a lead row to its private thread, or null. Only a personal campaign has private threads,
- * only a reader of them sees the link, and only an enrollment whose person has such a thread gets one.
- * The row and the lead panel use this one answer.
- */
-export function privateThreadHref(input: { base: string; enrollmentId: string; canRead: boolean; hasPrivateThread: boolean }): string | null {
-  return input.canRead && input.hasPrivateThread ? `${input.base}/leads/${input.enrollmentId}/thread` : null;
-}

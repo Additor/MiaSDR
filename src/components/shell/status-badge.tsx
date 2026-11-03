@@ -24,6 +24,9 @@ const VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
   suppressed: "secondary",
   replied: "secondary",
   cancelled: "secondary",
+  found: "secondary",
+  missing: "outline",
+  unchecked: "outline",
 };
 
 /**

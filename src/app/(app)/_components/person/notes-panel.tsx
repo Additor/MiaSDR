@@ -22,8 +22,8 @@ export interface Note {
   createdBy: string | null;
 }
 
-/** Where the panel writes: a reply record's notes, or a person's notes (every note of the person; new ones have no record). */
-export type NoteTarget = { recordId: string; personId?: never } | { personId: string; recordId?: never };
+/** Where the panel writes: a conversation's notes, or a person's notes (every note of the person; new ones have no conversation). */
+export type NoteTarget = { conversationId: string; personId?: never } | { personId: string; conversationId?: never };
 
 export type NotesPanelProps = NoteTarget & {
   notes: Note[];
@@ -33,7 +33,7 @@ export type NotesPanelProps = NoteTarget & {
 
 export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPanelProps) {
   const router = useRouter();
-  const base = target.recordId !== undefined ? `/api/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
+  const base = target.conversationId !== undefined ? `/api/conversations/${target.conversationId}/notes` : `/api/people/${target.personId}/notes`;
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"add" | "save">();

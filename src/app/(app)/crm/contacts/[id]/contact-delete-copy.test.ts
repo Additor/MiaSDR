@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { blockerText, countLines, expectedQuery, reachLines, type DeleteCounts, type DeletePreview } from "./contact-delete-copy";
 
-const ZERO: DeleteCounts = { deals: { won: 0, lost: 0, wonTitles: [] }, notes: 0, tasks: 0, events: 0, conversations: 0, messages: 0, campaigns: 0, sends: 0 };
+const ZERO: DeleteCounts = { deals: { won: 0, lost: 0, wonTitles: [] }, notes: 0, tasks: 0, events: 0, threads: 0, messages: 0, campaigns: 0, sends: 0 };
 const person = (over: Partial<DeletePreview["person"]> = {}): DeletePreview["person"] => ({ id: "p", fullName: "Ada Lovelace", email: "ada@example.com", linkedinUrl: null, doNotContact: false, ...over });
 
 describe("countLines", () => {
@@ -21,7 +21,7 @@ describe("countLines", () => {
   });
 
   it("lists the other counts in order with singular and plural", () => {
-    expect(countLines({ ...ZERO, notes: 1, tasks: 2, events: 1, conversations: 1, messages: 3, campaigns: 1, sends: 2 })).toEqual([
+    expect(countLines({ ...ZERO, notes: 1, tasks: 2, events: 1, threads: 1, messages: 3, campaigns: 1, sends: 2 })).toEqual([
       "1 note",
       "2 tasks",
       "1 history line",
@@ -73,6 +73,6 @@ describe("blockerText", () => {
 
 describe("expectedQuery", () => {
   it("sends won plus lost as deals", () => {
-    expect(expectedQuery({ ...ZERO, deals: { won: 1, lost: 2, wonTitles: [] }, sends: 4 })).toBe("deals=3&notes=0&tasks=0&events=0&conversations=0&messages=0&sends=4");
+    expect(expectedQuery({ ...ZERO, deals: { won: 1, lost: 2, wonTitles: [] }, sends: 4 })).toBe("deals=3&notes=0&tasks=0&events=0&threads=0&messages=0&sends=4");
   });
 });

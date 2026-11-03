@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { getCampaignAfterReply, getFollowUpStopTypes, saveCampaignAfterReply, type AfterReplyDeps } from "./after-reply";
-import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView, StopReplyTypeRow } from "./sequence-ports";
+import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView, StopReplyTypeRow } from "./follow-up-ports";
 
 const NOW = new Date("2026-10-16T09:00:00Z");
 const actor: Actor = { userId: "u1", organizationId: "org", role: "member" };
 
 const step = (position: number, over: Partial<StepView> = {}): StepView => ({
   id: `s${position}`,
-  sequenceVersionId: "v1",
+  followUpVersionId: "v1",
   position,
   stepType: position === 1 ? "reply" : "follow_up",
   name: position === 1 ? "Reply to their answer" : "Follow-up",
@@ -22,7 +22,7 @@ const step = (position: number, over: Partial<StepView> = {}): StepView => ({
 
 const raw = (position: number) => ({ name: position === 1 ? "Reply" : "Nudge", delayMinutes: position === 1 ? 0 : 1440, subjectTemplate: null, bodyTemplate: null, aiInstructions: "Do it", knowledgeTags: [] });
 
-const run = (over: Partial<FlowRunRow> = {}): FlowRunRow => ({ runId: "r1", recordId: "rec1", conversationId: "conv1", personName: "Sam", status: "active", currentStep: 2, totalSteps: 3, nextDueAt: NOW, versionNumber: 1, ...over });
+const run = (over: Partial<FlowRunRow> = {}): FlowRunRow => ({ runId: "r1", conversationId: "rec1", threadId: "conv1", personName: "Sam", status: "active", currentStep: 2, totalSteps: 3, nextDueAt: NOW, versionNumber: 1, ...over });
 
 const stopType = (over: Partial<StopReplyTypeRow> & Pick<StopReplyTypeRow, "id" | "name" | "groupKey">): StopReplyTypeRow => ({ key: over.id, systemRole: null, sortOrder: 0, ...over });
 
@@ -48,7 +48,7 @@ function fake(state: FlowState | null, stopTypes: StopReplyTypeRow[] = STOP_TYPE
 }
 
 const emailState = (over: Partial<FlowState> = {}): FlowState => ({
-  campaign: { id: "c1", name: "Autumn", channel: "email", type: "regular", status: "active" },
+  campaign: { id: "c1", name: "Autumn", channel: "email", status: "active" },
   flow: { id: "f1", status: "active" },
   published: { version: 2 },
   steps: [step(1), step(2)],
@@ -76,12 +76,10 @@ describe("getCampaignAfterReply", () => {
     expect(view).toMatchObject({ mode: "handoff", steps: [], versionNumber: null });
   });
 
-  it("locks LinkedIn and Personal campaigns to handoff", async () => {
-    const linkedin = await getCampaignAfterReply(fake(emailState({ campaign: { id: "c1", name: "L", channel: "linkedin", type: "regular", status: "active" } })).deps, actor, "c1");
+  it("locks LinkedIn campaigns to handoff", async () => {
+    const linkedin = await getCampaignAfterReply(fake(emailState({ campaign: { id: "c1", name: "L", channel: "linkedin", status: "active" } })).deps, actor, "c1");
     expect(linkedin.supported).toBe(false);
     expect(linkedin.lockedReason).toMatch(/email/);
-    const personal = await getCampaignAfterReply(fake(emailState({ campaign: { id: "c1", name: "P", channel: "linkedin", type: "personal", status: "active" } })).deps, actor, "c1");
-    expect(personal.lockedReason).toMatch(/Personal/);
   });
 
   it("answers 404 for a campaign the organization does not have", async () => {
@@ -150,19 +148,15 @@ describe("saveCampaignAfterReply", () => {
     expect(f.saved).toHaveLength(0);
   });
 
-  it("answers a conflict with code mode_locked for LinkedIn and Personal campaigns", async () => {
-    for (const campaign of [
-      { id: "c1", name: "L", channel: "linkedin", type: "regular", status: "active" },
-      { id: "c1", name: "P", channel: "linkedin", type: "personal", status: "active" },
-    ]) {
-      const f = fake(emailState({ campaign, flow: null, published: null, steps: [] }));
-      await expect(saveCampaignAfterReply(f.deps, actor, "c1", { mode: "ai_drafts", steps: [raw(1)] })).rejects.toMatchObject({ details: { code: "mode_locked" } });
-      expect(f.saved).toHaveLength(0);
-    }
+  it("answers a conflict with code mode_locked for a LinkedIn campaign", async () => {
+    const campaign = { id: "c1", name: "L", channel: "linkedin", status: "active" as const };
+    const f = fake(emailState({ campaign, flow: null, published: null, steps: [] }));
+    await expect(saveCampaignAfterReply(f.deps, actor, "c1", { mode: "ai_drafts", steps: [raw(1)] })).rejects.toMatchObject({ details: { code: "mode_locked" } });
+    expect(f.saved).toHaveLength(0);
   });
 
   it("allows handoff on a locked campaign", async () => {
-    const f = fake(emailState({ campaign: { id: "c1", name: "L", channel: "linkedin", type: "regular", status: "active" }, flow: null, published: null, steps: [] }));
+    const f = fake(emailState({ campaign: { id: "c1", name: "L", channel: "linkedin", status: "active" }, flow: null, published: null, steps: [] }));
     await saveCampaignAfterReply(f.deps, actor, "c1", { mode: "handoff" });
     expect(f.saved).toMatchObject([{ mode: "handoff" }]);
   });

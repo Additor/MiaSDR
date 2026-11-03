@@ -86,7 +86,7 @@ export function useFieldInsert(opts: {
  * Insert field: the app's Select with the fields grouped. A pick inserts the token at the caret of the last edited field
  * once the list has closed, so the field takes focus back from the trigger. The Select keeps no value.
  */
-export function MergeFieldPicker({ fields, disabled, onPick }: { fields: MergeFieldItem[]; disabled?: boolean; onPick: (token: string) => void }) {
+export function MergeFieldPicker({ fields, onPick }: { fields: MergeFieldItem[]; onPick: (token: string) => void }) {
   const picked = useRef<string | null>(null);
   if (fields.length === 0) return null;
   return (
@@ -96,7 +96,6 @@ export function MergeFieldPicker({ fields, disabled, onPick }: { fields: MergeFi
       </label>
       <Select
         value={null}
-        disabled={disabled}
         onValueChange={(token) => {
           picked.current = token;
         }}

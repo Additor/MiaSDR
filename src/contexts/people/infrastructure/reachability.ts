@@ -2,12 +2,12 @@ import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { contactPolicies, people, suppressionList } from "@/platform/db/schema";
 import { rowsOf } from "@/platform/db/sql-values";
-import { DELETED_WHILE_MARKED_NOTE, reachability, suppressionKey, type Reachability, type ReadReachability, type SuppressionReason } from "../domain/reachability";
+import { DELETED_WHILE_MARKED_NOTE, reachability, SUPPRESSION_REASONS, suppressionBlocks, suppressionKey, suppressionReasonsBlocking, type ReachChannel, type Reachability, type ReadReachability, type SuppressionReason } from "../domain/reachability";
 
 /*
  * Reachability. The people context owns `contact_policies` and `suppression_list` and is their one writer. The contexts
- * above call these functions inside their own transactions and run their own follow-through: outreach ends the
- * enrollments of a suppressed address, conversations ends runs and retires drafts for do not contact.
+ * above call these functions inside their own transactions. `stopContactTx` in conversations calls the two marks and
+ * runs the follow-through: enrollments, runs and drafts.
  */
 
 const ALIAS = /^[a-z_][a-z0-9_]*$/;
@@ -29,6 +29,14 @@ export const doNotContactSql = (person: string): SQL => {
 export const suppressedSql = (person: string): SQL => {
   const p = aliasOf(person);
   return sql.raw(`exists (select 1 from suppression_list reach_sl where reach_sl.organization_id = ${p}.organization_id and reach_sl.email = lower(${p}.email))`);
+};
+
+/** `suppressedSql` for one channel: true when the address's suppression reason blocks that channel (`suppressionBlocks`). */
+export const suppressionBlocksSql = (person: string, channel: ReachChannel): SQL => {
+  if (channel === "email") return suppressedSql(person);
+  const p = aliasOf(person);
+  const reasons = suppressionReasonsBlocking(channel).map((reason) => `'${reason}'`).join(", ");
+  return sql.raw(`exists (select 1 from suppression_list reach_sl where reach_sl.organization_id = ${p}.organization_id and reach_sl.email = lower(${p}.email) and reach_sl.reason in (${reasons}))`);
 };
 
 /** Whether the person is marked do not contact. The send guards ask it right before a provider call. */
@@ -82,8 +90,9 @@ export const readReachability: ReadReachability = async (organizationId, personI
 };
 
 /**
- * Puts an address on the suppression list. An address already there keeps its row, reason and note. Returns the stored
- * form of the address and whether this call added it.
+ * Puts an address on the suppression list. An address already there keeps its row and note, and its reason too, except
+ * that a request to be left alone replaces a reason that blocks less: a bounced address someone then unsubscribes or adds
+ * by hand must also close LinkedIn. Returns the stored form of the address and whether this call added a row.
  */
 export async function suppressAddressTx(
   tx: DbHandle,
@@ -95,12 +104,25 @@ export async function suppressAddressTx(
     .values({ organizationId: input.organizationId, email, reason: input.reason, note: input.note ?? null, addedInSettings: input.addedInSettings ?? false })
     .onConflictDoNothing()
     .returning({ id: suppressionList.id });
+  if (inserted.length === 0 && suppressionBlocks(input.reason, "linkedin")) {
+    const weaker = SUPPRESSION_REASONS.filter((reason) => !suppressionBlocks(reason, "linkedin"));
+    await tx
+      .update(suppressionList)
+      .set({ reason: input.reason })
+      .where(and(eq(suppressionList.organizationId, input.organizationId), eq(suppressionList.email, email), inArray(suppressionList.reason, weaker)));
+  }
   return { email, added: inserted.length > 0 };
 }
 
 /** Takes an address off the list. Only a row an owner or admin pasted on Settings, Suppression list can go. */
 export async function removeSettingsSuppression(handle: DbHandle, organizationId: string, id: string): Promise<void> {
   await handle.delete(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.id, id), eq(suppressionList.addedInSettings, true)));
+}
+
+/** Whether the person's address is on the list for a reason that also closes LinkedIn. The LinkedIn send guard asks it right before a provider call. */
+export async function isLinkedinBlockedBySuppression(handle: DbHandle, organizationId: string, personId: string): Promise<boolean> {
+  const [row] = rowsOf<{ blocked: boolean }>(await handle.execute(sql`select ${suppressionBlocksSql("p", "linkedin")} as blocked from people p where p.organization_id = ${organizationId} and p.id = ${personId}`));
+  return row?.blocked === true;
 }
 
 /** Whether the address is on the organization's suppression list. */

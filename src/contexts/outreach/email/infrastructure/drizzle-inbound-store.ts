@@ -1,10 +1,10 @@
-import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, inboundEvents, mailboxes, people, sends } from "@/platform/db/schema";
-import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
+import type { ContactStop, InboundStore, InboxFiling, MessageFailureState, PersonTimeline, SyncMailbox } from "../../application/inbound-ports";
 import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
-import { createSuppressionStore } from "../../infrastructure/suppression-store";
+import { recordBounceTx } from "../../infrastructure/bounce-pause-tx";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 type Tx = DbTx;
@@ -40,7 +40,7 @@ async function matchEnrollment(tx: Tx, mailbox: SyncMailbox, email: InboundEmail
     const found = await pick(or(inArray(sends.rfcMessageId, ids), inArray(sends.providerMessageId, ids)));
     if (found) return found;
   }
-  if (email.threadId) return pick(and(eq(sends.threadId, email.threadId), eq(sends.mailboxId, mailbox.id)));
+  if (email.providerThreadId) return pick(and(eq(sends.providerThreadId, email.providerThreadId), eq(sends.mailboxId, mailbox.id)));
   return null;
 }
 
@@ -67,16 +67,19 @@ async function bounceEvidence(mailbox: SyncMailbox, email: InboundEmail, failedR
       .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
       .innerJoin(people, eq(people.id, campaignEnrollments.personId))
       .where(extra ? and(sentToRecipient, extra) : sentToRecipient)
+      .orderBy(desc(sends.claimedAt))
       .limit(1);
-    return row !== undefined;
+    return row?.id ?? null;
   };
-  const weSentToRecipient = await find();
-  if (!weSentToRecipient) return { weSentToRecipient, tiedToOurSend: false };
+  const newest = await find();
+  if (newest === null) return { weSentToRecipient: false, tiedToOurSend: false, sendId: null };
   const ties = [];
   if (email.sendId && UUID.test(email.sendId)) ties.push(eq(sends.id, email.sendId));
   const ids = rfcIdVariants(email);
   if (ids.length > 0) ties.push(inArray(sends.rfcMessageId, ids), inArray(sends.providerMessageId, ids));
-  return { weSentToRecipient, tiedToOurSend: ties.length > 0 && (await find(or(...ties))) };
+  const tied = ties.length > 0 ? await find(or(...ties)) : null;
+  // The send that bounced: the one the notice names, or else the latest to that address from this mailbox.
+  return { weSentToRecipient: true, tiedToOurSend: tied !== null, sendId: tied ?? newest };
 }
 
 /** Files a received message in the master inbox. Idempotent, so a replayed batch stores nothing twice. */
@@ -84,7 +87,7 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
   return inbox.email({
     organizationId: mailbox.organizationId,
     accountRef: mailbox.emailAddress,
-    providerThreadId: email.threadId ?? email.providerMessageId,
+    providerThreadId: email.providerThreadId ?? email.providerMessageId,
     providerMessageId: email.providerMessageId,
     rfcMessageId: email.rfcMessageId,
     inReplyTo: email.inReplyTo,
@@ -103,8 +106,7 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
 const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.id}:${providerMessageId}`;
 
 /** The email inbound store. `inbox` files each message that is not a verified bounce or our own. */
-export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowUpStop): InboundStore {
-  const suppression = createSuppressionStore(followUps);
+export function createDrizzleInboundStore(inbox: InboxFiling, stop: ContactStop, timeline: PersonTimeline): InboundStore {
   return {
     async listDueMailboxIds(dueBefore) {
       const rows = await db
@@ -135,12 +137,10 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
             await storeInInbox(inbox, mailbox, email, true, evidence.weSentToRecipient);
             return "unverified_bounce";
           }
-          // One transaction inside: suppression row (conflict ignored) and the bounced enrollments.
-          await suppression.suppressEmail({
-            organizationId: mailbox.organizationId,
-            email: classification.failedRecipient,
-            reason: "bounced",
-            note: `Bounced from ${mailbox.emailAddress}`,
+          // One transaction: the suppression row (conflict ignored), the bounced enrollments, the send's mark and the campaign's rate.
+          await db.transaction(async (tx) => {
+            await stop.stopContactTx(tx, { organizationId: mailbox.organizationId, email: classification.failedRecipient }, { kind: "bounce", note: `Bounced from ${mailbox.emailAddress}`, now });
+            if (evidence.sendId) await recordBounceTx(tx, timeline, { organizationId: mailbox.organizationId, sendId: evidence.sendId, now });
           });
           return "hard_bounce";
         }
@@ -157,7 +157,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
             if (!enrollmentId) return false;
             const [matchedEnrollment] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)));
             // The person-wide stop, ahead of filing: a message that fails to file must not leave their other campaigns running.
-            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId, channel: "email", now });
+            if (matchedEnrollment) await stop.stopContactTx(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email }, { kind: "reply", channel: "email", unlessFiled: { accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId }, now });
             return true;
           });
           // After the sequence stopped. A replayed batch repeats both steps: the stop skips a filed message, and filing dedupes.
@@ -237,7 +237,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
           accountRef: mailbox.emailAddress,
           payload: {
             providerMessageId: email.providerMessageId,
-            threadId: email.threadId,
+            providerThreadId: email.providerThreadId,
             from: email.from,
             subject: email.subject,
             receivedAt: email.receivedAt.toISOString(),

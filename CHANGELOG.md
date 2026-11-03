@@ -20,7 +20,65 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### Changed
+
+- An address on the suppression list because it unsubscribed or was added by hand now blocks LinkedIn too: new enrollment skips its owners, a restore refuses them, the next campaign step does not go out, and the person's LinkedIn shows as blocked with the reason. A bounced address still blocks email only.
+- Every enroll path reads one rule, so a dry run and the enroll it previews answer the same counts. A lead removed earlier now counts as removed, not as a duplicate, in an enroll by search. A person who fits two reasons counts once. A lead with only a Sales Navigator or Recruiter URL can now be added by id, as a search already could. Dry runs by id answer `added: 0` and `wouldAdd`.
+- The campaign list's stopped count means what the campaign page means: bounced, suppressed, failed or cancelled. A removed lead no longer counts as stopped.
+- An automated message no longer marks one thread unread when the Inbox list does not.
+- First-run setup now also refuses when an organization exists without users, so a database in that state cannot gain a second organization.
+- The setup guide measures real progress: mailbox connected, leads present, campaign started, first email sent and first reply. A draft campaign no longer counts, the time zone and approve steps are gone, and the guide leaves the sidebar after the first email and first reply. A demo send counts only on an install that runs the fake provider.
+- A reply that asks to stop in Korean, Japanese, Spanish, German or French now raises Possible stop request without an AI key, like one in English. Replies already stored keep their reading.
+- Settings, Mailboxes gains a read-only Sender DNS block that shows Found, Missing or Could not check for SPF, DKIM on the `google` selector and DMARC on each sending domain. `docs/guides/sender-dns.md` has the Google Workspace records.
+- Email settings gain a postal address, under Settings, Mailboxes, Sending rules. Campaign email carries it in the footer, and with `MAILBOX_PROVIDER=gmail` a campaign refuses to start without it.
+- A verified hard bounce now pauses an email campaign when 5% or more of at least 20 sends since it last started or resumed bounced. The campaign page and Actions state the numbers, the resume dialog repeats them, and only a person resumes it. The MCP reads carry `pausedReason`, and agents get `agent_resume_bounce_paused` and `agent_complete_bounce_paused`. The database gains `campaigns.sends_counted_from`, `campaigns.bounce_pause` and `sends.bounced_at`.
+- One install now serves one organization. First-run setup creates it, and the server refuses another. Creating and switching organizations are gone. `AUTH_SIGNUP` is removed, so accounts need an invitation. `MAILBOX_ALLOWED_DOMAINS` stays optional.
+- AI picks follow one fixed rule: a pick waits for a person only for a stop request, confidence under 85%, or a move out of Existing customer. Every other pick applies at once, and Change type or Undo corrects it. Reply types are fixed, and Settings > Reply handling lists them read-only. Looks right, Check before and after, the confidence floor setting and the MCP `confirm_pick` action are gone.
+- Every LinkedIn reply now lands in the Inbox and Actions and reaches the AI. Personal campaigns are gone, along with the MCP fields `personal`, `hiddenSends` and the campaign list's `type`, and the refusal `agent_sender_not_owned`.
+- Tables keep enrichment columns, AI columns and the handoff to a campaign. Formula columns, LOOKUP, Recalculate and the AI formula helper are gone.
+
+### Database and code names
+
+The tables and code now use the words the screens use, so start from an empty database. `records` became `conversations`, the old `conversations` became `threads`, and the follow-up tables became `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs` and `follow_up_step_runs`.
+
+- MCP fields changed with them: a thread's id is `threadId` and a conversation's id is `conversationId`, which used to be `recordId`.
+- `/api/records` moved to `/api/conversations`.
+- Inbox URLs use `group` and `type`. Actions URLs use `group` and `list`.
+- Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
+- The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
+- Follow-up events are `follow_up.*`, which used to be `sequence.*`, and the skip conflict code is `follow_ups_changed`. A campaign's Sequence keeps its name.
+- The Leads filter param `category` is now `replyGroup`, and `/crm/pipeline` reads only `owner`, `q` and `showAll`.
+- `get_analytics` replies: the bucket `unclassified` is `no_type` and `classifiedShare` is `replyTypeShare`. The CSV column `Category` is `Reply group`.
+- `get_work_queue`: the group `classification` is `ai_pick`, on the Actions page too.
+- The deal event `deal.type_changed` is `deal.stage_changed`.
+- Every saved credential now lives in `integration_credentials`. `grid_provider_credentials` is gone, and `grid_providers.account_id` names the account that holds a provider's key. The rotation script reports one table.
+- `follow_up_flows.campaign_id` is required. Nothing ever created a flow without a campaign.
+- The draft status `generating` is gone because nothing wrote it. A draft row defaults to `awaiting_review`.
+
+### Stopping contact
+
+- An unsubscribe, a suppression added by hand and Suppress in the Inbox now end the LinkedIn enrollments and follow-ups of the people with that address too. They used to end email enrollments only, while ending follow-ups on every channel.
+- A hard bounce now ends email enrollments and email follow-ups only. A LinkedIn enrollment or follow-up of that person goes on.
+- A reply and do not contact now clear the LinkedIn resolve retry of an enrollment they end.
+- Every stop now takes the person's locks in one order and takes the outreach lock, so a stop can no longer commit between the checks and the write of a restore of a removed lead or of a person delete. Do not contact on a single person now runs once more after a lock conflict, then answers 409 `try_again`.
+
+### Removed
+
+Nothing used these, and the database baseline drops them, so start from an empty database.
+
+- The redirects from old URLs such as `/crm/records/[id]` and `/settings/email`.
+- 24 `GET` API handlers that no screen, MCP tool or test called. Screens read through the server, and MCP tools call the same use cases.
+- `draft_knowledge_citations` and 12 columns with no reader. A draft's stored request still names the knowledge it used.
+- The `complaint` suppression reason and its label, because no path ever wrote it. The Replies report no longer counts complaints.
+- The `shadcn` and `date-fns` packages. `src/app/globals.css` keeps the few CSS rules the app uses.
+
 ### Fixed
+
+- Two AI or enrichment columns can no longer read each other's output, which would have queued paid runs forever.
+- Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.
+- A reply whose own words ask to stop now shows Review stop request in Actions and on the thread before any AI pick reads it. An MCP work queue row for one has `aiPick.replyTypePickId: null`.
+- A new reply on a closed conversation clears its old closed reason.
+- A campaign can't start with Gmail on while `APP_URL` is a local address, because every unsubscribe link would point there.
 
 - The contact delete preview no longer waits on its own database connection when the pool holds one connection.
 

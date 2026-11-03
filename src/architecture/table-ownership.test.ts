@@ -40,15 +40,21 @@ const RETENTION_TABLES: Record<string, string> = {
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "records"],
+  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "threads"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
+  "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "threads"],
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/columns.ts": ["organizations"],
-  "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
-  "src/platform/db/stop-review-sql.ts": ["messages", "records", "replyTypePicks", "stopReviews"],
+};
+
+/**
+ * Database views, the one way a context publishes a read to the layers below it, for a rule those layers must run inside
+ * their own statements. A view reads tables the scans above cannot see, so each one names its owner and every file outside
+ * the owner that reads it, and the test below fails on anything else.
+ */
+const PUBLISHED_VIEWS: Record<string, { owner: string; readers: string[] }> = {
+  stop_review_open_messages: { owner: "conversations", readers: [] },
+  stop_review_open_people: { owner: "conversations", readers: ["src/contexts/outreach/infrastructure/stop-review-gate.ts"] },
 };
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -62,10 +68,11 @@ const SCHEMA_FILES: Record<string, string[]> = {
   platform: ["platform/jobs/schema.ts"],
   identity: ["contexts/identity/infrastructure/schema.ts"],
   tenancy: ["contexts/tenancy/infrastructure/schema.ts"],
+  "agent-access": ["contexts/agent-access/infrastructure/schema.ts"],
   integrations: ["contexts/integrations/infrastructure/schema.ts"],
   people: ["contexts/people/infrastructure/schema.ts"],
   outreach: ["contexts/outreach/infrastructure/schema.ts"],
-  conversations: ["contexts/conversations/infrastructure/schema.ts", "contexts/conversations/after-reply/infrastructure/sequences-schema.ts"],
+  conversations: ["contexts/conversations/infrastructure/schema.ts", "contexts/conversations/after-reply/infrastructure/follow-ups-schema.ts"],
   grid: ["contexts/grid/infrastructure/schema.ts"],
   deals: ["contexts/deals/infrastructure/schema.ts"],
 };
@@ -184,19 +191,29 @@ describe("table ownership", () => {
     expect(scan(upwardReads)).toEqual(UPWARD_READS);
   });
 
+  it("lists every database view, and reads one outside its owner only where the list allows it", () => {
+    const baseline = readFileSync(path.join(ROOT, "drizzle/0000_baseline.sql"), "utf8");
+    expect([...baseline.matchAll(/CREATE VIEW public\.(\w+)/g)].map((m) => m[1]).sort()).toEqual(Object.keys(PUBLISHED_VIEWS).sort());
+    const files = ["contexts", "platform", READ_MODELS, "composition", "app"].flatMap((tier) => sourceFiles(path.join(SRC, tier)));
+    for (const [view, { owner, readers }] of Object.entries(PUBLISHED_VIEWS)) {
+      const foreign = files.filter((file) => ownerOf(file) !== owner && readFileSync(file, "utf8").includes(view)).map((file) => path.relative(ROOT, file).split(path.sep).join("/"));
+      expect(foreign, view).toEqual(readers);
+    }
+  });
+
   it("catches a Drizzle write, a raw SQL write, an upward import and a read in a typed sql template", () => {
     const table = owners();
     const source = [
-      'import { conversations, people, mailboxes } from "@/platform/db/schema";',
-      "import { records } from './schema';",
+      'import { threads, people, mailboxes } from "@/platform/db/schema";',
+      "import { conversations } from './schema';",
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
-      "await tx.execute(sql`select 1 from drafts d join sequence_runs r on r.id = d.run_id`);",
+      "await tx.execute(sql`select 1 from drafts d join follow_up_runs r on r.id = d.run_id`);",
       "const sent = sql<boolean>`exists (select 1 from sends s where s.person_id = people.id)`;",
     ].join("\n");
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sends", "sequenceRuns"]);
+    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "followUpRuns", "mailboxes", "sends", "threads"]);
   });
 
   it("catches a write through an alias, a choice, an interpolated table and sql.raw", () => {
@@ -204,10 +221,10 @@ describe("table ownership", () => {
     const wrote = (line: string) => foreignWrites("outreach", line, table);
     expect(wrote("const p = people;\nawait tx.update(p).set({ name });")).toEqual(["people"]);
     expect(wrote('const p = alias(people, "p");\nawait tx.delete(p);')).toEqual(["people"]);
-    expect(wrote("const t = a ? people : records;\nawait tx.update(t).set(row);")).toEqual(["people", "records"]);
-    expect(wrote("await tx.update(a ? people : records).set(row);")).toEqual(["people", "records"]);
+    expect(wrote("const t = a ? people : conversations;\nawait tx.update(t).set(row);")).toEqual(["conversations", "people"]);
+    expect(wrote("await tx.update(a ? people : conversations).set(row);")).toEqual(["conversations", "people"]);
     expect(wrote("await tx.execute(sql`update ${people} set name = ${name}`);")).toEqual(["people"]);
-    expect(wrote("await tx.execute(sql`delete from ${schema.records} where id = ${id}`);")).toEqual(["records"]);
+    expect(wrote("await tx.execute(sql`delete from ${schema.conversations} where id = ${id}`);")).toEqual(["conversations"]);
     expect(wrote('await tx.execute(sql`delete from ${sql.raw("people")} where id = ${id}`);')).toEqual(["people"]);
     expect(wrote("await db.execute(sql`delete from ${sql.raw(table)} where id = ${id}`);")).toEqual(["sql.raw(table)"]);
     // A local name that holds no table, and the context's own tables, are not findings.
@@ -227,9 +244,9 @@ describe("table ownership", () => {
       "await db.update(people).set({ name });",
       "await tx.execute(sql`delete from messages where id = ${id}`);",
       "await db.insert(schema.campaigns).values(row);",
-      "await db.delete( records ).where(match);",
+      "await db.delete( conversations ).where(match);",
     ].join("\n");
     expect(upwardReads(READ_MODELS, source, table)).toEqual([]);
-    expect(foreignWrites(READ_MODELS, source, table)).toEqual(["campaigns", "messages", "people", "records"]);
+    expect(foreignWrites(READ_MODELS, source, table)).toEqual(["campaigns", "conversations", "messages", "people"]);
   });
 });

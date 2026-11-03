@@ -61,6 +61,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
     variables: claim.person.variables,
     signatureHtml: claim.mailbox.signatureHtml,
     unsubscribeUrl,
+    postalAddress: claim.postalAddress,
     random: deps.random,
   });
   const threading = resolveThreading(rendered.subject, claim.priorSent);
@@ -85,7 +86,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
       rfcMessageId,
       inReplyTo: threading.inReplyTo,
       references: threading.references,
-      threadId: threading.threadId,
+      providerThreadId: threading.providerThreadId,
       listUnsubscribeUrl: oneClickUrl,
     });
     await deps.store.markSent(claim, sent, deps.clock.now());
@@ -119,7 +120,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
 export async function recheckFailedMailboxes(deps: EngineDeps, deadline = Number.POSITIVE_INFINITY): Promise<{ checked: number; recovered: number }> {
   const now = deps.clock.now();
   const report = { checked: 0, recovered: 0 };
-  const policy = deps.domainPolicy ?? { allowedDomains: null, openSignup: false };
+  const policy = deps.domainPolicy ?? { allowedDomains: null };
   for (const mailbox of await deps.store.failedMailboxes(new Date(now.getTime() - FAILED_MAILBOX_CHECK_MINUTES * 60_000))) {
     // A provider outage makes each check wait out its timeout. The rest stay due, so the next tick takes them.
     if (Date.now() >= deadline) break;

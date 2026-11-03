@@ -10,10 +10,11 @@ export const AGENT_CAMPAIGN_REFUSALS = {
   agent_send_paused: "Sending is paused for this organization. Agents start nothing until a person resumes it.",
   launch_token_stale: "The campaign changed since the preview: its steps, senders, status or waiting leads. Run preview_campaign_launch again and check the new preview.",
   agent_enroll_cap: "This would pass today's limit on leads agents enroll for this organization. It resets at midnight UTC.",
-  agent_sender_not_owned: "An agent starts a Personal campaign only from LinkedIn accounts its token's person owns, named as the campaign's senders. The account's owner starts it, or an admin sets the owner under Settings, LinkedIn.",
   agent_sender_change_active: "An agent changes the senders of a campaign only while it is not running. Pause it first.",
   agent_resume_person_paused: "A person paused this campaign, so only a person resumes it in MiaSDR.",
   agent_complete_person_paused: "A person paused this campaign, so only a person completes it in MiaSDR.",
+  agent_resume_bounce_paused: "MiaSDR paused this campaign because too many emails bounced, so only a person resumes it in MiaSDR.",
+  agent_complete_bounce_paused: "MiaSDR paused this campaign because too many emails bounced, so only a person completes it in MiaSDR.",
 } as const;
 
 export type AgentCampaignRefusal = keyof typeof AGENT_CAMPAIGN_REFUSALS;

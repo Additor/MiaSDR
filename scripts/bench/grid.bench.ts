@@ -61,17 +61,4 @@ describeDb("grid benchmark", () => {
     expect(await store.list(org, id, { limit: 200, offset: ROWS - 200, query: { sorts }, columns })).toHaveLength(200);
     results.push({ scenario: "sort last page", ms: Math.round(performance.now() - t0) });
   });
-
-  it("formula recalculation of every row", async () => {
-    const recalc = await import("@/contexts/grid/application/formula-recalc");
-    const deps = (await import("@/contexts/grid/infrastructure/composition")).gridDeps();
-    const org = orgs[0].organizationId;
-    const id = await table(org, [{ key: "name", type: "text" }]);
-    await sql`insert into grid_columns (organization_id, table_id, key, name, type, position, config, depends_on, auto_run) values (${org}, ${id}, 'up', 'up', 'formula', 2, ${sql.json({ expression: "UPPER({{name}})" })}, ${["name"]}, true)`;
-    await sql`insert into grid_rows (organization_id, table_id, position, cells) select ${org}, ${id}, g, jsonb_build_object('name', 'n' || g) from generate_series(1, ${ROWS}::int) as g`;
-    await sql`analyze grid_rows`;
-    const t0 = performance.now();
-    expect(await recalc.recalculateFormula(deps, org, id, "up")).toBe(ROWS);
-    results.push({ scenario: `recalculate ${ROWS} rows`, ms: Math.round(performance.now() - t0) });
-  });
 });

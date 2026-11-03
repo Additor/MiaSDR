@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptsEnrollments, canArchive, canReadPersonalThread, privateThreadHref, canTransition, parseCampaignType, typeEditable, emptyFirstSubjectMessage, parseArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type StepInput } from "./campaign";
+import { acceptsEnrollments, canArchive, canTransition, emptyFirstSubjectMessage, parseArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type StepInput } from "./campaign";
 
 const step = (over: Partial<StepInput> = {}): StepInput => ({ stepNumber: 1, kind: "email", subject: "Hi", body: "Hello", waitDays: 0, ...over });
 
@@ -96,39 +96,5 @@ describe("emptyFirstSubjectMessage", () => {
   });
   it("ignores an empty sequence", () => {
     expect(emptyFirstSubjectMessage([], vars)).toBeNull();
-  });
-});
-
-describe("campaign type", () => {
-  it("reads personal and treats anything else as regular", () => {
-    expect(parseCampaignType("personal")).toBe("personal");
-    expect(parseCampaignType("regular")).toBe("regular");
-    expect(parseCampaignType(undefined)).toBe("regular");
-    expect(parseCampaignType("PERSONAL")).toBe("regular");
-  });
-  it("lets the type change only before the first send", () => {
-    expect(typeEditable(false)).toBe(true);
-    expect(typeEditable(true)).toBe(false);
-  });
-  it("lets an owner, an admin or the creator read private replies", () => {
-    expect(canReadPersonalThread({ isOwnerOrAdmin: true, actorUserId: "a", createdBy: "b" })).toBe(true);
-    expect(canReadPersonalThread({ isOwnerOrAdmin: false, actorUserId: "a", createdBy: "a" })).toBe(true);
-    expect(canReadPersonalThread({ isOwnerOrAdmin: false, actorUserId: "a", createdBy: "b" })).toBe(false);
-    expect(canReadPersonalThread({ isOwnerOrAdmin: false, actorUserId: "a", createdBy: null })).toBe(false);
-  });
-});
-
-describe("privateThreadHref", () => {
-  const base = "/campaigns/c1";
-  const row = { base, enrollmentId: "e1", canRead: true, hasPrivateThread: true };
-
-  it("links the lead row to its private thread for a reader", () => {
-    expect(privateThreadHref(row)).toBe("/campaigns/c1/leads/e1/thread");
-  });
-  it("gives no link when the enrollment has no private thread", () => {
-    expect(privateThreadHref({ ...row, hasPrivateThread: false })).toBeNull();
-  });
-  it("gives no link to someone who may not read the thread", () => {
-    expect(privateThreadHref({ ...row, canRead: false })).toBeNull();
   });
 });

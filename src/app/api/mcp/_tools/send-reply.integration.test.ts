@@ -27,10 +27,10 @@ describeDb("MCP send_reply: agent email replies", () => {
    * An inbound reply on its own thread. With `campaign`, a campaign email reached the lead in that thread first; with
    * `failedCampaign`, the lead was enrolled and the only send failed; with `enrolledOnly`, nothing was sent at all.
    */
-  async function conversation(opts: { campaign?: boolean; failedCampaign?: boolean; enrolledOnly?: boolean } = {}) {
+  async function seedThread(opts: { campaign?: boolean; failedCampaign?: boolean; enrolledOnly?: boolean } = {}) {
     n += 1;
     const email = `lead${n}-${randomBytes(3).toString("hex")}@acme.test`;
-    const threadId = `t-${org.organizationId}-${n}`;
+    const providerThreadId = `t-${org.organizationId}-${n}`;
     if (opts.campaign || opts.failedCampaign || opts.enrolledOnly) {
       const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'email', ${`c${n}`}, 'active', ${sql.json([])}) returning id`;
       const [{ id: person }] = await sql`insert into people (organization_id, email, full_name) values (${org.organizationId}, ${email}, 'Lena Lead') returning id`;
@@ -38,14 +38,14 @@ describeDb("MCP send_reply: agent email replies", () => {
       if (!opts.enrolledOnly) {
         await sql`
           insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, subject, body, thread_id, sent_at)
-          values (${org.organizationId}, ${enrollment}, 1, 'email', ${opts.campaign ? "sent" : "failed"}, ${mailboxId}, 'Hello', 'Opening pitch', ${threadId}, now() - interval '2 hours')`;
+          values (${org.organizationId}, ${enrollment}, 1, 'email', ${opts.campaign ? "sent" : "failed"}, ${mailboxId}, 'Hello', 'Opening pitch', ${providerThreadId}, now() - interval '2 hours')`;
       }
     }
     const { ingestInbound } = await import("@/contexts/conversations/infrastructure/composition");
     const result = await ingestInbound({
       organizationId: org.organizationId,
       accountRef: mailbox,
-      providerThreadId: threadId,
+      providerThreadId: providerThreadId,
       providerMessageId: `m-${org.organizationId}-${n}`,
       rfcMessageId: `<${org.organizationId}-${n}@x.test>`,
       inReplyTo: null,
@@ -56,19 +56,19 @@ describeDb("MCP send_reply: agent email replies", () => {
       receivedAt: new Date(Date.now() - 3_600_000),
       autoReply: false,
     });
-    const [{ record_id }] = await sql<{ record_id: string }[]>`select record_id from conversations where id = ${result.conversationId}`;
-    return { conversationId: result.conversationId, recordId: record_id };
+    const [{ conversation_id }] = await sql<{ conversation_id: string }[]>`select conversation_id from threads where id = ${result.threadId}`;
+    return { threadId: result.threadId, conversationId: conversation_id };
   }
 
   /** A typed draft the agent wrote on the conversation. */
-  async function draftOn(conversationId: string) {
-    const created = await agent.tool("write_reply_draft", { action: "create_manual", conversationId, subject: "Re: Hello", bodyText: "Pricing attached." });
+  async function draftOn(threadId: string) {
+    const created = await agent.tool("write_reply_draft", { action: "create_manual", threadId, subject: "Re: Hello", bodyText: "Pricing attached." });
     expect(created.isError, created.text).toBe(false);
     return created.structured.draft as { draftId: string; revision: number };
   }
 
-  const send = (conversationId: string, draft: { draftId: string; revision: number }, key = `key-${randomBytes(8).toString("hex")}`) =>
-    agent.tool("send_reply", { conversationId, draftId: draft.draftId, revision: draft.revision, idempotencyKey: key });
+  const send = (threadId: string, draft: { draftId: string; revision: number }, key = `key-${randomBytes(8).toString("hex")}`) =>
+    agent.tool("send_reply", { threadId, draftId: draft.draftId, revision: draft.revision, idempotencyKey: key });
 
   const codeOf = (result: { structured: Record<string, unknown> }) => (result.structured.error as { code?: string } | undefined)?.code;
   const listed = async (token: string) =>
@@ -97,64 +97,64 @@ describeDb("MCP send_reply: agent email replies", () => {
   });
 
   it("sends a reply in a campaign thread as the agent, records who sent it, and replays the same key", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     const key = `key-${randomBytes(8).toString("hex")}`;
-    const sent = await send(thread.conversationId, draft, key);
+    const sent = await send(thread.threadId, draft, key);
     expect(sent.isError, sent.text).toBe(false);
-    expect(sent.structured).toMatchObject({ status: "sent", replayed: false, retryable: false, appUrl: `http://localhost:3000/inbox/${thread.conversationId}` });
+    expect(sent.structured).toMatchObject({ status: "sent", replayed: false, retryable: false, appUrl: `http://localhost:3000/inbox/${thread.threadId}` });
 
     const [attempt] = await sql`select origin, mcp_token_id, status, actor_user_id from send_attempts where draft_id = ${draft.draftId}`;
     expect(attempt).toMatchObject({ origin: "agent", mcp_token_id: agent.tokenId, status: "sent", actor_user_id: org.userId });
-    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where record_id = ${thread.recordId} and event_type = 'draft.sent'`;
+    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where conversation_id = ${thread.conversationId} and event_type = 'draft.sent'`;
     expect(event.meta).toMatchObject({ via: { tokenId: agent.tokenId, tokenName: "Test agent" } });
-    const [message] = await sql<{ raw: Record<string, unknown> }[]>`select raw from messages where conversation_id = ${thread.conversationId} and direction = 'outbound'`;
+    const [message] = await sql<{ raw: Record<string, unknown> }[]>`select raw from messages where thread_id = ${thread.threadId} and direction = 'outbound'`;
     expect(message.raw.sentVia).toBe("Test agent");
     expect(await sql`select 1 from mcp_tool_calls where token_id = ${agent.tokenId} and tool = 'send_reply' and error_code is null`).toHaveLength(1);
 
-    const again = await send(thread.conversationId, draft, key);
+    const again = await send(thread.threadId, draft, key);
     expect(again.structured).toMatchObject({ status: "sent", replayed: true });
     expect(await sql`select 1 from send_attempts where draft_id = ${draft.draftId}`).toHaveLength(1);
   });
 
   it("refuses a stranger, a lead whose campaign email failed, and a draft with CC", async () => {
-    const stranger = await conversation();
-    expect(codeOf(await send(stranger.conversationId, await draftOn(stranger.conversationId)))).toBe("agent_unverified_recipient");
-    const failed = await conversation({ failedCampaign: true });
-    expect(codeOf(await send(failed.conversationId, await draftOn(failed.conversationId)))).toBe("agent_unverified_recipient");
+    const stranger = await seedThread();
+    expect(codeOf(await send(stranger.threadId, await draftOn(stranger.threadId)))).toBe("agent_unverified_recipient");
+    const failed = await seedThread({ failedCampaign: true });
+    expect(codeOf(await send(failed.threadId, await draftOn(failed.threadId)))).toBe("agent_unverified_recipient");
 
-    const reached = await conversation({ campaign: true });
-    const draft = await draftOn(reached.conversationId);
+    const reached = await seedThread({ campaign: true });
+    const draft = await draftOn(reached.threadId);
     await sql`update drafts set cc = array['boss@acme.test'] where id = ${draft.draftId}`;
-    expect(codeOf(await send(reached.conversationId, draft))).toBe("agent_cc_not_allowed");
+    expect(codeOf(await send(reached.threadId, draft))).toBe("agent_cc_not_allowed");
     expect(await sql`select 1 from send_attempts where organization_id = ${org.organizationId} and status = 'sending'`).toHaveLength(0);
   });
 
   it("refuses a lead who was only enrolled, one reached only on LinkedIn, and a thread whose person changed in a merge", async () => {
-    const enrolled = await conversation({ enrolledOnly: true });
-    expect(codeOf(await send(enrolled.conversationId, await draftOn(enrolled.conversationId)))).toBe("agent_unverified_recipient");
+    const enrolled = await seedThread({ enrolledOnly: true });
+    expect(codeOf(await send(enrolled.threadId, await draftOn(enrolled.threadId)))).toBe("agent_unverified_recipient");
 
-    const linkedinOnly = await conversation();
-    const [{ person_id: personId }] = await sql<{ person_id: string }[]>`select person_id from records where id = ${linkedinOnly.recordId}`;
+    const linkedinOnly = await seedThread();
+    const [{ person_id: personId }] = await sql<{ person_id: string }[]>`select person_id from conversations where id = ${linkedinOnly.conversationId}`;
     const [{ id: account }] = await sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status) values (${org.organizationId}, ${`a-${randomBytes(4).toString("hex")}`}, ${`ACo-${randomBytes(4).toString("hex")}`}, 'Jo', 'connected') returning id`;
     const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'linkedin', ${`li${n}`}, 'active', ${sql.json([])}) returning id`;
     const [{ id: enrollment }] = await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${org.organizationId}, ${campaign}, ${personId}, 'linkedin') returning id`;
     await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at) values (${org.organizationId}, ${enrollment}, 1, 'linkedin', 'sent', ${account}, 'Hi', now() - interval '1 day')`;
-    expect(codeOf(await send(linkedinOnly.conversationId, await draftOn(linkedinOnly.conversationId)))).toBe("agent_unverified_recipient");
+    expect(codeOf(await send(linkedinOnly.threadId, await draftOn(linkedinOnly.threadId)))).toBe("agent_unverified_recipient");
 
-    const merged = await conversation({ campaign: true });
+    const merged = await seedThread({ campaign: true });
     const [{ id: other }] = await sql`insert into people (organization_id, email, full_name) values (${org.organizationId}, ${`merged-${n}@acme.test`}, 'Someone Else') returning id`;
-    const draft = await draftOn(merged.conversationId);
-    await sql`update records set person_id = ${other} where id = ${merged.recordId}`;
-    expect(codeOf(await send(merged.conversationId, draft))).toBe("agent_unverified_recipient");
+    const draft = await draftOn(merged.threadId);
+    await sql`update conversations set person_id = ${other} where id = ${merged.conversationId}`;
+    expect(codeOf(await send(merged.threadId, draft))).toBe("agent_unverified_recipient");
   });
 
   it("holds an agent's reply under PAUSE_OUTBOUND and lets a person's through", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     vi.stubEnv("PAUSE_OUTBOUND", "true");
     try {
-      expect(codeOf(await send(thread.conversationId, draft))).toBe("agent_send_paused");
+      expect(codeOf(await send(thread.threadId, draft))).toBe("agent_send_paused");
       const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");
       const { replySendDeps } = await import("@/contexts/conversations/infrastructure/reply-send-composition");
       const person = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
@@ -167,16 +167,16 @@ describeDb("MCP send_reply: agent email replies", () => {
   it("stops at the mailbox limit", async () => {
     await setMcp({ agentReplyCaps: { org: 100, user: 50, mailbox: 0 } });
     try {
-      const thread = await conversation({ campaign: true });
-      expect(codeOf(await send(thread.conversationId, await draftOn(thread.conversationId)))).toBe("agent_daily_cap");
+      const thread = await seedThread({ campaign: true });
+      expect(codeOf(await send(thread.threadId, await draftOn(thread.threadId)))).toBe("agent_daily_cap");
     } finally {
       await setMcp({ agentReplyCaps: { org: 100, user: 50, mailbox: 30 } });
     }
   });
 
   it("does not count a definite failure against the day's gap: a new key sends, and the same key replays the failure", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");
     const { replySendDeps } = await import("@/contexts/conversations/infrastructure/reply-send-composition");
     const { ReplySendError } = await import("@/contexts/conversations/application/reply-ports");
@@ -203,8 +203,8 @@ describeDb("MCP send_reply: agent email replies", () => {
   });
 
   it("makes a policy save wait for an agent reply or start that holds the lock", async () => {
-    const { updateMcpSettings } = await import("@/contexts/tenancy/application/mcp-tokens");
-    const { mcpTokenDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { updateMcpSettings } = await import("@/contexts/agent-access/application/mcp-tokens");
+    const { mcpTokenDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     for (const [take, mailbox] of [["pg_advisory_xact_lock", 31], ["pg_advisory_xact_lock_shared", 30]] as const) {
       const lock = await sql.reserve();
@@ -227,61 +227,61 @@ describeDb("MCP send_reply: agent email replies", () => {
   });
 
   it("refuses a draft longer than an answer shows, so the agent sends only text it read whole", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     await sql`update drafts set edited_body_text = ${"Long text. ".repeat(1200)} where id = ${draft.draftId}`;
-    expect(codeOf(await send(thread.conversationId, draft))).toBe("draft_not_read");
+    expect(codeOf(await send(thread.threadId, draft))).toBe("draft_not_read");
     expect(await sql`select 1 from send_attempts where draft_id = ${draft.draftId}`).toHaveLength(0);
   });
 
   it("refuses a reply while the lead's latest message may ask to stop, until a person reviews it", async () => {
-    const thread = await conversation({ campaign: true });
-    const [{ message_id }] = await sql<{ message_id: string }[]>`select latest_inbound_message_id as message_id from records where id = ${thread.recordId}`;
+    const thread = await seedThread({ campaign: true });
+    const [{ message_id }] = await sql<{ message_id: string }[]>`select latest_inbound_message_id as message_id from conversations where id = ${thread.conversationId}`;
     const [{ id: pick }] = await sql<{ id: string }[]>`
-      insert into reply_type_picks (organization_id, record_id, message_id, status, confidence, response, expected_context_version)
-      select organization_id, id, ${message_id}, 'proposed', 0.9, ${sql.json({ stopRequested: true })}, context_version from records where id = ${thread.recordId} returning id`;
-    const draft = await draftOn(thread.conversationId);
-    expect(codeOf(await send(thread.conversationId, draft))).toBe("agent_stop_requested");
-    const read = await agent.tool("get_conversation", { conversationId: thread.conversationId });
+      insert into reply_type_picks (organization_id, conversation_id, message_id, status, confidence, response, expected_context_version)
+      select organization_id, id, ${message_id}, 'proposed', 0.9, ${sql.json({ stopRequested: true })}, context_version from conversations where id = ${thread.conversationId} returning id`;
+    const draft = await draftOn(thread.threadId);
+    expect(codeOf(await send(thread.threadId, draft))).toBe("agent_stop_requested");
+    const read = await agent.tool("get_conversation", { threadId: thread.threadId });
     expect(read.structured.aiPicks).toContainEqual(expect.objectContaining({ replyTypePickId: pick, stopRequested: true }));
     await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) select organization_id, message_id, now() from reply_type_picks where id = ${pick}`;
-    expect((await send(thread.conversationId, draft)).structured.status).toBe("sent");
+    expect((await send(thread.threadId, draft)).structured.status).toBe("sent");
   });
 
-  it("shows an agent's unconfirmed send to a person even when the record waits on no one", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+  it("shows an agent's unconfirmed send to a person even when the conversation waits on no one", async () => {
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     await sql`update drafts set status = 'delivery_uncertain', error = 'timeout' where id = ${draft.draftId}`;
     await sql`insert into send_attempts (organization_id, draft_id, idempotency_key, provider, account_ref, status, origin, mcp_token_id, actor_user_id)
               values (${org.organizationId}, ${draft.draftId}, ${`k-${randomBytes(6).toString("hex")}`}, 'mailbox', ${mailbox}, 'delivery_uncertain', 'agent', ${agent.tokenId}, ${org.userId})`;
-    await sql`update records set workflow_state = 'idle', next_action_at = null where id = ${thread.recordId}`;
+    await sql`update conversations set workflow_state = 'idle', next_action_at = null where id = ${thread.conversationId}`;
     const queue = await agent.tool("get_work_queue", { group: "problem" });
-    const items = (queue.structured.groups as Array<{ items: Array<{ recordId: string; problem: { message: string } | null }> }>)[0].items;
-    expect(items.find((i) => i.recordId === thread.recordId)?.problem?.message).toContain("An agent sent this with Test agent");
+    const items = (queue.structured.groups as Array<{ items: Array<{ conversationId: string; problem: { message: string } | null }> }>)[0].items;
+    expect(items.find((i) => i.conversationId === thread.conversationId)?.problem?.message).toContain("An agent sent this with Test agent");
   });
 
   it("sends where a person already replied, and waits a day before the agent replies there again", async () => {
-    const thread = await conversation();
+    const thread = await seedThread();
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");
     const { replySendDeps } = await import("@/contexts/conversations/infrastructure/reply-send-composition");
-    const first = await draftOn(thread.conversationId);
+    const first = await draftOn(thread.threadId);
     const person = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     expect((await approveAndSendDraft(replySendDeps(), person, first.draftId, { revision: first.revision, idempotencyKey: `person-${randomBytes(6).toString("hex")}` })).status).toBe("sent");
 
-    const sent = await send(thread.conversationId, await draftOn(thread.conversationId));
+    const sent = await send(thread.threadId, await draftOn(thread.threadId));
     expect(sent.structured.status, sent.text).toBe("sent");
-    const gap = await send(thread.conversationId, await draftOn(thread.conversationId));
+    const gap = await send(thread.threadId, await draftOn(thread.threadId));
     expect(codeOf(gap)).toBe("agent_reply_gap");
     expect((gap.structured.error as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(23 * 3600);
   });
 
   it("refuses while the organization's sending is paused", async () => {
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     await sql`insert into channel_settings (organization_id, channel, values) values (${org.organizationId}, 'general', ${sql.json({ sendingPaused: { at: new Date().toISOString(), byName: "Jo" } })})
       on conflict (organization_id, channel) do update set values = channel_settings.values || excluded.values`;
     try {
-      expect(codeOf(await send(thread.conversationId, draft))).toBe("agent_send_paused");
+      expect(codeOf(await send(thread.threadId, draft))).toBe("agent_send_paused");
     } finally {
       await sql`update channel_settings set values = values - 'sendingPaused' where organization_id = ${org.organizationId} and channel = 'general'`;
     }
@@ -291,14 +291,14 @@ describeDb("MCP send_reply: agent email replies", () => {
     const used = (await sql<{ n: number }[]>`select count(*)::int as n from send_attempts where organization_id = ${org.organizationId} and origin = 'agent' and status <> 'failed'`)[0].n;
     await setMcp({ agentReplyCaps: { org: used + 1, user: 50, mailbox: 30 } });
     try {
-      const a = await conversation({ campaign: true });
-      const b = await conversation({ campaign: true });
-      const [draftA, draftB] = [await draftOn(a.conversationId), await draftOn(b.conversationId)];
+      const a = await seedThread({ campaign: true });
+      const b = await seedThread({ campaign: true });
+      const [draftA, draftB] = [await draftOn(a.threadId), await draftOn(b.threadId)];
       const lock = await sql.reserve();
       try {
         await lock`begin`;
         await lock`select pg_advisory_xact_lock(hashtextextended(${`agent-send:${org.organizationId}`}, 0))`;
-        const both = Promise.all([send(a.conversationId, draftA), send(b.conversationId, draftB)]);
+        const both = Promise.all([send(a.threadId, draftA), send(b.threadId, draftB)]);
         await waitForLockWaiters(sql, 2);
         await lock`commit`;
         const results = await both;
@@ -318,8 +318,8 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(await listed(agent.token)).toContain("send_reply");
     expect(await listed(writer.token)).not.toContain("send_reply");
 
-    const { updateMcpSettings } = await import("@/contexts/tenancy/application/mcp-tokens");
-    const { mcpTokenDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { updateMcpSettings } = await import("@/contexts/agent-access/application/mcp-tokens");
+    const { mcpTokenDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     const off = await updateMcpSettings(mcpTokenDeps(), owner, { agentSendMode: "off" });
     expect(off.agentSendEpoch).toBe(1);
@@ -330,8 +330,8 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(audit.meta).toEqual({ from: "replies", to: "off" });
 
     // The store reads the policy again under the lock, so a send that reached it with the old token is refused too.
-    const thread = await conversation({ campaign: true });
-    const draft = await draftOn(thread.conversationId);
+    const thread = await seedThread({ campaign: true });
+    const draft = await draftOn(thread.threadId);
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");
     const { replySendDeps } = await import("@/contexts/conversations/infrastructure/reply-send-composition");
     const viaOld = { ...owner, via: { kind: "agent" as const, tokenId: agent.tokenId, tokenName: "Test agent", clientName: null } };

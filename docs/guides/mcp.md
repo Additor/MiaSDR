@@ -66,7 +66,7 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 | Tool | Changes |
 |---|---|
 | `write_reply_draft` | Has the AI write a reply draft, saves the agent's own email or LinkedIn draft, edits, regenerates or discards one. The answer gives `reviewUrl`, where a person reviews and sends it |
-| `set_reply_type` | Changes a conversation's reply type, or confirms or undoes an AI pick |
+| `set_reply_type` | Changes a conversation's reply type, or undoes, accepts or overrides an AI pick |
 | `update_conversation` | Adds a note, takes or assigns a conversation, closes or reopens it |
 | `manage_task` | Lists, creates, edits and completes tasks |
 | `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes. The Sending paused banner names the person and the token, such as "Ana's agent (Work laptop)" |
@@ -110,7 +110,7 @@ With Replies on, a person can create a token that sends. Its agent gets one more
 
 Every rule of a person's send applies too: suppression, do not contact, closed reply handling, a newer message, and the LinkedIn account's limits. The answer's `status` is `sent`, `delivery_uncertain` (it may have gone out; do not send again, a person checks), `failed` or `blocked` (nothing went out; `retryable` says whether a new key may try again). The same key never sends twice.
 
-With Replies and campaigns, a token that sends also gets `preview_campaign_launch` and `launch_campaign`. The agent previews a start, a resume or an enroll into a running campaign, shows the preview to the person, and passes its `launchToken` to `launch_campaign` (or to `draft_campaign` `add_leads` for a running campaign). A launch refuses when the campaign changed since the preview (`launch_token_stale`), when the organization allows replies only (`agent_campaigns_off`), while sending is paused, and for a Personal campaign unless it names its senders and the token's person owns each one (`agent_sender_not_owned`). Agents enroll at most 200 leads a day across both channels by default, drafts included (`agent_enroll_cap`); an owner or admin changes the limit in the same card. An owner or admin names the owner when connecting a LinkedIn account, or changes it later under Settings, LinkedIn; an account with no owner stays out of agents' Personal campaigns. An agent resumes only a campaign an agent paused: one a person paused, including through Pause campaigns agents started, refuses with `agent_resume_person_paused`.
+With Replies and campaigns, a token that sends also gets `preview_campaign_launch` and `launch_campaign`. The agent previews a start, a resume or an enroll into a running campaign, shows the preview to the person, and passes its `launchToken` to `launch_campaign` (or to `draft_campaign` `add_leads` for a running campaign). A launch refuses when the campaign changed since the preview (`launch_token_stale`), when the organization allows replies only (`agent_campaigns_off`), and while sending is paused. Agents enroll at most 200 leads a day across both channels by default, drafts included (`agent_enroll_cap`); an owner or admin changes the limit in the same card. An owner or admin names the owner when connecting a LinkedIn account, or changes it later under Settings, LinkedIn. An agent's LinkedIn search uses only accounts the token's person owns and accounts with no owner. An agent resumes only a campaign an agent paused: one a person paused, including through Pause campaigns agents started, refuses with `agent_resume_person_paused`. A campaign MiaSDR paused for bounces refuses with `agent_resume_bounce_paused`, and `list_campaigns` and `get_campaign` state the numbers in `pausedReason`.
 
 Owners and admins see agents' sends under Agent sends on the settings page: today's counts against the limits, the latest agent replies, and the campaigns agents started, with Pause campaigns agents started to stop all of those at once. It also holds campaigns an agent paused, so no agent resumes them. An agent's send with an unconfirmed outcome shows in Actions under Problems, naming the token.
 
@@ -157,7 +157,7 @@ LinkedIn can still restrict an account for how it is used, and these limits cann
 
 ## Actions no one can undo
 
-Agents complete campaigns and delete records only when all of these hold:
+Agents complete campaigns and delete conversations only when all of these hold:
 
 1. The server allows it. `MCP_IRREVERSIBLE_ENABLED=false` refuses it for the whole install.
 2. An owner or admin sets a daily limit above 0 under Settings, Organization, Agents can spend and delete.
@@ -179,7 +179,7 @@ Such a token gets two tools:
 | `action_token_stale` | The target changed since the preview | Preview again and check the new answer |
 | `agent_delete_protected` | The person is marked do not contact, on the suppression list, asked to stop, or was removed from a campaign | A person deletes them in MiaSDR |
 | `agent_complete_person_paused` | A person paused the campaign | A person completes it in MiaSDR |
-| `agent_sender_not_owned` | A Personal campaign sends from another member's accounts | Its owner acts on it |
+| `agent_complete_bounce_paused` | MiaSDR paused the campaign for bounces | A person completes it in MiaSDR |
 
 Deleting a contact erases its conversations, messages, closed deals, notes and tasks, and nobody can get them back. An agent that followed instructions planted in a lead's message could do this within the limit, so keep the limit low and tick the option only on tokens that need it. Agent activity lists each call with its target, and the audit log names the token.
 

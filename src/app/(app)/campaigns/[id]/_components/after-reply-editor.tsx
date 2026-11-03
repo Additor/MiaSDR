@@ -19,8 +19,7 @@ import {
   DELAY_UNITS,
   delayToMinutes,
   formChanged,
-  handoffOption,
-  lockedNote,
+  HANDOFF_OPTION,
   MAX_FOLLOW_UP_STEPS,
   parseTags,
   splitDelay,
@@ -78,7 +77,6 @@ export function AfterReplyEditor({
   steps: savedSteps,
   supported,
   lockedReason,
-  personal,
   inProgress,
 }: {
   campaignId: string;
@@ -86,7 +84,6 @@ export function AfterReplyEditor({
   steps: StepFromApi[];
   supported: boolean;
   lockedReason: string | null;
-  personal: boolean;
   /** Follow-ups running or paused now, counted when the page loaded. */
   inProgress: number;
 }) {
@@ -108,9 +105,7 @@ export function AfterReplyEditor({
   const dirty = formChanged({ mode, steps, saved });
   useLeaveGuard(dirty);
   useReportUnsaved(campaignId, "Follow-ups", dirty);
-  const note = lockedNote(lockedReason, personal);
   const aiOn = mode === "ai_drafts";
-  const off = handoffOption(personal);
 
   function update(index: number, patch: Partial<EditorStep>) {
     setSteps((all) => all.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -194,8 +189,8 @@ export function AfterReplyEditor({
             <Field orientation="horizontal">
               <RadioGroupItem value="handoff" id={`after-reply-${campaignId}-handoff`} />
               <FieldContent>
-                <FieldTitle>{off.title}</FieldTitle>
-                <FieldDescription>{off.description}</FieldDescription>
+                <FieldTitle>{HANDOFF_OPTION.title}</FieldTitle>
+                <FieldDescription>{HANDOFF_OPTION.description}</FieldDescription>
               </FieldContent>
             </Field>
           </FieldLabel>
@@ -209,7 +204,7 @@ export function AfterReplyEditor({
             </Field>
           </FieldLabel>
         </RadioGroup>
-        {note && <p className="text-sm text-muted-foreground">{note}</p>}
+        {lockedReason && <p className="text-sm text-muted-foreground">{lockedReason}</p>}
       </fieldset>
 
       {aiOn && (

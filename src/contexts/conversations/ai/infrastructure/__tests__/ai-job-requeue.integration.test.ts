@@ -17,7 +17,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
   let store: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
   let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
   let db: typeof import("@/platform/db/client").db;
-  let restart: typeof import("../../../infrastructure/restart-record-work");
+  let restart: typeof import("../../../infrastructure/restart-conversation-work");
   const orgs: TestOrg[] = [];
   let counter = 0;
   // One clock for every fixture: a tick of one organization also claims, and releases, the jobs of the others.
@@ -88,7 +88,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     store = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
     FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
     db = (await import("@/platform/db/client")).db;
-    restart = await import("../../../infrastructure/restart-record-work");
+    restart = await import("../../../infrastructure/restart-conversation-work");
   });
 
   afterAll(async () => {
@@ -115,7 +115,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
 
       const b = await fixture();
       await receive(b);
-      await failOut(b, new AiError("The AI answered outside the allowed categories.", "transient", "shape"));
+      await failOut(b, new AiError("The AI answered outside the allowed reply types.", "transient", "shape"));
       const j = await job(b.org);
       expect(j).toMatchObject({ status: "failed", attempts: 3 });
       expect(j.payload).toMatchObject({ failureKind: "shape" });
@@ -214,7 +214,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       return { f, id: (await job(f.org)).id as string };
     }
 
-    /** An initial draft job a person's pick queued, for a record of a fresh organization. */
+    /** An initial draft job a person's pick queued, for a conversation of a fresh organization. */
     async function draftJob(contextVersion = 1) {
       const { f } = await classificationJob();
       const pickId = randomUUID();
@@ -274,15 +274,15 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       const a = await claimAt(id, "initial_draft", at(1), "worker-a");
       const b = await claimAt(id, "initial_draft", at(2), "worker-b");
       await store.complete(b, at(2));
-      const [{ record_id: recordId, context_version: version }] = await sql`select id as record_id, context_version from records where organization_id = ${f.org}`;
+      const [{ conversation_id: conversationId, context_version: version }] = await sql`select id as conversation_id, context_version from conversations where organization_id = ${f.org}`;
       await db.transaction((tx) => restart.queuePickDraftTx(tx, { organizationId: f.org, replyTypePickId: pickId, contextVersion: 2 }));
       expect(await row(id)).toMatchObject({ status: "queued", attempts: 0, claim_token: null });
       const c = await claimAt(id, "initial_draft", at(3), "worker-c");
-      const [conversation] = await sql`select id from conversations where record_id = ${recordId}`;
+      const [thread] = await sql`select id from threads where conversation_id = ${conversationId}`;
       const written = await store.insertDraft(a, {
         organizationId: f.org,
-        recordId,
-        conversationId: conversation.id,
+        conversationId,
+        threadId: thread.id,
         replyForMessageId: null,
         expectedContextVersion: Number(version),
         subject: "Re: hello",
@@ -291,7 +291,6 @@ describeDb("failed AI jobs: requeue and sweep", () => {
         model: "fake",
         request: {},
         response: {},
-        citations: [],
       });
       expect(written).toBeNull();
       expect(await sql`select 1 from drafts where organization_id = ${f.org}`).toHaveLength(0);
@@ -320,13 +319,13 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(await row(id)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
     });
 
-    it("a stale worker's classification writes no pick and leaves the record alone", async () => {
+    it("a stale worker's classification writes no pick and leaves the conversation alone", async () => {
       const { f, id } = await classificationJob();
       const a = await claimAt(id, "classification", at(1), "worker-a");
       await claimAt(id, "classification", at(2), "worker-b");
       const ctx = await store.loadClassifyContext(f.org, a.entityId);
       if (!ctx) throw new Error("no classify context");
-      const before = (await sql`select group_key, reply_type_id, workflow_state from records where id = ${ctx.recordId}`)[0];
+      const before = (await sql`select group_key, reply_type_id, workflow_state from conversations where id = ${ctx.conversationId}`)[0];
       const outcome = await store.finishClassification({
         job: a,
         messageId: a.entityId,
@@ -342,26 +341,26 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       });
       expect(outcome).toEqual({ status: "stale" });
       expect(await sql`select 1 from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
-      expect((await sql`select group_key, reply_type_id, workflow_state from records where id = ${ctx.recordId}`)[0]).toEqual(before);
+      expect((await sql`select group_key, reply_type_id, workflow_state from conversations where id = ${ctx.conversationId}`)[0]).toEqual(before);
     });
 
-    it("a reclaimed job's failure takes the record before the job row, as a late worker's classification does", async () => {
+    it("a reclaimed job's failure takes the conversation before the job row, as a late worker's classification does", async () => {
       const { id } = await classificationJob();
       const a = await claimAt(id, "classification", at(1), "worker-a");
       const b = await claimAt(id, "classification", at(2), "worker-b");
-      const [{ record_id: recordId }] = await sql`
-        select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${a.entityId}`;
+      const [{ conversation_id: conversationId }] = await sql`
+        select c.conversation_id from messages m join threads c on c.id = m.thread_id where m.id = ${a.entityId}`;
       let failing: Promise<void> | undefined;
-      // Worker a's classification, step by step: the record lock, then the job row. Worker b fails in between.
+      // Worker a's classification, step by step: the conversation lock, then the job row. Worker b fails in between.
       await sql.begin(async (tx) => {
-        await tx`select id from records where id = ${recordId} for update`;
+        await tx`select id from conversations where id = ${conversationId} for update`;
         failing = store.fail(b, "permanent failure", at(2), "permanent");
         for (let i = 0; i < 100; i++) {
           const [{ n }] = await tx`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`;
           if (n > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        // The failure waits on the record, so the job row is free: before the fix it held the row and this deadlocked.
+        // The failure waits on the conversation, so the job row is free: before the fix it held the row and this deadlocked.
         await tx`set local lock_timeout = '2s'`;
         await tx`select id from ai_jobs where id = ${id} for update`;
       });
@@ -565,7 +564,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       await failOut(a, new AiError("Anthropic rejected the API key.", "permanent"));
       const b = await fixture();
       await receive(b);
-      await failOut(b, new AiError("The AI answered outside the allowed categories.", "transient", "shape"));
+      await failOut(b, new AiError("The AI answered outside the allowed reply types.", "transient", "shape"));
       for (const f of [a, b]) {
         f.ai.failWith = null;
         f.advance(24 * HOUR);

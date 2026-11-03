@@ -51,11 +51,11 @@ describeDb("reachability read model and writers", () => {
     } finally {
       select.mockRestore();
     }
-    expect(map.get(open)).toEqual({ doNotContact: null, email: { state: "open", suppressionReason: null, since: null }, linkedin: { state: "open" } });
+    expect(map.get(open)).toEqual({ doNotContact: null, email: { state: "open", suppressionReason: null, since: null }, linkedin: { state: "open", suppressionReason: null, since: null } });
     expect(map.get(suppressed)).toEqual({
       doNotContact: null,
       email: { state: "suppressed", suppressionReason: "bounced", since: new Date("2026-10-01T10:00:00Z") },
-      linkedin: { state: "open" },
+      linkedin: { state: "open", suppressionReason: null, since: null },
     });
     expect(map.get(marked)).toMatchObject({ doNotContact: { reason: "Asked to stop", since: new Date("2026-10-02T10:00:00Z") }, email: { state: "open" }, linkedin: { state: "missing" } });
     expect(map.get(bare)).toMatchObject({ email: { state: "missing" }, linkedin: { state: "missing" } });

@@ -3,8 +3,8 @@ import { MAX_LINKEDIN_REPLY } from "../../domain/linkedin-reply";
 
 /**
  * What the AI may return and what it may be shown. The classification output is a closed set:
- * one active subcategory key (the category follows from it), a confidence and a short reason.
- * Nothing in a model answer can name a category outside the pipeline, trigger a send or add a field.
+ * one active reply type key (the group follows from it), a confidence and a short reason.
+ * Nothing in a model answer can name a reply type outside the set, trigger a send or add a field.
  */
 
 export const MAX_REASON_LENGTH = 500;
@@ -13,7 +13,7 @@ export const MAX_DRAFT_BODY = 20_000;
 export function classificationSchema(keys: readonly string[]) {
   if (keys.length === 0) throw new Error("The AI needs at least one active reply type to pick from.");
   return z.strictObject({
-    subcategoryKey: z.enum(keys as [string, ...string[]]),
+    replyTypeKey: z.enum(keys as [string, ...string[]]),
     confidence: z.number().finite().min(0).max(1),
     reason: z
       .string()
@@ -30,11 +30,11 @@ export function classificationJsonSchema(keys: readonly string[]) {
   return {
     type: "object",
     properties: {
-      subcategoryKey: { type: "string", enum: [...keys] },
+      replyTypeKey: { type: "string", enum: [...keys] },
       confidence: { type: "number", description: "Between 0 and 1." },
       reason: { type: "string", description: "One or two sentences, at most 500 characters." },
     },
-    required: ["subcategoryKey", "confidence", "reason"],
+    required: ["replyTypeKey", "confidence", "reason"],
     additionalProperties: false,
   } as const;
 }
@@ -109,10 +109,10 @@ export interface ClassifyInput {
   businessContext: string;
 }
 
-/** A person moved the record to another stage after the last inbound message, because something happened off the thread. */
+/** A person changed the reply type after the last inbound message, because something happened off the thread. */
 export interface ReplyTypeChange {
-  /** Name of the stage the record moved to. */
-  stage: string;
+  /** Name of the new reply type, or of its group when the change set the group alone. */
+  replyTypeName: string;
   occurredAt: Date;
   note: string | null;
 }
@@ -125,7 +125,7 @@ export interface DraftInput {
   /** Empty for LinkedIn. */
   subject: string;
   classification: { replyTypeName: string; reason: string | null } | null;
-  /** The newest stage move since the last inbound message, or null. The classifier's reason is dropped when it is set. */
+  /** The newest type change since the last inbound message, or null. The classifier's reason is dropped when it is set. */
   replyTypeChange: ReplyTypeChange | null;
   operatorInstructions: string;
   knowledge: Array<{ title: string; content: string }>;

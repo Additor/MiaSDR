@@ -1,40 +1,35 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
-import { interruptOnTerminalStageTx } from "../../after-reply/infrastructure/sequence-run-tx";
-import { aiJobs, replyTypePicks, conversations, events, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
+import { interruptOnStoppingTypeTx } from "../../after-reply/infrastructure/follow-up-run-tx";
+import { aiJobs, replyTypePicks, threads, events, messages, conversations, replyTypes } from "@/platform/db/schema";
 import type { AiJobWorkerStore, ClaimedJob, JobKind } from "../../application/reply-ports";
 import { AUTO_REQUEUE_CEILING, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
 import { startOfLocalDay } from "@/contexts/outreach/domain/working-hours";
-import { publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiPick } from "../../domain/workflow-state";
 import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/reply-type";
 import { followUpModeFactsTx } from "../../infrastructure/follow-up-mode-facts";
 import { insertDraftTx } from "../../infrastructure/reply-store-drafts";
-import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
+import type { Tx } from "../../after-reply/infrastructure/follow-up-stop";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
 /**
- * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
- * confidence floor, and whether follow-ups apply (`followUpModeFactsTx`, as a person's type change reads them).
+ * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: whether
+ * follow-ups apply (`followUpModeFactsTx`, as a person's type change reads them).
  */
 async function applyFactsTx(
   tx: Tx,
   organizationId: string,
-  record: { id: string; replyTypeSetId: string; activeChannel: string | null },
-): Promise<Pick<ReplyTypeFacts, "floor" | "isContact" | "campaignMode" | "channel">> {
-  const [[settings], mode] = await Promise.all([
-    tx.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
-    followUpModeFactsTx(tx, organizationId, record.id),
-  ]);
+  conversation: { id: string; activeChannel: string | null },
+): Promise<Pick<ReplyTypeFacts, "isContact" | "campaignMode" | "channel">> {
+  const mode = await followUpModeFactsTx(tx, organizationId, conversation.id);
   return {
-    floor: Number(settings?.floor ?? 0.85),
     isContact: mode?.isContact ?? false,
     campaignMode: mode?.campaignMode ?? null,
-    channel: mode?.channel ?? record.activeChannel,
+    channel: mode?.channel ?? conversation.activeChannel,
   };
 }
 
@@ -100,14 +95,14 @@ const failureMarks = (kind: FailureKind) =>
 
 /**
  * Whether the organization ever wrote to the sender of message `m`: an outbound message to the address or in another
- * conversation of the same record (LinkedIn has no address), or a campaign send to a person with that address.
+ * conversation of the same conversation (LinkedIn has no address), or a campaign send to a person with that address.
  */
 const senderKnown = (alias: string) => {
   const m = sql.raw(alias);
   return sql`(
   exists (select 1 from messages o where o.organization_id = ${m}.organization_id and o.direction = 'outbound' and lower(o.to_address) = lower(${m}.from_address))
-  or exists (select 1 from messages o join conversations oc on oc.id = o.conversation_id join conversations mc on mc.record_id = oc.record_id
-             where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound' and ${publicConversationSql("oc")})
+  or exists (select 1 from messages o join threads oc on oc.id = o.thread_id join threads mc on mc.conversation_id = oc.conversation_id
+             where mc.id = ${m}.thread_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound')
   or exists (select 1 from sends s join campaign_enrollments e on e.id = s.enrollment_id join people p on p.id = e.person_id
              where s.organization_id = ${m}.organization_id and s.status in ${sqlValues(SEND_COUNTED)} and lower(p.email) = lower(${m}.from_address))
 )`;
@@ -165,17 +160,17 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
   async fail(job, error, now, failureKind = "transient") {
     const lastError = error.slice(0, 1000) || "failed";
     await db.transaction(async (tx) => {
-      // A classification failure writes a pick and an event of the record, so it locks the record before the job row,
+      // A classification failure writes a pick and an event of the conversation, so it locks the conversation before the job row,
       // the order `finishClassification` takes them in. The other order deadlocks with a late worker's classification.
-      const [record] =
+      const [conversation] =
         job.kind === "classification"
           ? await tx
-              .select({ id: records.id, personId: records.personId, version: records.contextVersion })
+              .select({ id: conversations.id, personId: conversations.personId, version: conversations.contextVersion })
               .from(messages)
-              .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-              .innerJoin(records, eq(records.id, conversations.recordId))
-              .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId), publicConversation))
-              .for("no key update", { of: records })
+              .innerJoin(threads, eq(threads.id, messages.threadId))
+              .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+              .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId)))
+              .for("no key update", { of: conversations })
           : [];
       const moved = await tx
         .update(aiJobs)
@@ -183,20 +178,20 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
         .where(heldClaim(job))
         .returning({ id: aiJobs.id, status: aiJobs.status });
       if (moved.length === 0 || moved[0].status !== "failed" || job.kind !== "classification") return;
-      if (!record) return;
+      if (!conversation) return;
       // Recorded so the panel can say why, and so the sweep does not queue the same message again.
       await tx
         .insert(replyTypePicks)
-        .values({ organizationId: job.organizationId, recordId: record.id, messageId: job.entityId, expectedContextVersion: record.version, status: "failed", error: lastError })
+        .values({ organizationId: job.organizationId, conversationId: conversation.id, messageId: job.entityId, expectedContextVersion: conversation.version, status: "failed", error: lastError })
         .onConflictDoNothing();
       await tx.insert(events).values({
         organizationId: job.organizationId,
-        personId: record.personId,
-        recordId: record.id,
+        personId: conversation.personId,
+        conversationId: conversation.id,
         eventType: "reply_type_pick.failed",
         actorType: "ai",
         meta: { error: lastError },
-        contextVersion: record.version,
+        contextVersion: conversation.version,
       });
     });
   },
@@ -255,42 +250,41 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
 
   async finishClassification(input) {
     return db.transaction(async (tx) => {
-      // The record lock comes first, as in a person's pick that marks or requeues the job (`queuePickDraftTx`).
-      const [record] = await tx
+      // The conversation lock comes first, as in a person's pick that marks or requeues the job (`queuePickDraftTx`).
+      const [conversation] = await tx
         .select({
-          id: records.id,
-          personId: records.personId,
-          replyTypeSetId: records.replyTypeSetId,
-          version: records.contextVersion,
-          latest: records.latestInboundMessageId,
-          groupKey: records.groupKey,
-          replyTypeId: records.replyTypeId,
-          locked: records.replyTypeLocked,
-          activeChannel: records.activeChannel,
-          state: records.workflowState,
+          id: conversations.id,
+          personId: conversations.personId,
+          replyTypeSetId: conversations.replyTypeSetId,
+          version: conversations.contextVersion,
+          latest: conversations.latestInboundMessageId,
+          groupKey: conversations.groupKey,
+          replyTypeId: conversations.replyTypeId,
+          locked: conversations.replyTypeLocked,
+          activeChannel: conversations.activeChannel,
+          state: conversations.workflowState,
         })
         .from(messages)
-        .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId), publicConversation))
-        .for("no key update", { of: records });
-      if (!record) return { status: "stale" as const };
+        .innerJoin(threads, eq(threads.id, messages.threadId))
+        .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+        .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId)))
+        .for("no key update", { of: conversations });
+      if (!conversation) return { status: "stale" as const };
       // A worker whose lease ran out writes nothing: the job's current claim owns this result.
       if (!(await holdsClaimTx(tx, input.job))) return { status: "stale" as const };
-      // A type archived after the job read its context is no longer a choice: the result is stored stale.
       const [proposed] = await tx
         .select()
         .from(replyTypes)
-        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey), eq(replyTypes.active, true)));
+        .where(and(eq(replyTypes.replyTypeSetId, conversation.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey)));
 
       const base = {
         rules: proposed ? typeRulesOf(proposed) : null,
         organizationId: input.job.organizationId,
-        recordId: record.id,
+        conversationId: conversation.id,
         messageId: input.messageId,
         expectedContextVersion: input.expectedContextVersion,
-        previousGroupKey: record.groupKey,
-        previousReplyTypeId: record.replyTypeId,
+        previousGroupKey: conversation.groupKey,
+        previousReplyTypeId: conversation.replyTypeId,
         proposedGroupKey: proposed?.groupKey ?? null,
         proposedReplyTypeId: proposed?.id ?? null,
         confidence: input.confidence.toFixed(4),
@@ -301,7 +295,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
       };
 
       // A newer reply or a person's decision since the work started: this result must not overwrite it.
-      if (record.version !== input.expectedContextVersion || record.latest !== input.messageId || !proposed) {
+      if (conversation.version !== input.expectedContextVersion || conversation.latest !== input.messageId || !proposed) {
         await tx
           .insert(replyTypePicks)
           .values({ ...base, status: "stale", response: input.response })
@@ -309,16 +303,16 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
         return { status: "stale" as const };
       }
 
-      // The one decision for this pick, under the record lock and with the facts as they are now: a floor raised or a
-      // lock set after the job read its context holds the pick here.
+      // The one decision for this pick, under the conversation lock and with the facts as they are now: a lock set after
+      // the job read its context holds the pick here.
       const decision = decideReplyType(
-        { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
+        { groupKey: proposed.groupKey, systemRole: proposed.systemRole, rules: typeRulesOf(proposed) },
         {
-          ...(await applyFactsTx(tx, input.job.organizationId, record)),
+          ...(await applyFactsTx(tx, input.job.organizationId, conversation)),
           stopRequested: input.stopRequested,
           confidence: input.confidence,
-          locked: record.locked,
-          currentType: { groupKey: record.groupKey },
+          locked: conversation.locked,
+          currentType: { groupKey: conversation.groupKey },
         },
       );
       const auto = decision.hold === null;
@@ -329,7 +323,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
           status: auto ? "auto_applied" : "proposed",
           appliedGroupKey: auto ? proposed.groupKey : null,
           appliedReplyTypeId: auto ? proposed.id : null,
-          response: { ...(input.response as object), holdReason: decision.hold, stopRequested: input.stopRequested, previousLocked: record.locked },
+          response: { ...(input.response as object), holdReason: decision.hold, stopRequested: input.stopRequested, previousLocked: conversation.locked },
         })
         .onConflictDoNothing()
         .returning({ id: replyTypePicks.id });
@@ -337,19 +331,19 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
       if (!row) return { status: "stale" as const };
 
       if (auto) {
-        const settle = settlesAfterAiPick(record.state, decision, input.stopRequested);
+        const settle = settlesAfterAiPick(conversation.state, decision, input.stopRequested);
         await tx
-          .update(records)
+          .update(conversations)
           .set({
             groupKey: proposed.groupKey,
             replyTypeId: proposed.id,
             replyTypeSource: "ai",
             ...(settle ? { workflowState: "idle" } : {}),
           })
-          .where(eq(records.id, record.id));
-        await interruptOnTerminalStageTx(tx, {
+          .where(eq(conversations.id, conversation.id));
+        await interruptOnStoppingTypeTx(tx, {
           organizationId: input.job.organizationId,
-          recordId: record.id,
+          conversationId: conversation.id,
           replyTypeId: proposed.id,
           followUps: decision.followUps,
           now: new Date(),
@@ -363,11 +357,11 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
       }
       await tx.insert(events).values({
         organizationId: input.job.organizationId,
-        personId: record.personId,
-        recordId: record.id,
+        personId: conversation.personId,
+        conversationId: conversation.id,
         eventType: auto ? "reply_type_pick.applied" : "reply_type_pick.proposed",
         actorType: "ai",
-        fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
+        fromData: { groupKey: conversation.groupKey, replyTypeId: conversation.replyTypeId },
         toData: { groupKey: proposed.groupKey, replyTypeId: proposed.id },
         meta: { confidence: input.confidence, holdReason: decision.hold, stopRequested: input.stopRequested },
         contextVersion: input.expectedContextVersion,
@@ -377,7 +371,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
   },
 
   insertDraft(job, draft) {
-    // `insertDraftTx` locks the record first and then asks for the job row, the order a person's pick takes them in.
+    // `insertDraftTx` locks the conversation first and then asks for the job row, the order a person's pick takes them in.
     return db.transaction((tx) => insertDraftTx(tx, draft, (locked) => holdsClaimTx(locked, job)));
   },
 };

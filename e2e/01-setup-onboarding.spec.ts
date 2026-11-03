@@ -14,9 +14,7 @@ test.describe("first-run setup and onboarding", () => {
     await page.getByRole("button", { name: "Create admin" }).click();
 
     await expect(page).toHaveURL(/\/onboarding$/);
-    await expect(page.getByRole("main").getByText("1 of 5 required steps done")).toBeVisible();
-    // The browser time zone was saved at setup, so the profile step reads as done.
-    await expect(page.getByText("Time zone saved")).toBeVisible();
+    await expect(page.getByRole("main").getByText("0 of 5 required steps done")).toBeVisible();
 
     // The next step's one action is the filled Next link above the list.
     await page.getByRole("link", { name: "Next: Connect a mailbox" }).click();
@@ -27,7 +25,7 @@ test.describe("first-run setup and onboarding", () => {
     await expect(page.getByText("sdr@e2e-corp.test")).toBeVisible();
 
     await page.goto("/onboarding");
-    await expect(page.getByRole("main").getByText("2 of 5 required steps done")).toBeVisible();
+    await expect(page.getByRole("main").getByText("1 of 5 required steps done")).toBeVisible();
     await expect(page.getByText("1 mailbox connected")).toBeVisible();
 
     await page.getByRole("button", { name: "Hide setup guide" }).click();

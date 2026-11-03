@@ -14,12 +14,12 @@ import {
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
-import { INTERRUPTED_BEFORE_PROVIDER, mailboxBlock } from "../../domain/send-policy";
+import { INTERRUPTED_BEFORE_PROVIDER, mailboxBlock, senderPostalAddress } from "../../domain/send-policy";
 import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { isLiveEnrollment, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
@@ -208,7 +208,7 @@ export const drizzleOutreachStore: OutreachStore = {
   async checkBlockers(claim): Promise<BlockReason | null> {
     // A reply, unsubscribe, bounce or cancel can land between the claim and the send.
     const [enrollment] = await db.select({ status: campaignEnrollments.status }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
-    if (!enrollment || enrollment.status !== "pending" && enrollment.status !== "active") return "enrollment_stopped";
+    if (!enrollment || !isLiveEnrollment(enrollment.status)) return "enrollment_stopped";
 
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
@@ -239,7 +239,7 @@ export const drizzleOutreachStore: OutreachStore = {
     await db.transaction(async (tx) => {
       const moved = await tx
         .update(sends)
-        .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
+        .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId, sentAt: now, error: null })
         .where(ownClaim(claim))
         .returning({ id: sends.id });
       // A send that is already final (for example failed by a reconciler) stays as it is.
@@ -329,7 +329,7 @@ export const drizzleOutreachStore: OutreachStore = {
     await db.transaction(async (tx) => {
       const updated = await tx
         .update(sends)
-        .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
+        .set({ status: "sent", providerMessageId: sent.providerMessageId, providerThreadId: sent.providerThreadId, sentAt: now, error: null })
         .where(readAttempt(send, "sent"))
         .returning({ id: sends.id, mailboxId: sends.mailboxId });
       if (updated.length === 0) return;
@@ -432,12 +432,12 @@ async function buildClaim(
   );
 
   const priorRows = await tx
-    .select({ subject: sends.subject, rfcMessageId: sends.rfcMessageId, threadId: sends.threadId, mailboxId: sends.mailboxId })
+    .select({ subject: sends.subject, rfcMessageId: sends.rfcMessageId, providerThreadId: sends.providerThreadId, mailboxId: sends.mailboxId })
     .from(sends)
     .where(and(eq(sends.enrollmentId, input.enrollmentId), eq(sends.status, "sent")))
     .orderBy(asc(sends.stepNumber));
   // Another mailbox cannot continue this mailbox's thread. Keep the subject so a blank-subject follow-up still reads "Re: ...".
-  const prior = priorRows.map(({ mailboxId, ...p }) => (mailboxId === input.mailbox.id ? p : { ...p, rfcMessageId: null, threadId: null }));
+  const prior = priorRows.map(({ mailboxId, ...p }) => (mailboxId === input.mailbox.id ? p : { ...p, rfcMessageId: null, providerThreadId: null }));
 
   const step = row.steps[input.stepNumber - 1];
   const next = row.steps[input.stepNumber];
@@ -454,6 +454,7 @@ async function buildClaim(
       displayName: input.mailbox.displayName,
       signatureHtml: input.mailbox.signatureHtml,
     },
+    postalAddress: senderPostalAddress(await channelValues(tx, input.organizationId, "email")),
     person: { id: input.personId, email: row.email as string, variables },
     step: { subject: step.subject ?? "", body: step.body, waitDays: step.waitDays },
     nextStep: next ? { waitDays: next.waitDays } : null,

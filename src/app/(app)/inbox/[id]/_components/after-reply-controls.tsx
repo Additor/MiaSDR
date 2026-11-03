@@ -9,10 +9,10 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { callApi } from "@/app/_lib/api-client";
-import type { RecordAfterReply } from "@/contexts/conversations/after-reply/application/sequences";
+import type { ConversationAfterReply } from "@/contexts/conversations/after-reply/application/follow-ups";
 import type { Json } from "@/app/(app)/_components/serialize";
 
-type State = Json<RecordAfterReply>;
+type State = Json<ConversationAfterReply>;
 type Command = "pause" | "resume" | "skip" | "cancel" | "restart";
 
 const STEP_LABEL: Record<string, string> = {
@@ -39,7 +39,7 @@ const DONE_MESSAGE: Record<Command, string> = {
  * run exists or the campaign drafts follow-ups; a campaign that hands replies to the Inbox says so in its Campaigns row.
  * Stop works like the other stops: a quiet button opens the consequence in place, and only the confirm is red.
  */
-export function AfterReplyControls({ recordId, state, disabledReason = null }: { recordId: string; state: State; disabledReason?: string | null }) {
+export function AfterReplyControls({ conversationId, state, disabledReason = null }: { conversationId: string; state: State; disabledReason?: string | null }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -56,7 +56,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
 
   /** Sends one command and returns the problem to show, or null when it worked. */
   async function send(action: Command) {
-    const result = await callApi(`/api/records/${recordId}/after-reply`, "POST", { action });
+    const result = await callApi(`/api/conversations/${conversationId}/after-reply`, "POST", { action });
     return result.ok ? null : (result.error ?? "Could not change the follow-ups. Try again.");
   }
   async function call(action: Command) {

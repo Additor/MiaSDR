@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ForbiddenError, type Actor } from "@/shared/errors";
 import { dismissOnboarding, getOnboarding, type OnboardingStore } from "./onboarding";
 
-const facts = { timeZoneSaved: true, connectedMailboxes: 0, totalMailboxes: 0, connectedLinkedInAccounts: 0, leads: 0 };
+const facts = { connectedMailboxes: 1, totalMailboxes: 0, connectedLinkedInAccounts: 0, leads: 0 };
 
 function store(dismissed = false) {
   const calls: string[] = [];
@@ -21,8 +21,8 @@ function store(dismissed = false) {
   return { s, calls };
 }
 const noAi = async () => ({ state: "none" as const });
-const replies = async () => ({ draftsAwaiting: 0, messagesApproved: 0 });
-const campaigns = async () => ({ campaigns: 0, activeCampaigns: 0 });
+const replies = async () => ({ replies: 0 });
+const campaigns = async () => ({ campaigns: 0, startedCampaigns: 0, emailsSent: 0 });
 const actor = (role: string): Actor => ({ userId: "u1", organizationId: "o1", role });
 
 describe("onboarding use cases", () => {
@@ -30,7 +30,7 @@ describe("onboarding use cases", () => {
     const { s, calls } = store();
     const view = await getOnboarding({ store: s, aiSetup: noAi, replies, campaigns }, actor("member"));
     expect(calls).toEqual(["facts:o1"]);
-    expect(view.steps.find((x) => x.id === "profile")?.status).toBe("done");
+    expect(view.steps.find((x) => x.id === "mailbox")?.status).toBe("done");
     expect(view).toMatchObject({ dismissed: false, canDismiss: false });
   });
 

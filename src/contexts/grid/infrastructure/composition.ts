@@ -4,21 +4,18 @@ import type { GridDeps } from "../application/ports";
 import { isStaticColumnType } from "../domain/column-types";
 import { campaignHandoff } from "./campaign-handoff";
 import { drizzleColumnStore } from "./drizzle-column-store";
-import { drizzleCellRunStore, drizzleFormulaStore } from "./drizzle-formula-store";
+import { drizzleCellRunStore } from "./drizzle-cell-run-store";
 import { drizzleRowStore } from "./drizzle-row-store";
 import { drizzleStructureStore } from "./drizzle-structure-store";
 import { gridRunDeps } from "../enrichment/infrastructure/enrichment-composition";
-import { createFormulaAuthor } from "./formula-author";
 
 /** The grid's adapters. Routes call `gridDeps()` per request. */
 export const gridDeps = (): GridDeps => ({
   structure: drizzleStructureStore,
   columns: drizzleColumnStore,
   rows: drizzleRowStore,
-  formulas: drizzleFormulaStore,
   cellRuns: drizzleCellRunStore,
   handoff: campaignHandoff,
-  formulaAuthor: createFormulaAuthor(),
 });
 
 /**

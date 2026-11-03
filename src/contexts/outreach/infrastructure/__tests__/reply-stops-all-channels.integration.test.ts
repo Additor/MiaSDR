@@ -68,7 +68,7 @@ describeDb("a genuine reply stops all outreach to the person", () => {
     seq += 1;
     return {
       providerMessageId: `m-${seq}-${uniqueKey()}`,
-      threadId: `t-${seq}-${uniqueKey()}`,
+      providerThreadId: `t-${seq}-${uniqueKey()}`,
       rfcMessageId: null,
       inReplyTo: null,
       references: [],
@@ -100,7 +100,7 @@ describeDb("a genuine reply stops all outreach to the person", () => {
   }
 
   beforeAll(async () => {
-    email = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).followUps);
+    email = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).contactStop, (await import("@/composition/inbox-filing")).personTimeline);
     linkedin = (await import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
   });
 
@@ -144,7 +144,7 @@ describeDb("a genuine reply stops all outreach to the person", () => {
       const f = await fixture();
       const { inboxFiling } = await import("@/composition/inbox-filing");
       const failing = { ...inboxFiling, email: async () => Promise.reject(new Error("filing failed")) };
-      const store = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore(failing, (await import("@/composition/inbox-filing")).followUps);
+      const store = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore(failing, (await import("@/composition/inbox-filing")).contactStop, (await import("@/composition/inbox-filing")).personTimeline);
       await expect(store.applyInbound(f.mb, await threaded(f), { kind: "message" }, now)).rejects.toThrow("filing failed");
       for (const id of [f.aEmail1, f.aEmail2, f.aLinkedin]) expect(await status(id)).toMatchObject({ status: "replied" });
       expect(await stopEvents(f.o)).toHaveLength(1);

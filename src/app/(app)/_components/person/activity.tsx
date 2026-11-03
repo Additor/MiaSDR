@@ -59,7 +59,7 @@ export function EventList({ events, who, limit }: { events: Array<PersonEventVie
 }
 
 /**
- * A person's activity: what happened (deal events, the conversion, reply handling; personal-campaign threads left out),
+ * A person's activity: what happened (deal events, the conversion, reply handling),
  * their notes and their tasks, as tabs under one heading. Lead, contact and deal pages share it. Wrap it in Suspense.
  */
 export async function PersonActivity({ actor, personId, first = "history" }: { actor: Actor; personId: string; first?: "history" | "tasks" }) {

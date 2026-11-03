@@ -4,10 +4,8 @@ import type { CellEditInput, GridColumn, GridRow } from "../data/types";
 
 export interface FillPlan {
   updates: CellEditInput[];
-  /** Cells in formula, AI and enrichment columns. A fill never writes them. Includes `skippedFormula`. */
+  /** Cells in AI and enrichment columns. A fill never writes them. */
   skippedRunner: number;
-  /** The part of `skippedRunner` in formula columns. */
-  skippedFormula: number;
 }
 
 /**
@@ -20,7 +18,6 @@ export function planFill(source: Bounds, toRow: number, rows: readonly GridRow[]
   const last = Math.min(toRow, rows.length - 1);
   const updates: CellEditInput[] = [];
   let skippedRunner = 0;
-  let skippedFormula = 0;
   for (let r = source.r1 + 1; r <= last; r++) {
     const from = rows[source.r0 + ((r - source.r1 - 1) % height)];
     const to = rows[r];
@@ -29,11 +26,10 @@ export function planFill(source: Bounds, toRow: number, rows: readonly GridRow[]
       if (!column || !from || !to) continue;
       if (!isEditableColumn(column)) {
         skippedRunner += 1;
-        if (column.type === "formula") skippedFormula += 1;
         continue;
       }
       updates.push({ rowId: to.id, columnKey: column.key, value: from.cells[column.key] ?? null });
     }
   }
-  return { updates, skippedRunner, skippedFormula };
+  return { updates, skippedRunner };
 }

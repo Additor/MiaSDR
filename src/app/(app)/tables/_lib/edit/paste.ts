@@ -75,10 +75,8 @@ export function serializeClipboard(matrix: readonly (readonly string[])[]): stri
 
 export interface PastePlan {
   updates: CellEditInput[];
-  /** Cells in columns that are not typed in (formula, AI, enrichment and their outputs). Includes `skippedFormula`. */
+  /** Cells in columns that are not typed in (AI, enrichment and their outputs). */
   skippedRunner: number;
-  /** The part of `skippedRunner` in formula columns, which recalculate on their own. */
-  skippedFormula: number;
   /** Rows or columns of the clipboard that fell outside the grid. */
   clipped: boolean;
 }
@@ -93,7 +91,6 @@ const blankToNull = (text: string) => (text.trim() === "" ? null : restoreFormul
 export function planPaste(matrix: readonly (readonly string[])[], target: Bounds, rows: readonly GridRow[], columns: readonly GridColumn[]): PastePlan {
   const updates: CellEditInput[] = [];
   let skippedRunner = 0;
-  let skippedFormula = 0;
   let clipped = false;
   const fill = matrix.length === 1 && matrix[0].length === 1 && (target.r1 > target.r0 || target.c1 > target.c0);
 
@@ -114,13 +111,12 @@ export function planPaste(matrix: readonly (readonly string[])[], target: Bounds
       }
       if (!isStaticColumnType(column.type)) {
         skippedRunner += 1;
-        if (column.type === "formula") skippedFormula += 1;
         continue;
       }
       updates.push({ rowId: row.id, columnKey: column.key, value: blankToNull(fill ? line[0] : (line[c] ?? "")) });
     }
   }
-  return { updates, skippedRunner, skippedFormula, clipped };
+  return { updates, skippedRunner, clipped };
 }
 
 /** What the server's paste route takes. The rows after `anchorRowId` in table order take the lines. */
@@ -146,24 +142,18 @@ export const ROWS_NOT_LOADED = "That paste reaches rows that are not loaded, and
 
 const cellCount = (n: number) => countOf(n, "cell");
 
-/**
- * The clause for cells a paste or fill left alone, told apart by why: formula columns recalculate, AI and enrichment
- * columns (and their outputs) are filled by a run. `total` counts both, `formula` is the formula share. Empty when none.
- */
-export function skippedCellsText(total: number, formula: number): string {
-  const parts: string[] = [];
-  if (formula > 0) parts.push(`${cellCount(formula)} in formula columns (they recalculate)`);
-  if (total - formula > 0) parts.push(`${cellCount(total - formula)} in AI or enrichment columns (a run fills them)`);
-  return parts.length === 0 ? "" : `Skipped ${parts.join(" and ")}.`;
+/** The clause for cells a paste or fill left alone: a run fills AI and enrichment columns and their outputs. Empty when none. */
+export function skippedCellsText(total: number): string {
+  return total > 0 ? `Skipped ${cellCount(total)} in AI or enrichment columns (a run fills them).` : "";
 }
 
 /** The toast after a block paste: what was written and created, what was skipped and what the column type refused. */
-export function pasteSummary(outcome: { cells: number; addedRows: number; addedColumns: number; skippedRunner: number; skippedFormula: number; invalidCount: number }): string {
+export function pasteSummary(outcome: { cells: number; addedRows: number; addedColumns: number; skippedRunner: number; invalidCount: number }): string {
   const made: string[] = [];
   if (outcome.addedRows > 0) made.push(countOf(outcome.addedRows, "row"));
   if (outcome.addedColumns > 0) made.push(countOf(outcome.addedColumns, "column"));
   const sentences = [`Pasted ${cellCount(outcome.cells)}${made.length > 0 ? ` and added ${made.join(" and ")}` : ""}.`];
-  const skipped = skippedCellsText(outcome.skippedRunner, outcome.skippedFormula);
+  const skipped = skippedCellsText(outcome.skippedRunner);
   if (skipped) sentences.push(skipped);
   if (outcome.invalidCount > 0) sentences.push(`${cellCount(outcome.invalidCount)} did not fit the column type and ${outcome.invalidCount === 1 ? "was" : "were"} not saved.`);
   return sentences.join(" ");

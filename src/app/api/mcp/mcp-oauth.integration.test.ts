@@ -11,10 +11,10 @@ describeDb("MCP OAuth grants", () => {
   const sql = testSql({ max: 3 });
   const orgs: TestOrg[] = [];
   let org: TestOrg;
-  let tokens: typeof import("@/contexts/tenancy/application/mcp-tokens");
-  let principal: typeof import("@/contexts/tenancy/application/mcp-principal");
-  let deps: import("@/contexts/tenancy/application/mcp-tokens").McpTokenDeps;
-  let principalDeps: import("@/contexts/tenancy/application/mcp-principal").McpPrincipalDeps;
+  let tokens: typeof import("@/contexts/agent-access/application/mcp-tokens");
+  let principal: typeof import("@/contexts/agent-access/application/mcp-principal");
+  let deps: import("@/contexts/agent-access/application/mcp-tokens").McpTokenDeps;
+  let principalDeps: import("@/contexts/agent-access/application/mcp-principal").McpPrincipalDeps;
 
   const actor = () => ({ userId: org.userId, organizationId: org.organizationId, role: "owner" });
   const claims = (clientId: string, scopes = ["mcp:read", "mcp:write", "offline_access"]) => ({ userId: org.userId, organizationId: org.organizationId, clientId, scopes });
@@ -25,9 +25,9 @@ describeDb("MCP OAuth grants", () => {
   };
 
   beforeAll(async () => {
-    tokens = await import("@/contexts/tenancy/application/mcp-tokens");
-    principal = await import("@/contexts/tenancy/application/mcp-principal");
-    const composition = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    tokens = await import("@/contexts/agent-access/application/mcp-tokens");
+    principal = await import("@/contexts/agent-access/application/mcp-principal");
+    const composition = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     deps = composition.mcpTokenDeps();
     principalDeps = composition.mcpPrincipalDeps();
     org = await createTestOrg(sql, "OAuth grants");

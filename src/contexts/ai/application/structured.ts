@@ -5,8 +5,6 @@ import type { AiUsage, GenerateRequest, JsonSchema } from "../domain/generation"
 import type { LanguageModel } from "./ports";
 
 export interface StructuredRequest<T> extends Omit<GenerateRequest, "output" | "maxTokens"> {
-  /** Defaults to the task's budget in `AI_TASKS`. */
-  maxTokens?: number;
   schema: { name: string; json: JsonSchema; parse: z.ZodType<T> };
   /** What the error says when the answer parses as JSON but not as `schema.parse`. */
   shapeError: string;
@@ -17,10 +15,10 @@ export interface StructuredRequest<T> extends Omit<GenerateRequest, "output" | "
  * schema support can still answer outside it. Every failure is an `AiError` the job runner knows how to retry or stop.
  */
 export async function generateStructured<T>(model: LanguageModel, request: StructuredRequest<T>): Promise<{ output: T; usage: AiUsage }> {
-  const { schema, shapeError, maxTokens, ...rest } = request;
+  const { schema, shapeError, ...rest } = request;
   const result = await model.generate({
     ...rest,
-    maxTokens: maxTokens ?? AI_TASKS[request.task].maxTokens,
+    maxTokens: AI_TASKS[request.task].maxTokens,
     output: { name: schema.name, schema: schema.json },
   });
   if (result.stop === "refusal") throw new AiError("The model declined to answer this message.", "permanent");

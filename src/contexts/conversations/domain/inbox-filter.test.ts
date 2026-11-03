@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTOMATED_SENDER_PATTERN,
+  AUTOMATED_SUBJECT_PATTERN,
   activeFilterCount,
   dayGroupOf,
   groupByDay,
   inboxHref,
-  isAutomatedMessage,
   parseInboxParams,
   resolveDateRange,
 } from "./inbox-filter";
@@ -77,20 +78,18 @@ describe("resolveDateRange in a time zone", () => {
   });
 });
 
-describe("isAutomatedMessage", () => {
-  it("trusts the header flags", () => {
-    expect(isAutomatedMessage({ autoReply: true })).toBe(true);
-    expect(isAutomatedMessage({ possibleBounce: true })).toBe(true);
-  });
+describe("the patterns of machine mail", () => {
+  const sender = new RegExp(AUTOMATED_SENDER_PATTERN, "i");
+  const subject = new RegExp(AUTOMATED_SUBJECT_PATTERN, "i");
 
   it.each(["noreply@x.test", "no-reply@x.test", "No_Reply@x.test", "do-not-reply@x.test", "donotreply@x.test", "mailer-daemon@x.test", "postmaster@x.test", "dmarc-reports@x.test", "bounces@x.test", "Service <notifications.noreply@x.test>"])(
-    "flags the sender %s",
-    (from) => expect(isAutomatedMessage({ from })).toBe(true),
+    "flag the sender %s",
+    (from) => expect(sender.test(from)).toBe(true),
   );
 
   it.each(["Report domain: acme.test Submitter: google.com", "DMARC Aggregate Report", "Delivery Status Notification (Failure)", "Undeliverable: hello", "Mail delivery failed: returning message", "Returned mail: see transcript"])(
-    "flags the subject %s",
-    (subject) => expect(isAutomatedMessage({ subject })).toBe(true),
+    "flag the subject %s",
+    (text) => expect(subject.test(text)).toBe(true),
   );
 
   it.each([
@@ -98,8 +97,10 @@ describe("isAutomatedMessage", () => {
     { from: "noreplyton@acme.test", subject: "Reply about the report" },
     { from: "anna.bouncer@acme.test", subject: "Let's talk" },
     { from: "reply@acme.test", subject: "Delivery schedule for Q4" },
-    { from: null, subject: null },
-  ])("leaves a human message alone: %j", (probe) => expect(isAutomatedMessage(probe)).toBe(false));
+  ])("leave a human message alone: %j", (probe) => {
+    expect(sender.test(probe.from)).toBe(false);
+    expect(subject.test(probe.subject)).toBe(false);
+  });
 });
 
 describe("day groups", () => {
@@ -127,7 +128,7 @@ describe("parseInboxParams and inboxHref", () => {
   });
 
   it("drops unknown or malformed values", () => {
-    const p = parseInboxParams({ view: "nope", page: "-3", campaign: ["x", ID], mailbox: "zzz", subcategory: ["Bad Key", "demo_request"], category: ["interested", "weird"], range: "forever" });
+    const p = parseInboxParams({ view: "nope", page: "-3", campaign: ["x", ID], mailbox: "zzz", type: ["Bad Key", "demo_request"], group: ["interested", "weird"], range: "forever" });
     expect(p).toMatchObject({ view: "all", page: 1, campaignIds: [ID], mailboxIds: [], replyTypeKeys: ["demo_request"], groupKeys: ["interested"], dateMode: "all" });
   });
 
@@ -143,7 +144,7 @@ describe("parseInboxParams and inboxHref", () => {
   });
 
   it("round-trips through the link builder", () => {
-    const p = parseInboxParams({ q: "pricing", view: "sent", lead: ID, campaign: ID, subcategory: "demo_request", category: "interested", range: "custom", from: "2026-10-01", to: "2026-10-03", page: "2" });
+    const p = parseInboxParams({ q: "pricing", view: "sent", lead: ID, campaign: ID, type: "demo_request", group: "interested", range: "custom", from: "2026-10-01", to: "2026-10-03", page: "2" });
     expect(parseInboxParams(Object.fromEntries(new URL(inboxHref(p), "http://x").searchParams.entries()))).toEqual(p);
     expect(activeFilterCount(p)).toBe(5);
   });

@@ -17,7 +17,7 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
   const users: string[] = [];
   let writer: McpCaller;
   let reader: McpCaller;
-  let thread: { conversationId: string; recordId: string };
+  let thread: { threadId: string; conversationId: string };
   let memberId: string;
 
   async function inbound(org: TestOrg, n: number) {
@@ -37,11 +37,11 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
       receivedAt: new Date(Date.now() - 3_600_000),
       autoReply: false,
     });
-    const [{ record_id }] = await sql<{ record_id: string }[]>`select record_id from conversations where id = ${result.conversationId}`;
-    return { conversationId: result.conversationId, recordId: record_id };
+    const [{ conversation_id }] = await sql<{ conversation_id: string }[]>`select conversation_id from threads where id = ${result.threadId}`;
+    return { threadId: result.threadId, conversationId: conversation_id };
   }
 
-  const eventsOf = (recordId: string, type: string) => sql<{ meta: Record<string, unknown> }[]>`select meta from events where record_id = ${recordId} and event_type = ${type} order by created_at`;
+  const eventsOf = (conversationId: string, type: string) => sql<{ meta: Record<string, unknown> }[]>`select meta from events where conversation_id = ${conversationId} and event_type = ${type} order by created_at`;
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
@@ -70,18 +70,18 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
     const listed = await callMcp(POST, { era: "modern", token: reader.token, method: "tools/list" });
     const names = (listed.body as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
     expect(names).not.toContain("write_reply_draft");
-    await expect(reader.tool("write_reply_draft", { action: "request_ai", conversationId: thread.conversationId })).rejects.toThrow();
+    await expect(reader.tool("write_reply_draft", { action: "request_ai", threadId: thread.threadId })).rejects.toThrow();
   });
 
   it("writes, edits and discards a draft with the agent named on it, and never sends", async () => {
-    const created = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: "Pricing attached." });
+    const created = await writer.tool("write_reply_draft", { action: "create_manual", threadId: thread.threadId, subject: "Re: pricing", bodyText: "Pricing attached." });
     expect(created.isError, created.text).toBe(false);
     const draft = created.structured.draft as { draftId: string; revision: number; status: string; text: string };
     expect(draft).toMatchObject({ status: "awaiting_review", text: "Pricing attached." });
-    expect(created.structured.reviewUrl).toBe(`http://localhost:3000/inbox/${thread.conversationId}`);
+    expect(created.structured.reviewUrl).toBe(`http://localhost:3000/inbox/${thread.threadId}`);
     const [row] = await sql<{ written_via_token_id: string }[]>`select written_via_token_id from drafts where id = ${draft.draftId}`;
     expect(row.written_via_token_id).toBe(writer.tokenId);
-    expect((await eventsOf(thread.recordId, "draft.created_manual"))[0].meta).toMatchObject({ via: { tokenId: writer.tokenId, tokenName: "Test agent" } });
+    expect((await eventsOf(thread.conversationId, "draft.created_manual"))[0].meta).toMatchObject({ via: { tokenId: writer.tokenId, tokenName: "Test agent" } });
 
     const edited = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: "Pricing attached. Talk Tuesday?" });
     expect(edited.isError, edited.text).toBe(false);
@@ -92,9 +92,9 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
     expect(stale.text).toContain("changed since you opened it");
     const discarded = await writer.tool("write_reply_draft", { action: "discard", draftId: draft.draftId, revision: draft.revision + 1 });
     expect(discarded.isError, discarded.text).toBe(false);
-    expect((await eventsOf(thread.recordId, "draft.discarded"))[0].meta).toMatchObject({ via: { tokenId: writer.tokenId } });
+    expect((await eventsOf(thread.conversationId, "draft.discarded"))[0].meta).toMatchObject({ via: { tokenId: writer.tokenId } });
 
-    const asked = await writer.tool("write_reply_draft", { action: "request_ai", conversationId: thread.conversationId });
+    const asked = await writer.tool("write_reply_draft", { action: "request_ai", threadId: thread.threadId });
     expect(asked.isError, asked.text).toBe(false);
     expect(asked.structured.draft).toMatchObject({ status: "awaiting_review" });
     expect(await sql`select 1 from send_attempts where organization_id = ${orgs[0].organizationId}`).toHaveLength(0);
@@ -103,16 +103,16 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
   it("refuses an edit that carries the cut copy of a long draft", async () => {
     const long = `${"Pricing tiers explained at length. ".repeat(500)}The end.`;
     // The test before left an AI draft open, and a new draft replaces it only with its revision.
-    const open = (await writer.tool("get_conversation", { conversationId: thread.conversationId })).structured.draft as { revision: number };
-    const blind = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long });
+    const open = (await writer.tool("get_conversation", { threadId: thread.threadId })).structured.draft as { revision: number };
+    const blind = await writer.tool("write_reply_draft", { action: "create_manual", threadId: thread.threadId, subject: "Re: pricing", bodyText: long });
     expect(blind.structured.error).toMatchObject({ code: "draft_open" });
-    const created = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long, revision: open.revision });
+    const created = await writer.tool("write_reply_draft", { action: "create_manual", threadId: thread.threadId, subject: "Re: pricing", bodyText: long, revision: open.revision });
     const draft = created.structured.draft as { draftId: string; revision: number; text: string; truncated: boolean };
     expect(draft.truncated).toBe(true);
 
     const cut = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: draft.text });
     expect(cut.structured.error).toMatchObject({ code: "truncated_text" });
-    const copied = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, bodyText: draft.text, revision: draft.revision });
+    const copied = await writer.tool("write_reply_draft", { action: "create_manual", threadId: thread.threadId, bodyText: draft.text, revision: draft.revision });
     expect(copied.structured.error).toMatchObject({ code: "truncated_text" });
     const [row] = await sql<{ edited_body_text: string }[]>`select edited_body_text from drafts where id = ${draft.draftId}`;
     expect(row.edited_body_text).toBe(long);
@@ -125,7 +125,7 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
   });
 
   it("refuses to regenerate a draft a person edited since the agent read it", async () => {
-    const created = await writer.tool("write_reply_draft", { action: "request_ai", conversationId: thread.conversationId });
+    const created = await writer.tool("write_reply_draft", { action: "request_ai", threadId: thread.threadId });
     const draft = created.structured.draft as { draftId: string; revision: number };
     await sql`update drafts set revision = revision + 1, edited_body_text = 'A person wrote this.' where id = ${draft.draftId}`;
     const stale = await writer.tool("write_reply_draft", { action: "regenerate", draftId: draft.draftId, revision: draft.revision });
@@ -137,49 +137,49 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
   });
 
   it("assigns, notes, closes and reopens a reply handling, each event marked with the token", async () => {
-    const claimed = await writer.tool("update_conversation", { action: "claim", recordId: thread.recordId });
+    const claimed = await writer.tool("update_conversation", { action: "claim", conversationId: thread.conversationId });
     expect(claimed.structured).toMatchObject({ assignedTo: orgs[0].userId, changed: true });
-    const refused = await writer.tool("update_conversation", { action: "assign", recordId: thread.recordId, assignedTo: memberId, expectedAssignedTo: null });
+    const refused = await writer.tool("update_conversation", { action: "assign", conversationId: thread.conversationId, assignedTo: memberId, expectedAssignedTo: null });
     expect(refused.isError).toBe(true);
-    const assigned = await writer.tool("update_conversation", { action: "assign", recordId: thread.recordId, assignedTo: memberId, expectedAssignedTo: orgs[0].userId });
+    const assigned = await writer.tool("update_conversation", { action: "assign", conversationId: thread.conversationId, assignedTo: memberId, expectedAssignedTo: orgs[0].userId });
     expect(assigned.structured).toMatchObject({ assignedTo: memberId, changed: true });
-    const assignments = await eventsOf(thread.recordId, "assignee.changed");
+    const assignments = await eventsOf(thread.conversationId, "assignee.changed");
     expect(assignments).toHaveLength(2);
     expect(assignments.every((e) => (e.meta.via as { tokenId: string }).tokenId === writer.tokenId)).toBe(true);
 
-    expect((await writer.tool("update_conversation", { action: "add_note", recordId: thread.recordId, text: "Wants pricing for 20 seats" })).structured.noteId).toEqual(expect.any(String));
-    expect((await writer.tool("update_conversation", { action: "close", recordId: thread.recordId, reason: "Sent pricing by phone" })).isError).toBe(false);
-    expect((await writer.tool("update_conversation", { action: "reopen", recordId: thread.recordId })).isError).toBe(false);
-    const states = await eventsOf(thread.recordId, "workflow.state_changed");
+    expect((await writer.tool("update_conversation", { action: "add_note", conversationId: thread.conversationId, text: "Wants pricing for 20 seats" })).structured.noteId).toEqual(expect.any(String));
+    expect((await writer.tool("update_conversation", { action: "close", conversationId: thread.conversationId, reason: "Sent pricing by phone" })).isError).toBe(false);
+    expect((await writer.tool("update_conversation", { action: "reopen", conversationId: thread.conversationId })).isError).toBe(false);
+    const states = await eventsOf(thread.conversationId, "workflow.state_changed");
     expect(states.slice(-2).map((e) => (e.meta.via as { tokenId: string }).tokenId)).toEqual([writer.tokenId, writer.tokenId]);
   });
 
   it("changes the reply type with the version it read and refuses an old version", async () => {
-    const [{ context_version }] = await sql<{ context_version: number }[]>`select context_version from records where id = ${thread.recordId}`;
-    const changed = await writer.tool("set_reply_type", { action: "change", recordId: thread.recordId, groupKey: "interested", replyTypeId: null, expectedContextVersion: context_version });
+    const [{ context_version }] = await sql<{ context_version: number }[]>`select context_version from conversations where id = ${thread.conversationId}`;
+    const changed = await writer.tool("set_reply_type", { action: "change", conversationId: thread.conversationId, groupKey: "interested", replyTypeId: null, expectedContextVersion: context_version });
     expect(changed.isError, changed.text).toBe(false);
     expect(changed.structured.contextVersion).toBe(context_version + 1);
-    expect((await eventsOf(thread.recordId, "reply_type.changed")).at(-1)?.meta).toMatchObject({ via: { tokenId: writer.tokenId } });
-    const old = await writer.tool("set_reply_type", { action: "change", recordId: thread.recordId, groupKey: "interested", replyTypeId: null, expectedContextVersion: context_version });
+    expect((await eventsOf(thread.conversationId, "reply_type.changed")).at(-1)?.meta).toMatchObject({ via: { tokenId: writer.tokenId } });
+    const old = await writer.tool("set_reply_type", { action: "change", conversationId: thread.conversationId, groupKey: "interested", replyTypeId: null, expectedContextVersion: context_version });
     expect(old.isError).toBe(true);
   });
 
   it("creates, lists and completes a task due in the organization's time zone", async () => {
-    const created = await writer.tool("manage_task", { action: "create", recordId: thread.recordId, name: "Send the contract", dueDay: "2026-11-20", assigneeId: memberId });
+    const created = await writer.tool("manage_task", { action: "create", conversationId: thread.conversationId, name: "Send the contract", dueDay: "2026-11-20", assigneeId: memberId });
     expect(created.isError, created.text).toBe(false);
     const taskId = created.structured.taskId as string;
-    const listed = await writer.tool("manage_task", { action: "list", recordId: thread.recordId });
+    const listed = await writer.tool("manage_task", { action: "list", conversationId: thread.conversationId });
     expect(listed.structured.tasks).toEqual([expect.objectContaining({ taskId, name: "Send the contract", assigneeId: memberId, dueAt: expect.stringMatching(/^2026-11-2[01]T/) })]);
     expect((await writer.tool("manage_task", { action: "complete", taskId, completed: true })).isError).toBe(false);
-    expect((await writer.tool("manage_task", { action: "list", recordId: thread.recordId })).structured.tasks).toEqual([]);
+    expect((await writer.tool("manage_task", { action: "list", conversationId: thread.conversationId })).structured.tasks).toEqual([]);
   });
 
   it("logs write calls as changes and leaves a list call among the reads", async () => {
-    const { listMcpToolCalls } = await import("@/contexts/tenancy/application/mcp-tool-calls");
-    const { mcpToolCallDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { listMcpToolCalls } = await import("@/contexts/agent-access/application/mcp-tool-calls");
+    const { mcpToolCallDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: orgs[0].userId, organizationId: orgs[0].organizationId, role: "owner" };
     const changes = (await listMcpToolCalls(mcpToolCallDeps(), owner, { writesOnly: true, before: null })).calls;
-    expect(changes.some((c) => c.tool === "write_reply_draft" && c.action === "create_manual" && c.target.conversationId === thread.conversationId)).toBe(true);
+    expect(changes.some((c) => c.tool === "write_reply_draft" && c.action === "create_manual" && c.target.threadId === thread.threadId)).toBe(true);
     expect(changes.some((c) => c.tool === "manage_task" && c.action === "list")).toBe(false);
   });
 

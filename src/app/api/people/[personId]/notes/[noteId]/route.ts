@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { deleteRecordNote } from "@/contexts/conversations/application/reply-handling";
+import { deleteConversationNote } from "@/contexts/conversations/application/reply-handling";
 import { assertCanDeleteNote, editNote } from "@/contexts/conversations/actions/application/tasks";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { withActor } from "@/app/_lib/api";
 
-/** Any note of the person, record-bound or not. Only the author or an admin changes it, as on the record routes. */
+/** Any note of the person, conversation-bound or not. Only the author or an admin changes it, as on the conversation routes. */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/people/[personId]/notes/[noteId]">) {
   const { personId, noteId } = await ctx.params;
   return withActor(async (actor) => {
@@ -19,7 +19,7 @@ export async function DELETE(_request: Request, ctx: RouteContext<"/api/people/[
   const { personId, noteId } = await ctx.params;
   return withActor(async (actor) => {
     await assertCanDeleteNote(taskDeps(), actor, { personId }, noteId);
-    await deleteRecordNote(replyHandlingDeps(), actor, { personId }, noteId);
+    await deleteConversationNote(replyHandlingDeps(), actor, { personId }, noteId);
     return { ok: true };
   });
 }

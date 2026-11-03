@@ -29,22 +29,6 @@ export const AUTOMATED_SENDER_PATTERN = "(^|[^a-z0-9])(no[-_.]?reply|do[-_.]?not
 export const AUTOMATED_SUBJECT_PATTERN =
   "(^|[^a-z0-9])(dmarc|report domain|aggregate report|delivery status notification|undeliverable|mail delivery (failed|subsystem)|returned mail|failure notice|delivery failure)([^a-z0-9]|$)";
 
-const SENDER_RE = new RegExp(AUTOMATED_SENDER_PATTERN, "i");
-const SUBJECT_RE = new RegExp(AUTOMATED_SUBJECT_PATTERN, "i");
-
-export interface AutomatedProbe {
-  autoReply?: boolean;
-  possibleBounce?: boolean;
-  from?: string | null;
-  subject?: string | null;
-}
-
-/** Header flags win; the sender and subject patterns catch DMARC reports and no-reply mail that carry no flag. */
-export function isAutomatedMessage(probe: AutomatedProbe): boolean {
-  if (probe.autoReply || probe.possibleBounce) return true;
-  return SENDER_RE.test(probe.from ?? "") || SUBJECT_RE.test(probe.subject ?? "");
-}
-
 export interface DateRange {
   /** Inclusive. */
   start: Date | null;
@@ -142,8 +126,8 @@ export function parseInboxParams(raw: Raw): InboxParams {
     leadQuery: (lead.find((v) => !UUID.test(v)) ?? "").slice(0, 200),
     campaignIds: all(raw.campaign).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     mailboxIds: all(raw.mailbox).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
-    replyTypeKeys: all(raw.subcategory).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
-    groupKeys: all(raw.category).filter((v): v is (typeof INBOX_GROUPS)[number] => (INBOX_GROUPS as readonly string[]).includes(v)),
+    replyTypeKeys: all(raw.type).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
+    groupKeys: all(raw.group).filter((v): v is (typeof INBOX_GROUPS)[number] => (INBOX_GROUPS as readonly string[]).includes(v)),
     dateMode,
     dateFrom,
     dateTo,
@@ -160,8 +144,8 @@ export function inboxHref(params: Partial<InboxParams>, override: Partial<InboxP
   if (p.leadQuery) qs.append("lead", p.leadQuery);
   for (const id of p.campaignIds ?? []) qs.append("campaign", id);
   for (const id of p.mailboxIds ?? []) qs.append("mailbox", id);
-  for (const k of p.replyTypeKeys ?? []) qs.append("subcategory", k);
-  for (const k of p.groupKeys ?? []) qs.append("category", k);
+  for (const k of p.replyTypeKeys ?? []) qs.append("type", k);
+  for (const k of p.groupKeys ?? []) qs.append("group", k);
   if (p.dateMode && p.dateMode !== "all") {
     qs.set("range", p.dateMode);
     if (p.dateMode === "custom") {

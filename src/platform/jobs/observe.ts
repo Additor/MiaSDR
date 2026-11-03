@@ -89,7 +89,7 @@ export function createTickObserver(options: ObserverOptions = {}) {
           await persist({ job: job.name, signature, message, occurrences: entry.occurrences, firstSeenAt: new Date(entry.firstSeenAt), now: new Date(t) });
         } catch (error) {
           // The log line above already carries the failure. A broken database must not stop the scheduler.
-          log("warn", line({ event: "job.failure_record_failed", job: job.name, error: errorText(error) }));
+          log("warn", line({ event: "job.failure_conversation_failed", job: job.name, error: errorText(error) }));
         }
       }
 

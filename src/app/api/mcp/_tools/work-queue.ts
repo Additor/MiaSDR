@@ -7,8 +7,8 @@ import { defineTool, READ_ONLY } from "./define";
 import { appLinks, counted, DEFAULT_LIST_LIMIT, fencedExcerpt, fencedField, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
 
 const item = z.object({
-  recordId: z.string(),
-  conversationId: z.string().nullable(),
+  conversationId: z.string(),
+  threadId: z.string().nullable(),
   personId: z.string(),
   personName: z.string().nullable(),
   channel: z.string().nullable(),
@@ -17,7 +17,7 @@ const item = z.object({
   waitingSince: z.string(),
   lastInbound: z.string().nullable(),
   draft: z.object({ draftId: z.string(), status: z.string(), subject: z.string().nullable() }).nullable(),
-  aiPick: z.object({ replyTypePickId: z.string(), kind: z.string(), name: z.string().nullable(), confidence: z.number().nullable(), contextVersion: z.number() }).nullable(),
+  aiPick: z.object({ replyTypePickId: z.string().nullable(), kind: z.string(), name: z.string().nullable(), confidence: z.number().nullable(), contextVersion: z.number() }).nullable(),
   problem: z.object({ kind: z.string(), message: z.string() }).nullable(),
   appUrl: z.string().nullable(),
 });
@@ -30,8 +30,8 @@ const output = z.object({
 function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
   const links = appLinks(ctx);
   return {
-    recordId: i.recordId,
     conversationId: i.conversationId,
+    threadId: i.threadId,
     personId: i.personId,
     personName: i.personName,
     channel: i.channel,
@@ -40,15 +40,15 @@ function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
     waitingSince: i.waitingSince.at.toISOString(),
     lastInbound: fencedExcerpt(ctx, i.channel, i.snippet),
     draft: i.draft && { draftId: i.draft.draftId, status: i.draft.status, subject: fencedField(ctx, i.draft.subject) },
-    aiPick: i.classification && {
-      replyTypePickId: i.classification.replyTypePickId,
-      kind: i.classification.kind,
-      name: i.classification.name,
-      confidence: i.classification.confidence,
-      contextVersion: i.classification.contextVersion,
+    aiPick: i.aiPick && {
+      replyTypePickId: i.aiPick.replyTypePickId,
+      kind: i.aiPick.kind,
+      name: i.aiPick.name,
+      confidence: i.aiPick.confidence,
+      contextVersion: i.aiPick.contextVersion,
     },
     problem: i.problem,
-    appUrl: i.conversationId ? links.conversation(i.conversationId) : links.person(i.personId, i.personLifecycle),
+    appUrl: i.threadId ? links.thread(i.threadId) : links.person(i.personId, i.personLifecycle),
   };
 }
 
@@ -73,7 +73,8 @@ export const getWorkQueueTool = defineTool({
   output,
   async run({ actor, out }, input) {
     const deps = workQueueDeps();
-    const { cursor, limit, ...filter } = input;
+    const { cursor, limit, group: list, ...rest } = input;
+    const filter = { ...rest, list };
     const [queue, counts] = await Promise.all([getWorkQueue(deps, actor, { filter, cursor, limit: listLimit(limit, input.group ? DEFAULT_LIST_LIMIT : OVERVIEW_LIMIT) }), getWorkQueueCounts(deps, actor)]);
     const groups = QUEUE_GROUPS.filter((g) => !input.group || g === input.group).map((group) => {
       const page = queue.groups[group];

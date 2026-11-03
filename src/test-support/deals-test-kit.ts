@@ -9,8 +9,8 @@ import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-po
 export { waitForLockWaiters } from "@/test-support/db";
 
 /*
- * Fixtures for the deals integration tests: organizations with members, leads with a reply record, a running Follow-ups after a reply
- * follow-up with its draft, and live enrollments. Everything goes through the real ingest and sequence code where a test
+ * Fixtures for the deals integration tests: organizations with members, leads with a reply conversation, a running Follow-ups after a reply
+ * follow-up with its draft, and live enrollments. Everything goes through the real ingest and follow-up code where a test
  * needs that state. Needs TEST_DATABASE_URL pointing at a migrated Postgres; `bootDealsKit` sets the environment first and
  * `cleanup` puts it back.
  */
@@ -23,14 +23,14 @@ export async function bootDealsKit(url: string) {
     else process.env[key] = value;
   }
   const sql = postgres(url, { max: 10, onnotice: () => undefined });
-  const conversations = await import("@/contexts/conversations/infrastructure/composition");
+  const threads = await import("@/contexts/conversations/infrastructure/composition");
   const aiJobsApp = await import("@/contexts/conversations/ai/application/ai-jobs");
   const arApp = await import("@/contexts/conversations/after-reply/application/after-reply");
-  const seqJobsApp = await import("@/contexts/conversations/after-reply/application/sequence-jobs");
-  const seqStore = await import("@/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store");
+  const followUpJobsApp = await import("@/contexts/conversations/after-reply/application/follow-up-jobs");
+  const followUpStore = await import("@/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store");
   const jobs = (await import("@/contexts/conversations/ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore;
   const replies = (await import("@/contexts/conversations/infrastructure/drizzle-reply-store")).drizzleReplyStore;
-  const engine = (await import("@/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine;
+  const engine = (await import("@/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine;
   const FakeAi = (await import("@/contexts/conversations/ai/infrastructure/fake-reply-ai")).FakeReplyAi;
   const orgs: string[] = [];
   const users: string[] = [];
@@ -59,7 +59,7 @@ export async function bootDealsKit(url: string) {
     const clock = () => new Date();
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const [seqTick] = seqJobsApp.createSequenceJobs({ engine, runs: seqStore.drizzleRunStore, replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [followUpTick] = followUpJobsApp.createFollowUpJobs({ engine, runs: followUpStore.drizzleRunStore, replies, ai: resolver, now: clock, workerId: "w1", leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
 
     const mail = (partial: Partial<InboundEmailInput> = {}): InboundEmailInput => {
@@ -89,7 +89,7 @@ export async function bootDealsKit(url: string) {
       creator,
       address,
       mail,
-      /** A plain lead without a record. */
+      /** A plain lead without a conversation. */
       async person(over: { name?: string | null; email?: string | null; companyId?: string | null; contact?: boolean } = {}) {
         const n = ++counter;
         const [{ id }] = await sql`
@@ -103,9 +103,8 @@ export async function bootDealsKit(url: string) {
         const [{ id }] = await sql`insert into companies (organization_id, domain, name) values (${org}, ${domain}, ${name}) returning id`;
         return id as string;
       },
-      /** A personal campaign is a LinkedIn campaign (`campaigns_personal_linkedin_ck`). */
-      campaign: (over: { type?: "regular" | "personal"; createdBy?: string; name?: string } = {}) =>
-        createCampaign(sql, { organizationId: org, type: over.type, name: over.name, channel: over.type === "personal" ? "linkedin" : "email" }).then(async (id) => {
+      campaign: (over: { createdBy?: string; name?: string } = {}) =>
+        createCampaign(sql, { organizationId: org, name: over.name, channel: "email" }).then(async (id) => {
           if (over.createdBy) await sql`update campaigns set created_by = ${over.createdBy} where id = ${id}`;
           return id;
         }),
@@ -115,24 +114,24 @@ export async function bootDealsKit(url: string) {
           values (${org}, ${campaignId}, ${personId}, ${channel}, ${status}, ${status === "active" ? new Date() : null}) returning id`;
         return id as string;
       },
-      /** An unknown sender writes in: a lead with a reply record and a public conversation. */
+      /** An unknown sender writes in: a lead with a conversation and a thread. */
       async ingest(partial: Partial<InboundEmailInput> = {}) {
         const input = mail(partial);
-        const result = await conversations.ingestInbound(input);
+        const result = await threads.ingestInbound(input);
         const [p] = await sql`select id from people where organization_id = ${org} and lower(email) = ${input.from.email.toLowerCase()}`;
-        const [r] = await sql`select id from records where person_id = ${p.id}`;
-        return { input, personId: p.id as string, recordId: r.id as string, conversationId: result.conversationId };
+        const [r] = await sql`select id from conversations where person_id = ${p.id}`;
+        return { input, personId: p.id as string, conversationId: r.id as string, threadId: result.threadId };
       },
-      /** The person replied to a regular campaign that drafts follow-ups; after `cycle` the person has an active run and its reply draft. */
+      /** The person replied to a campaign that drafts follow-ups; after `cycle` the person has an active run and its reply draft. */
       async emailedBy(personId: string) {
         const campaignId = await createCampaign(sql, { organizationId: org });
         const sent = await recordSentEmail(sql, { organizationId: org, campaignId, personId, sentAt: new Date(Date.now() - 3_600_000) });
-        await arApp.saveCampaignAfterReply({ flows: seqStore.drizzleAfterReplyStore, now: clock }, owner, campaignId, { mode: "ai_drafts", steps: FLOW_STEPS });
+        await arApp.saveCampaignAfterReply({ flows: followUpStore.drizzleAfterReplyStore, now: clock }, owner, campaignId, { mode: "ai_drafts", steps: FLOW_STEPS });
         return { campaignId, repliedEnrollmentId: sent.enrollmentId };
       },
       cycle: async () => {
         await aiTick.run(ctx());
-        return seqTick.run(ctx());
+        return followUpTick.run(ctx());
       },
     };
   }

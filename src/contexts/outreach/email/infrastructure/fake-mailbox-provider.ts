@@ -40,7 +40,7 @@ export class FakeMailboxProvider implements MailboxProvider {
     if (behavior === "revoked") throw new ProviderSendError("Google would not give an access token.", "definite", "account");
     if (behavior === "outage") throw new ProviderSendError("Could not reach Google.", "definite", "provider");
     if (behavior === "timeout-lost") throw new ProviderSendError("Request timed out", "unknown", "message");
-    const sent = { providerMessageId: `fake-${this.instance}-${++this.counter}`, threadId: email.threadId ?? `thread-${this.instance}-${this.counter}` };
+    const sent = { providerMessageId: `fake-${this.instance}-${++this.counter}`, providerThreadId: email.providerThreadId ?? `thread-${this.instance}-${this.counter}` };
     this.delivered.push(email);
     this.sentIndex.set(email.rfcMessageId, sent);
     if (behavior === "timeout-after-accept") throw new ProviderSendError("Request timed out", "unknown", "message");
@@ -67,7 +67,7 @@ export class FakeMailboxProvider implements MailboxProvider {
     const n = ++this.inboundCounter;
     const email: InboundEmail = {
       providerMessageId: `fake-in-${this.instance}-${n}`,
-      threadId: `fake-in-thread-${this.instance}-${n}`,
+      providerThreadId: `fake-in-thread-${this.instance}-${n}`,
       rfcMessageId: `<in-${this.instance}-${n}@example.com>`,
       inReplyTo: null,
       references: [],

@@ -1,4 +1,4 @@
-import { effectiveColumnType, isStaticColumnType, RUNNABLE_TYPES, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
+import { effectiveColumnType, isStaticColumnType, RUNNABLE_TYPES, STATIC_COLUMN_TYPES } from "@/contexts/grid/domain/column-types";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
@@ -25,7 +25,6 @@ export const TYPE_LABELS: Record<string, string> = {
   functions: "Functions",
   message: "Message",
   waterfall: "Waterfall",
-  formula: "Formula",
   merge: "Merge",
 };
 
@@ -104,8 +103,8 @@ export function cellStatus(row: GridRow, columnKey: string): { state: "idle" | "
   if (meta.status === "running" || meta.status === "queued" || meta.status === "waiting") return { state: "running" };
   if (meta.status === "error" || meta.status === "failed") return { state: "error", message: meta.error ?? "The run failed." };
   if (meta.status === "skipped: cap") return { state: "skipped", message: meta.reason ?? "Not run automatically: over the auto-run limit." };
-  // A formula cell whose LOOKUP source changed after its last run. The value is the old one.
-  if (meta.status === "stale") return { state: "stale", message: meta.error ?? "The source changed. Recalculate this column." };
+  // An undo restored an input after the last run. The value is the old one.
+  if (meta.status === "stale") return { state: "stale", message: meta.error ?? "An input changed. Run this column to refresh it." };
   if (meta.outcome === "miss") {
     const steps = meta.unanswered?.length ? ` Steps that did not answer: ${meta.unanswered.join("; ")}.` : "";
     return { state: "miss", message: `No provider confirmed this.${steps}` };
@@ -147,7 +146,6 @@ export const DEFAULT_WIDTH: Record<string, number> = {
   select: 150,
   multiselect: 200,
   json: 220,
-  formula: 180,
   ai: 220,
   ai_output: 200,
   integration_output: 180,
@@ -156,9 +154,6 @@ export const DEFAULT_WIDTH: Record<string, number> = {
 };
 
 export const columnWidth = (column: Pick<GridColumn, "type">) => DEFAULT_WIDTH[column.type] ?? 180;
-
-/** Column key for a freshly typed name, only for display hints. The server derives the real key. */
-export const isRunnerType = (type: ColumnType | string) => !isStaticColumnType(type) && type !== "formula";
 
 /** "Reused, no charge", "$0.03 · 1 credit", "1 credit" or "No charge": a billed call is never called free. */
 export function runCost(r: { costCents: number; credits: number | null; reused?: boolean }): string {

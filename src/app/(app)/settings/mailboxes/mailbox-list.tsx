@@ -45,10 +45,9 @@ function waitingWarning(count: number, hours: number) {
   return `${formatCount(count)} lead${count === 1 ? " waits" : "s wait"} for follow-ups on this mailbox; after ${hours} hour${hours === 1 ? "" : "s"} another mailbox takes over and the thread breaks.`;
 }
 
-/** Mirrors the send-time domain policy: a connected mailbox outside the list (or any mailbox under open sign-up without a list) does not send. */
-function domainAllowed(emailAddress: string, allowedDomains: string[] | null, signupBlocked: boolean): boolean {
-  if (allowedDomains) return allowedDomains.includes(emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase());
-  return !signupBlocked;
+/** Mirrors the send-time domain policy: a connected mailbox outside the list does not send. */
+function domainAllowed(emailAddress: string, allowedDomains: string[] | null): boolean {
+  return !allowedDomains || allowedDomains.includes(emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase());
 }
 
 export function MailboxList({
@@ -56,18 +55,21 @@ export function MailboxList({
   canManage,
   takeoverAfterHours,
   allowedDomains,
-  signupBlocked,
+  unsubscribeUnreachable,
   zones,
   defaultTimeZone,
+  dns,
   rules,
 }: {
   mailboxes: Mailbox[];
   canManage: boolean;
   takeoverAfterHours: number;
   allowedDomains: string[] | null;
-  signupBlocked: boolean;
+  unsubscribeUnreachable: boolean;
   zones: string[];
   defaultTimeZone: string;
+  /** The sender DNS block, which the server renders while its lookups run. */
+  dns: ReactNode;
   /** The sending rules block, which closes the page. */
   rules: ReactNode;
 }) {
@@ -103,11 +105,7 @@ export function MailboxList({
           description={
             <>
               Enter the address campaigns should send from.
-              {allowedDomains
-                ? ` Allowed domains: ${allowedDomains.join(", ")}.`
-                : signupBlocked
-                  ? " Connecting is disabled until your administrator limits which domains can be connected in the server configuration."
-                  : ""}
+              {allowedDomains ? ` Allowed domains: ${allowedDomains.join(", ")}.` : ""}
             </>
           }
         >
@@ -134,6 +132,11 @@ export function MailboxList({
         </SettingsSection>
       )}
 
+      {unsubscribeUnreachable && (
+        <p role="alert" className="mb-4 text-sm text-destructive" data-testid="unsubscribe-unreachable">
+          Campaigns can&apos;t start yet. Set APP_URL in .env to this server&apos;s public address: every email carries an unsubscribe link built from it.
+        </p>
+      )}
       <SettingsSection
         title="Mailboxes"
         description={canManage && mailboxes.length > 0 ? "Recheck connection asks Google whether MiaSDR can still send as an address. To deliver one real message, open More and choose Send test email." : undefined}
@@ -175,7 +178,7 @@ export function MailboxList({
                     {waitingWarning(mailbox.waitingLeads, takeoverAfterHours)}
                   </p>
                 )}
-                {mailbox.status === "connected" && !domainAllowed(mailbox.emailAddress, allowedDomains, signupBlocked) && (
+                {mailbox.status === "connected" && !domainAllowed(mailbox.emailAddress, allowedDomains) && (
                   <p role="alert" className="text-sm text-destructive">
                     Blocked: this address is outside the domains your administrator allows. Connect an address in an allowed domain, or ask your administrator to add this one.
                   </p>
@@ -187,14 +190,16 @@ export function MailboxList({
                 )}
                 {canManage && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={isBusy(`mailbox:${mailbox.id}`)}
-                      onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."), "test")}
-                    >
-                      {busyTag(`mailbox:${mailbox.id}`) === "test" ? "Checking…" : "Recheck connection"}
-                    </Button>
+                    {mailbox.status !== "disabled" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={isBusy(`mailbox:${mailbox.id}`)}
+                        onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."), "test")}
+                      >
+                        {busyTag(`mailbox:${mailbox.id}`) === "test" ? "Checking…" : "Recheck connection"}
+                      </Button>
+                    )}
                     <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} refresh={refresh} />
                     <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={isBusy(`mailbox:${mailbox.id}`)} run={run} refresh={refresh} />
                   </div>
@@ -204,6 +209,7 @@ export function MailboxList({
           </ul>
         )}
       </SettingsSection>
+      {dns}
       {rules}
     </div>
   );

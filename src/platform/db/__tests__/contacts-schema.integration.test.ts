@@ -99,7 +99,7 @@ describeDb("contacts, deals, companies and assignees schema", () => {
     return row.id;
   }
   async function record(): Promise<string> {
-    const [row] = await sql<{ id: string }[]>`insert into records (organization_id, person_id, reply_type_set_id) values (${orgA}, ${await lead()}, ${pipeline}) returning id`;
+    const [row] = await sql<{ id: string }[]>`insert into conversations (organization_id, person_id, reply_type_set_id) values (${orgA}, ${await lead()}, ${pipeline}) returning id`;
     return row.id;
   }
 
@@ -561,63 +561,63 @@ describeDb("contacts, deals, companies and assignees schema", () => {
   });
 
   describe("record assignee", () => {
-    const assignee = async (id: string) => (await sql`select assigned_to, assigned_source from records where id = ${id}`)[0];
+    const assignee = async (id: string) => (await sql`select assigned_to, assigned_source from conversations where id = ${id}`)[0];
 
     it("accepts a member of the same organization and refuses anyone else", async () => {
       const id = await record();
-      await sql`update records set assigned_to = ${bob}, assigned_source = 'human' where id = ${id}`;
+      await sql`update conversations set assigned_to = ${bob}, assigned_source = 'human' where id = ${id}`;
       expect((await assignee(id)).assigned_to).toBe(bob);
       // Carl belongs to B, Dana to no organization, and a made-up id to no user at all.
       for (const outsider of [carl, dana, uid()]) {
-        const error = await rejection(sql`update records set assigned_to = ${outsider}, assigned_source = 'human' where id = ${id}`);
-        expect([error.code, error.constraint_name]).toEqual(["23503", "records_assigned_to_fk"]);
+        const error = await rejection(sql`update conversations set assigned_to = ${outsider}, assigned_source = 'human' where id = ${id}`);
+        expect([error.code, error.constraint_name]).toEqual(["23503", "conversations_assigned_to_fk"]);
       }
     });
 
     it("requires a known source and a source whenever someone is assigned", async () => {
       const id = await record();
-      const noSource = await rejection(sql`update records set assigned_to = ${ann} where id = ${id}`);
-      expect([noSource.code, noSource.constraint_name]).toEqual(["23514", "records_assigned_source_ck"]);
-      const badSource = await rejection(sql`update records set assigned_to = ${ann}, assigned_source = 'robot' where id = ${id}`);
-      expect([badSource.code, badSource.constraint_name]).toEqual(["23514", "records_assigned_source_ck"]);
-      await sql`update records set assigned_to = ${ann}, assigned_source = 'auto' where id = ${id}`;
-      await sql`update records set assigned_to = null, assigned_source = 'cleared' where id = ${id}`;
-      await sql`update records set assigned_to = null, assigned_source = null where id = ${id}`;
-      await sql`update records set assigned_source = 'human' where id = ${id}`;
+      const noSource = await rejection(sql`update conversations set assigned_to = ${ann} where id = ${id}`);
+      expect([noSource.code, noSource.constraint_name]).toEqual(["23514", "conversations_assigned_source_ck"]);
+      const badSource = await rejection(sql`update conversations set assigned_to = ${ann}, assigned_source = 'robot' where id = ${id}`);
+      expect([badSource.code, badSource.constraint_name]).toEqual(["23514", "conversations_assigned_source_ck"]);
+      await sql`update conversations set assigned_to = ${ann}, assigned_source = 'auto' where id = ${id}`;
+      await sql`update conversations set assigned_to = null, assigned_source = 'cleared' where id = ${id}`;
+      await sql`update conversations set assigned_to = null, assigned_source = null where id = ${id}`;
+      await sql`update conversations set assigned_source = 'human' where id = ${id}`;
       expect(await assignee(id)).toEqual({ assigned_to: null, assigned_source: "human" });
     });
 
-    it("unassigns the records of a member who leaves, keeps their organization, and leaves other members alone", async () => {
+    it("unassigns the conversations of a member who leaves, keeps their organization, and leaves other members alone", async () => {
       const leaving = await user("Leaving");
       await sql`insert into members (organization_id, user_id, role) values (${orgA}, ${leaving}, 'member')`;
       const mine = await record();
       const theirs = await record();
-      await sql`update records set assigned_to = ${leaving}, assigned_source = 'human' where id = ${mine}`;
-      await sql`update records set assigned_to = ${ann}, assigned_source = 'auto' where id = ${theirs}`;
+      await sql`update conversations set assigned_to = ${leaving}, assigned_source = 'human' where id = ${mine}`;
+      await sql`update conversations set assigned_to = ${ann}, assigned_source = 'auto' where id = ${theirs}`;
 
       await sql`delete from members where organization_id = ${orgA} and user_id = ${leaving}`;
 
-      const [left] = await sql`select organization_id, assigned_to, assigned_source from records where id = ${mine}`;
+      const [left] = await sql`select organization_id, assigned_to, assigned_source from conversations where id = ${mine}`;
       // The source keeps its old value. It is read only while assigned_to is set.
       expect(left).toEqual({ organization_id: orgA, assigned_to: null, assigned_source: "human" });
       expect((await assignee(theirs)).assigned_to).toBe(ann);
     });
 
-    it("unassigns the records of a user who is deleted", async () => {
+    it("unassigns the conversations of a user who is deleted", async () => {
       const kept = await record();
-      await sql`update records set assigned_to = ${ann}, assigned_source = 'human' where id = ${kept}`;
+      await sql`update conversations set assigned_to = ${ann}, assigned_source = 'human' where id = ${kept}`;
       const [{ id: temp }] = await sql<{ id: string }[]>`insert into users (name, email) values ('Temp', ${email()}) returning id`;
       await sql`insert into members (organization_id, user_id, role) values (${orgA}, ${temp}, 'member')`;
       const other = await record();
-      await sql`update records set assigned_to = ${temp}, assigned_source = 'human' where id = ${other}`;
+      await sql`update conversations set assigned_to = ${temp}, assigned_source = 'human' where id = ${other}`;
       await sql`delete from users where id = ${temp}`;
       expect((await assignee(other)).assigned_to).toBeNull();
       expect((await assignee(kept)).assigned_to).toBe(ann);
     });
 
     it("has the index the queue and the key read", async () => {
-      const [index] = await sql`select pg_get_indexdef(indexrelid) as def from pg_index where indexrelid = 'records_org_assigned_idx'::regclass`;
-      expect(index.def).toContain("ON public.records USING btree (organization_id, assigned_to, workflow_state)");
+      const [index] = await sql`select pg_get_indexdef(indexrelid) as def from pg_index where indexrelid = 'conversations_org_assigned_idx'::regclass`;
+      expect(index.def).toContain("ON public.conversations USING btree (organization_id, assigned_to, workflow_state)");
     });
   });
 });

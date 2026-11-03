@@ -17,10 +17,9 @@ export type ColumnAction =
   | { kind: "delete" }
   | { kind: "run" }
   | { kind: "retry" }
-  | { kind: "recalculate" }
   | { kind: "pin" }
   | { kind: "unpin" }
-  | { kind: "duplicate" } // static and formula columns, values copied
+  | { kind: "duplicate" } // data columns, values copied
   | { kind: "runFirstN"; count: number }; // the first `count` rows in table order
 
 export type ColumnActionKind = ColumnAction["kind"];
@@ -41,7 +40,7 @@ export function isColumnActionOffered(kind: ColumnActionKind, ctx: ColumnActionC
     case "unpin":
       return ctx.pinned;
     case "duplicate":
-      return isStaticColumnType(ctx.column.type) || ctx.column.type === "formula";
+      return isStaticColumnType(ctx.column.type);
     case "runFirstN":
       return RUNNER_TYPES_WITH_RUN.has(ctx.column.type);
     default:
@@ -57,17 +56,15 @@ export function pinBlockedReason(ctx: Pick<ColumnActionContext, "pinned" | "pinC
 
 /**
  * The request that duplicates a column: a "(copy)" next to the original, same type and config. A data column also
- * copies its values (`copyValuesFrom`, one SQL update on the server). A formula column copies its expression and
- * the server recalculates it. Returns null for a runner column, which the menu does not offer either.
+ * copies its values (`copyValuesFrom`, one SQL update on the server). Returns null for a runner column, which the menu does not offer either.
  */
 export function duplicateColumnRequest(column: { id: string; key: string; name: string; type: string; config?: Record<string, unknown> }): Record<string, unknown> | null {
-  const isFormula = column.type === "formula";
-  if (!isFormula && !isStaticColumnType(column.type)) return null;
+  if (!isStaticColumnType(column.type)) return null;
   return {
     name: `${column.name} (copy)`.slice(0, 200),
     type: column.type,
     config: column.config ?? {},
     afterColumnId: column.id,
-    ...(isFormula ? {} : { copyValuesFrom: column.key }),
+    copyValuesFrom: column.key,
   };
 }

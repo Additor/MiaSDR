@@ -37,33 +37,30 @@ const facts = (partial: Partial<QueueFacts> = {}): QueueFacts => ({
 });
 
 describe("queue group and membership", () => {
-  it("picks the first match of problem, reply, classification, follow_up, next_step", () => {
+  it("picks the first match of problem, reply, ai_pick, follow_up, next_step", () => {
     expect(queueGroupOf(facts())).toBe("next_step");
     expect(queueGroupOf(facts({ workflowState: "waiting" }))).toBe("follow_up");
-    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("ai_pick");
     expect(queueGroupOf(facts({ hasReplyTypePickToReview: true, hasDraftToReview: true }))).toBe("reply");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasProblemDraft: true }))).toBe("problem");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasFailedJob: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "error", hasDraftToReview: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("ai_pick");
   });
 
-  it("admits action_required and error records, and waiting records whose time has come", () => {
+  it("admits action_required conversations, and waiting conversations whose time has come", () => {
     expect(isInQueue(facts(), NOW)).toBe(true);
-    expect(isInQueue(facts({ workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: new Date("2026-10-20T09:00:00Z") }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: new Date("2026-10-20T09:00:01Z") }), NOW)).toBe(false);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: null }), NOW)).toBe(false);
-    for (const workflowState of ["unclassified", "classifying", "idle", "paused", "closed"]) {
+    for (const workflowState of ["no_type", "idle", "closed"]) {
       expect(isInQueue(facts({ workflowState, hasDraftToReview: true, hasProblemDraft: true }), NOW)).toBe(false);
     }
   });
 
-  it("leaves a next_step record out while it has an open task, and keeps every other group", () => {
+  it("leaves a next_step conversation out while it has an open task, and keeps every other group", () => {
     expect(isInQueue(facts({ hasOpenTask: true }), NOW)).toBe(false);
     expect(isInQueue(facts({ hasOpenTask: true, hasDraftToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, hasReplyTypePickToReview: true }), NOW)).toBe(true);
-    expect(isInQueue(facts({ hasOpenTask: true, workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "waiting", nextActionAt: new Date("2026-10-19T09:00:00Z") }), NOW)).toBe(true);
   });
 });
@@ -78,10 +75,10 @@ describe("action queue domain", () => {
   });
 
   it("round-trips a cursor with microsecond precision and rejects anything else", () => {
-    const cursor = { sortKey: "2026-10-14 10:00:00.123456+00", recordId: ID };
+    const cursor = { sortKey: "2026-10-14 10:00:00.123456+00", conversationId: ID };
     expect(decodeQueueCursor(encodeQueueCursor(cursor))).toEqual(cursor);
     expect(() => decodeQueueCursor("nope")).toThrow(ValidationError);
-    expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["'; drop table records;--", ID])).toString("base64url"))).toThrow(ValidationError);
+    expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["'; drop table conversations;--", ID])).toString("base64url"))).toThrow(ValidationError);
     expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", "x"])).toString("base64url"))).toThrow(ValidationError);
     // A cursor from the newest-first order has two elements. Continuing it in the oldest-first order would skip or repeat items.
     expect(() => decodeQueueCursor(Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", ID])).toString("base64url"))).toThrow(/Reload the queue/);
@@ -99,12 +96,12 @@ describe("action queue domain", () => {
 
   it("parses filters and reads a bare due-before date as the end of that day", () => {
     expect(parseQueueFilter({})).toEqual({});
-    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
+    const f = parseQueueFilter({ group: "interested", channel: "email", list: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
     expect(f).toMatchObject({ groupKey: "interested", channel: "email", group: "reply", replyTypeId: ID });
     expect(f.dueBefore?.toISOString()).toBe("2026-10-15T23:59:59.999Z");
     expect(f.dueAfter?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(parseQueueFilter({ errorsOnly: "1" }).errorsOnly).toBe(true);
-    expect(() => parseQueueFilter({ errorsOnly: "1", group: "reply" })).toThrow(ValidationError);
+    expect(() => parseQueueFilter({ errorsOnly: "1", list: "reply" })).toThrow(ValidationError);
   });
 });
 
@@ -119,8 +116,8 @@ describe("waiting since", () => {
     ...partial,
   });
 
-  it("starts the clock of a reply, a classification and a next step at the last inbound message", () => {
-    for (const group of ["reply", "classification", "next_step"] as const) {
+  it("starts the clock of a reply, an AI pick and a next step at the last inbound message", () => {
+    for (const group of ["reply", "ai_pick", "next_step"] as const) {
       expect(waitingSince(group, waiting())).toEqual({ at: at("2026-10-18T08:00:00Z"), basis: "inbound" });
     }
   });
@@ -144,7 +141,7 @@ describe("waiting since", () => {
 });
 
 describe("work totals", () => {
-  const none = { queue: 0, tasks: 0, uncertainCampaignSends: 0, unmatchedSenders: 0, deadLetters: 0 };
+  const none = { queue: 0, tasks: 0, uncertainCampaignSends: 0, unmatchedSenders: 0, deadLetters: 0, bouncePausedCampaigns: 0 };
 
   it("is clear only when every source is empty", () => {
     expect(isWorkClear(none)).toBe(true);
@@ -155,23 +152,23 @@ describe("work totals", () => {
 });
 
 describe("next queue item", () => {
-  const items = ["a", "b", "c", "d"].map((recordId) => ({ recordId }));
+  const items = ["a", "b", "c", "d"].map((conversationId) => ({ conversationId }));
 
   it("takes the first candidate that is not the open item", () => {
-    expect(pickNextQueueItem(items, "a")).toEqual({ recordId: "b" });
-    expect(pickNextQueueItem(items, "c")).toEqual({ recordId: "a" });
-    expect(pickNextQueueItem(items, "handled")).toEqual({ recordId: "a" });
+    expect(pickNextQueueItem(items, "a")).toEqual({ conversationId: "b" });
+    expect(pickNextQueueItem(items, "c")).toEqual({ conversationId: "a" });
+    expect(pickNextQueueItem(items, "handled")).toEqual({ conversationId: "a" });
   });
 
   it("answers null when nothing else waits", () => {
     expect(pickNextQueueItem([], "a")).toBeNull();
-    expect(pickNextQueueItem([{ recordId: "a" }], "a")).toBeNull();
+    expect(pickNextQueueItem([{ conversationId: "a" }], "a")).toBeNull();
   });
 
   it("searches the groups below the item, then the ones above, then its own", () => {
-    expect(groupsAfter("reply")).toEqual(["follow_up", "classification", "next_step", "problem", "reply"]);
-    expect(groupsAfter("classification")).toEqual(["next_step", "problem", "reply", "follow_up", "classification"]);
-    expect(groupsAfter("problem")).toEqual(["reply", "follow_up", "classification", "next_step", "problem"]);
+    expect(groupsAfter("reply")).toEqual(["follow_up", "ai_pick", "next_step", "problem", "reply"]);
+    expect(groupsAfter("ai_pick")).toEqual(["next_step", "problem", "reply", "follow_up", "ai_pick"]);
+    expect(groupsAfter("problem")).toEqual(["reply", "follow_up", "ai_pick", "next_step", "problem"]);
     for (const group of QUEUE_GROUPS) expect([...groupsAfter(group)].sort()).toEqual([...QUEUE_GROUPS].sort());
   });
 });
@@ -204,46 +201,36 @@ describe("what an AI pick waits for", () => {
     hasProposedType: true,
     proposedSystemRole: null,
     stopReviewOpen: false,
-    acknowledged: false,
-    appliedIsCurrentType: false,
-    checkMode: "before",
     stopped: false,
     ...partial,
   });
-  const applied = (partial: Partial<PickReviewFacts> = {}) => pick({ status: "auto_applied", appliedIsCurrentType: true, checkMode: "after", ...partial });
+  const applied = (partial: Partial<PickReviewFacts> = {}) => pick({ status: "auto_applied", ...partial });
 
-  it("asks to accept a current held pick, and nothing once the record version moved on", () => {
+  it("asks to accept a current held pick, and nothing once the conversation version moved on", () => {
     expect(pickReviewOf(pick())).toBe("held");
     expect(pickReviewOf(pick({ current: false }))).toBeNull();
     expect(pickReviewOf(pick({ hasProposedType: false }))).toBeNull();
     expect(pickReviewOf(pick({ status: "stale", current: false }))).toBeNull();
   });
 
-  it("asks Looks right only for an applied pick decided with Check after, still the record's type, not looked at", () => {
-    expect(pickReviewOf(applied())).toBe("looks_right");
-    expect(pickReviewOf(applied({ checkMode: null }))).toBe("looks_right");
-    expect(pickReviewOf(applied({ checkMode: "skip" }))).toBeNull();
-    expect(pickReviewOf(applied({ checkMode: "before" }))).toBeNull();
-    expect(pickReviewOf(applied({ acknowledged: true }))).toBeNull();
-    expect(pickReviewOf(applied({ appliedIsCurrentType: false }))).toBeNull();
-    for (const status of ["accepted", "overridden", "rejected", "failed"]) expect(pickReviewOf(applied({ status }))).toBeNull();
+  it("asks nothing of an applied pick", () => {
+    for (const status of ["auto_applied", "accepted", "overridden", "rejected", "failed"]) expect(pickReviewOf(applied({ status }))).toBeNull();
   });
 
   it("turns an open stop request into a stop review whatever the pick's status, unless contact already stopped", () => {
     expect(pickReviewOf(pick({ stopReviewOpen: true }))).toBe("stop_review");
-    expect(pickReviewOf(applied({ stopReviewOpen: true, checkMode: "skip" }))).toBe("stop_review");
+    expect(pickReviewOf(applied({ stopReviewOpen: true }))).toBe("stop_review");
     // An agent can move the pick. Only a person's review closes the question.
     for (const status of ["stale", "rejected", "overridden"]) expect(pickReviewOf(pick({ status, current: false, stopReviewOpen: true }))).toBe("stop_review");
-    expect(pickReviewOf(applied({ acknowledged: true, stopReviewOpen: true }))).toBe("stop_review");
     // Do not contact or a suppressed address: nothing is left to stop, and a held stop request is not offered for Accept.
     expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopReviewOpen: true, stopped: true }))).toBeNull();
     expect(pickReviewOf(pick({ stopReviewOpen: true, stopped: true }))).toBe("held");
-    expect(pickReviewOf(applied({ stopReviewOpen: true, stopped: true }))).toBe("looks_right");
+    expect(pickReviewOf(applied({ stopReviewOpen: true, stopped: true }))).toBeNull();
     // A person reviewed it, so the pick asks only what it asks otherwise.
-    expect(pickReviewOf(applied())).toBe("looks_right");
+    expect(pickReviewOf(applied())).toBeNull();
   });
 
-  it("keeps a record with an open stop request in the queue whatever its state", () => {
+  it("keeps a conversation with an open stop request in the queue whatever its state", () => {
     expect(isInQueue(facts({ workflowState: "idle", hasStopToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "idle" }), NOW)).toBe(false);
   });

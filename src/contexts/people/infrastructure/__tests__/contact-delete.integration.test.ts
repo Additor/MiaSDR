@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import type { ContactDeleteDeps, ContactDeletePreview } from "../../application/contact-delete";
-import { describeDb, dropOrgs, testSql, useTestEnv } from "@/test-support/db";
+import { describeDb, dropOrgs, insertFollowUpFlow, testSql, useTestEnv } from "@/test-support/db";
 
 /**
  * Contact delete ("Contacts and Companies CRUD" in docs/decisions.md): the use case over the composition root's real wiring of
@@ -56,14 +56,13 @@ describeDb("contact delete", () => {
     const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
     const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${`box-${tag}@x.test`}, 'connected') returning id`);
     const account = await one(sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${`acc-${tag}`}, ${`li-${tag}`}) returning id`);
-    const personal = await one(sql`insert into campaigns (organization_id, channel, name, type, created_by) values (${org}, 'linkedin', 'Mine', 'personal', ${other}) returning id`);
     const regular = await one(sql`insert into campaigns (organization_id, channel, name, status) values (${org}, 'email', 'Spring', 'completed') returning id`);
     const actors = {
       member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
       other: { userId: other, organizationId: org, role: "member" } satisfies Actor,
       admin: { userId: admin, organizationId: org, role: "admin" } satisfies Actor,
     };
-    return { org, tag, pipeline, pipeline2, sub, mailbox, account, personal, regular, actors };
+    return { org, tag, pipeline, pipeline2, sub, mailbox, account, regular, actors };
   }
   type Org = Awaited<ReturnType<typeof organization>>;
 
@@ -82,46 +81,46 @@ describeDb("contact delete", () => {
    * a sent attempt, a follow-up run, events, notes, tasks, a do not contact mark, a resolved identity exception, a won and a
    * lost deal, and a finished campaign enrollment with two sends a month old.
    */
-  async function full(o: Org, label: string, opts: { companyId?: string | null; privateThread?: boolean } = {}) {
+  async function full(o: Org, label: string, opts: { companyId?: string | null } = {}) {
     const t = `${o.tag}-${label}`;
     const { person, email } = await bare(o, label, opts);
-    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
+    const conversationId = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
     const box = `me-${t}@x.test`;
-    const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${o.org}, ${record}, 'email', ${box}) returning id`);
+    const thread = await one(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${o.org}, ${conversationId}, 'email', ${box}) returning id`);
     const inbound = await one(sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${o.org}, ${conversation}, 'email', ${box}, 'inbound', ${`in-${t}`}, 'hello', now()) returning id`);
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      values (${o.org}, ${thread}, 'email', ${box}, 'inbound', ${`in-${t}`}, 'hello', now()) returning id`);
     const outbound = await one(sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${o.org}, ${conversation}, 'email', ${box}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
-    await sql`update records set latest_inbound_message_id = ${inbound} where id = ${record}`;
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+      values (${o.org}, ${thread}, 'email', ${box}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
+    await sql`update conversations set latest_inbound_message_id = ${inbound} where id = ${conversationId}`;
     await one(sql`
-      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
-      values (${o.org}, ${record}, ${inbound}, 0, ${o.sub}, ${o.sub}, ${o.sub}, 0.9) returning id`);
+      insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
+      values (${o.org}, ${conversationId}, ${inbound}, 0, ${o.sub}, ${o.sub}, ${o.sub}, 0.9) returning id`);
     await sql`insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, completed_at) values (${o.org}, 'classification', 'succeeded', 'message', ${inbound}, ${`job-c-${t}`}, now())`;
     const draft = await one(sql`
-      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
-      values (${o.org}, ${record}, ${conversation}, ${inbound}, 0, 'email') returning id`);
+      insert into drafts (organization_id, conversation_id, thread_id, reply_for_message_id, expected_context_version, channel)
+      values (${o.org}, ${conversationId}, ${thread}, ${inbound}, 0, 'email') returning id`);
     const attempt = await one(sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa-${t}`}, ${o.actors.member.userId}, 'prepared') returning id`);
     await sql`update send_attempts set status = 'sent' where id = ${attempt}`;
-    const sequence = await one(sql`insert into sequences (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
-    const version = await one(sql`insert into sequence_versions (organization_id, sequence_id, version) values (${o.org}, ${sequence}, 1) returning id`);
+    const flow = await insertFollowUpFlow(sql, o.org, `Seq ${t}`);
+    const version = await one(sql`insert into follow_up_versions (organization_id, flow_id, version) values (${o.org}, ${flow}, 1) returning id`);
     const step = await one(sql`
-      insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+      insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${o.org}, ${version}, 1, 'reply', 'Step 1', 0, 'Write a short note.') returning id`);
-    await sql`update sequence_versions set status = 'published', published_at = now() where id = ${version}`;
+    await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${version}`;
     const run = await one(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-      values (${o.org}, ${record}, ${conversation}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
+      insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
+      values (${o.org}, ${conversationId}, ${thread}, ${flow}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
     await sql`
-      insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
+      insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
-    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
+    await sql`insert into events (organization_id, person_id, conversation_id, event_type, actor_type) values (${o.org}, ${person}, ${conversationId}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
-    await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
+    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${conversationId}, 'on the conversation')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
-    await sql`insert into tasks (organization_id, person_id, record_id, name) values (${o.org}, ${person}, ${record}, 'call')`;
+    await sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${o.org}, ${person}, ${conversationId}, 'call')`;
     await sql`insert into contact_policies (organization_id, person_id, do_not_contact, reason, source, set_at) values (${o.org}, ${person}, true, 'asked', 'human', now())`;
     await sql`
       insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason, status, resolved_person_id, resolved_at)
@@ -135,16 +134,7 @@ describeDb("contact delete", () => {
     }
     const won = await closedDeal(o, person, "won", `${label} renewal`);
     const lost = await closedDeal(o, person, "lost", `${label} pilot`);
-    let privateConversation: string | null = null;
-    if (opts.privateThread) {
-      const privateRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
-      privateConversation = await one(sql`
-        insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.org}, ${privateRecord}, 'linkedin', ${`li-${t}`}, ${o.personal}) returning id`);
-      await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-        values (${o.org}, ${privateConversation}, 'linkedin', ${`li-${t}`}, 'inbound', ${`li-in-${t}`}, 'private hello', now())`;
-    }
-    return { person, email, record, conversation, inbound, won, lost, privateConversation };
+    return { person, email, conversationId, thread, inbound, won, lost };
   }
 
   async function closedDeal(o: Org, personId: string, kind: "won" | "lost", title: string) {
@@ -160,18 +150,18 @@ describeDb("contact delete", () => {
 
   /** Rows that point at the person, per table the delete clears. */
   async function rowsOf(o: Org, person: string) {
-    const recs = sql`(select id from records where person_id = ${person})`;
-    const convs = sql`(select id from conversations where record_id in ${recs})`;
+    const recs = sql`(select id from conversations where person_id = ${person})`;
+    const convs = sql`(select id from threads where conversation_id in ${recs})`;
     const [row] = await sql`
       select
         (select count(*) from people where id = ${person})::int as people,
-        (select count(*) from records where person_id = ${person})::int as records,
-        (select count(*) from conversations where id in ${convs})::int as conversations,
-        (select count(*) from messages where conversation_id in ${convs})::int as messages,
-        (select count(*) from reply_type_picks where record_id in ${recs})::int as classifications,
-        (select count(*) from drafts where record_id in ${recs})::int as drafts,
-        (select count(*) from sequence_runs where record_id in ${recs})::int as sequence_runs,
-        (select count(*) from events where person_id = ${person} or record_id in ${recs})::int as events,
+        (select count(*) from conversations where person_id = ${person})::int as conversations,
+        (select count(*) from threads where id in ${convs})::int as threads,
+        (select count(*) from messages where thread_id in ${convs})::int as messages,
+        (select count(*) from reply_type_picks where conversation_id in ${recs})::int as classifications,
+        (select count(*) from drafts where conversation_id in ${recs})::int as drafts,
+        (select count(*) from follow_up_runs where conversation_id in ${recs})::int as follow_up_runs,
+        (select count(*) from events where person_id = ${person} or conversation_id in ${recs})::int as events,
         (select count(*) from contact_policies where person_id = ${person})::int as policies,
         (select count(*) from notes where person_id = ${person})::int as notes,
         (select count(*) from tasks where person_id = ${person})::int as tasks,
@@ -187,7 +177,7 @@ describeDb("contact delete", () => {
     notes: preview.counts.notes,
     tasks: preview.counts.tasks,
     events: preview.counts.events,
-    conversations: preview.counts.conversations,
+    threads: preview.counts.threads,
     messages: preview.counts.messages,
     sends: preview.counts.sends,
   });
@@ -218,11 +208,10 @@ describeDb("contact delete", () => {
     const preview = await app.previewContactDelete(deps, o.actors.admin, target.person);
     expect(preview).toEqual({
       person: { id: target.person, fullName: "target", email: target.email, linkedinUrl: null, doNotContact: true },
-      counts: { deals: { won: 1, lost: 1, wonTitles: ["target renewal"] }, notes: 2, tasks: 1, events: preview.counts.events, conversations: 1, messages: 2, campaigns: 1, sends: 2 },
+      counts: { deals: { won: 1, lost: 1, wonTitles: ["target renewal"] }, notes: 2, tasks: 1, events: preview.counts.events, threads: 1, messages: 2, campaigns: 1, sends: 2 },
       blockers: [],
       suppressionKept: true,
       linkedinOnlyBlock: false,
-      hiddenExcluded: false,
       agentProtected: false,
     });
     // Two seeded lines plus the deals' own history.
@@ -331,33 +320,6 @@ describeDb("contact delete", () => {
     expect(preview.blockers).toEqual([]);
     await app.deleteContact(deps, o.actors.admin, stale.person, { expected: expectedOf(preview) });
     expect(await sql`select id from ai_jobs where id = ${job}`).toEqual([]);
-  });
-
-  it("blocks a member on another member's personal campaign and private thread, leaves them out of the counts, and lets an admin delete", async () => {
-    const o = await organization();
-    const target = await full(o, "private", { privateThread: true });
-    await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${o.org}, ${o.personal}, ${target.person}, 'linkedin', 'completed')`;
-
-    const member = await app.previewContactDelete(deps, o.actors.member, target.person);
-    expect(reasons(member)).toEqual(["personal_campaign_sends", "private_conversation"]);
-    expect(member.hiddenExcluded).toBe(true);
-    expect(member.counts).toMatchObject({ conversations: 1, messages: 2, campaigns: 1 });
-
-    // The campaign's creator sees both and is not blocked.
-    const creator = await app.previewContactDelete(deps, o.actors.other, target.person);
-    expect(creator.blockers).toEqual([]);
-    expect(creator.hiddenExcluded).toBe(false);
-
-    const admin = await app.previewContactDelete(deps, o.actors.admin, target.person);
-    expect(admin.blockers).toEqual([]);
-    expect(admin.hiddenExcluded).toBe(false);
-    expect(admin.counts).toMatchObject({ conversations: 2, messages: 3, campaigns: 2 });
-
-    const error = await rejection(app.deleteContact(deps, o.actors.member, target.person, { expected: expectedOf(member) }));
-    expect((error as ConflictError).details?.code).toBe("contact_blocked");
-    await app.deleteContact(deps, o.actors.admin, target.person, { expected: expectedOf(admin) });
-    expect(Object.values(await rowsOf(o, target.person)).every((n) => n === 0)).toBe(true);
-    expect(await sql`select id from conversations where id = ${target.privateConversation}`).toEqual([]);
   });
 
   it("keeps an existing suppression row as it is, and blocks nothing for an unmarked contact", async () => {

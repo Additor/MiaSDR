@@ -9,8 +9,8 @@ import { deleteContact, flatten, previewContactDelete, type ContactDeleteBlocker
 import { BLOCK_MESSAGES } from "@/contexts/people/application/lead-delete-terms";
 import { deleteLeads, previewLeadDelete } from "@/contexts/people/application/lead-management";
 import { AGENT_DELETE_PROTECTED } from "@/contexts/people/domain/person-delete-policy";
-import { withAgentUsage } from "@/contexts/tenancy/application/mcp-agent-usage";
-import { agentUsageDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { withAgentUsage } from "@/contexts/agent-access/application/mcp-agent-usage";
+import { agentUsageDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { actionToken, actionTokenMatches, actionTokenStale, readActionToken } from "@/shared/action-token";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 
@@ -55,14 +55,12 @@ const CONTACT_BLOCKERS: Record<ContactDeleteBlocker["reason"], string> = {
   recent_send: "A message went to this contact a moment ago. Try again once the send has settled.",
   recent_invite: "A LinkedIn invitation went to this contact a moment ago. Try again once it has settled.",
   ai_job_running: "An AI job is working on this contact's replies. Try again in a moment.",
-  private_conversation: "This contact has another member's private conversation. Ask that member, an owner or an admin.",
-  personal_campaign_sends: "This contact is in another member's personal campaign. Ask its creator, an owner or an admin.",
 };
 
 const targetIdOf = (target: IrreversibleTarget): string => ("dealId" in target ? target.dealId : "personId" in target ? target.personId : target.campaignId);
 
 const countWords = (counts: ContactDeleteCounts) =>
-  `${counts.conversations} conversations with ${counts.messages} messages, ${counts.deals.won + counts.deals.lost} closed deals, ${counts.notes} notes, ${counts.tasks} tasks and ${counts.sends} sends`;
+  `${counts.threads} conversations with ${counts.messages} messages, ${counts.deals.won + counts.deals.lost} closed deals, ${counts.notes} notes, ${counts.tasks} tasks and ${counts.sends} sends`;
 
 async function previewPerson(actor: Actor, kind: "delete_lead" | "delete_contact", personId: string): Promise<IrreversiblePreview> {
   const base = { kind, targetId: personId, erases: null, alreadyDone: false };

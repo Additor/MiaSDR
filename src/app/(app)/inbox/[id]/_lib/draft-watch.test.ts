@@ -18,9 +18,7 @@ describe("draft watch", () => {
     expect(isWatching(next, bumped, 10_000)).toBe(true);
   });
 
-  it("starts at mount when a draft is already generating or its job waits", () => {
-    const generating = { ...base, draftStatus: "generating" };
-    expect(isWatching(initialWatch(generating, 7), generating, 7)).toBe(true);
+  it("starts at mount when a draft job waits", () => {
     const queued = { ...base, drafting: true };
     expect(isWatching(initialWatch(queued, 7), queued, 7)).toBe(true);
   });
@@ -36,13 +34,12 @@ describe("draft watch", () => {
     for (const draftStatus of ["awaiting_review", "failed", "sending", "sent", "delivery_uncertain"]) {
       expect(isWatching(state, { ...base, contextVersion: 4, draftStatus, drafting: true }, 3_000), draftStatus).toBe(false);
     }
-    expect(isWatching(state, { ...base, contextVersion: 4, draftStatus: "generating" }, 3_000)).toBe(true);
+    expect(isWatching(state, { ...base, contextVersion: 4, draftStatus: null, drafting: true }, 3_000)).toBe(true);
   });
 
-  it("stops when the record closed or errored, since no draft will come", () => {
+  it("stops when the conversation closed, since no draft will come", () => {
     const state = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 0);
     expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "closed", drafting: true }, 3_000)).toBe(false);
-    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "error", drafting: true }, 3_000)).toBe(false);
   });
 
   it("polls every 3 s and gives up at 45 s", () => {
@@ -71,11 +68,11 @@ describe("draft watch", () => {
 
 describe("watchedDraftStatus", () => {
   it("reads the newest open draft of the current context version only, so an earlier sent draft does not end the watch", () => {
-    const sentBefore = { conversationId: "c1", status: "sent", expectedContextVersion: 3 };
+    const sentBefore = { threadId: "c1", status: "sent", expectedContextVersion: 3 };
     expect(watchedDraftStatus([sentBefore], "c1", 4)).toBeNull();
-    const generating = { conversationId: "c1", status: "generating", expectedContextVersion: 4 };
-    expect(watchedDraftStatus([generating, sentBefore], "c1", 4)).toBe("generating");
-    expect(watchedDraftStatus([{ ...generating, status: "stale" }, sentBefore], "c1", 4)).toBeNull();
-    expect(watchedDraftStatus([{ ...generating, conversationId: "c2" }], "c1", 4)).toBeNull();
+    const waiting = { threadId: "c1", status: "awaiting_review", expectedContextVersion: 4 };
+    expect(watchedDraftStatus([waiting, sentBefore], "c1", 4)).toBe("awaiting_review");
+    expect(watchedDraftStatus([{ ...waiting, status: "stale" }, sentBefore], "c1", 4)).toBeNull();
+    expect(watchedDraftStatus([{ ...waiting, threadId: "c2" }], "c1", 4)).toBeNull();
   });
 });

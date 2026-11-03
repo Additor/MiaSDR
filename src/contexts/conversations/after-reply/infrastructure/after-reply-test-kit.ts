@@ -16,11 +16,11 @@ export const FLOW_STEPS = [
 
 export async function createCampaign(
   sql: Sql,
-  input: { organizationId: string; name?: string; channel?: "email" | "linkedin"; type?: "regular" | "personal"; status?: "draft" | "active" | "paused" | "completed"; archived?: boolean },
+  input: { organizationId: string; name?: string; channel?: "email" | "linkedin"; status?: "draft" | "active" | "paused" | "completed"; archived?: boolean },
 ): Promise<string> {
   const [row] = await sql`
-    insert into campaigns (organization_id, channel, name, type, status, archived_at)
-    values (${input.organizationId}, ${input.channel ?? "email"}, ${input.name ?? `Campaign ${Math.random().toString(36).slice(2, 7)}`}, ${input.type ?? "regular"}, ${input.status ?? "active"},
+    insert into campaigns (organization_id, channel, name, status, archived_at)
+    values (${input.organizationId}, ${input.channel ?? "email"}, ${input.name ?? `Campaign ${Math.random().toString(36).slice(2, 7)}`}, ${input.status ?? "active"},
             ${input.archived ? new Date() : null})
     returning id`;
   return row.id as string;

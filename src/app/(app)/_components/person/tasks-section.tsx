@@ -9,13 +9,13 @@ import { listMemberChoices } from "@/contexts/tenancy/application/member-directo
 import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 
 /**
- * Loads the tasks and the organization's members. With `recordId`, one reply record's tasks; with `personId`, every task of
- * the person, and new tasks get no record. Wrap it in Suspense.
+ * Loads the tasks and the organization's members. With `conversationId`, one conversation's tasks; with `personId`, every task of
+ * the person, and new tasks get no conversation. Wrap it in Suspense.
  */
 export async function TasksSection({ actor, compact, ...target }: TaskTarget & { actor: Actor; compact?: boolean }) {
   await connection();
   const deps = taskDeps();
-  const scope = target.recordId !== undefined ? { recordId: target.recordId } : { personId: target.personId };
+  const scope = target.conversationId !== undefined ? { conversationId: target.conversationId } : { personId: target.personId };
   const [tasks, members] = await Promise.all([listTasks(deps, actor, { state: "all", ...scope }), listMemberChoices(memberDirectoryDeps(), actor)]);
   const admin = isOwnerOrAdmin(actor.role);
   return (

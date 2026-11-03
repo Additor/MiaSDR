@@ -1,5 +1,5 @@
 import type { Locator } from "@playwright/test";
-import { expect, settled, signInAdmin, test, waitForHydrated } from "./support/fixtures";
+import { ADMIN, expect, settled, signInAdmin, test, waitForHydrated } from "./support/fixtures";
 
 /**
  * Popups open under their trigger with the left edges lined up ("Popups" in DESIGN.md). A mouse opens them: Base UI's
@@ -10,6 +10,15 @@ async function expectUnder(trigger: Locator, popup: Locator) {
   const [t, p] = [await trigger.boundingBox(), await popup.boundingBox()];
   if (!t || !p) throw new Error("No box for the trigger or the popup.");
   expect(p.y).toBeGreaterThanOrEqual(t.y + t.height);
+  expect(Math.abs(p.x - t.x)).toBeLessThan(1);
+}
+
+/** The account menu sits at the bottom of the sidebar, so it opens upward, with the same left edge. */
+async function expectAbove(trigger: Locator, popup: Locator) {
+  await settled(popup);
+  const [t, p] = [await trigger.boundingBox(), await popup.boundingBox()];
+  if (!t || !p) throw new Error("No box for the trigger or the popup.");
+  expect(p.y + p.height).toBeLessThanOrEqual(t.y);
   expect(Math.abs(p.x - t.x)).toBeLessThan(1);
 }
 
@@ -35,9 +44,9 @@ test.describe("popup placement", () => {
   test("a menu whose trigger sits 8px from the viewport edge stays lined up with it", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/inbox");
-    const trigger = page.getByTestId("org-switcher");
+    const trigger = page.getByRole("button", { name: ADMIN.email });
     await waitForHydrated(trigger);
     await trigger.click();
-    await expectUnder(trigger, page.locator('[data-slot="dropdown-menu-content"][data-open]'));
+    await expectAbove(trigger, page.locator('[data-slot="dropdown-menu-content"][data-open]'));
   });
 });

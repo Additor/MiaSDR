@@ -4,18 +4,16 @@ import { events } from "@/platform/db/schema";
 import { NotFoundError, viaMeta } from "@/shared/errors";
 import type { AssignmentStore } from "../application/assignment";
 import { ASSIGNED_EVENT, planAssign, planClaim } from "../domain/assignment";
-import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 
 export const drizzleAssignmentStore: AssignmentStore = {
-  async change({ organizationId, recordId, actorUserId, via, change, now }) {
+  async change({ organizationId, conversationId, actorUserId, via, change, now }) {
     return db.transaction(async (tx) => {
-      // The same lock the other record writers take, so a claim and a reclassification wait for each other. The row is
-      // read through the visibility rule: a record that exists only for a private thread answers 404.
+      // The same lock the other conversation writers take, so a claim and a reclassification wait for each other. The row is
       const [row] = rowsOf<{ person_id: string; assigned_to: string | null }>(
         await tx.execute(sql`
-          select r.person_id, r.assigned_to from records r
-          where r.id = ${recordId} and r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
+          select r.person_id, r.assigned_to from conversations r
+          where r.id = ${conversationId} and r.organization_id = ${organizationId}
           for no key update`),
       );
       if (!row) throw new NotFoundError("Reply handling not found");
@@ -25,11 +23,11 @@ export const drizzleAssignmentStore: AssignmentStore = {
         targetIsMember = rowsOf<{ one: number }>(await tx.execute(sql`select 1 as one from members where organization_id = ${organizationId} and user_id = ${change.target}`)).length > 0;
       }
       const plan = change.kind === "claim" ? planClaim(row.assigned_to, actorUserId) : planAssign({ current: row.assigned_to, expected: change.expected, target: change.target, targetIsMember });
-      if (!plan.changed) return { recordId, assignedTo: plan.assignedTo, previousAssignedTo: row.assigned_to, changed: false };
+      if (!plan.changed) return { conversationId, assignedTo: plan.assignedTo, previousAssignedTo: row.assigned_to, changed: false };
 
       // Not the context version, not updated_at: an assignment is not a reclassification, and the queue reads updated_at as
-      // the time a record went into error.
-      await tx.execute(sql`update records set assigned_to = ${plan.assignedTo}, assigned_source = ${plan.source} where id = ${recordId} and organization_id = ${organizationId}`);
+      // the time a conversation went into error.
+      await tx.execute(sql`update conversations set assigned_to = ${plan.assignedTo}, assigned_source = ${plan.source} where id = ${conversationId} and organization_id = ${organizationId}`);
 
       const names = new Map(
         rowsOf<{ id: string; name: string }>(
@@ -40,7 +38,7 @@ export const drizzleAssignmentStore: AssignmentStore = {
       await tx.insert(events).values({
         organizationId,
         personId: row.person_id,
-        recordId,
+        conversationId,
         eventType: ASSIGNED_EVENT,
         actorType: "human",
         actorUserId,
@@ -49,7 +47,7 @@ export const drizzleAssignmentStore: AssignmentStore = {
         meta: { source: "human", action: change.kind, ...viaMeta(via) },
         createdAt: now,
       });
-      return { recordId, assignedTo: plan.assignedTo, previousAssignedTo: row.assigned_to, changed: true };
+      return { conversationId, assignedTo: plan.assignedTo, previousAssignedTo: row.assigned_to, changed: true };
     });
   },
 };

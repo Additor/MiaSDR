@@ -1,5 +1,5 @@
-import { listMcpToolCalls } from "@/contexts/tenancy/application/mcp-tool-calls";
-import { mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { listMcpToolCalls } from "@/contexts/agent-access/application/mcp-tool-calls";
+import { mcpToolCallDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { withAdmin } from "@/app/_lib/api";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

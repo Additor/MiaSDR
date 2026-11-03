@@ -125,7 +125,7 @@ describeDb("grid enrichment runs", () => {
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(await m.providers.listProviders(d.providerDeps, actor))).not.toContain(SECRET);
 
-    const [row] = await sql`select encrypted_payload, encryption_version from grid_provider_credentials where organization_id = ${org}`;
+    const [row] = await sql`select c.encrypted_payload, c.encryption_version from integration_credentials c join grid_providers p on p.account_id = c.account_id where p.organization_id = ${org}`;
     expect(row.encrypted_payload).toMatch(/^v2:/);
     expect(row.encryption_version).toBe("v2");
     expect(row.encrypted_payload).not.toContain(SECRET);
@@ -136,7 +136,7 @@ describeDb("grid enrichment runs", () => {
     // Rotating replaces the envelope.
     const rotated = await m.providers.updateProvider(d.providerDeps, actor, view.id, { credentials: { apiKey: "another-key-999999" } });
     expect(JSON.stringify(rotated)).not.toContain("another-key");
-    const [after] = await sql`select encrypted_payload from grid_provider_credentials where organization_id = ${org}`;
+    const [after] = await sql`select c.encrypted_payload from integration_credentials c join grid_providers p on p.account_id = c.account_id where p.organization_id = ${org}`;
     expect(after.encrypted_payload).not.toBe(row.encrypted_payload);
   });
 

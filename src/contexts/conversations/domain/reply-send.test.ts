@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConflictError, ValidationError } from "@/shared/errors";
 import { MAX_LINKEDIN_REPLY } from "./linkedin-reply";
 import { MANUAL_BODY_MAX } from "./manual-reply";
-import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, NEWER_MESSAGE, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "./reply-send";
+import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, NEWER_MESSAGE, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "./reply-send";
 
 const ACCOUNT = "4f6c1f6e-7a0b-4c55-9d7e-2b1c3a4d5e6f";
 
@@ -18,11 +18,11 @@ function refusal(run: () => unknown): { error: string; message: string; details?
   }
 }
 
-describe("checkRecordOpen", () => {
+describe("checkConversationOpen", () => {
   it("refuses closed reply handling and passes every other state", () => {
-    expect(refusal(() => checkRecordOpen({ workflowState: "closed" }, "email"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
-    expect(refusal(() => checkRecordOpen({ workflowState: "closed" }, "linkedin"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
-    for (const workflowState of ["unclassified", "action_required", "waiting", "idle", "paused", "error"]) expect(refusal(() => checkRecordOpen({ workflowState }, "email"))).toBeNull();
+    expect(refusal(() => checkConversationOpen({ workflowState: "closed" }, "email"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
+    expect(refusal(() => checkConversationOpen({ workflowState: "closed" }, "linkedin"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
+    for (const workflowState of ["no_type", "action_required", "waiting", "idle"]) expect(refusal(() => checkConversationOpen({ workflowState }, "email"))).toBeNull();
   });
 });
 
@@ -92,8 +92,8 @@ describe("checkDraftCurrent", () => {
       error: "conflict",
       message: "A person changed the reply type after this draft was written. Review the thread and regenerate the draft.",
     });
-    expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: "The conversation became private" }, expected, "linkedin"))?.message).toBe(
-      "The conversation became private. Review the thread and regenerate the draft.",
+    expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: "The thread moved on" }, expected, "linkedin"))?.message).toBe(
+      "The thread moved on. Review the thread and regenerate the draft.",
     );
     expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: null }, expected, "email"))?.message).toBe("This draft is out of date. Review the thread and regenerate the draft.");
   });

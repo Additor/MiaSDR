@@ -24,13 +24,13 @@ import { countOf, formatCount } from "@/shared/format-number";
 interface Row {
   id: string;
   email: string;
-  reason: "unsubscribed" | "bounced" | "manual" | "complaint";
+  reason: "unsubscribed" | "bounced" | "manual";
   note: string | null;
   addedInSettings: boolean;
   createdAt: string;
 }
 
-const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Stopped by a person", complaint: "Spam complaint" };
+const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Stopped by a person" };
 /** A `manual` row pasted here reads apart from one a stop request or a do-not-contact deletion wrote, which cannot be removed. */
 const reasonLabel = (row: Row) => (row.addedInSettings ? "Added here" : REASON_LABEL[row.reason]);
 
@@ -77,13 +77,13 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
     <div>
       <div className="stack-group pb-section">
         <p className="text-sm text-muted-foreground">
-          Campaigns and replies never email an address on this list. An unsubscribe link, a verified bounce and Suppress in the Inbox add to it. LinkedIn stays open: use Do not contact on a person to stop every channel.
+          Campaigns and replies never email an address on this list. An unsubscribe link, a verified bounce and Suppress in the Inbox add to it. An address that unsubscribed or was added by hand also closes LinkedIn campaigns to its owners; a bounce does not. Use Do not contact on a person to stop every channel.
         </p>
         {!canManage && <AdminNotice action="add or remove addresses" />}
       </div>
 
       {canManage && (
-        <SettingsSection title="Add addresses" description="Paste up to 500 addresses, separated by commas, spaces or line breaks. Each one stops its unfinished email sequences.">
+        <SettingsSection title="Add addresses" description="Paste up to 500 addresses, separated by commas, spaces or line breaks. Each one stops its unfinished sequences on every channel.">
           <form onSubmit={add}>
             <FieldGroup>
               <Field>

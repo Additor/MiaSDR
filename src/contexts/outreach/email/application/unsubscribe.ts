@@ -1,10 +1,9 @@
-import type { SuppressionReason } from "@/contexts/people/domain/reachability";
 import { verifyUnsubscribeToken } from "../domain/unsubscribe-token";
 
 /** Port. Suppresses one address in one organization and stops its active sequences. */
 export interface SuppressionStore {
   /** `addedInSettings` marks an address pasted on Settings, Suppression list, the only kind that page can remove. */
-  suppressEmail(input: { organizationId: string; email: string; reason: SuppressionReason; note?: string; addedInSettings?: boolean }): Promise<{ stopped: number; added: boolean }>;
+  suppressEmail(input: { organizationId: string; email: string; reason: "bounced" | "unsubscribed" | "manual"; note?: string; addedInSettings?: boolean }): Promise<{ stopped: number; added: boolean }>;
 }
 
 export class InvalidUnsubscribeToken extends Error {

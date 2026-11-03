@@ -1,14 +1,15 @@
 /**
  * Allowed status transitions of a `sends` row (campaign sends and test sends, email and LinkedIn).
- * `sent` and `failed` are final. `unknown` means the provider call may have gone out: it settles to
- * `sent` or `failed` only through reconciliation or a person's answer, never by a guess.
+ * `sent` is final. `failed` is final too, except for the reclaim: the next claim of the same step puts a failed row back
+ * to `sending` with the next attempt, in its `on conflict` clause. `unknown` means the provider call may have gone out: it
+ * settles to `sent` or `failed` only through reconciliation or a person's answer, never by a guess.
  * Every UPDATE of `sends.status` in a store filters on `SEND_FROM[target]`, so a late writer changes nothing.
  */
 export const SEND_STATUSES = ["sending", "sent", "failed", "unknown"] as const;
 export type SendStatus = (typeof SEND_STATUSES)[number];
 
 export const SEND_FROM: Record<SendStatus, readonly SendStatus[]> = {
-  sending: [],
+  sending: ["failed"],
   sent: ["sending", "unknown"],
   failed: ["sending", "unknown"],
   unknown: ["sending"],
@@ -35,7 +36,3 @@ export const SEND_OUTCOMES: readonly SendStatus[] = ["sent", "unknown", "failed"
 
 /** Sends a restored lead counts as progress: delivered, or `unknown` (it may have gone out, so the engine never retries it). A call still in flight may yet fail. */
 export const SEND_PROGRESS: readonly SendStatus[] = ["sent", "unknown"];
-
-export function canMoveSend(from: SendStatus, to: SendStatus): boolean {
-  return SEND_FROM[to].includes(from);
-}

@@ -28,8 +28,8 @@ const ALIASES: Record<string, string> = {
   s: "deal_stages",
   col: "deal_stages",
   e: "events",
-  vc: "conversations",
-  vc2: "conversations",
+  vc: "threads",
+  vc2: "threads",
   cp: "contact_policies",
 };
 
@@ -44,9 +44,7 @@ const PINNED: Record<string, string[]> = {
     "person_id", "source_enrollment_id", "stage_changed_at", "stage_id", "stage_kind", "title", "updated_at", "version",
   ],
   deal_stages: ["id", "kind", "name", "organization_id", "position"],
-  events: ["created_at", "organization_id", "person_id", "record_id"],
-  // The private-thread column comes from `publicConversationText`, the one owner of that rule.
-  conversations: ["record_id"],
+  events: ["created_at", "organization_id", "person_id"],
   contact_policies: ["do_not_contact", "organization_id", "person_id"],
 };
 
@@ -61,7 +59,7 @@ describe("crm-read source", () => {
     expect(Object.fromEntries(Object.entries(read).map(([t, cols]) => [t, [...cols].sort()]))).toEqual(PINNED);
     const tables = new Set([...CODE.matchAll(/\b(?:from|join)\s+([a-z_]+)\b/g)].map((m) => m[1]));
     for (const cte of ["contact_counts", "open_counts", "lateral"]) tables.delete(cte);
-    expect([...tables].sort()).toEqual(["companies", "company_domain_aliases", "contact_policies", "conversations", "deal_stages", "deals", "entity_columns", "events", "people"]);
+    expect([...tables].sort()).toEqual(["companies", "company_domain_aliases", "contact_policies", "deal_stages", "deals", "entity_columns", "events", "people"]);
     for (const table of Object.keys(PINNED)) expect(SOURCE.split("*/")[0], `header lists ${table}`).toContain(`${table} `);
   });
 
@@ -263,7 +261,7 @@ describeDb("crm-read against Postgres", () => {
   });
 
   describe("Contacts list", () => {
-    it("lists contacts only, newest conversion first, with open deals and visible last activity; searches and pages", async () => {
+    it("lists contacts only, newest conversion first, with open deals and last activity; searches and pages", async () => {
       const f = await kit.organization();
       const zenith = await f.company("Zenith");
       await f.person({ name: "Still a lead" });
@@ -334,19 +332,6 @@ describeDb("crm-read against Postgres", () => {
       expect(await names({ stage: otherStage.id })).toEqual({ names: [], total: 0 });
       await expect(list({ owner: "someone" })).rejects.toThrow("Filter by");
       await expect(list({ stage: "new" })).rejects.toThrow("Pick a stage");
-    });
-
-    it("last activity leaves out the events of a record whose threads are all private", async () => {
-      const f = await kit.organization();
-      const personId = await f.person({ name: "Private" });
-      await create(f, personId);
-      const [pipeline] = await kit.sql`select id from reply_type_sets where organization_id = ${f.org} limit 1`.then(async (rows) => (rows.length ? rows : kit.sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'Default') returning id`));
-      const [record] = await kit.sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${personId}, ${pipeline.id}) returning id`;
-      const campaign = await f.campaign({ type: "personal", createdBy: f.owner.userId });
-      await kit.sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${f.org}, ${record.id}, 'linkedin', ${`acct-${f.tag}`}, ${campaign})`;
-      const before = (await deals.listContacts(composition.dealsDeps(), f.owner)).rows[0].lastActivityAt;
-      await kit.sql`insert into events (organization_id, person_id, record_id, event_type, actor_type, created_at) values (${f.org}, ${personId}, ${record.id}, 'test.private', 'system', now() + interval '1 hour')`;
-      expect((await deals.listContacts(composition.dealsDeps(), f.owner)).rows[0].lastActivityAt).toEqual(before);
     });
   });
 

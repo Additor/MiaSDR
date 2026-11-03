@@ -47,7 +47,7 @@ describeDb("inbox filters, views and search", () => {
     from?: string;
   }
 
-  /** Creates the person, record, conversation and first inbound message through the real ingest path. */
+  /** Creates the person, conversation, conversation and first inbound message through the real ingest path. */
   async function inboundThread(f: Fixture, seed: Seed = {}) {
     const n = ++counter;
     const email = seed.email ?? `lead${n}@acme.test`;
@@ -71,21 +71,21 @@ describeDb("inbox filters, views and search", () => {
   }
 
   /** Adds a message to an existing conversation without the ingest path (outbound replies, later inbound). */
-  async function addMessage(conversationId: string, m: { direction: "inbound" | "outbound"; body: string; at: Date; subject?: string; from?: string; raw?: unknown }) {
-    const [c] = await sql`select organization_id, channel, account_ref from conversations where id = ${conversationId}`;
+  async function addMessage(threadId: string, m: { direction: "inbound" | "outbound"; body: string; at: Date; subject?: string; from?: string; raw?: unknown }) {
+    const [c] = await sql`select organization_id, channel, account_ref from threads where id = ${threadId}`;
     await sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, subject, from_address, body_text, sent_at, raw)
-      values (${c.organization_id}, ${conversationId}, ${c.channel}, ${c.account_ref}, ${m.direction}, ${"k-" + ++counter}, ${m.subject ?? null}, ${m.from ?? null}, ${m.body}, ${m.at}, ${m.raw ? sql.json(m.raw as never) : null})`;
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, subject, from_address, body_text, sent_at, raw)
+      values (${c.organization_id}, ${threadId}, ${c.channel}, ${c.account_ref}, ${m.direction}, ${"k-" + ++counter}, ${m.subject ?? null}, ${m.from ?? null}, ${m.body}, ${m.at}, ${m.raw ? sql.json(m.raw as never) : null})`;
   }
 
-  async function classify(conversationId: string, replyTypeKey: string) {
+  async function classify(threadId: string, replyTypeKey: string) {
     await sql`
-      update records set group_key = s.group_key, reply_type_id = s.id, reply_type_source = 'human'
-      from reply_types s, conversations c
-      where c.id = ${conversationId} and records.id = c.record_id and s.reply_type_set_id = records.reply_type_set_id and s.key = ${replyTypeKey}`;
+      update conversations set group_key = s.group_key, reply_type_id = s.id, reply_type_source = 'human'
+      from reply_types s, threads c
+      where c.id = ${threadId} and conversations.id = c.conversation_id and s.reply_type_set_id = conversations.reply_type_set_id and s.key = ${replyTypeKey}`;
   }
 
-  const ids = (rows: Array<{ conversationId: string }>) => rows.map((r) => r.conversationId).sort();
+  const ids = (rows: Array<{ threadId: string }>) => rows.map((r) => r.threadId).sort();
   const list = async (f: Fixture, input: Parameters<typeof inbox.listInbox>[2] = {}) => inbox.listInbox(composition.inboxDeps(), f.actor, input);
 
   beforeAll(async () => {
@@ -108,7 +108,7 @@ describeDb("inbox filters, views and search", () => {
         leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], replyTypeKeys: [], groupKeys: [], dateMode: "all", dateFrom: "", dateTo: "",
       });
       expect(plain.total).toBe(3);
-      expect(empty.rows.map((r) => r.conversationId)).toEqual(plain.rows.map((r) => r.conversationId));
+      expect(empty.rows.map((r) => r.threadId)).toEqual(plain.rows.map((r) => r.threadId));
       expect(empty.total).toBe(plain.total);
     });
 
@@ -116,21 +116,21 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const ann = await inboundThread(f, { email: "ann@acme.test", name: "Ann Archer" });
       const bob = await inboundThread(f, { email: "bob@beta.test", name: "Bob Baker" });
-      expect(ids((await list(f, { leadIds: [ann.personId] })).rows)).toEqual([ann.conversationId]);
+      expect(ids((await list(f, { leadIds: [ann.personId] })).rows)).toEqual([ann.threadId]);
       expect(ids((await list(f, { leadIds: [ann.personId, bob.personId] })).rows)).toEqual(ids([ann, bob]));
-      expect(ids((await list(f, { leadQuery: "baker" })).rows)).toEqual([bob.conversationId]);
-      expect(ids((await list(f, { leadQuery: "ann@" })).rows)).toEqual([ann.conversationId]);
+      expect(ids((await list(f, { leadQuery: "baker" })).rows)).toEqual([bob.threadId]);
+      expect(ids((await list(f, { leadQuery: "ann@" })).rows)).toEqual([ann.threadId]);
       expect((await list(f, { leadIds: ["00000000-0000-4000-8000-000000000000"] })).total).toBe(0);
     });
 
-    it("names each row's record and its assignee", async () => {
+    it("names each row's conversation and its assignee", async () => {
       const f = await fixture();
       const t = await inboundThread(f);
-      const [rec] = await sql<{ id: string }[]>`select record_id as id from conversations where id = ${t.conversationId}`;
-      expect((await list(f)).rows[0]).toMatchObject({ conversationId: t.conversationId, recordId: rec.id, assignedTo: null });
+      const [rec] = await sql<{ id: string }[]>`select conversation_id as id from threads where id = ${t.threadId}`;
+      expect((await list(f)).rows[0]).toMatchObject({ threadId: t.threadId, conversationId: rec.id, assignedTo: null });
       // The fixture's actor is a placeholder; the organization's owner is a real member.
       const owner = orgs.find((o) => o.organizationId === f.org)!.userId;
-      await sql`update records set assigned_to = ${owner}, assigned_source = 'human' where id = ${rec.id}`;
+      await sql`update conversations set assigned_to = ${owner}, assigned_source = 'human' where id = ${rec.id}`;
       expect((await list(f)).rows[0].assignedTo).toBe(owner);
     });
 
@@ -142,7 +142,7 @@ describeDb("inbox filters, views and search", () => {
       const [{ id: other }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'email', 'Q3', 'active', ${sql.json([])}) returning id`;
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${f.org}, ${campaign}, ${ann.personId}, 'email', 'replied')`;
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${f.org}, ${other}, ${bob.personId}, 'email', 'replied')`;
-      expect(ids((await list(f, { campaignIds: [campaign] })).rows)).toEqual([ann.conversationId]);
+      expect(ids((await list(f, { campaignIds: [campaign] })).rows)).toEqual([ann.threadId]);
       expect(ids((await list(f, { campaignIds: [campaign, other] })).rows)).toEqual(ids([ann, bob]));
     });
 
@@ -153,23 +153,23 @@ describeDb("inbox filters, views and search", () => {
         values (${f.org}, ${"second-" + f.mailbox}, 'connected', ${sql.json({ timeZone: "UTC", days: {} })}) returning id`;
       const a = await inboundThread(f);
       const b = await inboundThread(f, { mailbox: "second-" + f.mailbox });
-      expect(ids((await list(f, { mailboxIds: [f.mailboxId] })).rows)).toEqual([a.conversationId]);
-      expect(ids((await list(f, { mailboxIds: [secondId] })).rows)).toEqual([b.conversationId]);
+      expect(ids((await list(f, { mailboxIds: [f.mailboxId] })).rows)).toEqual([a.threadId]);
+      expect(ids((await list(f, { mailboxIds: [secondId] })).rows)).toEqual([b.threadId]);
     });
 
-    it("filters by subcategory and by category, and fills the category chip", async () => {
+    it("filters by reply type and by group, and fills the group chip", async () => {
       const f = await fixture();
       const a = await inboundThread(f);
       const b = await inboundThread(f);
       const c = await inboundThread(f);
-      await classify(a.conversationId, "demo_request");
-      await classify(b.conversationId, "not_required_right_now");
+      await classify(a.threadId, "demo_request");
+      await classify(b.threadId, "not_required_right_now");
       const demo = await list(f, { replyTypeKeys: ["demo_request"] });
-      expect(ids(demo.rows)).toEqual([a.conversationId]);
+      expect(ids(demo.rows)).toEqual([a.threadId]);
       expect(demo.rows[0]).toMatchObject({ groupKey: "interested", replyTypeName: expect.any(String) });
-      expect(ids((await list(f, { groupKeys: ["not_interested"] })).rows)).toEqual([b.conversationId]);
+      expect(ids((await list(f, { groupKeys: ["not_interested"] })).rows)).toEqual([b.threadId]);
       expect(ids((await list(f, { groupKeys: ["interested", "not_interested"] })).rows)).toEqual(ids([a, b]));
-      expect((await list(f)).rows.find((r) => r.conversationId === c.conversationId)).toMatchObject({ groupKey: null, replyTypeName: null });
+      expect((await list(f)).rows.find((r) => r.threadId === c.threadId)).toMatchObject({ groupKey: null, replyTypeName: null });
     });
 
     it("filters by date range on the latest message: today, yesterday, custom", async () => {
@@ -179,11 +179,11 @@ describeDb("inbox filters, views and search", () => {
       const today = await inboundThread(f, { at: now });
       const yesterday = await inboundThread(f, { at: new Date(startToday.getTime() - 6 * HOUR) });
       const old = await inboundThread(f, { at: new Date("2026-01-15T10:00:00Z") });
-      expect(ids((await list(f, { dateMode: "today" })).rows)).toEqual([today.conversationId]);
-      expect(ids((await list(f, { dateMode: "yesterday" })).rows)).toEqual([yesterday.conversationId]);
+      expect(ids((await list(f, { dateMode: "today" })).rows)).toEqual([today.threadId]);
+      expect(ids((await list(f, { dateMode: "yesterday" })).rows)).toEqual([yesterday.threadId]);
       const custom = await list(f, { dateMode: "custom", dateFrom: "2026-01-15", dateTo: "2026-01-15" });
-      expect(ids(custom.rows)).toEqual([old.conversationId]);
-      expect(ids((await list(f, { dateMode: "custom", dateFrom: "2026-01-16", dateTo: "2026-01-14" })).rows)).toEqual([old.conversationId]);
+      expect(ids(custom.rows)).toEqual([old.threadId]);
+      expect(ids((await list(f, { dateMode: "custom", dateFrom: "2026-01-16", dateTo: "2026-01-14" })).rows)).toEqual([old.threadId]);
       expect((await list(f, { dateMode: "custom", dateFrom: "2026-01-16", dateTo: "2026-01-16" })).total).toBe(0);
     });
 
@@ -195,18 +195,18 @@ describeDb("inbox filters, views and search", () => {
       const startToday = startOfDayInZone(calendarDayInZone(new Date(), zone), zone);
       const today = await inboundThread(f, { at: new Date(startToday.getTime() + 1000) });
       const yesterday = await inboundThread(f, { at: new Date(startToday.getTime() - 60_000) });
-      expect(ids((await list(f, { dateMode: "today" })).rows)).toEqual([today.conversationId]);
-      expect(ids((await list(f, { dateMode: "yesterday" })).rows)).toEqual([yesterday.conversationId]);
+      expect(ids((await list(f, { dateMode: "today" })).rows)).toEqual([today.threadId]);
+      expect(ids((await list(f, { dateMode: "yesterday" })).rows)).toEqual([yesterday.threadId]);
 
       // 2026-01-14 16:30 UTC is 2026-01-15 01:30 in Seoul: a custom range for Jan 15 finds it, Jan 14 does not.
       const late = await inboundThread(f, { at: new Date("2026-01-14T16:30:00Z") });
-      expect(ids((await list(f, { dateMode: "custom", dateFrom: "2026-01-15", dateTo: "2026-01-15" })).rows)).toEqual([late.conversationId]);
+      expect(ids((await list(f, { dateMode: "custom", dateFrom: "2026-01-15", dateTo: "2026-01-15" })).rows)).toEqual([late.threadId]);
       expect((await list(f, { dateMode: "custom", dateFrom: "2026-01-14", dateTo: "2026-01-14" })).total).toBe(0);
 
       // The same thread under a UTC organization is Jan 14.
       const utc = await fixture();
       const same = await inboundThread(utc, { at: new Date("2026-01-14T16:30:00Z") });
-      expect(ids((await list(utc, { dateMode: "custom", dateFrom: "2026-01-14", dateTo: "2026-01-14" })).rows)).toEqual([same.conversationId]);
+      expect(ids((await list(utc, { dateMode: "custom", dateFrom: "2026-01-14", dateTo: "2026-01-14" })).rows)).toEqual([same.threadId]);
       expect((await list(utc, { dateMode: "custom", dateFrom: "2026-01-15", dateTo: "2026-01-15" })).total).toBe(0);
     });
 
@@ -214,13 +214,13 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const a = await inboundThread(f, { email: "ann@acme.test", name: "Ann", body: "pricing question" });
       const b = await inboundThread(f, { email: "bob@acme.test", name: "Bob", body: "pricing question" });
-      await classify(a.conversationId, "demo_request");
-      await classify(b.conversationId, "demo_request");
+      await classify(a.threadId, "demo_request");
+      await classify(b.threadId, "demo_request");
       const combined = { replyTypeKeys: ["demo_request"], mailboxIds: [f.mailboxId], query: "pricing" };
       expect((await list(f, combined)).total).toBe(2);
-      expect(ids((await list(f, { ...combined, leadQuery: "bob" })).rows)).toEqual([b.conversationId]);
+      expect(ids((await list(f, { ...combined, leadQuery: "bob" })).rows)).toEqual([b.threadId]);
       expect((await list(f, { ...combined, leadQuery: "bob", groupKeys: ["not_interested"] })).total).toBe(0);
-      expect(ids((await list(f, { ...combined, view: "unread", leadIds: [a.personId] })).rows)).toEqual([a.conversationId]);
+      expect(ids((await list(f, { ...combined, view: "unread", leadIds: [a.personId] })).rows)).toEqual([a.threadId]);
     });
 
     it("never returns another organization's conversations for any filter", async () => {
@@ -228,12 +228,12 @@ describeDb("inbox filters, views and search", () => {
       const other = await fixture();
       const mine = await inboundThread(f, { email: "mine@acme.test" });
       const theirs = await inboundThread(other, { email: "theirs@acme.test", body: "secretword" });
-      await classify(theirs.conversationId, "demo_request");
+      await classify(theirs.threadId, "demo_request");
       expect((await list(f, { leadIds: [theirs.personId] })).total).toBe(0);
       expect((await list(f, { mailboxIds: [other.mailboxId] })).total).toBe(0);
       expect((await list(f, { query: "secretword" })).total).toBe(0);
       expect((await list(f, { replyTypeKeys: ["demo_request"] })).total).toBe(0);
-      expect(ids((await list(f)).rows)).toEqual([mine.conversationId]);
+      expect(ids((await list(f)).rows)).toEqual([mine.threadId]);
       expect((await inbox.inboxFilterOptions(composition.inboxDeps(), f.actor, [theirs.personId])).leads).toEqual([]);
       const options = await inbox.inboxFilterOptions(composition.inboxDeps(), f.actor, [mine.personId]);
       expect(options.mailboxes.map((m) => m.id)).toEqual([f.mailboxId]);
@@ -246,12 +246,12 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const waiting = await inboundThread(f, { at: new Date(Date.now() - 5 * 24 * HOUR) });
       const answered = await inboundThread(f, { at: new Date(Date.now() - 6 * 24 * HOUR) });
-      await addMessage(answered.conversationId, { direction: "outbound", body: "Thanks, here you go", at: new Date(Date.now() - 4 * 24 * HOUR), from: f.mailbox });
+      await addMessage(answered.threadId, { direction: "outbound", body: "Thanks, here you go", at: new Date(Date.now() - 4 * 24 * HOUR), from: f.mailbox });
       const ooo = await inboundThread(f, { at: new Date(Date.now() - 2 * 24 * HOUR) });
-      await classify(ooo.conversationId, "out_of_office");
-      expect(ids((await list(f, { view: "sent" })).rows)).toEqual([answered.conversationId]);
-      expect(ids((await list(f, { view: "replied" })).rows)).toEqual([waiting.conversationId]);
-      expect(ids((await list(f, { view: "ooo" })).rows)).toEqual([ooo.conversationId]);
+      await classify(ooo.threadId, "out_of_office");
+      expect(ids((await list(f, { view: "sent" })).rows)).toEqual([answered.threadId]);
+      expect(ids((await list(f, { view: "replied" })).rows)).toEqual([waiting.threadId]);
+      expect(ids((await list(f, { view: "ooo" })).rows)).toEqual([ooo.threadId]);
       // All keeps all three.
       expect((await list(f)).total).toBe(3);
     });
@@ -259,10 +259,10 @@ describeDb("inbox filters, views and search", () => {
     it("a new inbound after our reply moves the thread back to Replied", async () => {
       const f = await fixture();
       const t = await inboundThread(f, { at: new Date(Date.now() - 6 * 24 * HOUR) });
-      await addMessage(t.conversationId, { direction: "outbound", body: "ours", at: new Date(Date.now() - 5 * 24 * HOUR) });
+      await addMessage(t.threadId, { direction: "outbound", body: "ours", at: new Date(Date.now() - 5 * 24 * HOUR) });
       expect((await list(f, { view: "replied" })).total).toBe(0);
-      await addMessage(t.conversationId, { direction: "inbound", body: "theirs again", at: new Date(Date.now() - 4 * 24 * HOUR) });
-      expect(ids((await list(f, { view: "replied" })).rows)).toEqual([t.conversationId]);
+      await addMessage(t.threadId, { direction: "inbound", body: "theirs again", at: new Date(Date.now() - 4 * 24 * HOUR) });
+      expect(ids((await list(f, { view: "replied" })).rows)).toEqual([t.threadId]);
       expect((await list(f, { view: "sent" })).total).toBe(0);
     });
 
@@ -285,15 +285,19 @@ describeDb("inbox filters, views and search", () => {
       expect(view.automatedHidden).toBe(0);
       expect(ids((await list(f, { view: "replied" })).rows)).toEqual(ids([human, lookalike]));
       // A search reaches into machine mail too.
-      expect(ids((await list(f, { query: "invoice" })).rows)).toEqual([noReply.conversationId]);
+      expect(ids((await list(f, { query: "invoice" })).rows)).toEqual([noReply.threadId]);
     });
 
     it("unread counts leave out machine mail but keep an unverified bounce notice", async () => {
       const f = await fixture();
-      await inboundThread(f, { email: "human@acme.test" });
-      await inboundThread(f, { autoReply: true });
-      await inboundThread(f, { email: "no-reply@service.test", subject: "Receipt" });
-      await inboundThread(f, { email: "mailer-daemon@mail.test", subject: "Undelivered", possibleBounce: true });
+      const human = await inboundThread(f, { email: "human@acme.test" });
+      const flagged = await inboundThread(f, { autoReply: true });
+      const receipt = await inboundThread(f, { email: "no-reply@service.test", subject: "Receipt" });
+      const notice = await inboundThread(f, { email: "mailer-daemon@mail.test", subject: "Undelivered", possibleBounce: true });
+      // One thread's marks read as the list does, the sender and subject patterns included.
+      const { drizzleInboxStore } = await import("../drizzle-inbox-store");
+      const unreadOf = async (t: { threadId: string }) => (await drizzleInboxStore.thread(f.org, t.threadId))?.unreadCount;
+      expect([await unreadOf(human), await unreadOf(flagged), await unreadOf(receipt), await unreadOf(notice)]).toEqual([1, 0, 0, 1]);
       const nav = await unreadStore.drizzleUnreadStore.counts(f.org);
       // The human message and the unverified bounce count; the auto-reply and the no-reply receipt do not.
       expect(nav.total).toBe(2);
@@ -308,10 +312,10 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const t = await inboundThread(f, { email: "carol@acme.test", name: "Carol Quimby", subject: "Zephyrword subject", body: "Opening mentions gadolinium", at: new Date(Date.now() - 9 * 24 * HOUR) });
       for (let i = 1; i <= 3; i++) {
-        await addMessage(t.conversationId, { direction: i % 2 ? "outbound" : "inbound", body: `later message ${i}`, subject: "Re: later", at: new Date(Date.now() - (9 - i) * 24 * HOUR) });
+        await addMessage(t.threadId, { direction: i % 2 ? "outbound" : "inbound", body: `later message ${i}`, subject: "Re: later", at: new Date(Date.now() - (9 - i) * 24 * HOUR) });
       }
       for (const term of ["gadolinium", "zephyrword", "quimby", "CAROL@", "Carol"]) {
-        expect(ids((await list(f, { query: term })).rows), term).toEqual([t.conversationId]);
+        expect(ids((await list(f, { query: term })).rows), term).toEqual([t.threadId]);
       }
       expect((await list(f, { query: "nonexistentterm" })).total).toBe(0);
     });
@@ -320,11 +324,11 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const literal = await inboundThread(f, { body: "discount of 50% on a_c plans, path C:\\temp" });
       const decoy = await inboundThread(f, { body: "discount of 500 on abc plans, path C:xtemp" });
-      expect(ids((await list(f, { query: "50%" })).rows)).toEqual([literal.conversationId]);
-      expect(ids((await list(f, { query: "a_c" })).rows)).toEqual([literal.conversationId]);
-      expect(ids((await list(f, { query: "C:\\t" })).rows)).toEqual([literal.conversationId]);
+      expect(ids((await list(f, { query: "50%" })).rows)).toEqual([literal.threadId]);
+      expect(ids((await list(f, { query: "a_c" })).rows)).toEqual([literal.threadId]);
+      expect(ids((await list(f, { query: "C:\\t" })).rows)).toEqual([literal.threadId]);
       expect((await list(f, { query: "%" })).total).toBe(1);
-      expect(decoy.conversationId).not.toBe(literal.conversationId);
+      expect(decoy.threadId).not.toBe(literal.threadId);
     });
   });
 
@@ -373,24 +377,24 @@ describeDb("inbox filters, views and search", () => {
     it("includes queued follow-up steps of active runs only and honors lead, campaign, mailbox and date filters", async () => {
       const f = await fixture();
       const nurture = await campaignWith(f, "Nurture");
-      const [seq] = await sql`insert into sequences (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
-      // The step goes in while the version is a draft: sequence_steps_frozen_trg refuses it under a published one.
-      const [ver] = await sql`insert into sequence_versions (organization_id, sequence_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
+      const [flow] = await sql`insert into follow_up_flows (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
+      // The step goes in while the version is a draft: follow_up_steps_frozen_trg refuses it under a published one.
+      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow.id}, 1) returning id`;
       const [step] = await sql`
-        insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
+        insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${f.org}, ${ver.id}, 2, 'follow_up', 'Check in', 60, 'Say hi') returning id`;
-      await sql`update sequence_versions set status = 'published', published_at = now() where id = ${ver.id}`;
+      await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${ver.id}`;
 
       async function run(email: string, status: string, stepStatus: string, dueIn: number) {
         const t = await inboundThread(f, { email, name: email.split("@")[0] });
-        await classify(t.conversationId, "demo_request");
-        const [rec] = await sql`select r.id, r.reply_type_id, c.id as conv from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
-        const [msg] = await sql`select id from messages where conversation_id = ${t.conversationId} limit 1`;
+        await classify(t.threadId, "demo_request");
+        const [rec] = await sql`select r.id, r.reply_type_id, c.id as conv from conversations r join threads c on c.conversation_id = r.id where c.id = ${t.threadId}`;
+        const [msg] = await sql`select id from messages where thread_id = ${t.threadId} limit 1`;
         const [r] = await sql`
-          insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-          values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
+          insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
+          values (${f.org}, ${rec.id}, ${t.threadId}, ${flow.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
         const [sr] = await sql`
-          insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version)
+          insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version)
           values (${f.org}, ${r.id}, ${step.id}, ${stepStatus}, ${new Date(Date.now() + dueIn * HOUR)}, 1) returning id`;
         return { id: sr.id as string, personId: t.personId };
       }
@@ -404,7 +408,7 @@ describeDb("inbox filters, views and search", () => {
 
       const all = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
       expect(all.rows.map((r) => r.id)).toEqual([camp, active.id]);
-      expect(all.rows[1]).toMatchObject({ kind: "sequence", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
+      expect(all.rows[1]).toMatchObject({ kind: "follow_up", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
 
       const byLead = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { leadIds: [active.personId] });
       expect(byLead.rows.map((r) => r.id)).toEqual([active.id]);
@@ -420,32 +424,6 @@ describeDb("inbox filters, views and search", () => {
       const byMailbox = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { mailboxIds: [f.mailboxId] });
       expect(byMailbox.total).toBe(2);
       expect((await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { dateMode: "custom", dateFrom: "2020-01-01", dateTo: "2020-01-02" })).total).toBe(0);
-    });
-
-    it("keeps the steps of a legacy standalone sequence (no campaign) listed while its run is active", async () => {
-      const f = await fixture();
-      // A legacy sequence is archived. Its runs in flight keep going, so their steps stay scheduled.
-      const [seq] = await sql`insert into sequences (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
-      const [ver] = await sql`insert into sequence_versions (organization_id, sequence_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
-      const [step] = await sql`
-        insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
-        values (${f.org}, ${ver.id}, 2, 'follow_up', 'Legacy check in', 60, 'Say hi') returning id`;
-      await sql`update sequence_versions set status = 'published', published_at = now() where id = ${ver.id}`;
-      const t = await inboundThread(f, { email: "legacy@acme.test", name: "Legacy Lou" });
-      await classify(t.conversationId, "demo_request");
-      const [rec] = await sql`select r.id, r.reply_type_id from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
-      const [msg] = await sql`select id from messages where conversation_id = ${t.conversationId} limit 1`;
-      const [run] = await sql`
-        insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
-      const [sr] = await sql`
-        insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version)
-        values (${f.org}, ${run.id}, ${step.id}, 'scheduled', ${new Date(Date.now() + 2 * HOUR)}, 1) returning id`;
-
-      const result = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
-      expect(result.rows.map((r) => r.id)).toEqual([sr.id]);
-      expect(result.rows[0]).toMatchObject({ kind: "sequence", sourceName: "Legacy nurture", stepLabel: "Legacy check in" });
-      expect(result.total).toBe(1);
     });
   });
 });

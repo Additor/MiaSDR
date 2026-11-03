@@ -286,14 +286,6 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
     });
   },
 
-  async isCurrent(claim) {
-    const rows = await db
-      .select({ id: q.id })
-      .from(q)
-      .where(and(eq(q.id, claim.searchId), eq(q.leaseUntil, claim.leaseUntil), inArray(q.status, LIVE)));
-    return rows.length > 0;
-  },
-
   async recordPage(claim, page, now, gapSeconds) {
     return db.transaction(async (tx) => {
       const gapUntil = secondsFrom(now, gapSeconds);

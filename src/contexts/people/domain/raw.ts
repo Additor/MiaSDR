@@ -97,10 +97,3 @@ export function splitUnmapped(
   }
   return { person, company };
 }
-
-/** A raw key becomes a custom field value only as text. Used by the "Map this field" backfill. */
-export function rawValueForCustom(value: unknown): string | null {
-  if (typeof value === "string") return value.trim() === "" ? null : value;
-  if (value === null || value === undefined) return null;
-  return String(value);
-}

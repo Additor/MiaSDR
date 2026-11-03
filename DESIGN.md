@@ -341,7 +341,7 @@ Every choice in the app goes through one of these parts. The app has no native `
 - **Surface.** The menu surface (`bg-popover`, `shadow-md`, the foreground ring) scales from 95% and fades in from the trigger's side over `--duration-menu`. A submenu takes `shadow-lg`, a step above the menu under it. A `Select` list closes at once: its backdrop takes outside clicks until it unmounts, so a fading list would swallow the click on the next field.
 - **Moving one.** A trigger at the right edge (a More menu, a row's actions) opens with `align="end"`, so the popup grows to the left. A trigger at the bottom edge (the selection bar, the sidebar footer) opens with `side="top"`. The primitives' props accept nothing else, so tsc refuses any other placement.
 - **Tips and submenus.** A tooltip opens above the trigger and centered (`TIP_POSITIONER`), and `beside` opens it to the right for an icon in the collapsed sidebar. `TouchTip`'s popover on a tap opens where its tooltip does (`PopoverContent tip`). A submenu opens to the right of its item (`SUBMENU_POSITIONER`).
-- **Enforcement.** `src/architecture/popup-placement.test.ts` holds `@ts-expect-error` lines that fail `pnpm typecheck` once a primitive accepts another placement, fails on a positioner in `src/components/ui` that sets its own placement or does not spread one from popup.ts, and fails on a Base UI import outside `src/components/ui`.
+- **Enforcement.** `src/architecture/popup-placement.test.ts` holds `@ts-expect-error` lines that fail `pnpm typecheck` once a primitive accepts another placement, fails on a positioner in `src/components/ui` that sets its own placement or does not spread one from popup.ts, and ESLint refuses a Base UI import outside `src/components/ui`.
 
 ### Dialogs
 

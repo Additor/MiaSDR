@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { disk, resolveSource as resolve, specifiersOf, type SourceReader } from "./source-ast";
 
 /**
- * Route handlers read the session through `withActor`, `withUser` or `withAdmin` (src/app/_lib/api.ts), so they answer 401
- * and the application errors in the one shape the client reads. The session readers (`apiOrgContext`, `apiUser`,
+ * Route handlers read the session through `withActor` or `withAdmin` (src/app/_lib/api.ts), so they answer 401
+ * and the application errors in the one shape the client reads. The session readers (`apiOrgContext`,
  * `requireOrgContext`, `resolveOrgContext`) live in identity's `session.ts`; `getSession` is on Better Auth's `auth()`.
  *
  * The rule is on imports, so an alias or a reader passed as a value does not slip past it:
@@ -22,10 +22,7 @@ const WRAPPERS = "src/app/_lib/api.ts";
 
 /** Files that read the session or Better Auth themselves, each with its reason. Shrink only. */
 const READS_SESSION_ITSELF: Record<string, string> = {
-  "src/app/(legacy)/crm/records/[id]/route.ts": "A redirect for old record links, outside /api. Without a session it sends the browser to the Pipeline; a wrapper would answer 401 JSON to a link.",
-  "src/app/(legacy)/crm/sequences/[id]/route.ts": "A redirect for old sequence links, outside /api. Without a session it sends the browser to the campaign list; a wrapper would answer 401 JSON to a link.",
   "src/app/api/auth/[...all]/route.ts": "Better Auth's own endpoints (sign-in, sign-up, reset), a public route. It hands the request to the Better Auth handler.",
-  "src/app/api/invitations/[id]/route.ts": "GET is the accept-invitation page's data, for a signed-in user who usually has no organization yet. The view depends on the session's email, which `withUser` does not hand over (`SessionUser` carries no email), so it reads the Better Auth session itself. DELETE uses `withActor`.",
 };
 
 const posix = (file: string) => path.relative(ROOT, file).split(path.sep).join("/");
@@ -78,11 +75,11 @@ export function sessionReach(file: string, reader: SourceReader): string | null 
 }
 
 describe("route wrappers", () => {
-  it("leaves the session to withActor, withUser or withAdmin everywhere but the listed files", () => {
+  it("leaves the session to withActor or withAdmin everywhere but the listed files", () => {
     const found: Record<string, string> = {};
     for (const file of scannedFiles()) {
       const reach = sessionReach(file, disk);
-      if (reach) found[file] = READS_SESSION_ITSELF[file] ?? `(not listed: ${reach}. Wrap the handler in withActor, withUser or withAdmin)`;
+      if (reach) found[file] = READS_SESSION_ITSELF[file] ?? `(not listed: ${reach}. Wrap the handler in withActor or withAdmin)`;
     }
     expect(found).toEqual(READS_SESSION_ITSELF);
   }, 60_000);
@@ -91,7 +88,7 @@ describe("route wrappers", () => {
     const sample: Record<string, string> = {
       "src/app/api/x/route.ts": 'import { apiOrgContext as who } from "@/contexts/identity/infrastructure/session";\nexport const GET = () => who();',
       "src/app/api/y/route.ts": 'import { readCaller } from "./read-caller";\nexport const GET = () => readCaller();',
-      "src/app/api/y/read-caller.ts": 'import * as s from "../../../contexts/identity/infrastructure/session";\nexport const readCaller = s.apiUser;',
+      "src/app/api/y/read-caller.ts": 'import * as s from "../../../contexts/identity/infrastructure/session";\nexport const readCaller = s.apiOrgContext;',
       "src/app/api/z/route.ts": 'export const GET = async () => (await import("@/contexts/identity/infrastructure/session")).apiOrgContext();',
       "src/app/api/b/route.ts": 'import { auth } from "@/contexts/identity/infrastructure/auth";\nexport const GET = () => auth();',
       "src/app/api/c/route.ts": 'import { getSessionCookie } from "better-auth/cookies";\nexport const GET = getSessionCookie;',

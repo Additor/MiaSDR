@@ -40,13 +40,10 @@ export function createEmailJobs(deps: EngineDeps): Job[] {
         // Queue build: while PAUSE_OUTBOUND is set, do not even list sendable mailboxes.
         if (isOutboundPaused()) return { processed: 0, more: false, detail: { paused: 1 } };
         let processed = 0;
-        const policy = deps.domainPolicy ?? { allowedDomains: null, openSignup: false };
+        const policy = deps.domainPolicy ?? { allowedDomains: null };
         const { ids, blockedByDomainPolicy } = await deps.store.listSendableMailboxIds(ctx.now(), policy);
         if (blockedByDomainPolicy > 0) {
-          const reason = policy.allowedDomains
-            ? `outside MAILBOX_ALLOWED_DOMAINS (${policy.allowedDomains.join(", ")})`
-            : "AUTH_SIGNUP=open without MAILBOX_ALLOWED_DOMAINS";
-          console.warn(`email.send skipped ${blockedByDomainPolicy} connected mailbox(es): ${reason}.`);
+          console.warn(`email.send skipped ${blockedByDomainPolicy} connected mailbox(es): outside MAILBOX_ALLOWED_DOMAINS (${policy.allowedDomains?.join(", ")}).`);
         }
         const detail: Record<string, number> = { blocked_by_domain_policy: blockedByDomainPolicy };
         for (const mailboxId of ids) {

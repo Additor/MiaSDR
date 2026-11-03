@@ -2,8 +2,7 @@ import { z } from "zod";
 import { fence, UNTRUSTED_DATA_RULES } from "@/contexts/ai/domain/prompt-fence";
 
 /**
- * The grid's AI question: the requested fields for one row, filled from a few cell values. AI columns and the formula
- * helper both ask it. The output is closed: exactly the requested fields, nothing that can trigger an action.
+ * The grid's AI question: the requested fields for one row, filled from a few cell values. AI columns ask it. The output is closed: exactly the requested fields, nothing that can trigger an action.
  */
 
 export interface AnswerField {

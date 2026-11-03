@@ -1,10 +1,9 @@
 import { APPLIED_PICK_STATUSES } from "../domain/reply-type-pick";
-import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
   replyTypePicks,
-  conversations,
+  threads,
   events,
   knowledgeDocuments,
   knowledgeDocumentVersions,
@@ -12,7 +11,7 @@ import {
   mailboxes,
   messages,
   replyHandlingSettings,
-  records,
+  conversations,
   replyTypes,
   type AiInstructionBlock,
 } from "@/platform/db/schema";
@@ -22,7 +21,6 @@ import { KNOWLEDGE_BUDGET_CHARS, normalizeTags, selectKnowledge } from "../ai/do
 import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,7 +38,7 @@ const KNOWLEDGE_CANDIDATES = 200;
 /**
  * Latest version of each active document, chosen by `selectKnowledge`: capped always-included documents first, then
  * documents ranked by tag overlap with `stepTags`, inside one character budget. `includeUnmatched` (default true)
- * lets documents without a matching tag fill the rest, as before tags existed. A tagged sequence step passes false.
+ * lets documents without a matching tag fill the rest, as before tags existed. A tagged follow-up step passes false.
  */
 export async function knowledgeFor(organizationId: string, options: { alwaysOnly: boolean; stepTags?: readonly string[]; includeUnmatched?: boolean }) {
   // Stored tags are lowercase and trimmed, so the step's tags get the same treatment before the SQL compares them.
@@ -79,10 +77,8 @@ export async function knowledgeFor(organizationId: string, options: { alwaysOnly
   return selectKnowledge(rows, { alwaysOnly: options.alwaysOnly, stepTags: options.stepTags, includeUnmatched: options.includeUnmatched ?? true });
 }
 
-export const excerptHash = (excerpt: string) => createHash("sha256").update(excerpt).digest("hex").slice(0, 32);
-
-export async function threadEntries(organizationId: string, conversationId: string): Promise<{ person: AiPersonContext; entries: ThreadEntry[]; channel: string; accountRef: string } | null> {
-  const thread = await drizzleInboxStore.thread(organizationId, conversationId);
+export async function threadEntries(organizationId: string, threadId: string): Promise<{ person: AiPersonContext; entries: ThreadEntry[]; channel: string; accountRef: string } | null> {
+  const thread = await drizzleInboxStore.thread(organizationId, threadId);
   if (!thread) return null;
   return {
     person: { name: thread.person.name, email: thread.person.email, title: thread.person.title, company: thread.person.company },
@@ -93,46 +89,46 @@ export async function threadEntries(organizationId: string, conversationId: stri
 }
 
 /**
- * The newest `reply_type.changed` event written after the record's latest inbound message arrived: where a person moved
+ * The newest `reply_type.changed` event written after the conversation's latest inbound message arrived: where a person moved
  * it, when it happened and what they wrote. Null when there is none. A move before the last inbound is history.
  */
-export async function replyTypeChangeFor(organizationId: string, recordId: string, latestInboundMessageId: string | null): Promise<ReplyTypeChange | null> {
+export async function replyTypeChangeFor(organizationId: string, conversationId: string, latestInboundMessageId: string | null): Promise<ReplyTypeChange | null> {
   const [inbound] = latestInboundMessageId ? await db.select({ at: messages.createdAt }).from(messages).where(eq(messages.id, latestInboundMessageId)) : [];
   const [moved] = await db
     .select({ toData: events.toData, meta: events.meta, createdAt: events.createdAt })
     .from(events)
-    .where(and(eq(events.organizationId, organizationId), eq(events.recordId, recordId), eq(events.eventType, "reply_type.changed"), inbound ? gt(events.createdAt, inbound.at) : sql`true`))
+    .where(and(eq(events.organizationId, organizationId), eq(events.conversationId, conversationId), eq(events.eventType, "reply_type.changed"), inbound ? gt(events.createdAt, inbound.at) : sql`true`))
     .orderBy(desc(events.createdAt))
     .limit(1);
   if (!moved) return null;
   const to = (moved.toData ?? {}) as { groupKey?: string | null; replyTypeId?: string | null };
-  const [sub] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
+  const [type] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
   const meta = moved.meta as { note?: unknown; occurredAt?: unknown };
   const occurred = typeof meta.occurredAt === "string" ? new Date(meta.occurredAt) : moved.createdAt;
   return {
-    stage: sub?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another stage"),
+    replyTypeName: type?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another type"),
     occurredAt: Number.isNaN(occurred.getTime()) ? moved.createdAt : occurred,
     note: typeof meta.note === "string" && meta.note.trim() !== "" ? meta.note : null,
   };
 }
 
-/** Prompt context for a reply to the record's latest inbound message, on email or LinkedIn. Null when the conversation is missing or on another channel. */
-export async function buildDraftContext(organizationId: string, conversationId: string): Promise<DraftContext | null> {
+/** Prompt context for a reply to the conversation's latest inbound message, on email or LinkedIn. Null when the conversation is missing or on another channel. */
+export async function buildDraftContext(organizationId: string, threadId: string): Promise<DraftContext | null> {
   const [head] = await db
     .select({
-      recordId: records.id,
-      replyTypeSetId: records.replyTypeSetId,
-      contextVersion: records.contextVersion,
-      latestInbound: records.latestInboundMessageId,
-      channel: conversations.channel,
-      accountRef: conversations.accountRef,
+      conversationId: conversations.id,
+      replyTypeSetId: conversations.replyTypeSetId,
+      contextVersion: conversations.contextVersion,
+      latestInbound: conversations.latestInboundMessageId,
+      channel: threads.channel,
+      accountRef: threads.accountRef,
     })
-    .from(conversations)
-    .innerJoin(records, eq(records.id, conversations.recordId))
-    .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+    .from(threads)
+    .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+    .where(and(eq(threads.organizationId, organizationId), eq(threads.id, threadId)));
   if (!head || (head.channel !== "email" && head.channel !== "linkedin")) return null;
   const channel = head.channel;
-  const thread = await threadEntries(organizationId, conversationId);
+  const thread = await threadEntries(organizationId, threadId);
   if (!thread) return null;
 
   const [settings] = await db.select({ draft: replyHandlingSettings.draftInstructions }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, head.replyTypeSetId));
@@ -154,7 +150,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
       })
       .from(replyTypePicks)
       .innerJoin(replyTypes, eq(replyTypes.id, sql`coalesce(${replyTypePicks.appliedReplyTypeId}, ${replyTypePicks.proposedReplyTypeId})`))
-      .where(and(eq(replyTypePicks.recordId, head.recordId), eq(replyTypePicks.messageId, head.latestInbound), inArray(replyTypePicks.status, [...APPLIED_PICK_STATUSES, "proposed"])))
+      .where(and(eq(replyTypePicks.conversationId, head.conversationId), eq(replyTypePicks.messageId, head.latestInbound), inArray(replyTypePicks.status, [...APPLIED_PICK_STATUSES, "proposed"])))
       .orderBy(desc(replyTypePicks.createdAt))
       .limit(1);
     if (row) classification = { id: row.id, replyTypeName: row.name, reason: row.reasoning };
@@ -164,8 +160,8 @@ export async function buildDraftContext(organizationId: string, conversationId: 
   return {
     channel,
     organizationId,
-    recordId: head.recordId,
-    conversationId,
+    conversationId: head.conversationId,
+    threadId,
     contextVersion: head.contextVersion,
     replyForMessageId: head.latestInbound,
     person: thread.person,
@@ -173,7 +169,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
     // A chat message has no subject.
     subject: channel === "linkedin" ? "" : replySubject(lastInbound?.subject),
     classification,
-    replyTypeChange: await replyTypeChangeFor(organizationId, head.recordId, head.latestInbound),
+    replyTypeChange: await replyTypeChangeFor(organizationId, head.conversationId, head.latestInbound),
     operatorInstructions: renderInstructions(settings?.draft),
     knowledge: await knowledgeFor(organizationId, { alwaysOnly: false }),
     senderName,

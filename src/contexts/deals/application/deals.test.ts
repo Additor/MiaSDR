@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lockRetryStats } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import type { LiveEnrollmentSummary } from "@/contexts/outreach/application/conversion";
 import { DEFAULT_DEAL_STAGES } from "../domain/stages";
 import type { AuditEntry, DealPerson, DealRow, DealsDeps, DealStage, NewDeal } from "./deal-ports";
 import { createDealStage, createDefaultDealStages, deleteDealStage, listDealStages, renameDealStage, reorderDealStages } from "./deal-stages";
@@ -35,7 +34,6 @@ interface State {
 function world() {
   let state: State = { stages: [], deals: [], events: [], audits: [], lifecycle: {} };
   const people = new Map<string, DealPerson>();
-  const live = new Map<string, LiveEnrollmentSummary>();
   const control = {
     convertFailures: [] as string[],
     insertFails: false,
@@ -121,13 +119,11 @@ function world() {
       const lifecycle = state.lifecycle[input.personId];
       if (!lifecycle) throw new NotFoundError("Lead not found");
       if (lifecycle === "contact") return { changed: false, stopped: { enrollments: 0, runs: 0, drafts: 0 } };
-      if (input.guard) await input.guard(_tx);
       state.lifecycle[input.personId] = "contact";
       return { changed: true, stopped: { ...control.stopped } };
     },
     people: { summaries: async (_org, ids) => new Map(ids.filter((id) => people.has(id)).map((id) => [id, { ...people.get(id)!, lifecycle: state.lifecycle[id] }])) },
     outreach: {
-      liveEnrollmentSummary: async (_org, ids) => new Map(ids.map((id) => [id, live.get(id) ?? { regular: 0, personal: { count: 0, createdBy: [] } }])),
       latestRepliedEnrollment: async (_org, ids) => new Map(ids.filter((id) => control.replied.has(id)).map((id) => [id, control.replied.get(id)!])),
       enrollmentSources: async () => new Map(),
     },
@@ -157,7 +153,7 @@ function world() {
     },
     now: () => NOW,
   };
-  return { deps, addPerson, live, control, state: () => state, seedDefaults };
+  return { deps, addPerson, control, state: () => state, seedDefaults };
 }
 
 const expectConflict = async (run: Promise<unknown>, code: string) => {
@@ -234,21 +230,6 @@ describe("createDealFromLead", () => {
     expect(w.state().deals.find((d) => d.id === ok.dealId)).toMatchObject({ ownerUserId: null, amountMinor: 125050, currency: "USD", expectedCloseOn: "2026-12-01", title: "Renewal" });
   });
 
-  it("skips a person held by another member's personal campaign, converts for its creator or an admin", async () => {
-    const w = world();
-    const held = w.addPerson();
-    w.live.set(held, { regular: 1, personal: { count: 1, createdBy: [OTHER_MEMBER] } });
-    const error = await createDealFromLead(w.deps, member, held).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ForbiddenError);
-    expect(w.state().lifecycle[held]).toBe("lead");
-    const creator: Actor = { userId: OTHER_MEMBER, organizationId: ORG, role: "member" };
-    await createDealFromLead(w.deps, creator, held);
-    const other = w.addPerson();
-    w.live.set(other, { regular: 0, personal: { count: 1, createdBy: [OTHER_MEMBER] } });
-    await createDealFromLead(w.deps, admin, other);
-    expect(w.state().lifecycle[other]).toBe("contact");
-  });
-
   it("retries once on a deadlock or lock timeout, then answers try_again", async () => {
     const w = world();
     const person = w.addPerson();
@@ -270,13 +251,11 @@ describe("createDealsFromLeads", () => {
     const w = world();
     const a = w.addPerson();
     const contact = w.addPerson({ lifecycle: "contact" });
-    const held = w.addPerson();
-    w.live.set(held, { regular: 0, personal: { count: 1, createdBy: [OTHER_MEMBER] } });
     const flaky = w.addPerson();
     const b = w.addPerson();
     const missing = "00000000-0000-4000-8000-00000000dead";
-    // a converts; held is skipped before convertLead; flaky meets two deadlocks; b converts after them.
-    const order = [a, held, flaky, b];
+    // a converts; flaky meets two deadlocks; b converts after them.
+    const order = [a, flaky, b];
     let calls = 0;
     const convert = w.deps.convertLead;
     w.deps.convertLead = async (tx, input) => {
@@ -287,7 +266,6 @@ describe("createDealsFromLeads", () => {
     const result = await createDealsFromLeads(w.deps, member, [...order, contact, missing, "garbage", a]);
     expect(result.created.map((c) => c.personId)).toEqual([a, b]);
     expect(result.skipped).toEqual([
-      { personId: held, reason: "personal_campaign" },
       { personId: flaky, reason: "retryable" },
       { personId: contact, reason: "already_converted" },
       { personId: missing, reason: "not_found" },
@@ -394,7 +372,7 @@ describe("moveDealStage, updateDeal, deleteDeal", () => {
     await moveDealStage(w.deps, admin, dealId, { stageId: by("Proposal").id, expectedVersion: 2 });
     expect(deal()).toMatchObject({ closedAt: null, stageKind: "open", version: 3 });
     expect(deal().stageChangedAt.toISOString()).toBe("2026-10-16T12:00:03.000Z");
-    expect(w.state().events.filter((e) => e.eventType === "deal.stage_moved")).toHaveLength(3);
+    expect(w.state().events.filter((e) => e.eventType === "deal.stage_changed")).toHaveLength(3);
   });
 
   it("stage_changed_at changes only on a move", async () => {

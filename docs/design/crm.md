@@ -10,7 +10,7 @@ The lead status picks the filled action: Replied with a conversation leads with 
 
 Every person side panel on a lead, contact or deal page ends with the Do not contact block (`DoNotContactCard`): when and why the person was marked, if they were, then the control. What marking does is said in the confirm step, next to the reason. Each stop works the same way: a quiet outline button opens the reason or the consequence in place, and only the confirm button is red (`Confirm do not contact`, `Confirm stop` for follow-ups). Clearing do not contact asks too. The safe choice is named (`Keep do not contact`, `Keep following up`, and `Keep contacting` on a mark or a bulk mark).
 
-Deleting a lead or a contact is a rare action, so it sits in the header's ghost More menu, as Delete company and Delete deal do. The dialog says whether the record qualifies; one the rules protect gets the reason and nothing to confirm. A side panel never ends on a refusal. The thread's own stop path is in [Actions, Inbox and the thread](inbox-and-actions.md#stopping-contact-from-a-thread).
+Deleting a lead or a contact is a rare action, so it sits in the header's ghost More menu, as Delete company and Delete deal do. The dialog says whether the conversation qualifies; one the rules protect gets the reason and nothing to confirm. A side panel never ends on a refusal. The thread's own stop path is in [Actions, Inbox and the thread](inbox-and-actions.md#stopping-contact-from-a-thread).
 
 ## Deal board
 

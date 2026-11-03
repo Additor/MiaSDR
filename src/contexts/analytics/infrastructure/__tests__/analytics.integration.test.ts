@@ -53,21 +53,21 @@ describeDb("analytics read model", () => {
     }
 
     const pipeline = (await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`)[0].id as string;
-    const subInterested = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'meeting', 'Meeting requested') returning id`)[0].id as string;
-    const subNo = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'not_interested', 'no_budget', 'No budget') returning id`)[0].id as string;
+    const typeInterested = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'meeting', 'Meeting requested') returning id`)[0].id as string;
+    const typeNo = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'not_interested', 'no_budget', 'No budget') returning id`)[0].id as string;
 
-    const reply = async (personId: string, channel: "email" | "linkedin", at: string, classification?: { status: string; category?: string; sub?: string }) => {
+    const reply = async (personId: string, channel: "email" | "linkedin", at: string, pick?: { status: string; group?: string; replyType?: string }) => {
       const ref = channel === "email" ? "a@sender.test" : account;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
-      const [conv] = await sql`select id from conversations where record_id = ${record} and channel = ${channel}`;
-      const conversation = conv?.id ?? (await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`)[0].id;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
+      const [conv] = await sql`select id from threads where conversation_id = ${conversationId} and channel = ${channel}`;
+      const thread = conv?.id ?? (await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, ${channel}, ${ref}) returning id`)[0].id;
       const [{ id: message }] = await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-        values (${org}, ${conversation}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at}) returning id`;
-      if (classification) {
+        insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        values (${org}, ${thread}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at}) returning id`;
+      if (pick) {
         await sql`
-          insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_group_key, applied_group_key, applied_reply_type_id)
-          values (${org}, ${record}, ${message}, 0, ${classification.status}, 0.9, ${classification.category ?? null}, ${classification.status === "proposed" ? null : (classification.category ?? null)}, ${classification.sub ?? null})`;
+          insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, status, confidence, proposed_group_key, applied_group_key, applied_reply_type_id)
+          values (${org}, ${conversationId}, ${message}, 0, ${pick.status}, 0.9, ${pick.group ?? null}, ${pick.status === "proposed" ? null : (pick.group ?? null)}, ${pick.replyType ?? null})`;
       }
     };
 
@@ -99,8 +99,8 @@ describeDb("analytics read model", () => {
     await send(org, e8, 1, "email", "sending", null, { mailbox, claimedAt: "2026-03-12T09:00:00Z" });
 
     await reply(p1, "email", "2026-03-11T12:00:00Z"); // contacted before the window, so a reply but not a cohort reply
-    await reply(p2, "email", "2026-03-11T14:00:00Z", { status: "auto_applied", category: "interested", sub: subInterested });
-    await reply(p5, "email", "2026-03-12T20:00:00Z", { status: "proposed", category: "interested" });
+    await reply(p2, "email", "2026-03-11T14:00:00Z", { status: "auto_applied", group: "interested", replyType: typeInterested });
+    await reply(p5, "email", "2026-03-12T20:00:00Z", { status: "proposed", group: "interested" });
     await reply(await person(org), "email", "2026-03-11T14:00:00Z"); // never contacted: not attributed to any campaign
 
     // LinkedIn campaign.
@@ -109,7 +109,7 @@ describeDb("analytics read model", () => {
     await send(org, l1, 1, "linkedin", "sent", "2026-03-10T14:00:00Z", { account });
     await send(org, l1, 2, "linkedin", "sent", "2026-03-11T15:00:00Z", { account });
     await details(org, l1, "connected", "2026-03-11T10:00:00Z");
-    await reply(l1p, "linkedin", "2026-03-12T12:00:00Z", { status: "overridden", category: "not_interested", sub: subNo });
+    await reply(l1p, "linkedin", "2026-03-12T12:00:00Z", { status: "overridden", group: "not_interested", replyType: typeNo });
     const l2 = await enroll(org, linkedinCampaign, await person(org), "linkedin", "active", { account });
     await send(org, l2, 1, "linkedin", "sent", "2026-03-11T14:00:00Z", { account });
     await details(org, l2, "request_sent", null);
@@ -146,18 +146,18 @@ describeDb("analytics read model", () => {
 
   /**
    * Gives `rival` one contacted email lead and one LinkedIn lead, each with a reply, plus an accepted invitation and a
-   * complaint suppression, all inside the window. A view that drops an organization filter counts these for `world`.
+   * manual suppression, all inside the window. A view that drops an organization filter counts these for `world`.
    */
   async function rivalActivity(w: World) {
     const org = w.actor.organizationId;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
     const reply = async (personId: string, channel: "email" | "linkedin", at: string) => {
       const ref = channel === "email" ? "a@sender.test" : w.account;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) returning id`;
-      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) returning id`;
+      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, ${channel}, ${ref}) returning id`;
       await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-        values (${org}, ${conversation}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at})`;
+        insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        values (${org}, ${thread}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at})`;
     };
     const [{ person_id: emailLead }] = await sql`select person_id from campaign_enrollments where organization_id = ${org}`;
     await reply(emailLead, "email", "2026-03-12T15:00:00Z"); // 03-12
@@ -167,7 +167,7 @@ describeDb("analytics read model", () => {
     await send(org, li, 2, "linkedin", "sent", "2026-03-11T16:00:00Z", { account: w.account }); // 03-11
     await details(org, li, "connected", "2026-03-11T11:00:00Z"); // 03-11
     await reply(liLead, "linkedin", "2026-03-12T13:00:00Z"); // 03-12
-    await sql`insert into suppression_list (organization_id, email, reason, created_at) values (${org}, ${uniq() + "@c.test"}, 'complaint', '2026-03-11T12:00:00Z')`;
+    await sql`insert into suppression_list (organization_id, email, reason, created_at) values (${org}, ${uniq() + "@c.test"}, 'manual', '2026-03-11T12:00:00Z')`;
   }
 
   let world: World;
@@ -212,11 +212,11 @@ describeDb("analytics read model", () => {
     const org = other.actor.organizationId;
     const [enrollment] = await sql`select e.person_id from campaign_enrollments e where e.organization_id = ${org} limit 1`;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
-    const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
-    const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', 'a@sender.test') returning id`;
+    const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
+    const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, 'email', 'a@sender.test') returning id`;
     await sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
-      values (${org}, ${conversation}, 'email', 'a@sender.test', 'inbound', ${uniq()}, 'I am away', '2026-03-11T19:00:00Z', ${sql.json({ autoReply: true })})`;
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
+      values (${org}, ${thread}, 'email', 'a@sender.test', 'inbound', ${uniq()}, 'I am away', '2026-03-11T19:00:00Z', ${sql.json({ autoReply: true })})`;
     const { data } = await get("campaigns", {}, other.actor);
     expect(data.totals.contacted).toBe(1);
     expect(data.totals.replied).toBe(0);
@@ -285,14 +285,14 @@ describeDb("analytics read model", () => {
     const { data } = await get("replies");
     expect(data.total).toBe(4);
     const counts = Object.fromEntries(data.byBucket.map((b) => [b.bucket, b.replies]));
-    expect(counts).toEqual({ customer: 0, interested: 1, not_interested: 1, other: 0, pending_review: 1, unclassified: 1 });
-    expect(data.classifiedShare).toBe(0.5);
+    expect(counts).toEqual({ customer: 0, interested: 1, not_interested: 1, other: 0, pending_review: 1, no_type: 1 });
+    expect(data.replyTypeShare).toBe(0.5);
     expect(data.byReplyType).toEqual([
       { bucket: "interested", name: "Meeting requested", replies: 1 },
       { bucket: "not_interested", name: "No budget", replies: 1 },
     ]);
     expect(data.byChannel.find((c) => c.channel === "linkedin")!.total).toBe(1);
-    expect(data.suppressions).toEqual({ unsubscribed: 0, bounced: 1, manual: 0, complaint: 0 });
+    expect(data.suppressions).toEqual({ unsubscribed: 0, bounced: 1, manual: 0 });
     const scoped = await get("replies", { campaignId: world.emailCampaign });
     expect(scoped.data.total).toBe(3);
     expect(scoped.data.suppressions).toBeNull();
@@ -349,8 +349,8 @@ describeDb("analytics read model", () => {
 
     const replies = (await get("replies", {}, rival.actor)).data;
     expect(replies.total).toBe(2);
-    expect(Object.fromEntries(replies.byBucket.map((b) => [b.bucket, b.replies]))).toEqual({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, unclassified: 2 });
-    expect(replies.suppressions).toEqual({ unsubscribed: 0, bounced: 0, manual: 0, complaint: 1 });
+    expect(Object.fromEntries(replies.byBucket.map((b) => [b.bucket, b.replies]))).toEqual({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, no_type: 2 });
+    expect(replies.suppressions).toEqual({ unsubscribed: 0, bounced: 0, manual: 1 });
 
     const series = (await get("timeseries", {}, rival.actor)).data;
     const by = (day: string) => series.points.find((p) => p.day === day)!;

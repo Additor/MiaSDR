@@ -22,8 +22,8 @@ describeDb("final status guard", () => {
   let org = "";
   let user = "";
   let mailbox = "";
-  let record = "";
-  let conversation = "";
+  let conversationId = "";
+  let thread = "";
   const tag = uniqueKey();
   let counter = 0;
 
@@ -33,8 +33,8 @@ describeDb("final status guard", () => {
     [{ id: mailbox }] = await sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb-" + tag + "@fs.test"}, 'connected') returning id`;
     const [{ id: person }] = await sql`insert into people (organization_id, email) values (${org}, ${tag + "@lead.test"}) returning id`;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
-    [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
-    [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', 'me@fs.test') returning id`;
+    [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
+    [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, 'email', 'me@fs.test') returning id`;
   });
 
   afterAll(async () => {
@@ -52,8 +52,8 @@ describeDb("final status guard", () => {
   async function insertAttempt(status: AttemptStatus): Promise<string> {
     counter += 1;
     const [{ id: draft }] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject)
-      values (${org}, ${record}, ${conversation}, 0, 'email', 'Re: hi') returning id`;
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject)
+      values (${org}, ${conversationId}, ${thread}, 0, 'email', 'Re: hi') returning id`;
     const [{ id }] = await sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, status, actor_user_id, reconciliation_note)
       values (${org}, ${draft}, ${`fs-${tag}-${counter}`}, ${status}, ${user}, ${status === "reconciled" ? "found" : null}) returning id`;
@@ -70,7 +70,8 @@ describeDb("final status guard", () => {
     for (const [from, to] of allowedPairs(SEND_FROM)) {
       it(`allows ${from} -> ${to}`, async () => {
         const id = await insertSend(from);
-        await moveSend(id, to);
+        // The trigger lets a failed row back to sending only with the attempt counted, as the engines' re-claim does.
+        await (from === "failed" && to === "sending" ? reclaim(id) : moveSend(id, to));
         expect((await sql`select status from sends where id = ${id}`)[0].status).toBe(to);
       });
     }

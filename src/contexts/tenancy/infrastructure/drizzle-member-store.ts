@@ -1,10 +1,8 @@
-import { recordAudit } from "./audit";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { invitations, members, users } from "@/platform/db/schema";
 import { clearActiveOrganizationTx } from "@/contexts/identity/infrastructure/user-accounts";
-import type { MemberStore } from "../application/member-management";
-import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
+import type { MemberAgentAccess, MemberStore } from "../application/member-management";
 
 const invitationColumns = {
   id: invitations.id,
@@ -17,7 +15,7 @@ const invitationColumns = {
 
 const toInvitation = <T extends { role: string | null }>(row: T) => ({ ...row, role: row.role ?? "member" });
 
-export const drizzleMemberStore: MemberStore = {
+const memberReads: Omit<MemberStore, "transaction"> = {
   async list(organizationId) {
     return db
       .select({ id: members.id, userId: members.userId, role: members.role, name: users.name, email: users.email, joinedAt: members.createdAt })
@@ -60,11 +58,16 @@ export const drizzleMemberStore: MemberStore = {
       .set({ status: "canceled" })
       .where(and(eq(invitations.organizationId, organizationId), eq(invitations.id, id), eq(invitations.status, "pending")));
   },
+};
+
+/** The member store. Agent access comes in as a required argument, so no member change can run without its lock and revoke. */
+export const drizzleMemberStore = (agentAccess: MemberAgentAccess): MemberStore => ({
+  ...memberReads,
 
   transaction(organizationId, run) {
     return db.transaction(async (tx) => {
       // Before the member rows: a role change or a removal then lands between agent actions, never inside one.
-      await lockAgentSend(tx, organizationId);
+      await agentAccess.lock(tx, organizationId);
       return run({
         handle: tx,
         async members() {
@@ -84,10 +87,9 @@ export const drizzleMemberStore: MemberStore = {
             .returning({ userId: members.userId });
           if (!row) return;
           await clearActiveOrganizationTx(tx, row.userId, organizationId);
-          const revoked = await revokeMcpTokensTx(tx, organizationId, { userId: row.userId });
-          if (revoked > 0) await recordAudit(tx, { organizationId, actorUserId, action: "mcp.member_tokens_revoked", entityType: "user", entityId: row.userId, meta: { count: revoked } });
+          await agentAccess.memberRemoved(tx, { organizationId, userId: row.userId, actorUserId });
         },
       });
     });
   },
-};
+});

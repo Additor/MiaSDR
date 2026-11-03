@@ -15,7 +15,7 @@ export type BulkReport = BulkCreateResult;
 export const CREATE_CHUNK = MAX_BULK_CONVERT_IDS;
 export const PREVIEW_CHUNK = MAX_CONVERT_PREVIEW_IDS;
 
-export const EMPTY_PREVIEW: ConvertPreview = { people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 0 };
+export const EMPTY_PREVIEW: ConvertPreview = { people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0 };
 
 export function sumPreviews(previews: readonly ConvertPreview[]): ConvertPreview {
   return previews.reduce<ConvertPreview>(
@@ -25,7 +25,6 @@ export function sumPreviews(previews: readonly ConvertPreview[]): ConvertPreview
       enrollments: sum.enrollments + p.enrollments,
       runs: sum.runs + p.runs,
       followUpDraftsToRetire: sum.followUpDraftsToRetire + p.followUpDraftsToRetire,
-      skippedPersonalCampaign: sum.skippedPersonalCampaign + p.skippedPersonalCampaign,
     }),
     EMPTY_PREVIEW,
   );
@@ -107,9 +106,6 @@ export function secondConfirmText(people: number): { question: string; lines: st
 export function bulkEffectsText(p: ConvertPreview): string {
   const lines = p.people > 0 ? [`Moves ${count(p.people, "lead", "leads")} to Contacts.`, ...stopLines(p)] : ["No lead here can get a deal."];
   if (p.alreadyContacts > 0) lines.push(`Skips ${count(p.alreadyContacts, "person who is already a contact", "people who are already contacts")}.`);
-  if (p.skippedPersonalCampaign > 0) {
-    lines.push(`Skips ${count(p.skippedPersonalCampaign, "lead", "leads")} in another member's personal campaign.`);
-  }
   if (p.people > 0) lines.push(bulkPermanenceText(p.people));
   return lines.join(" ");
 }
@@ -117,12 +113,11 @@ export function bulkEffectsText(p: ConvertPreview): string {
 const SKIP_LABELS: Record<BulkSkipReason, [string, string]> = {
   already_converted: ["was already a contact", "were already contacts"],
   not_found: ["was not found", "were not found"],
-  personal_campaign: ["is in another member's personal campaign", "are in another member's personal campaign"],
   failed: ["failed", "failed"],
   retryable: ["met another change and can be tried again", "met other changes and can be tried again"],
 };
 
-/** "Created 430 deals. Skipped 20: 15 were already contacts, 5 are in another member's personal campaign." */
+/** "Created 430 deals. Skipped 20: 15 were already contacts, 5 were not found." */
 export function bulkReportText(report: BulkReport): string {
   const created = `Created ${count(report.created.length, "deal", "deals")}.`;
   if (report.skipped.length === 0) return created;

@@ -28,7 +28,7 @@ export interface PersonFacts {
   source: string | null;
   /** ISO timestamp of the conversion, for a contact. */
   contactSince?: string | null;
-  /** The campaign of the deal that made the person a contact. A personal campaign never shows. */
+  /** The campaign of the deal that made the person a contact. */
   sourceCampaign?: { name: string; href: string } | null;
   /** ISO timestamps. */
   created: string;

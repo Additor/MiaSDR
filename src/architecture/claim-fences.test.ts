@@ -9,7 +9,7 @@ import { claimMethodsWithoutFence, fencedTableWritesWithoutFence, leaseWritesWit
  * `heldBy` (src/platform/db/claim.ts). Three scans hold the rule:
  * (a) a statement that writes a lease status (`running`, `drafting`, `processing`) also writes `claim_token`;
  * (b) a store method that takes a claim (a type with `claimToken`, or one that holds such a type) calls `heldBy`;
- * (c) a statement that updates, deletes or upserts a fenced table (`ai_jobs`, `inbound_events`, `sequence_step_runs`) calls `heldBy`, or
+ * (c) a statement that updates, deletes or upserts a fenced table (`ai_jobs`, `inbound_events`, `follow_up_step_runs`) calls `heldBy`, or
  *     its method sits in FENCE_EXEMPT with the reason it may write without a claim.
  */
 
@@ -28,32 +28,30 @@ const NOT_YET_FENCED: Record<string, string> = {
 
 /** Methods that update, delete or upsert a fenced table without holding a claim, and why that is right. */
 const FENCE_EXEMPT: Record<string, string> = {
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#claimDue":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#claimDue":
     "The expiry sweep before the claim: it fails steps whose lease ran out on the last attempt and clears their token. A worker still on that attempt finds the step no longer drafting, so its settles change nothing.",
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#takeDueStep":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#takeDueStep":
     "Takes the claim: it writes the fresh token.",
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#settleDrafts":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#settleDrafts":
     "Reconcile: it moves `awaiting_review` steps by the fate of their draft. The link that put them there ended the claim and cleared the token.",
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#pause":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store.ts#pause":
     "A person's pause: it moves the run's open steps back to `scheduled`, a drafting one included, and clears the token. The pause ends the claim, so the worker's late settle changes nothing.",
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#resume":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store.ts#resume":
     "A person's resume: it moves the due time of `scheduled` steps, which no claim holds.",
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#skipStep":
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store.ts#skipStep":
     "A person's skip: it refuses a `drafting` step, so it skips a step no claim holds.",
-  "src/contexts/conversations/after-reply/infrastructure/sequence-run-tx.ts#advanceRunTx":
+  "src/contexts/conversations/after-reply/infrastructure/follow-up-run-tx.ts#advanceRunTx":
     "Schedules the step after a settled one. That step is `scheduled` or `failed`, which no claim holds.",
-  "src/contexts/conversations/after-reply/infrastructure/sequence-stop.ts#endRunCountingTx":
+  "src/contexts/conversations/after-reply/infrastructure/follow-up-stop.ts#endRunCountingTx":
     "A stop: it cancels the run's open steps, a drafting one included, and clears the token. The stop ends the claim, so the worker's late settle changes nothing.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-worker-store.ts#claim":
     "Takes the claim: it writes the fresh token. Its first statement is the expiry sweep, which fails jobs whose lease ran out on the last attempt and clears their token.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-store.ts#requeue":
     "Admin and sweep requeue. It moves failed and skipped rows only, which no claim holds, and clears the token.",
-  "src/contexts/conversations/infrastructure/restart-record-work.ts#queuePickDraftTx":
+  "src/contexts/conversations/infrastructure/restart-conversation-work.ts#queuePickDraftTx":
     "A person's pick: it requeues a finished job (token cleared) or marks a running one `rerun` in its payload, which the holder's own settle reads.",
   "src/contexts/conversations/infrastructure/drizzle-reply-handling-store.ts#undoReplyTypePick":
     "Stop on undo: it fails queued draft jobs, which no claim holds, and drops the rerun mark of a running one without ending its claim.",
-  "src/contexts/conversations/infrastructure/private-thread-detach.ts#detachPrivateThreadTx":
-    "Private-thread detach: it fails queued jobs of the thread, which no claim holds.",
   "src/contexts/conversations/infrastructure/person-purge.ts#purgePersonHandling":
     "Contact purge: it deletes the person's jobs and leaves a running job with a live lease alone.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-inbound-store.ts#claimReplayable":
@@ -96,9 +94,9 @@ describe("claim fences", () => {
         "AiJobWorkerStore.insertDraft",
         "LinkedInInboundStore.finish",
         "LinkedInInboundStore.fail",
-        "SequenceEngineStore.release",
-        "SequenceEngineStore.failAttempt",
-        "SequenceEngineStore.linkDraft",
+        "FollowUpEngineStore.release",
+        "FollowUpEngineStore.failAttempt",
+        "FollowUpEngineStore.linkDraft",
       ]),
     );
   });

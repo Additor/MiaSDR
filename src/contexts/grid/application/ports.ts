@@ -1,9 +1,7 @@
 import type { ColumnType, StaticColumnType } from "../domain/column-types";
-import type { FormulaLookupRegistry, LookupCall } from "../domain/formula";
 import type { GridQuery, TableView } from "../domain/view-query";
 import type { CampaignFieldMapping } from "../domain/campaign-rows";
 import type { PlannedColumn } from "../domain/import-plan";
-import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 
 export interface FolderRecord {
   id: string;
@@ -147,7 +145,7 @@ export interface ColumnUpdate {
 export interface ColumnDeletePlan {
   deleteIds: string[];
   /** Config rewrites for columns that listed a deleted column as an output. */
-  configUpdates: Array<{ id: string; config: Record<string, unknown>; dependsOn?: string[] }>;
+  configUpdates: Array<{ id: string; config: Record<string, unknown> }>;
   view: TableView;
 }
 
@@ -302,21 +300,6 @@ export interface RowStore {
   deleteDuplicates(organizationId: string, tableId: string, columnId: string, pick: (rows: Array<{ id: string; cells: Record<string, unknown> }>, column: ColumnRecord) => string[]): Promise<string[] | null>;
 }
 
-export interface FormulaStore {
-  /**
-   * Resolves each LOOKUP table and column (by id, key or name, within the table's workbook) and loads the values.
-   * A name that is unknown or ambiguous, or a source table over the row limit, becomes a `LookupFailure` entry
-   * for that call, so evaluating it fails with a reason. Throws NotFoundError when `tableId` is not the organization's.
-   */
-  lookupRegistry(organizationId: string, tableId: string, calls: LookupCall[]): Promise<FormulaLookupRegistry>;
-  /** Formula columns of every table in the workbook, for finding the ones that read a LOOKUP source. */
-  formulaColumns(organizationId: string, workbookId: string): Promise<ColumnRecord[]>;
-  /** First row in table order, or the given row, with its 1-based display number. Null when missing. */
-  previewRow(organizationId: string, tableId: string, rowId?: string): Promise<{ row: RowRecord; rowNumber: number } | null>;
-  /** IANA zone of the organization, which decides what day TODAY returns. "UTC" when none is stored. */
-  organizationTimeZone(organizationId: string): Promise<string>;
-}
-
 export interface CellRunStore {
   /** Latest recorded run of the column that produced a cell. */
   latestRun(organizationId: string, tableId: string, rowId: string, sourceColumnKey: string): Promise<{
@@ -369,23 +352,12 @@ export interface CampaignHandoff {
   }): Promise<HandoffReport>;
 }
 
-/** Turns a plain-English request into a formula. Null means no AI is configured for the organization. */
-export interface FormulaAuthor {
-  forOrganization(organizationId: string): Promise<{
-    complete(input: { schema: unknown; request: string; currentExpression?: string; feedback?: string }): Promise<{ formula: string; explanation: string }>;
-  } | null>;
-  /** Whether AI is on and why not, for the message when `forOrganization` answers null. */
-  status(organizationId: string): Promise<AiStatus>;
-}
-
 export interface GridDeps {
   structure: StructureStore;
   columns: ColumnStore;
   rows: RowStore;
-  formulas: FormulaStore;
   cellRuns: CellRunStore;
   handoff: CampaignHandoff;
-  formulaAuthor: FormulaAuthor;
 }
 
 export type { StaticColumnType };

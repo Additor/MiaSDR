@@ -43,7 +43,7 @@ describeDb("MCP_SEND_ENABLED=false", () => {
     await sql`insert into mailboxes (organization_id, email_address, status) values (${org.organizationId}, ${mailbox}, 'connected')`;
     const { ingestInbound } = await import("@/contexts/conversations/infrastructure/composition");
     const tag = randomBytes(4).toString("hex");
-    const { conversationId } = await ingestInbound({
+    const { threadId } = await ingestInbound({
       organizationId: org.organizationId,
       accountRef: mailbox,
       providerThreadId: `t-${tag}`,
@@ -57,7 +57,7 @@ describeDb("MCP_SEND_ENABLED=false", () => {
       receivedAt: new Date(),
       autoReply: false,
     });
-    const created = await agent.tool("write_reply_draft", { action: "create_manual", conversationId, subject: "Re: Hi", bodyText: "Hello back." });
+    const created = await agent.tool("write_reply_draft", { action: "create_manual", threadId, subject: "Re: Hi", bodyText: "Hello back." });
     const draft = created.structured.draft as { draftId: string; revision: number };
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");
     const { replySendDeps } = await import("@/contexts/conversations/infrastructure/reply-send-composition");

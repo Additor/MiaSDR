@@ -17,7 +17,7 @@ function deps() {
     clock: { now: () => new Date("2026-10-15T10:00:00Z") },
     appUrl: "https://app.test",
     unsubscribeSecret: "u".repeat(40),
-    domainPolicy: { allowedDomains: null, openSignup: false },
+    domainPolicy: { allowedDomains: null },
   } as unknown as TestSendDeps;
   return { value, claim, send };
 }

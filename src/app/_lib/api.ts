@@ -1,13 +1,11 @@
 /**
- * The server side of our JSON API: route handlers wrap their use case in `withActor`, `withAdmin` or `withUser`, which
+ * The server side of our JSON API: route handlers wrap their use case in `withActor` or `withAdmin`, which
  * map domain errors to status codes and the error body of `./api-errors.ts`. `./api-client.ts` reads that body in the browser.
  */
-import { headers } from "next/headers";
 import { NextResponse, connection } from "next/server";
-import { apiOrgContext, apiUser, type OrgContext, type SessionUser } from "@/contexts/identity/infrastructure/session";
+import { apiOrgContext, type OrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { apiError } from "./api-errors";
-import { ORGANIZATION_CHANGED, ORGANIZATION_HEADER } from "./api-organization";
 import { classifyError } from "./classify-error";
 import { ForbiddenError, type Actor } from "@/shared/errors";
 
@@ -39,17 +37,7 @@ export async function withActor(run: (actor: Actor, ctx: OrgContext) => Promise<
   await connection();
   const ctx = await apiOrgContext();
   if (!ctx) return unauthenticated();
-  const rendered = (await headers()).get(ORGANIZATION_HEADER);
-  if (rendered && rendered !== ctx.organization.id) return apiError(409, "You switched organization in another tab.", { code: ORGANIZATION_CHANGED });
   return answer(() => run(toActor(ctx), ctx), status);
-}
-
-/** `withActor` for routes that work without an organization (a signed-in user with none can still create one). */
-export async function withUser(run: (user: SessionUser) => Promise<unknown>, status = 200): Promise<Response> {
-  await connection();
-  const user = await apiUser();
-  if (!user) return unauthenticated();
-  return answer(() => run(user), status);
 }
 
 /**

@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import type { ReplyAi } from "../../ai/application/ai-ports";
+import type { DraftContext, NewDraft } from "../../application/reply-ports";
+import { createFollowUpJobs } from "./follow-up-jobs";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
+
+/**
+ * The follow-up job writes the draft with the channel of the conversation it drafts for. The draft writer
+ * defaults to email, which breaks the draft channel trigger on a LinkedIn conversation.
+ */
+function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; sweep?: boolean } = {}) {
+  const interrupted: Array<{ runId: string; reason: string }> = [];
+  const inserted: Array<NewDraft & { feedback?: string | null }> = [];
+  const ctx = {
+    channel,
+    organizationId: "org",
+    conversationId: "rec",
+    threadId: "conv",
+    contextVersion: 3,
+    replyForMessageId: "msg",
+    person: { name: "Lena Lead", email: "lena@acme.test", company: null, title: null },
+    thread: [],
+    subject: channel === "linkedin" ? "" : "Re: hello",
+    classification: null,
+    replyTypeChange: null,
+    operatorInstructions: "",
+    knowledge: [],
+    senderName: null,
+  } as unknown as DraftContext;
+  const ai: ReplyAi = {
+    name: "fake",
+    model: "fake-1",
+    classify: async () => {
+      throw new Error("not used");
+    },
+    draft: async () => ({ output: { subject: "Following up", bodyText: "Checking in on this." } }),
+  };
+  let claimed = false;
+  const claim = {
+    stepRunId: "sr",
+    organizationId: "org",
+    claimToken: "token",
+    attempts: 1,
+    run: { id: "run", conversationId: "rec", threadId: "conv", followUpVersionId: "ver", triggerMessageId: "msg" },
+    step: { id: "st", followUpVersionId: "ver", position: 2, stepType: "follow_up", name: "Nudge", delayMinutes: 60, subjectTemplate: null, bodyTemplate: null, aiInstructions: "Check in once.", knowledgeTags: [] },
+    timeZone: "UTC",
+  };
+  const engine = {
+    interruptCandidates: async (after: string | null) =>
+      opts.sweep && after === null
+        ? [
+            {
+              runId: "run",
+              organizationId: "org",
+              conversationId: "rec",
+              facts: {
+                run: { triggerMessageId: "msg", replyTypeId: "sub", channel: "email" },
+                conversation: { latestInboundMessageId: "msg", replyTypeId: "sub", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting" },
+                doNotContact: false,
+                suppression: null,
+                flowActive: false,
+              },
+            },
+          ]
+        : [],
+    startCandidates: async () => [],
+    settleDrafts: async () => ({ settled: 0, deferred: 0 }),
+    claimDue: async () => (claimed ? null : ((claimed = true), claim)),
+    interruptFactsFor: async () => ({
+      run: { triggerMessageId: "msg", replyTypeId: "sub", channel: "email" },
+      conversation: { latestInboundMessageId: "msg", replyTypeId: "sub", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting" },
+      doNotContact: false,
+      suppression: null,
+      flowActive: opts.flowActive ?? true,
+    }),
+    interrupt: async (_org: string, runId: string, reason: string) => {
+      interrupted.push({ runId, reason });
+    },
+    orphanDraft: async () => null,
+    openDrafts: async () => [],
+    linkDraft: async () => "linked",
+    writeDraft: async (_claim: unknown, draft: NewDraft) => {
+      inserted.push(draft);
+      return { id: "draft-1", stale: false };
+    },
+    failAttempt: async (_claim: unknown, message: string) => {
+      throw new Error(message);
+    },
+  };
+  const replies = {
+    draftContext: async () => ctx,
+  };
+  const [job] = createFollowUpJobs({
+    engine: engine as never,
+    runs: {} as never,
+    replies: replies as never,
+    ai: replyAiResolverOf(async () => ai),
+    now: () => new Date("2026-10-16T10:00:00Z"),
+    workerId: "w",
+    leaseMs: 60_000,
+    notConfiguredDelayMs: 60_000,
+  });
+  return { job, inserted, interrupted };
+}
+
+describe("follow-up draft channel", () => {
+  const run = (job: ReturnType<typeof setup>["job"]) => job.run({ deadline: Date.now() + 10_000, now: () => new Date("2026-10-16T10:00:00Z") });
+
+  it("writes a draft on a LinkedIn conversation with channel linkedin", async () => {
+    const { job, inserted } = setup("linkedin");
+    const result = await run(job);
+    expect(result.detail).toMatchObject({ drafted: 1 });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].channel).toBe("linkedin");
+    expect(inserted[0].threadId).toBe("conv");
+  });
+
+  it("writes a draft on an email conversation with channel email", async () => {
+    const { job, inserted } = setup("email");
+    await run(job);
+    expect(inserted[0].channel).toBe("email");
+  });
+
+  it("ends a run whose campaign turned Follow-ups after a reply off, in the sweep, before any draft", async () => {
+    const { job, inserted, interrupted } = setup("email", { flowActive: false, sweep: true });
+    const result = await run(job);
+    // The fake engine still offers a claim after the sweep, and the guard stops it again.
+    expect(interrupted[0]).toEqual({ runId: "run", reason: "after_reply_off" });
+    expect(result.detail?.interrupted_after_reply_off).toBe(2);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("does not draft a claimed step when the flow went off after the claim", async () => {
+    const { job, inserted, interrupted } = setup("email", { flowActive: false });
+    await run(job);
+    expect(interrupted).toEqual([{ runId: "run", reason: "after_reply_off" }]);
+    expect(inserted).toHaveLength(0);
+  });
+});

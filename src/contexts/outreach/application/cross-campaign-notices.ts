@@ -46,8 +46,6 @@ export interface CrossCampaignNoticeReader {
   leadContext(organizationId: string, campaignId: string, personIds: string[]): Promise<Map<string, LeadCrossContext>>;
 }
 
-export const EMPTY_CROSS_CONTEXT: LeadCrossContext = { alsoInCampaigns: [], excludedAccounts: [] };
-
 /** Notices for the people one enroll call handled. */
 export async function noticesForPeople(reader: CrossCampaignNoticeReader, organizationId: string, campaignId: string, personIds: string[]): Promise<CrossCampaignNotices> {
   if (personIds.length === 0) return { alreadyContacted: [], alreadyContactedPeople: 0, excludedByAccount: [], excludedByAccountPeople: 0 };

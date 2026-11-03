@@ -4,7 +4,7 @@ import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg 
 import type { TestSendDeps } from "../../application/send-test-email";
 import { FakeMailboxProvider } from "../fake-mailbox-provider";
 
-const OPEN = { allowedDomains: null, openSignup: false };
+const OPEN = { allowedDomains: null };
 
 describeDb("mailbox test send", () => {
   useTestEnv({ BETTER_AUTH_SECRET: "x".repeat(40), INTEGRATION_CREDENTIALS_KEY: "x".repeat(40), UNSUBSCRIBE_SECRET: "x".repeat(40) });
@@ -61,17 +61,10 @@ describeDb("mailbox test send", () => {
 
   it("blocks a mailbox outside the allow-list before any row or provider call", async () => {
     const f = await fixture("outside.test");
-    const result = await app.sendTestEmail({ ...f.deps, domainPolicy: { allowedDomains: ["inside.test"], openSignup: false } }, f.actor(), f.mailbox, { to: "dev@example.com" });
+    const result = await app.sendTestEmail({ ...f.deps, domainPolicy: { allowedDomains: ["inside.test"] } }, f.actor(), f.mailbox, { to: "dev@example.com" });
     expect(result.status).toBe("blocked");
     expect(result.message).toMatch(/not an allowed mailbox domain/);
     expect(await rows(f.mailbox)).toHaveLength(0);
-    expect(f.provider.delivered).toHaveLength(0);
-  });
-
-  it("blocks under open sign-up without a list", async () => {
-    const f = await fixture();
-    const result = await app.sendTestEmail({ ...f.deps, domainPolicy: { allowedDomains: null, openSignup: true } }, f.actor(), f.mailbox, { to: "dev@example.com" });
-    expect(result.status).toBe("blocked");
     expect(f.provider.delivered).toHaveLength(0);
   });
 

@@ -11,41 +11,26 @@ import { callApi } from "@/app/_lib/api-client";
 import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { ENROLL_BATCH_LIMIT, ENROLL_CONFIRM_FROM, enrollNeedsConfirmation } from "@/contexts/outreach/domain/campaign-view";
+import { enrollSkipLines, NO_ENROLL_SKIPS, type EnrollSkipCounts } from "@/contexts/outreach/domain/enrollment-eligibility";
 import type { CrossCampaignNotices } from "@/contexts/outreach/application/cross-campaign-notices";
 import { CampaignSection } from "./campaign-section";
 import { CrossCampaignNoticeList } from "./cross-campaign-notices";
 
-interface Result {
+interface Result extends Partial<EnrollSkipCounts> {
   /** People the search matched, before any skip. */
   requested: number;
   added: number;
-  alreadyEnrolled: number;
-  skippedDoNotContact: number;
-  /** The latest reply seems to ask to stop and no person reviewed it. */
-  skippedStopRequest?: number;
-  /** People who became contacts; a campaign does not enroll them. */
-  skippedContact?: number;
-  /** Email only. */
-  skippedSuppressed?: number;
-  skippedNoEmail?: number;
-  /** LinkedIn only. */
-  skippedNoProfile?: number;
   /** LinkedIn only: people also contacted in other campaigns. */
   notices?: CrossCampaignNotices;
   /** Dry run only: people the same call would add. */
   wouldAdd?: number;
 }
 
-/** The skipped total and its breakdown, the same wording before and after an add. */
+/** The skipped total and its breakdown, the same wording before and after an add and as the Leads dialog. */
 function skippedSummary(result: Result, linkedin: boolean): { count: number; text: string } {
-  const contacts = result.skippedContact ?? 0;
-  const stops = result.skippedStopRequest ?? 0;
-  const stopText = stops > 0 ? `, ${formatCount(stops)} seem to ask to stop` : "";
-  const count = result.alreadyEnrolled + result.skippedDoNotContact + stops + contacts + (result.skippedSuppressed ?? 0) + (result.skippedNoEmail ?? 0) + (result.skippedNoProfile ?? 0);
-  const text = linkedin
-    ? `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedDoNotContact)} do not contact${stopText}, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoProfile ?? 0)} without a LinkedIn URL`
-    : `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedSuppressed ?? 0)} unsubscribed, ${formatCount(result.skippedDoNotContact)} do not contact${stopText}, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoEmail ?? 0)} without an email`;
-  return { count, text };
+  const counts = { ...NO_ENROLL_SKIPS, ...result };
+  const count = Object.keys(NO_ENROLL_SKIPS).reduce((sum, key) => sum + counts[key as keyof typeof NO_ENROLL_SKIPS], 0);
+  return { count, text: enrollSkipLines(counts, linkedin ? "linkedin" : "email").join(", ") };
 }
 
 /**
@@ -114,8 +99,8 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
         </h3>
         <p className="max-w-prose text-sm text-muted-foreground">
           {linkedin
-            ? `Adds every lead in your database that matches and has a LinkedIn URL, up to 5,000 at a time. Leave the search empty to add all. You confirm first when the search is empty or matches ${ENROLL_CONFIRM_FROM} or more leads. Do not contact leads, contacts and already added leads are skipped.`
-            : `Adds every lead in your database that matches, up to 5,000 at a time. Leave the search empty to add all. You confirm first when the search is empty or matches ${ENROLL_CONFIRM_FROM} or more leads. Unsubscribed and do not contact leads, contacts and already added leads are skipped.`}
+            ? `Adds every lead in your database that matches and has a LinkedIn URL, up to 5,000 at a time. Leave the search empty to add all. You confirm first when the search is empty or matches ${ENROLL_CONFIRM_FROM} or more leads. Do not contact leads, addresses that unsubscribed or were suppressed by hand, contacts and already added leads are skipped.`
+            : `Adds every lead in your database that matches, up to 5,000 at a time. Leave the search empty to add all. You confirm first when the search is empty or matches ${ENROLL_CONFIRM_FROM} or more leads. Suppressed and do not contact leads, contacts and already added leads are skipped.`}
         </p>
       </div>
       <div className="stack-group">

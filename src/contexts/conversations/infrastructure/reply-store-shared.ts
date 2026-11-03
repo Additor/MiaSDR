@@ -1,12 +1,11 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { contactPolicies, conversations, drafts, mailboxes, people, records, replyTypePicks, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
+import { contactPolicies, threads, drafts, mailboxes, people, conversations, replyTypePicks, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
 import type { DraftRow, KnownCc, SendContext } from "../application/reply-ports";
 import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
 import { PICK_FROM, type PickStatus } from "../domain/reply-type-pick";
-import { organizationMailboxAddresses } from "./drizzle-conversation-store";
+import { organizationMailboxAddresses } from "./drizzle-thread-store";
 import { toAttempt } from "./reply-attempt-ledger";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
 export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DRAFT_FROM[to]]);
@@ -28,8 +27,8 @@ export const toDraftRow = (d: typeof drafts.$inferSelect): DraftRow => {
   return {
     id: d.id,
     organizationId: d.organizationId,
-    recordId: d.recordId,
     conversationId: d.conversationId,
+    threadId: d.threadId,
     status: d.status as DraftStatus,
     revision: d.revision,
     expectedContextVersion: d.expectedContextVersion,
@@ -57,10 +56,10 @@ export interface Snapshot {
   subject: string;
   bodyText: string;
   accountRef: string;
+  threadId: string;
   conversationId: string;
-  recordId: string;
   personId: string;
-  threadId: string | null;
+  providerThreadId: string | null;
   inReplyTo: string | null;
   references: string[];
   revision: number;
@@ -80,15 +79,15 @@ export async function sendContextFor(attempt: typeof sendAttempts.$inferSelect):
   return {
     attempt: toAttempt(attempt),
     organizationId: attempt.organizationId,
+    threadId: snap.threadId,
     conversationId: snap.conversationId,
-    recordId: snap.recordId,
     personId: snap.personId,
     recipient: snap.to,
     cc: snap.cc ?? [],
     subject: snap.subject,
     bodyText: snap.bodyText,
     rfcMessageId: snap.rfcMessageId,
-    threadId: snap.threadId,
+    providerThreadId: snap.providerThreadId,
     inReplyTo: snap.inReplyTo,
     references: snap.references,
     mailbox: await mailboxFor(attempt.organizationId, snap.accountRef),
@@ -129,13 +128,13 @@ export async function knownCcsFor(organizationId: string, personId: string): Pro
   return visible.map((r) => ({ email: r.email, lastSeenAt: r.lastSeenAt, blocked: blocked.get(r.email) ?? null }));
 }
 
-export async function ccContextFor(organizationId: string, conversationId: string) {
+export async function ccContextFor(organizationId: string, threadId: string) {
   const [row] = await db
-    .select({ personId: records.personId, leadEmail: people.email, accountRef: conversations.accountRef })
-    .from(conversations)
-    .innerJoin(records, eq(records.id, conversations.recordId))
-    .innerJoin(people, eq(people.id, records.personId))
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId), publicConversation));
+    .select({ personId: conversations.personId, leadEmail: people.email, accountRef: threads.accountRef })
+    .from(threads)
+    .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+    .innerJoin(people, eq(people.id, conversations.personId))
+    .where(and(eq(threads.id, threadId), eq(threads.organizationId, organizationId)));
   if (!row) return null;
   const known = await db.select({ email: leadCcs.email }).from(leadCcs).where(and(eq(leadCcs.organizationId, organizationId), eq(leadCcs.personId, row.personId)));
   const ours = new Set(await organizationMailboxAddresses(organizationId));

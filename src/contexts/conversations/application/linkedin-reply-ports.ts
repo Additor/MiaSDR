@@ -34,8 +34,8 @@ export interface LinkedInReplyContext {
   attempt: AttemptRow;
   organizationId: string;
   draftId: string;
+  threadId: string;
   conversationId: string;
-  recordId: string;
   personId: string;
   accountId: string;
   providerAccountId: string;
@@ -48,7 +48,7 @@ export type BeginLinkedInReply = { kind: "replay"; attempt: AttemptRow } | { kin
 export type LinkedInReplyBlocker = "do_not_contact" | "not_connected" | "paused";
 
 export interface LinkedInReplyPanel {
-  conversationId: string;
+  threadId: string;
   recipient: string | null;
   accountLabel: string;
   /** Why a reply cannot go out right now, in words for the person. */
@@ -88,7 +88,7 @@ export interface LinkedInReplyStore {
    * Claims the reply for sending and writes the ledger row. A person's `text` replaces the open draft's. With `via`, an
    * agent sends `draft` as saved, `text` is ignored, and the agent rules run after the person's.
    */
-  begin(input: { organizationId: string; conversationId: string; text?: string; idempotencyKey: string; actorUserId: string; now: Date; draft?: { id: string; revision: number }; via?: AgentVia }): Promise<BeginLinkedInReply>;
+  begin(input: { organizationId: string; threadId: string; text?: string; idempotencyKey: string; actorUserId: string; now: Date; draft?: { id: string; revision: number }; via?: AgentVia }): Promise<BeginLinkedInReply>;
   checkBlockers(send: LinkedInReplyContext, now: Date): Promise<{ reason: LinkedInReplyBlocker; message: string } | null>;
   markSent(send: LinkedInReplyContext, sent: { providerMessageId: string | null }, now: Date, note?: string): Promise<void>;
   /** Definite refusal: the draft goes back to review with its text. */
@@ -96,6 +96,6 @@ export interface LinkedInReplyStore {
   markUncertain(send: LinkedInReplyContext, error: string): Promise<void>;
   pauseAccount(send: LinkedInReplyContext, until: Date): Promise<void>;
   disconnectAccount(send: LinkedInReplyContext, error: string): Promise<void>;
-  panel(organizationId: string, conversationId: string, now: Date): Promise<LinkedInReplyPanel | null>;
+  panel(organizationId: string, threadId: string, now: Date): Promise<LinkedInReplyPanel | null>;
   listUnsettled(olderThan: Date, limit: number): Promise<Array<{ send: LinkedInReplyContext; status: "sending" | "delivery_uncertain"; startedAt: Date }>>;
 }

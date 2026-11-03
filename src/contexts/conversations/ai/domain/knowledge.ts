@@ -52,7 +52,6 @@ export interface SelectOptions {
   includeUnmatched: boolean;
   /** Only always-included documents compete, so they may use the whole budget. */
   alwaysOnly?: boolean;
-  budgetChars?: number;
 }
 
 export interface PickedKnowledge {
@@ -69,7 +68,7 @@ const cut = (content: string, room: number) => (content.length > room ? `${conte
  * never exceeds the budget by more than the truncation marker.
  */
 export function selectKnowledge(candidates: readonly KnowledgeCandidate[], options: SelectOptions): PickedKnowledge[] {
-  const budget = options.budgetChars ?? KNOWLEDGE_BUDGET_CHARS;
+  const budget = KNOWLEDGE_BUDGET_CHARS;
   const wanted = new Set(normalizeTags(options.stepTags ?? []));
   const byTitle = (a: KnowledgeCandidate, b: KnowledgeCandidate) => a.title.localeCompare(b.title);
   const overlap = (c: KnowledgeCandidate) => normalizeTags(c.tags).filter((t) => wanted.has(t)).length;

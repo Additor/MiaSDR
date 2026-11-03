@@ -1,6 +1,5 @@
 import type { LeadsAudit } from "./leads-audit";
 import type { DbHandle } from "@/platform/db/client";
-import type { Actor } from "@/shared/errors";
 import type { LeadCurrent, LeadEditPlan } from "../domain/lead-edit";
 import type { LeadFilter } from "../domain/lead-filter";
 import type { BlockReason, LeadOutreachBlocker } from "../domain/person-delete-policy";
@@ -37,7 +36,7 @@ export interface LeadDetail {
   /** Custom field definitions of the organization (not archived), for labels. */
   customColumns: Array<{ key: string; name: string }>;
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
-  /** The address is on the organization's suppression list (unsubscribed, bounced, manual, complaint). */
+  /** The address is on the organization's suppression list (unsubscribed, bounced, manual). */
   suppression: { reason: string; note: string | null; createdAt: Date } | null;
   enrollments: Array<{
     id: string;
@@ -51,12 +50,9 @@ export interface LeadDetail {
     lastSentAt: Date | null;
     stopReason: string | null;
   }>;
-  /** The newest Inbox conversation with this lead, or null when none exists. Private (personal campaign) threads never count. */
-  conversationId: string | null;
-  /**
-   * Campaign sends in personal campaigns the viewer may see (their own, or any for an owner or admin) and every regular campaign
-   * send. A send in another member's personal campaign stays out.
-   */
+  /** The newest Inbox conversation with this lead, or null when none exists. */
+  threadId: string | null;
+  /** The campaign sends to this lead. */
   sends: Array<{
     id: string;
     campaignId: string;
@@ -70,21 +66,13 @@ export interface LeadDetail {
     claimedAt: Date;
     error: string | null;
   }>;
-  /** True when another member's personal campaign sent to this lead, so `sends` leaves those sends out. */
-  hiddenSends: boolean;
-}
-
-/** Who reads sends: the actor, and whether they see every personal campaign (owner or admin). */
-export interface SendViewer {
-  userId: string;
-  seesAllPersonal: boolean;
 }
 
 /** The part of the lead detail that other contexts' tables hold: enrollments, sends, the Inbox conversation. */
-export type LeadDetailActivity = Pick<LeadDetail, "enrollments" | "conversationId" | "sends" | "hiddenSends">;
+export type LeadDetailActivity = Pick<LeadDetail, "enrollments" | "threadId" | "sends">;
 
 /** Reads `LeadDetailActivity` for one person in the organization. `src/composition/leads.ts` passes the read model's reader. */
-export type ReadLeadDetailActivity = (organizationId: string, personId: string, viewer: SendViewer | undefined) => Promise<LeadDetailActivity>;
+export type ReadLeadDetailActivity = (organizationId: string, personId: string) => Promise<LeadDetailActivity>;
 
 export interface BlockedLead {
   id: string;
@@ -119,7 +107,7 @@ export interface ExportRow {
 
 export interface LeadRepository {
   /** Without a viewer, the sends list regular campaigns only. */
-  get(organizationId: string, id: string, viewer?: SendViewer): Promise<LeadDetail | null>;
+  get(organizationId: string, id: string): Promise<LeadDetail | null>;
   /**
    * Loads the lead under a row lock, asks `plan` what to write, and writes it in
    * the same transaction. Throws NotFoundError for another organization's id and
@@ -144,9 +132,7 @@ export interface LeadRepository {
    * unless `overwrite` is set. Returns how many leads gained or changed a value.
    */
   mapRawToCustom(organizationId: string, input: { rawKey: string; customKey: string; overwrite: boolean }): Promise<number>;
-  /** The raw keys in use with the number of leads that have each, most common first. */
-  rawKeyStats(organizationId: string): Promise<Array<{ key: string; leads: number }>>;
-  /** Creates the custom column when it does not exist; returns the key. */
+    /** Creates the custom column when it does not exist; returns the key. */
   ensureCustomColumn(organizationId: string, name: string, options?: { restoreArchived?: boolean }): Promise<{ key: string; name: string }>;
   /** Batches of rows in a stable order, so a long export never loads the whole table. */
   exportBatches(organizationId: string, filter: LeadFilter): AsyncIterable<ExportRow[]>;
@@ -189,15 +175,15 @@ export interface LeadDeleteStore {
 export interface LeadDeleteOutreach {
   /** The enrollments of these people `FOR UPDATE` in id order, so no send claim lands between the check and the purge. */
   lockEnrollments(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
-  /** The outreach blockers of each person, as the actor may see them. A person without one is left out. */
-  blockers(tx: DbHandle, actor: Actor, ids: readonly string[]): Promise<Map<string, LeadOutreachBlocker[]>>;
+  /** The outreach blockers of each person. A person without one is left out. */
+  blockers(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<Map<string, LeadOutreachBlocker[]>>;
   /** Deletes the failed sends of these people, then their enrollments. */
   purge(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
 }
 
 /** Conversations: `person-handling.ts`. */
 export interface LeadDeleteHandling {
-  /** The people among `ids` with a reply-handling record or an event. */
+  /** The people among `ids` with a conversation or an event. */
   peopleWithHistory(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<Set<string>>;
 }
 

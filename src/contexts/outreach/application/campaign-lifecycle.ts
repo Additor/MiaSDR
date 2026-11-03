@@ -38,7 +38,7 @@ export interface CampaignLifecycleStore<Step, Row extends CampaignRow<Step> = Ca
   /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
   delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<Enrolled>;
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<Enrolled>;
 }
 
 export interface CampaignLifecycleDeps<Step, Row extends CampaignRow<Step> = CampaignRow<Step>, Enrolled = unknown> {
@@ -93,7 +93,7 @@ export async function createCampaignOn<Step, Row extends CampaignRow<Step>, Enro
 
 /**
  * With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and
- * a read from the pool could wait on a connection this request holds. `more` adds the channel's own columns to the patch.
+ * a read from the pool could wait on a connection this request holds.
  */
 export async function updateCampaignOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   deps: CampaignLifecycleDeps<Step, Row, Enrolled>,
@@ -102,13 +102,11 @@ export async function updateCampaignOn<Step, Row extends CampaignRow<Step>, Enro
   id: string,
   patch: { name?: string; steps?: Step[]; senderIds?: string[] },
   tx?: DbHandle,
-  more?: (campaign: Row) => Promise<Record<string, unknown>>,
 ): Promise<void> {
   const campaign = await loadCampaign(deps.campaigns, actor, id, tx);
   const next: { name?: string; steps?: Step[] } = {};
   const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, channel.channel, patch.senderIds, tx);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
-  if (more) Object.assign(next, await more(campaign));
   if (patch.steps !== undefined) {
     if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
     const issues = channel.validateSteps(patch.steps);
@@ -204,7 +202,7 @@ export async function enrollOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   campaigns: CampaignLifecycleStore<Step, Row, Enrolled>,
   actor: Actor,
   id: string,
-  input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean },
+  input: { query?: string; limit?: number; dryRun?: boolean },
   options: EnrollOptions = {},
   tx?: DbHandle,
 ): Promise<Enrolled> {
@@ -212,7 +210,7 @@ export async function enrollOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? MAX_ENROLL_BATCH)), MAX_ENROLL_BATCH);
   return enrollUnder(campaigns, async (t) => (await loadCampaign(campaigns, actor, id, t)).status, options, tx, (t) =>
-    campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, collectIds: input.collectIds, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
+    campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
   );
 }
 
@@ -231,7 +229,7 @@ export async function enrollPickedOn<Step, Row extends CampaignRow<Step>, Enroll
   if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
   if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
   return enrollUnder(deps.campaigns, async (t) => (await loadCampaign(deps.campaigns, actor, id, t)).status, options, tx, (t) =>
-    adminStore(deps).enrollPicked(actor.organizationId, id, channel, personIds, actor.via?.tokenId ?? null, t),
+    adminStore(deps).enrollPicked(actor.organizationId, id, channel, personIds, { viaTokenId: actor.via?.tokenId ?? null, dryRun: options.dryRun }, t),
   );
 }
 

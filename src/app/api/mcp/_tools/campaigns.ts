@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getCampaignDetail, listCampaigns, previewStep } from "@/contexts/outreach/application/campaign-management";
 import { listAssignedSenders } from "@/contexts/outreach/application/enrollment-admin";
+import { bouncePauseReason, type BouncePause } from "@/contexts/outreach/domain/bounce-pause";
 import { parseArchiveFilter } from "@/contexts/outreach/domain/campaign";
 import { ENROLLMENT_TABS, parseEnrollmentListQuery } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
@@ -23,10 +24,11 @@ const summaryRow = z.object({
   channel: z.enum(CHANNELS),
   name: z.string(),
   status: z.string(),
-  type: z.string(),
   enrolled: z.number(),
   replied: z.number(),
   archived: z.boolean(),
+  /** Why MiaSDR paused it on its own, or null. */
+  pausedReason: z.string().nullable(),
   appUrl: z.string(),
 });
 
@@ -46,11 +48,11 @@ export const listCampaignsTool = defineTool({
       input.channel === "email" ? [] : listLinkedInCampaigns(linkedinCampaignDeps(), actor, archived),
     ]);
     const campaigns = [
-      ...email.map((c) => ({ campaignId: c.id, channel: "email" as const, name: c.name, status: c.status, type: "regular", enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
-      ...linkedin.map((c) => ({ campaignId: c.id, channel: "linkedin" as const, name: c.name, status: c.status, type: c.type, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
+      ...email.map((c) => ({ campaignId: c.id, channel: "email" as const, name: c.name, status: c.status, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, pausedReason: c.bouncePause ? bouncePauseReason(c.bouncePause) : null, appUrl: links.campaign(c.id) })),
+      ...linkedin.map((c) => ({ campaignId: c.id, channel: "linkedin" as const, name: c.name, status: c.status, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, pausedReason: null, appUrl: links.campaign(c.id) })),
     ];
     const fitted = fitItems(campaigns);
-    const lines = fitted.items.map((c) => `${c.name} (${c.channel}, ${c.status}): ${c.enrolled} enrolled, ${c.replied} replied`);
+    const lines = fitted.items.map((c) => `${c.name} (${c.channel}, ${c.status}): ${c.enrolled} enrolled, ${c.replied} replied${c.pausedReason ? `. ${c.pausedReason}` : ""}`);
     if (fitted.omitted > 0) lines.push(`${fitted.omitted} more left out; filter by channel or archive state.`);
     return { summary: lines.length === 0 ? "No campaigns." : lines.join("\n"), structured: { campaigns: fitted.items, omitted: fitted.omitted } };
   },
@@ -65,16 +67,16 @@ const enrollment = z.object({
   nextSendAt: z.string().nullable(),
   lastSentAt: z.string().nullable(),
   stopReason: z.string().nullable(),
-  conversationId: z.string().nullable(),
+  threadId: z.string().nullable(),
 });
 
 type EnrollmentQuery = ReturnType<typeof parseEnrollmentListQuery>;
 type Step = { stepNumber: number; kind: string; subject?: string; body: string; waitDays: number };
-type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxConversationId: string | null };
+type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxThreadId: string | null };
 
 /** What get_campaign and `campaignStatus` read of one channel. Both channels answer in the same shape. */
 interface ChannelReads {
-  detail(actor: Actor, id: string, query: EnrollmentQuery): Promise<{ campaign: { name: string; status: string; steps: Step[] }; enrollments: { total: number; rows: Row[] } }>;
+  detail(actor: Actor, id: string, query: EnrollmentQuery): Promise<{ campaign: { name: string; status: string; steps: Step[]; bouncePause?: BouncePause | null }; enrollments: { total: number; rows: Row[] } }>;
   preview(actor: Actor, id: string, stepNumber: number): Promise<{ subject: string | null; body: string; leadName: string | null; usedSampleLead: boolean; unresolved: UnresolvedToken[] }>;
 }
 
@@ -127,6 +129,8 @@ export const getCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     name: z.string(),
     status: z.string(),
+    /** Why MiaSDR paused it on its own, or null. Only a person resumes such a campaign. */
+    pausedReason: z.string().nullable(),
     steps: z.array(z.object({ stepNumber: z.number(), kind: z.string(), subject: z.string().nullable(), body: z.string(), truncated: z.boolean(), readToken: z.string().nullable(), waitDays: z.number() })),
     senders: z.array(z.object({ id: z.string(), label: z.string(), connected: z.boolean() })),
     enrollments: z.object({ total: z.number(), page: z.number(), pageSize: z.number(), rows: z.array(enrollment) }),
@@ -151,6 +155,7 @@ export const getCampaignTool = defineTool({
       channel: input.channel,
       name: detail.campaign.name,
       status: detail.campaign.status,
+      pausedReason: detail.campaign.bouncePause ? bouncePauseReason(detail.campaign.bouncePause) : null,
       steps: steps.map((s) => ({ stepNumber: s.stepNumber, kind: s.kind, subject: s.subject ?? null, ...bodyOf(s.body, s.stepNumber === step), waitDays: s.waitDays })),
       senders,
       enrollments: {
@@ -166,7 +171,7 @@ export const getCampaignTool = defineTool({
           nextSendAt: iso(r.nextSendAt),
           lastSentAt: iso(r.lastSentAt),
           stopReason: r.stopReason,
-          conversationId: r.inboxConversationId,
+          threadId: r.inboxThreadId,
         })),
       },
       // The rendered text carries a lead's own values, so it comes fenced like any imported field.
@@ -174,6 +179,7 @@ export const getCampaignTool = defineTool({
       appUrl: appLinks(out).campaign(input.campaignId),
     };
     const lines = [`${structured.name} (${input.channel}, ${structured.status}): ${steps.length} steps, ${senders.length} senders, ${structured.enrollments.total} leads in ${query.tab}.`];
+    if (structured.pausedReason) lines.push(structured.pausedReason);
     if (step !== undefined && !inRange) lines.push(`Step ${step} does not exist; the campaign has ${steps.length}.`);
     if (preview) lines.push(UNTRUSTED_NOTE);
     return { summary: lines.join("\n"), structured };

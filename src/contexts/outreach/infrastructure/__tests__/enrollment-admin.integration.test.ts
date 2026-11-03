@@ -525,7 +525,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
     });
 
     describe("mailbox delete", () => {
-      const mailboxDeps = () => ({ mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, provider: new FakeMailboxProvider(), now: () => current, policy: { allowedDomains: null, openSignup: false } });
+      const mailboxDeps = () => ({ mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, provider: new FakeMailboxProvider(), now: () => current, policy: { allowedDomains: null } });
       let mailboxUc: typeof import("../../email/application/mailbox-management");
       beforeAll(async () => {
         mailboxUc = await import("../../email/application/mailbox-management");

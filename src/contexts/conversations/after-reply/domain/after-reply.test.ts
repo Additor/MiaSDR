@@ -19,10 +19,10 @@ import {
   stopsOnLines,
   type StopReason,
 } from "./after-reply";
-import { interruptReason, type InterruptFacts, type InterruptReason, type RunStatus } from "./sequences";
+import { interruptReason, type InterruptFacts, type InterruptReason, type RunStatus } from "./follow-ups";
 
 const ALL_RUN_STATUSES: RunStatus[] = ["active", "paused", "interrupted", "completed", "cancelled"];
-const ALL_INTERRUPT_REASONS: InterruptReason[] = ["reply", "do_not_contact", "unsubscribed", "bounce", "suppressed", "terminal_stage", "record_closed", "converted", AFTER_REPLY_OFF];
+const ALL_INTERRUPT_REASONS: InterruptReason[] = ["reply", "do_not_contact", "unsubscribed", "bounce", "suppressed", "terminal_stage", "conversation_closed", "converted", AFTER_REPLY_OFF];
 
 describe("after a reply mode", () => {
   it("defaults to handing the conversation to the Inbox", () => {
@@ -73,7 +73,7 @@ describe("labels", () => {
 
   it("words the reasons that people and writes store, and falls back for unknown ones", () => {
     expect(stopReasonLabel("manual")).toBe("A person cancelled the follow-ups");
-    expect(stopReasonLabel("stage_moved")).toBe("A person changed the reply type");
+    expect(stopReasonLabel("type_changed")).toBe("A person changed the reply type");
     expect(stopReasonLabel("something_new")).toBe("Stopped");
     expect(stopReasonLabel(null)).toBe("Stopped");
     expect(stopReasonLabel("toString")).toBe("Stopped");
@@ -81,8 +81,8 @@ describe("labels", () => {
 });
 
 describe("FIXED_STOP_RULES", () => {
-  it("lists the lead and record facts, in the order interruptReason checks them", () => {
-    expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"]);
+  it("lists the lead and conversation facts, in the order interruptReason checks them", () => {
+    expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "conversation_closed", "converted"]);
     expect(new Set(FIXED_STOP_RULES.map((r) => r.id)).size).toBe(FIXED_STOP_RULES.length);
     for (const rule of FIXED_STOP_RULES) expect(rule.label.length).toBeGreaterThan(0);
   });
@@ -91,10 +91,10 @@ describe("FIXED_STOP_RULES", () => {
     for (const rule of FIXED_STOP_RULES) expect(ALL_INTERRUPT_REASONS).toContain(rule.reason);
   });
 
-  it("matches what interruptReason returns for each lead or record fact", () => {
+  it("matches what interruptReason returns for each lead or conversation fact", () => {
     const base: InterruptFacts = {
-      run: { triggerMessageId: "m1", replyTypeId: "s1" },
-      record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", followUps: "continue", workflowState: "open" },
+      run: { triggerMessageId: "m1", replyTypeId: "s1", channel: "email" },
+      conversation: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", followUps: "continue", workflowState: "open" },
       doNotContact: false,
       suppression: null,
       contact: false,
@@ -102,12 +102,12 @@ describe("FIXED_STOP_RULES", () => {
     };
     expect(interruptReason(base)).toBeNull();
     const byId = (id: string) => FIXED_STOP_RULES.find((r) => r.id === id)?.reason;
-    expect(interruptReason({ ...base, record: { ...base.record, latestInboundMessageId: "m2" } })).toBe(byId("reply"));
+    expect(interruptReason({ ...base, conversation: { ...base.conversation, latestInboundMessageId: "m2" } })).toBe(byId("reply"));
     expect(interruptReason({ ...base, doNotContact: true })).toBe(byId("do_not_contact"));
     expect(interruptReason({ ...base, suppression: "unsubscribed" })).toBe(byId("unsubscribe"));
     expect(interruptReason({ ...base, suppression: "bounced" })).toBe(byId("bounce"));
     expect(interruptReason({ ...base, suppression: "manual" })).toBe(byId("suppressed"));
-    expect(interruptReason({ ...base, record: { ...base.record, workflowState: "closed" } })).toBe(byId("record_closed"));
+    expect(interruptReason({ ...base, conversation: { ...base.conversation, workflowState: "closed" } })).toBe(byId("conversation_closed"));
     expect(interruptReason({ ...base, contact: true })).toBe(byId("converted"));
   });
 
@@ -127,12 +127,12 @@ describe("FIXED_STOP_RULES", () => {
 
 describe("why a run cannot start", () => {
   const ok = (): StartBlockFacts => ({
-    record: { replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", replyTypeName: "Demo request", followUps: "continue", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
-    conversation: { channel: "email" },
+    conversation: { replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", replyTypeName: "Demo request", followUps: "continue", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
+    thread: { channel: "email" },
     doNotContact: false,
     suppressed: false,
     contact: false,
-    owner: { name: "Autumn", channel: "email", type: "regular", status: "active", archived: false },
+    owner: { name: "Autumn", channel: "email", status: "active", archived: false },
     flow: { status: "active", hasPublished: true },
     stepCount: 3,
     answered: false,
@@ -142,9 +142,9 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(ok())).toBeNull();
   });
 
-  it("names the campaign state before the record state", () => {
+  it("names the campaign state before the conversation state", () => {
     const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false };
+    f.owner = { name: "Autumn", channel: "email", status: "paused", archived: false };
     f.doNotContact = true;
     expect(startBlockedReason(f)).toBe("The campaign Autumn is paused. Resume it to restart follow-ups.");
   });
@@ -158,7 +158,7 @@ describe("why a run cannot start", () => {
 
   it("names an archived campaign even when its status is active", () => {
     const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "regular", status: "active", archived: true };
+    f.owner = { name: "Autumn", channel: "email", status: "active", archived: true };
     expect(startBlockedReason(f)).toMatch(/Autumn is archived/);
   });
 
@@ -171,28 +171,22 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(empty)).toMatch(/no published follow-up steps\. Add them in its Follow-ups after a reply setting\./);
   });
 
-  it("says a personal campaign cannot draft follow-ups", () => {
-    const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "personal", status: "active", archived: false };
-    expect(startBlockedReason(f)).toBe("Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.");
-  });
-
   it("names the reply type whose Follow-ups rule is Stop", () => {
     const f = ok();
-    f.record.groupKey = "not_interested";
-    f.record.replyTypeKey = "not_required_right_now";
-    f.record.replyTypeName = "Not now";
-    f.record.followUps = "stop";
+    f.conversation.groupKey = "not_interested";
+    f.conversation.replyTypeKey = "not_required_right_now";
+    f.conversation.replyTypeName = "Not now";
+    f.conversation.followUps = "stop";
     expect(startBlockedReason(f)).toBe("Not now is set to stop follow-ups.");
   });
 
   it("reads the rule, not the group or the key", () => {
     const keepsGoing = ok();
-    keepsGoing.record.groupKey = "not_interested";
-    keepsGoing.record.replyTypeKey = "not_required_right_now";
+    keepsGoing.conversation.groupKey = "not_interested";
+    keepsGoing.conversation.replyTypeKey = "not_required_right_now";
     expect(startBlockedReason(keepsGoing)).toBeNull();
     const stops = ok();
-    stops.record.followUps = "stop";
+    stops.conversation.followUps = "stop";
     expect(startBlockedReason(stops)).toBe("Demo request is set to stop follow-ups.");
   });
 
@@ -206,7 +200,7 @@ describe("why a run cannot start", () => {
 
   it("needs a step after the reply when the reply type is set to Don't write a reply draft", () => {
     const f = ok();
-    f.record.replyDraft = false;
+    f.conversation.replyDraft = false;
     f.stepCount = 2;
     expect(startBlockedReason(f)).toBeNull();
     f.stepCount = 1;

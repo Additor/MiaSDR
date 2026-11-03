@@ -16,8 +16,6 @@ export interface InboundLinkedInInput {
   personId: string | null;
   bodyText: string;
   receivedAt: Date;
-  /** The personal campaign this lead is in on the receiving account, if any. The thread then stays out of the Inbox, the AI and the CRM. */
-  privateCampaignId?: string | null;
 }
 
 /** Port for LinkedIn inbound persistence. `ingestLinkedIn` is one transaction and safe to run twice for the same message.

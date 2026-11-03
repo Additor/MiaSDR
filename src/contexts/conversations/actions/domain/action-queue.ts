@@ -1,15 +1,14 @@
 import { ValidationError } from "@/shared/errors";
 import { isCalendarDay, shiftDay, startOfDayInZone } from "@/shared/time-zone";
-import type { CheckMode, SystemRole } from "../../domain/reply-type";
+import type { SystemRole } from "../../domain/reply-type";
 
 /**
- * The Actions queue lists records, not source rows. A record is in the queue when it is `action_required`
+ * The Actions queue lists conversations, not source rows. A conversation is in the queue when it is `action_required`
  * or `error`, or `waiting` with `next_action_at` due. Each one sits in exactly one group, picked in this
- * order: problem, reply, classification, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
- * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age. The `classification`
- * group is "AI picks" on screen; the key stays because URLs and the API carry it.
+ * order: problem, reply, ai_pick, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
+ * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age.
  */
-export const QUEUE_GROUPS = ["problem", "reply", "follow_up", "classification", "next_step"] as const;
+export const QUEUE_GROUPS = ["problem", "reply", "follow_up", "ai_pick", "next_step"] as const;
 export type QueueGroup = (typeof QUEUE_GROUPS)[number];
 
 export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUPS as readonly string[]).includes(value);
@@ -17,15 +16,15 @@ export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUP
 export const QUEUE_GROUP_LABELS: Record<QueueGroup, { title: string; description: string }> = {
   reply: { title: "Replies to approve", description: "Drafts waiting for your review before anyone sends them." },
   follow_up: { title: "Follow-ups due", description: "Leads you waited on who are due another touch." },
-  classification: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
+  ai_pick: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
   next_step: { title: "Needs a next step", description: "No draft or AI pick waits on this reply. Write a reply, change the type or add a task." },
   problem: { title: "Problems", description: "A draft or AI job failed, a send is unconfirmed, or reply handling hit an error." },
 };
 
 /**
- * What the queue knows about one visible record. Each flag is true when the thing exists and applies: a failed or
+ * What the queue knows about one visible conversation. Each flag is true when the thing exists and applies: a failed or
  * unconfirmed draft, a failed AI job that no newer draft answers, a draft awaiting review, an AI pick that waits for a
- * person (`pickReviewOf`), an open task. `workflowState` is the record's state as the domain wrote it; the queue reads it
+ * person (`pickReviewOf`), an open task. `workflowState` is the conversation's state as the domain wrote it; the queue reads it
  * and never works it out again. The SQL in `work-queue-read.ts` computes the same facts; `queueGroupOf` and `isInQueue`
  * are the rule, and `action-queue.integration.test.ts` checks that the query agrees with them.
  */
@@ -37,7 +36,7 @@ export interface QueueFacts {
   hasDraftToReview: boolean;
   hasReplyTypePickToReview: boolean;
   hasOpenTask: boolean;
-  /** The pick to review is a stop request. It stays listed whatever the record's state, since it keeps refusing agents. */
+  /** The pick to review is a stop request. It stays listed whatever the conversation's state, since it keeps refusing agents. */
   hasStopToReview: boolean;
 }
 
@@ -46,66 +45,58 @@ export interface QueueFacts {
  * (`typeDecision` in `inbox/[id]/_lib/type-line.ts`); `work-queue-read.ts` computes it in SQL and
  * `action-queue.integration.test.ts` checks that the two agree.
  *
- * - `stop_review`: a pick reads the reply as a request to stop and no person reviewed it (`stopReviewOpenSql`), whatever the
- *   pick's status. Accept would only change the type, so the row offers Review stop request. A person already marked do not
+ * - `stop_review`: the reply asks to stop, in a pick's reading or in its own words, and no person reviewed it
+ *   (`stopReviewOpenSql`), whatever the pick's status. The query also lists a reply no pick has read. Accept would only change the type, so the row offers Review stop request. A person already marked do not
  *   contact, or an email address on the suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
- * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
  *
- * Null when nothing waits: the pick is stale, a held pick that asks nothing to stop lost its record version, a person
- * already looked at it, or it is a held stop request for someone who can no longer be contacted.
+ * Null when nothing waits: the pick applied or is stale, a held pick that asks nothing to stop lost its conversation version,
+ * or it is a held stop request for someone who can no longer be contacted.
  */
-export type PickReviewKind = "stop_review" | "held" | "looks_right";
+export type PickReviewKind = "stop_review" | "held";
 
 export interface PickReviewFacts {
   status: string;
-  /** The pick was written for the record's current version and is not stale. */
+  /** The pick was written for the conversation's current version and is not stale. */
   current: boolean;
-  /** The held pick names a type that still exists and is active. An archived type cannot be accepted. */
+  /** The held pick names a type. */
   hasProposedType: boolean;
   proposedSystemRole: SystemRole | null;
-  /** A pick reads the reply as a request to stop and no person reviewed it. */
+  /** The reply asks to stop and no person reviewed it. */
   stopReviewOpen: boolean;
-  acknowledged: boolean;
-  /** The applied type is the record's type now. A person who changed the type since has answered the pick. */
-  appliedIsCurrentType: boolean;
-  /** Check from the pick's rules snapshot. Null for a pick written before snapshots, read as after. */
-  checkMode: CheckMode | null;
   /** Do not contact, or the address on the suppression list on an email thread. */
   stopped: boolean;
 }
 
 export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
   const held = f.status === "proposed" && f.current;
-  const applied = f.status === "auto_applied" && !f.acknowledged && f.appliedIsCurrentType;
   if (f.stopReviewOpen && !f.stopped) return "stop_review";
   if (held && f.hasProposedType && f.proposedSystemRole !== "stop_request") return "held";
-  if (applied && (f.checkMode === null || f.checkMode === "after")) return "looks_right";
   return null;
 }
 
-/** The first match of problem, reply, classification, follow_up, next_step. */
+/** The first match of problem, reply, ai_pick, follow_up, next_step. */
 export function queueGroupOf(facts: QueueFacts): QueueGroup {
-  if (facts.workflowState === "error" || facts.hasProblemDraft || facts.hasFailedJob) return "problem";
+  if (facts.hasProblemDraft || facts.hasFailedJob) return "problem";
   if (facts.hasDraftToReview) return "reply";
-  if (facts.hasReplyTypePickToReview) return "classification";
+  if (facts.hasReplyTypePickToReview) return "ai_pick";
   if (facts.workflowState === "waiting") return "follow_up";
   return "next_step";
 }
 
 /**
- * A record is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due, or a stop request
- * waits on it. A `next_step` record with an open task is left out, because the task already puts it in front of a person.
+ * A conversation is in the queue when it is `action_required`, or `waiting` with `next_action_at` due, or a stop request
+ * waits on it. A `next_step` conversation with an open task is left out, because the task already puts it in front of a person.
  */
 export function isInQueue(facts: QueueFacts, now: Date): boolean {
   if (facts.hasStopToReview) return true;
   const due = facts.workflowState === "waiting" && facts.nextActionAt !== null && facts.nextActionAt.getTime() <= now.getTime();
-  if (facts.workflowState !== "action_required" && facts.workflowState !== "error" && !due) return false;
+  if (facts.workflowState !== "action_required" && !due) return false;
   return !(queueGroupOf(facts) === "next_step" && facts.hasOpenTask);
 }
 
 /**
- * Why the clock of a queue item started. `inbound`: the last message from the other side (reply, classification, next_step).
+ * Why the clock of a queue item started. `inbound`: the last message from the other side (reply, ai_pick, next_step).
  * `failure`: when the failure was recorded (problem). `due`: when a follow-up came due (follow_up), shown as "overdue since".
  * Only `inbound` and `failure` say how long a person on the other side has waited or a send has been stuck.
  */
@@ -121,7 +112,7 @@ export interface WaitingFacts {
   lastInteractionAt: Date | null;
   createdAt: Date;
   nextActionAt: Date | null;
-  /** When the failure was recorded: the failed draft's last update, the failed job's failure time, or the record's last update. */
+  /** When the failure was recorded: the failed draft's last update, the failed job's failure time, or the conversation's last update. */
   failedAt: Date;
 }
 
@@ -135,7 +126,7 @@ export function waitingSince(group: QueueGroup, facts: WaitingFacts): WaitingSin
 
 /** Everything the Actions page can show as work. Each number counts items that wait on a person. */
 export interface WorkTotals {
-  /** Records in the queue, all groups. */
+  /** Conversations in the queue, all groups. */
   queue: number;
   /** Open tasks, assigned or not. */
   tasks: number;
@@ -143,20 +134,22 @@ export interface WorkTotals {
   unmatchedSenders: number;
   /** Dead inbound events. Zero for a member who cannot see them. */
   deadLetters: number;
+  /** Email campaigns the bounce breaker paused. */
+  bouncePausedCampaigns: number;
 }
 
 /** True only when no source holds work. A page says "nothing waits" on this and on nothing less. */
 export function isWorkClear(totals: WorkTotals): boolean {
-  return totals.queue + totals.tasks + totals.uncertainCampaignSends + totals.unmatchedSenders + totals.deadLetters === 0;
+  return totals.queue + totals.tasks + totals.uncertainCampaignSends + totals.unmatchedSenders + totals.deadLetters + totals.bouncePausedCampaigns === 0;
 }
 
 /**
- * The item to open after `currentRecordId`, given candidates in the order they should win. The first one that is not the
- * current record wins. The open item never qualifies. `getNextQueueItem` builds the candidates: the next item of the same
- * group, then the first items of the other groups (`groupsAfter`), and for a record that left the queue the top of the queue.
+ * The item to open after `currentConversationId`, given candidates in the order they should win. The first one that is not the
+ * current conversation wins. The open item never qualifies. `getNextQueueItem` builds the candidates: the next item of the same
+ * group, then the first items of the other groups (`groupsAfter`), and for a conversation that left the queue the top of the queue.
  */
-export function pickNextQueueItem<T extends { recordId: string }>(candidates: readonly T[], currentRecordId: string): T | null {
-  return candidates.find((item) => item.recordId !== currentRecordId) ?? null;
+export function pickNextQueueItem<T extends { conversationId: string }>(candidates: readonly T[], currentConversationId: string): T | null {
+  return candidates.find((item) => item.conversationId !== currentConversationId) ?? null;
 }
 
 /**
@@ -172,7 +165,7 @@ export const QUEUE_DEFAULT_LIMIT = 50;
 export const QUEUE_MAX_LIMIT = 200;
 
 /**
- * Whose work a queue item is. The three scopes split the queue by assignee and do not overlap: a record is mine when I am
+ * Whose work a queue item is. The three scopes split the queue by assignee and do not overlap: a conversation is mine when I am
  * its assignee, unassigned when it has none, and someone else's otherwise.
  */
 export const QUEUE_SCOPES = ["mine", "unassigned", "others"] as const;
@@ -185,20 +178,20 @@ export function scopeOf(assignedTo: string | null, actorUserId: string): QueueSc
   return assignedTo === actorUserId ? "mine" : "others";
 }
 
-export type QueueProblemKind = "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
+export type QueueProblemKind = "draft_failed" | "delivery_uncertain" | "job_failed";
 
-/** The group filter value for a record with no reply type yet. URLs keep it as `category=unclassified`. */
-export const NO_TYPE_FILTER = "unclassified";
+/** The group filter value for a conversation with no reply type yet. */
+export const NO_TYPE_FILTER = "no_type";
 
 export interface QueueFilter {
-  /** A group key, or `NO_TYPE_FILTER` for a record with no reply type yet. */
+  /** A group key, or `NO_TYPE_FILTER` for a conversation with no reply type yet. */
   groupKey?: string;
   channel?: string;
   group?: QueueGroup;
   /** Whose items to show. Without it the whole queue shows. */
   scope?: QueueScope;
   replyTypeId?: string;
-  /** Records of people currently enrolled in this campaign (email or LinkedIn, any status but removed). It does not mean the campaign that owns the conversation. */
+  /** Conversations of people currently enrolled in this campaign (email or LinkedIn, any status but removed). It does not mean the campaign that owns the conversation. */
   campaignId?: string;
   dueBefore?: Date;
   dueAfter?: Date;
@@ -207,13 +200,13 @@ export interface QueueFilter {
 }
 
 /**
- * Position of the last item of a group page: its waiting time as Postgres printed it (microseconds survive) and the record id.
+ * Position of the last item of a group page: its waiting time as Postgres printed it (microseconds survive) and the conversation id.
  * The first element of the encoded cursor is the order it belongs to. A group is read oldest first (`w`); a cursor from the
  * newest-first order is refused, because continuing it would skip or repeat items.
  */
 export interface QueueCursor {
   sortKey: string;
-  recordId: string;
+  conversationId: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -221,7 +214,7 @@ const SORT_KEY = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\
 
 const CURSOR_ORDER = "w";
 
-export const encodeQueueCursor = (cursor: QueueCursor) => Buffer.from(JSON.stringify([CURSOR_ORDER, cursor.sortKey, cursor.recordId])).toString("base64url");
+export const encodeQueueCursor = (cursor: QueueCursor) => Buffer.from(JSON.stringify([CURSOR_ORDER, cursor.sortKey, cursor.conversationId])).toString("base64url");
 
 export function decodeQueueCursor(value: string): QueueCursor {
   try {
@@ -235,7 +228,7 @@ export function decodeQueueCursor(value: string): QueueCursor {
       SORT_KEY.test(parsed[1]) &&
       UUID.test(parsed[2])
     ) {
-      return { sortKey: parsed[1], recordId: parsed[2] };
+      return { sortKey: parsed[1], conversationId: parsed[2] };
     }
   } catch {
     // Falls through to the error below.
@@ -281,14 +274,14 @@ const text = (value: unknown) => (typeof value === "string" && value.trim() !== 
  */
 export function parseQueueFilter(raw: Record<string, unknown>, timeZone = "UTC"): QueueFilter {
   const filter: QueueFilter = {};
-  const category = text(raw.category);
-  if (category) filter.groupKey = category;
+  const groupKey = text(raw.group);
+  if (groupKey) filter.groupKey = groupKey;
   const channel = text(raw.channel);
   if (channel) {
     if (channel !== "email" && channel !== "linkedin") throw new ValidationError("Channel must be email or linkedin.");
     filter.channel = channel;
   }
-  const group = text(raw.group);
+  const group = text(raw.list);
   if (group) {
     if (!isQueueGroup(group)) throw new ValidationError(`Action type must be one of ${QUEUE_GROUPS.join(", ")}.`);
     filter.group = group;

@@ -13,7 +13,7 @@ const FOREIGN_KEYS: Array<[string, string, string | null]> = [
   ["reply_type_picks", "reply_type_picks_proposed_reply_type_fk", "proposed_reply_type_id"],
   ["reply_type_picks", "reply_type_picks_applied_reply_type_fk", "applied_reply_type_id"],
   ["drafts", "drafts_reply_message_fk", "reply_for_message_id"],
-  ["records", "records_latest_inbound_message_fk", "latest_inbound_message_id"],
+  ["conversations", "conversations_latest_inbound_message_fk", "latest_inbound_message_id"],
   ["sends", "sends_mailbox_fk", null],
   ["sends", "sends_taken_over_mailbox_fk", null],
   ["sends", "sends_linkedin_account_fk", null],
@@ -25,9 +25,8 @@ const FOREIGN_KEYS: Array<[string, string, string | null]> = [
   ["linkedin_search_results", "linkedin_search_results_query_fk", "CASCADE"],
   ["linkedin_search_results", "linkedin_search_results_person_fk", "person_id"],
   ["identity_exceptions", "identity_exceptions_resolved_person_fk", "resolved_person_id"],
-  ["notes", "notes_record_fk", "record_id"],
-  ["tasks", "tasks_record_fk", "record_id"],
-  ["import_runs", "import_runs_destination_campaign_fk", "destination_campaign_id"],
+  ["notes", "notes_conversation_fk", "conversation_id"],
+  ["tasks", "tasks_conversation_fk", "conversation_id"],
   ["deals", "deals_source_enrollment_fk", "source_enrollment_id"],
   ["company_domain_aliases", "company_domain_aliases_company_fk", "CASCADE"],
 ];
@@ -38,14 +37,14 @@ const CHECKS = [
   ["reply_type_picks", "reply_type_picks_confidence_range_ck"],
   ["reply_type_picks", "reply_type_picks_context_version_ck"],
   ["reply_type_picks", "reply_type_picks_group_keys_ck"],
-  ["conversations", "conversations_account_ref_ck"],
+  ["threads", "threads_account_ref_ck"],
   ["drafts", "drafts_context_version_ck"],
   ["events", "events_type_ck"],
   ["identity_exceptions", "identity_exceptions_channel_ck"],
   ["identity_exceptions", "identity_exceptions_keys_ck"],
   ["messages", "messages_keys_ck"],
   ["reply_handling_settings", "reply_handling_settings_instructions_ck"],
-  ["records", "records_active_channel_ck"],
+  ["conversations", "conversations_active_channel_ck"],
   ["send_attempts", "send_attempts_refs_ck"],
 ] as const;
 
@@ -92,15 +91,14 @@ describeDb("foreign keys and checks", () => {
       ["reply_type_picks_proposed_reply_type_fk", "classification", (w, id) => sql`update reply_type_picks set proposed_reply_type_id = ${id} where id = ${w.classification}`],
       ["reply_type_picks_applied_reply_type_fk", "classification", (w, id) => sql`update reply_type_picks set applied_reply_type_id = ${id} where id = ${w.classification}`],
       ["drafts_reply_message_fk", "draft", (w, id) => sql`update drafts set reply_for_message_id = ${id} where id = ${w.draft}`],
-      ["records_latest_inbound_message_fk", "record", (w, id) => sql`update records set latest_inbound_message_id = ${id} where id = ${w.record}`],
+      ["conversations_latest_inbound_message_fk", "record", (w, id) => sql`update conversations set latest_inbound_message_id = ${id} where id = ${w.conversation}`],
       ["sends_mailbox_fk", "send", (w, id) => sql`update sends set mailbox_id = ${id} where id = ${w.sendEmail}`],
       ["sends_taken_over_mailbox_fk", "send", (w, id) => sql`update sends set taken_over_from_mailbox_id = ${id} where id = ${w.sendEmail}`],
       ["sends_linkedin_account_fk", "send", (w, id) => sql`update sends set linkedin_account_id = ${id} where id = ${w.sendLinkedin}`],
       ["linkedin_connections_enrollment_fk", "connection", (w, id) => sql`update linkedin_connections set enrollment_id = ${id} where id = ${w.connection}`],
       ["linkedin_search_queries_current_account_fk", "query", (w, id) => sql`update linkedin_search_queries set current_account_id = ${id} where id = ${w.searchQuery}`],
-      ["notes_record_fk", "note", (w, id) => sql`update notes set record_id = ${id} where id = ${w.note}`],
-      ["tasks_record_fk", "task", (w, id) => sql`update tasks set record_id = ${id} where id = ${w.task}`],
-      ["import_runs_destination_campaign_fk", "import run", (w, id) => sql`update import_runs set destination_campaign_id = ${id} where id = ${w.importRun}`],
+      ["notes_conversation_fk", "note", (w, id) => sql`update notes set conversation_id = ${id} where id = ${w.note}`],
+      ["tasks_conversation_fk", "task", (w, id) => sql`update tasks set conversation_id = ${id} where id = ${w.task}`],
       ["deals_source_enrollment_fk", "deal", (w, id) => sql`update deals set source_enrollment_id = ${id} where id = ${w.deal}`],
       ["company_domain_aliases_company_fk", "company alias", (w, id) => sql`update company_domain_aliases set company_id = ${id} where id = ${w.companyAlias}`],
     ];
@@ -114,7 +112,7 @@ describeDb("foreign keys and checks", () => {
       const a = await world();
       const b = await world();
       await expect(sql`update sends set mailbox_id = ${b.mailbox} where id = ${a.sendEmail}`).rejects.toThrow(/sends_mailbox_fk/);
-      await expect(sql`update notes set record_id = ${b.record} where id = ${a.note}`).rejects.toThrow(/notes_record_fk/);
+      await expect(sql`update notes set conversation_id = ${b.conversation} where id = ${a.note}`).rejects.toThrow(/notes_conversation_fk/);
       await expect(sql`update reply_type_picks set applied_reply_type_id = ${b.subA} where id = ${a.classification}`).rejects.toThrow(/reply_type_picks_applied_reply_type_fk/);
       await expect(sql`update deals set source_enrollment_id = ${b.enrollment} where id = ${a.deal}`).rejects.toThrow(/deals_source_enrollment_fk/);
       await expect(sql`update company_domain_aliases set company_id = ${b.company} where id = ${a.companyAlias}`).rejects.toThrow(/company_domain_aliases_company_fk/);
@@ -143,7 +141,7 @@ describeDb("foreign keys and checks", () => {
   });
 
   describe("delete behavior", () => {
-    it("deleting a subcategory nulls the classification pointers and keeps the row", async () => {
+    it("deleting a reply type nulls the classification pointers and keeps the row", async () => {
       const w = await world();
       await sql`delete from reply_types where id = ${w.subA}`;
       const [c] = await sql`select organization_id, previous_reply_type_id as p, proposed_reply_type_id as q, applied_reply_type_id as a from reply_type_picks where id = ${w.classification}`;
@@ -172,14 +170,6 @@ describeDb("foreign keys and checks", () => {
       expect((await sql`select count(*)::int as n from company_domain_aliases where id = ${w.companyAlias}`)[0].n).toBe(0);
     });
 
-    it("deleting a campaign nulls the import run's destination", async () => {
-      const w = await world();
-      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
-      await sql`delete from campaigns where id = ${w.campaign}`;
-      const [r] = await sql`select organization_id, destination_campaign_id from import_runs where id = ${w.importRun}`;
-      expect(r).toMatchObject({ organization_id: w.org, destination_campaign_id: null });
-    });
-
     it("deleting a campaign nulls the search batch's target campaign", async () => {
       const w = await world();
       await sql`update linkedin_search_batches set target_campaign_id = ${w.campaign} where id = ${w.searchBatch}`;
@@ -204,30 +194,30 @@ describeDb("foreign keys and checks", () => {
       expect(e).toEqual({ organization_id: w.org, status: "resolved", resolved_person_id: null });
     });
 
-    it("deleting a record nulls the note and task pointers", async () => {
+    it("deleting a conversation nulls the note and task pointers", async () => {
       const w = await world();
       const person2 = (await sql`insert into people (organization_id, email) values (${w.org}, ${"p2-" + w.tag + "@lead.test"}) returning id`)[0].id;
-      const record2 = (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${w.org}, ${person2}, ${w.pipeline}) returning id`)[0].id;
-      const note = (await sql`insert into notes (organization_id, person_id, record_id, body) values (${w.org}, ${person2}, ${record2}, 'n') returning id`)[0].id;
-      const task = (await sql`insert into tasks (organization_id, person_id, record_id, name) values (${w.org}, ${person2}, ${record2}, 't') returning id`)[0].id;
-      await sql`delete from records where id = ${record2}`;
-      expect((await sql`select record_id from notes where id = ${note}`)[0].record_id).toBeNull();
-      expect((await sql`select record_id from tasks where id = ${task}`)[0].record_id).toBeNull();
+      const conversation2 = (await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${w.org}, ${person2}, ${w.pipeline}) returning id`)[0].id;
+      const note = (await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${w.org}, ${person2}, ${conversation2}, 'n') returning id`)[0].id;
+      const task = (await sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${w.org}, ${person2}, ${conversation2}, 't') returning id`)[0].id;
+      await sql`delete from conversations where id = ${conversation2}`;
+      expect((await sql`select conversation_id from notes where id = ${note}`)[0].conversation_id).toBeNull();
+      expect((await sql`select conversation_id from tasks where id = ${task}`)[0].conversation_id).toBeNull();
     });
 
     it("deleting a message (with the purge setting) nulls the draft and record pointers", async () => {
       const w = await world();
-      const conv = w.conversation;
+      const conv = w.thread;
       const msg2 = (await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${w.org}, ${conv}, 'email', ${"me@" + w.tag + ".test"}, 'inbound', ${"m2-" + w.tag}, 'again', now()) returning id`)[0].id;
-      await sql`update records set latest_inbound_message_id = ${msg2} where id = ${w.record}`;
+      await sql`update conversations set latest_inbound_message_id = ${msg2} where id = ${w.conversation}`;
       await sql`update drafts set reply_for_message_id = ${msg2} where id = ${w.draft}`;
       await sql.begin(async (tx) => {
         await tx`select set_config('miasdr.allow_purge', 'on', true)`;
         await tx`delete from messages where id = ${msg2}`;
       });
-      expect((await sql`select latest_inbound_message_id as m from records where id = ${w.record}`)[0].m).toBeNull();
+      expect((await sql`select latest_inbound_message_id as m from conversations where id = ${w.conversation}`)[0].m).toBeNull();
       expect((await sql`select reply_for_message_id as m from drafts where id = ${w.draft}`)[0].m).toBeNull();
     });
 
@@ -279,7 +269,7 @@ describeDb("foreign keys and checks", () => {
     it("deleting the organization removes rows in all 13 child tables", async () => {
       const w = await seedWorld(sql);
       await sql`delete from organizations where id = ${w.org}`;
-      for (const t of ["reply_type_picks", "drafts", "records", "sends", "linkedin_connections", "linkedin_search_queries", "notes", "tasks", "import_runs", "messages", "events", "audit_log"]) {
+      for (const t of ["reply_type_picks", "drafts", "conversations", "sends", "linkedin_connections", "linkedin_search_queries", "notes", "tasks", "import_runs", "messages", "events", "audit_log"]) {
         const [{ n }] = await sql.unsafe(`select count(*)::int as n from ${t} where organization_id = '${w.org}'`);
         expect(n, t).toBe(0);
       }
@@ -290,14 +280,14 @@ describeDb("foreign keys and checks", () => {
   describe("a row that breaks a check is refused", () => {
     const fails = (name: string) => new RegExp(`violates check constraint "${name}"`);
 
-    it("classification confidence outside 0 to 1, context version below 0, unknown category key", async () => {
+    it("classification confidence outside 0 to 1, context version below 0, unknown group key", async () => {
       const w = await world();
       await expect(sql`update reply_type_picks set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
       await expect(sql`update reply_type_picks set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
       await expect(sql`update reply_type_picks set expected_context_version = -1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_context_version_ck"));
-      // Detaching the subcategory first keeps the cross-row validator out of the way; the CHECK is under test here.
+      // Detaching the reply type first keeps the cross-row validator out of the way; the CHECK is under test here.
       await expect(sql`update reply_type_picks set applied_reply_type_id = null, applied_group_key = 'maybe' where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_group_keys_ck"));
-      // The subcategory of the fixture is in 'interested': a different key would trip reply_type_picks_reply_types_upd_trg.
+      // The reply type of the fixture is in 'interested': a different key would trip reply_type_picks_reply_types_upd_trg.
       await sql`update reply_type_picks set confidence = 1, applied_group_key = 'interested' where id = ${w.classification}`;
     });
 
@@ -319,18 +309,17 @@ describeDb("foreign keys and checks", () => {
 
     it("blank keys and references", async () => {
       const w = await world();
-      // An insert: an update of account_ref now stops at conversations_identity_trg before the CHECK runs.
-      await expect(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${w.org}, ${w.record}, 'email', ' ')`).rejects.toThrow(fails("conversations_account_ref_ck"));
+      // An insert: an update of account_ref now stops at threads_identity_trg before the CHECK runs.
+      await expect(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${w.org}, ${w.conversation}, 'email', ' ')`).rejects.toThrow(fails("threads_account_ref_ck"));
       await expect(
-        sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-            values (${w.org}, ${w.conversation}, 'email', ${"me@" + w.tag + ".test"}, 'inbound', '  ', 'x', now())`,
+        sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+            values (${w.org}, ${w.thread}, 'email', ${"me@" + w.tag + ".test"}, 'inbound', '  ', 'x', now())`,
       ).rejects.toThrow(fails("messages_keys_ck"));
       await expect(sql`insert into events (organization_id, person_id, event_type, actor_type) values (${w.org}, ${w.person}, ' ', 'system')`).rejects.toThrow(fails("events_type_ck"));
       await expect(sql`update send_attempts set idempotency_key = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
       await expect(sql`update send_attempts set provider = '' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
-      await expect(sql`update send_attempts set request_id = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
       await expect(sql`update send_attempts set account_ref = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
-      await sql`update send_attempts set provider = null, request_id = 'r' where id = ${w.sendAttempt}`;
+      await sql`update send_attempts set provider = null where id = ${w.sendAttempt}`;
       const ex = (channel: string, account: string, key: string, reason: string) =>
         sql`insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason) values (${w.org}, ${channel}, ${account}, ${key}, ${reason})`;
       await expect(ex("sms", "a", "k1", "r")).rejects.toThrow(fails("identity_exceptions_channel_ck"));
@@ -342,8 +331,8 @@ describeDb("foreign keys and checks", () => {
 
     it("record active channel and instruction shape", async () => {
       const w = await world();
-      await expect(sql`update records set active_channel = 'sms' where id = ${w.record}`).rejects.toThrow(fails("records_active_channel_ck"));
-      await sql`update records set active_channel = 'linkedin' where id = ${w.record}`;
+      await expect(sql`update conversations set active_channel = 'sms' where id = ${w.conversation}`).rejects.toThrow(fails("conversations_active_channel_ck"));
+      await sql`update conversations set active_channel = 'linkedin' where id = ${w.conversation}`;
       const settings = (draft: unknown, cls: unknown = []) =>
         sql`insert into reply_handling_settings (reply_type_set_id, organization_id, draft_instructions, classification_instructions)
             values (${w.pipeline}, ${w.org}, ${sql.json(draft as never)}, ${sql.json(cls as never)})`;

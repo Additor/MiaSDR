@@ -1,4 +1,4 @@
-import { CircleHelpIcon, CircleXIcon } from "lucide-react";
+import { CircleHelpIcon, CircleXIcon, TriangleAlertIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -16,6 +16,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
 import { listCampaigns } from "@/contexts/outreach/application/campaign-management";
+import { bouncePauseReason } from "@/contexts/outreach/domain/bounce-pause";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
@@ -107,7 +108,7 @@ function Row({ id, title, detail, href, action, icon }: { id: string; title: Rea
 /** A contact's task opens the contact page; a lead's opens the conversation, or the lead page when there is none. */
 function taskTarget(t: TaskRow): { href: string; action: string } {
   if (t.personLifecycle === "contact") return { href: personHref(t.personId, t.personLifecycle), action: "Open contact" };
-  if (t.conversationId) return { href: `/inbox/${t.conversationId}`, action: "Open conversation" };
+  if (t.threadId) return { href: `/inbox/${t.threadId}`, action: "Open conversation" };
   return { href: personHref(t.personId, t.personLifecycle), action: "Open lead" };
 }
 
@@ -143,9 +144,10 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   ]);
   // Archived campaigns are hidden by default. The list holds both channels, because the queue does too.
   const campaigns = [...emailCampaigns, ...linkedinCampaigns].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const bouncePaused = emailCampaigns.flatMap((c) => (c.bouncePause ? [{ id: c.id, name: c.name, pause: c.bouncePause }] : []));
   const openTasks = await listTasks(taskDeps(), actor, { state: "open" });
   const now = taskDeps().now().getTime();
-  // The tasks of the scope in view. A task has an assignee or none, like a record.
+  // The tasks of the scope in view. A task has an assignee or none, like a conversation.
   const scopedTasks = openTasks.filter((t) => scopeOf(t.assigneeId, actor.userId) === scope);
   // Dead letters are for owners and admins, like /settings/inbound-events.
   const dead = await listInboundEvents(inboundReviewDeps(), actor, { state: "dead", limit: 10 }).catch((error) => {
@@ -187,12 +189,12 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   };
 
   // Groups with work show in their usual order. The empty ones collapse into one line below them.
-  const visibleGroups = QUEUE_GROUPS.filter((g) => (raw.errorsOnly !== "" ? g === "problem" : !raw.group || raw.group === g));
+  const visibleGroups = QUEUE_GROUPS.filter((g) => (raw.errorsOnly !== "" ? g === "problem" : !raw.list || raw.list === g));
   const groups = queue ? visibleGroups.filter((g) => queue.groups[g].total > 0) : [];
   const queueEmpty = queue !== null && groups.length === 0;
   const nowIso = new Date(now).toISOString();
   const oldestWaiting = counts.oldestWaiting[scope];
-  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
+  const filterValues = { group: raw.group, channel: raw.channel, list: raw.list, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
   const filtered = hasAnyFilter(filterValues);
   // "Nothing waits" holds only when tasks, unconfirmed sends, unmatched senders and dead letters are empty too.
   const clear = isWorkClear({
@@ -201,6 +203,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     uncertainCampaignSends: extras.uncertainCampaignSends.length,
     unmatchedSenders: extras.openIdentityExceptions,
     deadLetters: dead?.total ?? 0,
+    bouncePausedCampaigns: bouncePaused.length,
   });
 
   // The oldest wait has a name when it is the first item of one of the lists in view, which it is unless a filter hides it.
@@ -214,15 +217,16 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     oldestCandidate && oldestWaiting && oldestCandidate.waitingSince.at.getTime() === oldestWaiting.getTime()
       ? {
           name: oldestCandidate.personName ?? "an unknown sender",
-          href: oldestCandidate.conversationId ? `/inbox/${oldestCandidate.conversationId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
+          href: oldestCandidate.threadId ? `/inbox/${oldestCandidate.threadId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
         }
       : null;
-  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "AI picks", next_step: "Next steps" };
+  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", ai_pick: "AI picks", next_step: "Next steps" };
   // Every group in view with its count. A list with work is a jump link; the empty ones fold into one muted line, so the
   // strip says what waits without a row of zeros.
   const lists = [
     ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0, error: false })),
     { href: "#section-tasks", label: "Tasks", count: scopedTasks.length, error: false },
+    ...(bouncePaused.length > 0 ? [{ href: "#section-bounces", label: "Paused for bounces", count: bouncePaused.length, error: false }] : []),
     ...(extras.uncertainCampaignSends.length > 0 ? [{ href: "#section-sends", label: "Unconfirmed sends", count: extras.uncertainCampaignSends.length, error: false }] : []),
     ...(dead && dead.total > 0 ? [{ href: "#section-dead", label: "Dead letters", count: dead.total, error: true }] : []),
     ...(extras.openIdentityExceptions > 0 ? [{ href: "#section-unmatched", label: "Unmatched senders", count: extras.openIdentityExceptions, error: false }] : []),
@@ -241,7 +245,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
-  const replyTypes = taxonomy.replyTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
+  const replyTypes = taxonomy.replyTypes.map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
   const ambiguousTypes = [...ambiguousTypeNames(replyTypes)];
   const queueChips = queueFilterChips(filterValues, scope, { replyTypes, campaigns });
 
@@ -322,7 +326,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               key={`${g}:${query}`}
               group={g}
               title={QUEUE_GROUP_LABELS[g].title}
-              description={g === "classification" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}
+              description={g === "ai_pick" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}
               total={page.total}
               initialItems={page.items.map(toView)}
               initialCursor={page.nextCursor}
@@ -336,6 +340,26 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
 
       <ListSection id="section-tasks" title={TASK_SECTIONS[scope]} count={scopedTasks.length}>
         {scopedTasks.map(taskRow)}
+      </ListSection>
+
+      <ListSection
+        id="section-bounces"
+        icon={<TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-warning" />}
+        title="Campaigns paused for bounces"
+        description="MiaSDR stopped these campaigns because too many emails bounced. A person decides whether to resume each one."
+        count={bouncePaused.length}
+      >
+        {bouncePaused.map((c) => (
+          <Row
+            key={c.id}
+            id={`bounce-pause-${c.id}`}
+            icon={<TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-warning" />}
+            href={`/campaigns/${c.id}`}
+            action="Open campaign"
+            title={c.name}
+            detail={bouncePauseReason(c.pause)}
+          />
+        ))}
       </ListSection>
 
       <ListSection

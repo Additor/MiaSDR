@@ -56,7 +56,7 @@ export const applyIrreversibleTool = defineTool({
   description: [
     "Completes a campaign, or deletes a lead, contact, deal or draft campaign. No one can undo it. Use it only when the person asked for this action on this target, and after preview_irreversible.",
     "Pass the same `kind` and target, with its `actionToken`. A change since the preview answers `action_token_stale`: preview again. Each organization allows a limited number a day (`agent_irreversible_cap`).",
-    "Only a person deletes someone marked do not contact, on the suppression list, who asked to stop or was removed from a campaign (`agent_delete_protected`), and only a person completes a campaign a person paused (`agent_complete_person_paused`).",
+    "Only a person deletes someone marked do not contact, on the suppression list, who asked to stop or was removed from a campaign (`agent_delete_protected`), and only a person completes a campaign a person paused (`agent_complete_person_paused`) or MiaSDR paused for bounces (`agent_complete_bounce_paused`).",
   ].join(" "),
   scope: "mcp:irreversible",
   needs: "irreversible",

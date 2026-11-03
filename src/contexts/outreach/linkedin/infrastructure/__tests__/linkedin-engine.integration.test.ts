@@ -289,6 +289,37 @@ describeDb("linkedin engine", () => {
     expect(rows.find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt: 0, error: "do_not_contact" });
   });
 
+  it.each([
+    ["unsubscribed", true],
+    ["manual", true],
+    ["bounced", false],
+  ])("a suppression as %s that lands after the claim: blocked %s", async (reason, blocked) => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    await invite(gateway, f);
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    expect(accepted.status).toBe("done");
+    current = new Date("2026-10-15T10:03:00Z");
+    await sql`update people set email = ${`${f.slugs[0]}@list.test`} where id = (select person_id from campaign_enrollments where id = ${f.enrollmentIds[0]})`;
+    const racing: typeof store = {
+      ...store,
+      async claimNext(options) {
+        const claim = await store.claimNext(options);
+        if (claim) await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${`${f.slugs[0]}@list.test`}, ${reason})`;
+        return claim;
+      },
+    };
+    const outcome = await engine.runNextLinkedInAction({ ...deps(gateway), store: racing }, f.account);
+    if (blocked) {
+      expect(outcome).toEqual({ kind: "blocked", reason: "suppressed" });
+      expect(gateway.messages).toHaveLength(0);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", stop_reason: "suppressed", next_send_at: null });
+    } else {
+      expect(outcome.kind).toBe("sent");
+      expect(gateway.messages).toHaveLength(1);
+    }
+  });
+
   it("stops the sequence when the lead replies, and a redelivered reply changes nothing", async () => {
     const f = await fixture();
     const gateway = new FakeLinkedInGateway();
@@ -322,7 +353,7 @@ describeDb("linkedin engine", () => {
   });
 
   const inboxRows = (org: string) =>
-    sql`select m.*, c.provider_thread_id, c.channel as conversation_channel, r.person_id from messages m join conversations c on c.id = m.conversation_id join records r on r.id = c.record_id where m.organization_id = ${org} order by m.created_at`;
+    sql`select m.*, c.provider_thread_id, c.channel as thread_channel, r.person_id from messages m join threads c on c.id = m.thread_id join conversations r on r.id = c.conversation_id where m.organization_id = ${org} order by m.created_at`;
 
   it("stores a reply in the master inbox under the enrolled lead, once, and shows it in the inbox list", async () => {
     const f = await fixture();
@@ -354,14 +385,14 @@ describeDb("linkedin engine", () => {
     expect(new Date(rows[0].sent_at).toISOString()).toBe("2026-10-14T11:30:00.000Z");
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied" });
 
-    const conversations = await import("@/contexts/conversations/infrastructure/composition");
+    const threads = await import("@/contexts/conversations/infrastructure/composition");
     const inbox = await import("@/contexts/conversations/application/inbox");
     const actor = { userId: "00000000-0000-0000-0000-000000000000", organizationId: f.org, role: "owner" as const };
-    const list = await inbox.listInbox(conversations.inboxDeps(), actor, {});
+    const list = await inbox.listInbox(threads.inboxDeps(), actor, {});
     expect(list.total).toBe(1);
     expect(list.rows[0]).toMatchObject({ channel: "linkedin", snippet: "Let us talk", unreadCount: 1 });
     // The thread also carries the invitation note we sent.
-    const thread = await inbox.getThread(conversations.inboxDeps(), actor, list.rows[0].conversationId);
+    const thread = await inbox.getThread(threads.inboxDeps(), actor, list.rows[0].threadId);
     expect(thread.messages.map((m) => [m.direction, m.bodyText])).toEqual([
       ["outbound", "Hi Lead0, let us connect"],
       ["inbound", "Let us talk"],
@@ -378,7 +409,7 @@ describeDb("linkedin engine", () => {
     await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: replyPayload(f, member, "second", "One more thing") });
     const rows = await inboxRows(f.org);
     expect(rows.map((r) => r.body_text)).toEqual(["Sounds good", "One more thing"]);
-    expect(new Set(rows.map((r) => r.conversation_id)).size).toBe(1);
+    expect(new Set(rows.map((r) => r.thread_id)).size).toBe(1);
     expect(new Set(rows.map((r) => r.person_id)).size).toBe(1);
   });
 

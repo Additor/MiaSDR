@@ -24,9 +24,9 @@ const globalForGrid = globalThis as unknown as { __miasdrFakeGridProvider?: Fake
 const fakeMode = () => env().GRID_PROVIDER === "fake";
 
 /** Hosts a generic HTTP provider may call. Empty by default, so nothing user-configured can leave the server. */
-export function gridUrlPolicy(options: { allowLoopback?: boolean } = {}): UrlPolicy {
+export function gridUrlPolicy(): UrlPolicy {
   const allowedHosts = (env().GRID_HTTP_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
-  return { allowedHosts, allowLoopback: options.allowLoopback === true };
+  return { allowedHosts, allowLoopback: false };
 }
 
 export const gridCipher: CredentialCipher = credentialCipher;
@@ -53,8 +53,8 @@ export function fakeGridProvider(): FakeEnrichmentProvider {
   return (globalForGrid.__miasdrFakeGridProvider ??= new FakeEnrichmentProvider());
 }
 
-export function gridAdapters(options: { allowLoopback?: boolean; fake?: FakeEnrichmentProvider } = {}) {
-  return createAdapterRegistry({ policy: gridUrlPolicy(options), net: { allowLoopback: options.allowLoopback }, fake: options.fake ?? (fakeMode() ? fakeGridProvider() : undefined) });
+export function gridAdapters() {
+  return createAdapterRegistry({ policy: gridUrlPolicy(), fake: fakeMode() ? fakeGridProvider() : undefined });
 }
 
 export function gridProviderDeps(): ProviderDeps {
@@ -84,15 +84,6 @@ export function gridWorkerDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps 
     leaseMs: GRID_JOB_LEASE_MS,
     concurrency: env().GRID_RUN_CONCURRENCY ?? DEFAULT_CONCURRENCY,
     callTimeoutMs: GRID_CALL_TIMEOUT_MS,
-    // Formulas that read a result recompute once it lands. Loaded on use because composition.ts imports this file.
-    afterWrite: async (job, columnKeys) => {
-      const [{ recalculateFormulasQuietly }, { refreshAfterSourceWrite }, { gridDeps }] = await Promise.all([import("../../application/formula-recalc"), import("../../application/formula-lookup-refresh"), import("../../infrastructure/composition")]);
-      const deps = gridDeps();
-      await recalculateFormulasQuietly(deps, job.organizationId, job.tableId, { rowIds: [job.rowId], changedKeys: columnKeys });
-      // Formulas in other tables may look up what the run just wrote. One rescan per finished cell is too much, so they are marked stale.
-      const table = await deps.structure.getTable(job.organizationId, job.tableId);
-      if (table) await refreshAfterSourceWrite(deps, job.organizationId, table, columnKeys, { markOnly: true });
-    },
     ...overrides,
   };
 }

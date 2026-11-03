@@ -1,12 +1,11 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, conversations, drafts, linkedinAccounts, mcpTokens, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { utcDayStart } from "@/shared/utc-day";
 import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
@@ -14,10 +13,10 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
-import { lockAgentSend } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
+import { lockAgentSend } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
 import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt, type LinkedInSnapshot } from "./reply-attempt-ledger";
-import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
+import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
 
@@ -27,8 +26,8 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     attempt: toAttempt(attempt),
     organizationId: attempt.organizationId,
     draftId: attempt.draftId,
+    threadId: snap.threadId,
     conversationId: snap.conversationId,
-    recordId: snap.recordId,
     personId: snap.personId,
     accountId: snap.accountId,
     providerAccountId: snap.providerAccountId,
@@ -60,11 +59,8 @@ async function gapFor(tx: Tx | typeof db, organizationId: string): Promise<numbe
   return replyGapSeconds(row?.values ?? null);
 }
 
-/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`; older composer drafts carry `manual: true`. */
-const typedDraft = (request: unknown): boolean => {
-  const meta = request as { source?: string; manual?: boolean } | null;
-  return meta?.source === "manual" || meta?.manual === true;
-};
+/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`. */
+const typedDraft = (request: unknown): boolean => (request as { source?: string } | null)?.source === "manual";
 
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {
@@ -72,27 +68,27 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers. FOR UPDATE, as on
       // email, holds back an ingest's message insert (docs/database.md, "Lock modes").
       const [conv] = await tx
-        .select({ id: conversations.id, recordId: conversations.recordId, channel: conversations.channel, status: conversations.status, accountRef: conversations.accountRef, chat: conversations.providerThreadId })
-        .from(conversations)
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
+        .select({ id: threads.id, conversationId: threads.conversationId, channel: threads.channel, status: threads.status, accountRef: threads.accountRef, chat: threads.providerThreadId })
+        .from(threads)
+        .where(and(eq(threads.id, input.threadId), eq(threads.organizationId, input.organizationId)))
         .for("update");
       if (!conv) throw new NotFoundError("Conversation not found");
 
       const [existing] = await tx
-        .select({ attempt: sendAttempts, conversationId: drafts.conversationId })
+        .select({ attempt: sendAttempts, threadId: drafts.threadId })
         .from(sendAttempts)
         .innerJoin(drafts, eq(drafts.id, sendAttempts.draftId))
         .where(and(eq(sendAttempts.organizationId, input.organizationId), eq(sendAttempts.idempotencyKey, input.idempotencyKey)));
       if (existing) {
-        if (existing.conversationId !== conv.id) throw new ConflictError("This idempotency key belongs to another conversation.");
+        if (existing.threadId !== conv.id) throw new ConflictError("This idempotency key belongs to another conversation.");
         // A key names one send of one draft, so another draft must not read that send's outcome as its own.
         if (input.draft && attemptOfAnotherDraft(existing.attempt, input.draft.id)) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
       // The checks run in the order of docs/decisions.md, "Reply send rules".
-      const [record] = await tx.select({ personId: records.personId, workflowState: records.workflowState, version: records.contextVersion }).from(records).where(eq(records.id, conv.recordId));
-      checkRecordOpen(record, "linkedin");
+      const [conversation] = await tx.select({ personId: conversations.personId, workflowState: conversations.workflowState, version: conversations.contextVersion }).from(conversations).where(eq(conversations.id, conv.conversationId));
+      checkConversationOpen(conversation, "linkedin");
       checkThreadWritable(conv, "linkedin");
       // checkThreadWritable refused a conversation without one.
       const chat = conv.chat as string;
@@ -100,7 +96,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       const [inFlight] = await tx
         .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .where(and(eq(drafts.threadId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       checkNoneInFlight(inFlight, input.draft?.id ?? null, "linkedin");
 
@@ -110,10 +106,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         const [row] = await tx
           .select()
           .from(drafts)
-          .where(and(eq(drafts.id, input.draft.id), eq(drafts.organizationId, input.organizationId), eq(drafts.conversationId, conv.id), eq(drafts.channel, "linkedin")))
+          .where(and(eq(drafts.id, input.draft.id), eq(drafts.organizationId, input.organizationId), eq(drafts.threadId, conv.id), eq(drafts.channel, "linkedin")))
           .for("update");
         if (!row) throw new NotFoundError("Draft not found");
-        const outdated = checkDraftCurrent(row, { revision: input.draft.revision, contextVersion: record.version }, "linkedin");
+        const outdated = checkDraftCurrent(row, { revision: input.draft.revision, contextVersion: conversation.version }, "linkedin");
         if (outdated) {
           await tx.update(drafts).set({ status: "stale", error: outdated }).where(and(eq(drafts.id, row.id), eq(drafts.status, "awaiting_review")));
           return { kind: "stale" as const, reason: outdated };
@@ -136,10 +132,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
           via: input.via,
           actorUserId: input.actorUserId,
           channel: "linkedin",
-          conversationId: conv.id,
-          recordId: conv.recordId,
-          personId: record.personId,
-          threadId: chat,
+          threadId: conv.id,
+          conversationId: conv.conversationId,
+          personId: conversation.personId,
+          providerThreadId: chat,
           accountRef: account.id,
           cc: [],
           now: input.now,
@@ -153,7 +149,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         : await tx
             .select()
             .from(drafts)
-            .where(and(eq(drafts.conversationId, conv.id), eq(drafts.channel, "linkedin"), eq(drafts.status, "awaiting_review")))
+            .where(and(eq(drafts.threadId, conv.id), eq(drafts.channel, "linkedin"), eq(drafts.status, "awaiting_review")))
             .orderBy(desc(drafts.createdAt))
             .limit(1)
             .for("update");
@@ -166,7 +162,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
         const [updated] = await tx
           .update(drafts)
-          .set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version, writtenViaTokenId: input.via?.tokenId ?? null }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
+          .set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: conversation.version, writtenViaTokenId: input.via?.tokenId ?? null }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
         draftId = open.id;
         revision = updated.revision;
       } else {
@@ -174,9 +170,9 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
           .insert(drafts)
           .values({
             organizationId: input.organizationId,
-            recordId: conv.recordId,
-            conversationId: conv.id,
-            expectedContextVersion: record.version,
+            conversationId: conv.conversationId,
+            threadId: conv.id,
+            expectedContextVersion: conversation.version,
             channel: "linkedin",
             editedBodyText: text,
             status: "awaiting_review",
@@ -195,11 +191,11 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         chat,
         accountId: account.id,
         providerAccountId: account.providerAccountId,
-        conversationId: conv.id,
-        recordId: conv.recordId,
-        personId: record.personId,
+        threadId: conv.id,
+        conversationId: conv.conversationId,
+        personId: conversation.personId,
         revision,
-        expectedContextVersion: record.version,
+        expectedContextVersion: conversation.version,
       };
       const [attempt] = await tx
         .insert(sendAttempts)
@@ -246,23 +242,23 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     await disconnectLinkedInAccount(db, send.accountId, error);
   },
 
-  async panel(organizationId, conversationId, now) {
+  async panel(organizationId, threadId, now) {
     const [head] = await db
       .select({
-        id: conversations.id,
-        channel: conversations.channel,
-        status: conversations.status,
-        accountRef: conversations.accountRef,
-        chat: conversations.providerThreadId,
-        workflowState: records.workflowState,
+        id: threads.id,
+        channel: threads.channel,
+        status: threads.status,
+        accountRef: threads.accountRef,
+        chat: threads.providerThreadId,
+        workflowState: conversations.workflowState,
         personId: people.id,
         name: people.fullName,
         firstName: people.firstName,
       })
-      .from(conversations)
-      .innerJoin(records, eq(records.id, conversations.recordId))
-      .innerJoin(people, eq(people.id, records.personId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .from(threads)
+      .innerJoin(conversations, eq(conversations.id, threads.conversationId))
+      .innerJoin(people, eq(people.id, conversations.personId))
+      .where(and(eq(threads.organizationId, organizationId), eq(threads.id, threadId)));
     if (!head) return null;
     if (head.channel !== "linkedin") return null;
 
@@ -286,7 +282,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     const [newest] = await db
       .select()
       .from(drafts)
-      .where(and(eq(drafts.conversationId, conversationId), eq(drafts.channel, "linkedin"), sql`${drafts.status} <> 'discarded'`))
+      .where(and(eq(drafts.threadId, threadId), eq(drafts.channel, "linkedin"), sql`${drafts.status} <> 'discarded'`))
       .orderBy(desc(drafts.createdAt))
       .limit(1);
     const draft = newest && ["awaiting_review", "sending", "delivery_uncertain", "stale"].includes(newest.status) ? newest : null;
@@ -295,7 +291,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       ? await db.select({ name: mcpTokens.name }).from(mcpTokens).where(and(eq(mcpTokens.id, draft.writtenViaTokenId), eq(mcpTokens.organizationId, organizationId)))
       : [];
     return {
-      conversationId,
+      threadId,
       recipient: head.name ?? head.firstName,
       accountLabel: account?.name ?? account?.username ?? "LinkedIn account",
       issue,

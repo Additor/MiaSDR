@@ -9,8 +9,8 @@ import {
   type StopReplyType,
 } from "../domain/after-reply";
 import { byGroupThenOrder } from "../../domain/reply-handling";
-import { assertPublishable, parseSteps, type RunStatus, type StepInput, type StepType } from "../domain/sequences";
-import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState, StopReplyTypeRow } from "./sequence-ports";
+import { assertPublishable, parseSteps, type RunStatus, type StepInput, type StepType } from "../domain/follow-ups";
+import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState, StopReplyTypeRow } from "./follow-up-ports";
 
 /**
  * The campaign setting Follow-ups after a reply. A campaign either hands a classified reply to the Inbox (`handoff`) or lets the
@@ -36,9 +36,9 @@ export interface AfterReplyStepView {
 
 export interface AfterReplyRunRow {
   runId: string;
-  recordId: string;
-  /** The Inbox thread the run follows up on. */
   conversationId: string;
+  /** The Inbox thread the run follows up on. */
+  threadId: string;
   personName: string | null;
   /** `active` or `paused`: the card lists runs in progress. */
   status: RunStatus;
@@ -78,7 +78,7 @@ export interface SaveAfterReplyResult extends AfterReplyView {
 }
 
 /** Why a campaign cannot draft follow-ups, or null when it can. */
-export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel" | "type">) => string | null = lockedReasonOf;
+export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel">) => string | null = lockedReasonOf;
 
 function toStopTypes(rows: readonly StopReplyTypeRow[]): StopReplyType[] {
   return [...rows]

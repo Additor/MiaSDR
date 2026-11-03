@@ -33,21 +33,22 @@ describeDb("schema audit (organization scope)", () => {
     expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "jwks", "oauth_access_tokens", "oauth_client_assertions", "oauth_client_resources", "oauth_clients", "oauth_consents", "oauth_refresh_tokens", "oauth_resources", "organizations", "sessions", "users", "verifications"]);
     expect(Object.keys(NULLABLE_SCOPE).sort()).toEqual(["inbound_events", "job_runs"]);
     expect(Object.keys(SCOPED_BY_SIBLING_KEY).sort()).toEqual([
+      "conversations.conversations_reply_type_id_reply_type_set_id_group_key_reply_t",
       "knowledge_documents.knowledge_documents_latest_version_fk",
-      "messages.messages_conversation_id_channel_account_ref_conversations_id_c",
-      "records.records_reply_type_id_reply_type_set_id_group_key_reply_types_i",
+      "messages.messages_thread_id_channel_account_ref_threads_id_channel_accou",
     ]);
     for (const list of [NO_SCOPE, NULLABLE_SCOPE, INDEX_DEBT, SCOPED_BY_SIBLING_KEY]) {
       for (const reason of Object.values(list)) expect(reason.length).toBeGreaterThan(10);
     }
   });
 
-  it("keeps INDEX_DEBT at its 12 tables, each with the shared reason", () => {
+  it("keeps INDEX_DEBT at its 10 tables, each with the shared reason", () => {
     // The audit reports an entry that gained an index, but not a new entry: this list is the only check that INDEX_DEBT does not grow.
     expect(Object.keys(INDEX_DEBT).sort()).toEqual([
-      "campaign_senders", "draft_knowledge_citations", "events", "grid_columns", "grid_provider_credentials",
+      "campaign_senders", "events", "follow_up_step_runs",
+      "grid_columns",
       "grid_user_views", "linkedin_connections", "linkedin_enrollment_details",
-      "linkedin_search_results", "notes", "reply_handling_settings", "sequence_step_runs",
+      "linkedin_search_results", "notes", "reply_handling_settings",
     ]);
     for (const reason of Object.values(INDEX_DEBT)) expect(reason).toBe(INDEX_DEBT_REASON);
     expect(INDEX_DEBT_REASON).toContain("organization deletion is disabled");
@@ -116,13 +117,13 @@ describeDb("schema audit (organization scope)", () => {
   });
 
   it("rejects a composite key that pairs organization_id with another column", async () => {
-    // records has a unique (id, organization_id). Pairing the child's organization_id with the parent's id proves nothing.
+    // conversations has a unique (id, organization_id). Pairing the child's organization_id with the parent's id proves nothing.
     const found = await withScratch(
-      `create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id), record_id uuid,
-         foreign key (organization_id, record_id) references records(id, organization_id));
+      `create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id), conversation_id uuid,
+         foreign key (organization_id, conversation_id) references conversations(id, organization_id));
        create index on ${scratch} (organization_id)`,
     );
-    expect(found).toEqual([expect.stringMatching(/references records without organization_id/)]);
+    expect(found).toEqual([expect.stringMatching(/references conversations without organization_id/)]);
   });
 
   it("accepts a table that meets every rule", async () => {

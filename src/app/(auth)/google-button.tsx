@@ -6,7 +6,7 @@ import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 
 /**
  * Starts the Google OAuth flow. The server pages render it only when GOOGLE_CLIENT_ID and
- * GOOGLE_CLIENT_SECRET are set. A refused sign-up (invite-only without an invitation) comes back to
+ * GOOGLE_CLIENT_SECRET are set. A refused sign-up (no invitation) comes back to
  * `errorCallbackURL` with an `error` query parameter.
  */
 export function GoogleButton({ callbackURL, errorCallbackURL = "/sign-in" }: { callbackURL: string; errorCallbackURL?: string }) {

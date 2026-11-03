@@ -1,32 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { APPLIED_PICK_STATUSES, PICK_FROM, PICK_STATUSES, isAppliedPick, pickFlags, pickResponse } from "./reply-type-pick";
 
-const record = { latestInboundMessageId: "m1", contextVersion: 3 };
-const pick = { messageId: "m1", status: "auto_applied", appliedGroupKey: "interested", acknowledgedAt: null, expectedContextVersion: 3 };
+const conversation = { latestInboundMessageId: "m1", contextVersion: 3 };
+const pick = { messageId: "m1", status: "auto_applied", appliedGroupKey: "interested", expectedContextVersion: 3 };
 
 describe("pickFlags", () => {
-  it("an applied pick of the latest reply can be undone and acknowledged", () => {
-    expect(pickFlags(pick, record)).toEqual({ latest: true, current: true, canUndo: true, canAcknowledge: true });
+  it("an applied pick of the latest reply can be undone", () => {
+    expect(pickFlags(pick, conversation)).toEqual({ latest: true, current: true, canUndo: true });
   });
 
   it("only the latest reply's pick can be undone", () => {
-    expect(pickFlags({ ...pick, messageId: "m0" }, record)).toMatchObject({ latest: false, canUndo: false });
+    expect(pickFlags({ ...pick, messageId: "m0" }, conversation)).toMatchObject({ latest: false, canUndo: false });
   });
 
   it("a pick with no applied type cannot be undone", () => {
-    expect(pickFlags({ ...pick, status: "proposed", appliedGroupKey: null }, record).canUndo).toBe(false);
-    expect(pickFlags({ ...pick, appliedGroupKey: null }, record).canUndo).toBe(false);
+    expect(pickFlags({ ...pick, status: "proposed", appliedGroupKey: null }, conversation).canUndo).toBe(false);
+    expect(pickFlags({ ...pick, appliedGroupKey: null }, conversation).canUndo).toBe(false);
   });
 
-  it("a version behind the record, or a stale status, is not current", () => {
-    expect(pickFlags({ ...pick, expectedContextVersion: 2 }, record).current).toBe(false);
-    expect(pickFlags({ ...pick, status: "stale" }, record).current).toBe(false);
-  });
-
-  it("acknowledging takes an unread auto-applied or failed pick", () => {
-    expect(pickFlags({ ...pick, status: "failed", appliedGroupKey: null }, record).canAcknowledge).toBe(true);
-    expect(pickFlags({ ...pick, status: "accepted" }, record).canAcknowledge).toBe(false);
-    expect(pickFlags({ ...pick, acknowledgedAt: new Date() }, record).canAcknowledge).toBe(false);
+  it("a version behind the conversation, or a stale status, is not current", () => {
+    expect(pickFlags({ ...pick, expectedContextVersion: 2 }, conversation).current).toBe(false);
+    expect(pickFlags({ ...pick, status: "stale" }, conversation).current).toBe(false);
   });
 });
 

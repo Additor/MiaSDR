@@ -2,7 +2,7 @@
 // The API stores delays in minutes. The form shows days unless a stored delay only fits hours or minutes.
 
 import { AFTER_REPLY_MODE_LABELS } from "@/contexts/conversations/after-reply/domain/after-reply";
-import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/sequences";
+import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/follow-ups";
 import { formatCount } from "@/shared/format-number";
 
 export const MAX_FOLLOW_UP_STEPS = MAX_STEPS;
@@ -130,12 +130,6 @@ export function formChanged(input: { mode: string; steps: EditorStep[]; saved: {
   return JSON.stringify(stepsPayload(input.steps)) !== JSON.stringify(stepsPayload(input.saved.steps));
 }
 
-/** Why the AI option is locked, with the line about private replies added for a personal campaign when the reason lacks it. */
-export function lockedNote(reason: string | null, personal: boolean): string | null {
-  if (!reason) return null;
-  return personal && !/out of the inbox/i.test(reason) ? `${reason} Replies stay out of the Inbox.` : reason;
-}
-
 /** "3 follow-ups use an earlier version", or null when every run uses the newest. */
 export function earlierVersionNote(count: number): string | null {
   if (count <= 0) return null;
@@ -143,7 +137,7 @@ export function earlierVersionNote(count: number): string | null {
 }
 
 /** The ids of `FIXED_STOP_RULES` that `FIXED_STOPS_LINE` names. A test fails when the rules change and the line does not. */
-export const FIXED_STOPS_LINE_COVERS = ["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"] as const;
+export const FIXED_STOPS_LINE_COVERS = ["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "conversation_closed", "converted"] as const;
 
 /** The fixed stop rules in one muted line, under the reply types that stop follow-ups. */
 export const FIXED_STOPS_LINE =
@@ -157,11 +151,8 @@ export function stopTypesLine(names: readonly string[]): string {
   return names.length === 0 ? "No reply types yet." : names.join(", ");
 }
 
-/** The Off option of a campaign. A personal campaign keeps replies private, so the Inbox never sees them. */
-export function handoffOption(personal: boolean): { title: string; description: string } {
-  if (personal) return { title: "Off", description: "The sequence stops for that lead, and the reply stays out of the Inbox." };
-  return {
-    title: AFTER_REPLY_MODE_LABELS.handoff,
-    description: "The sequence stops for that lead and the reply waits in the Inbox. The AI still drafts a first reply for reply types set to Write one.",
-  };
-}
+/** The Off option of a campaign. */
+export const HANDOFF_OPTION = {
+  title: AFTER_REPLY_MODE_LABELS.handoff,
+  description: "The sequence stops for that lead and the reply waits in the Inbox. The AI still drafts a first reply for reply types that write one.",
+};

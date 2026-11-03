@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { gridRequest } from "@/app/(app)/tables/_lib/data/client";
-import { apiMessage, callApi, setRenderedOrganization } from "./api-client";
+import { apiMessage, callApi } from "./api-client";
 
 const answer = (status: number, body: unknown) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
 
@@ -20,14 +20,6 @@ describe("callApi", () => {
     const form = new FormData();
     await callApi("/api/x", "POST", form);
     expect(fetch).toHaveBeenCalledWith("/api/x", expect.objectContaining({ headers: {}, body: form }));
-  });
-
-  it("names the organization the page was rendered for", async () => {
-    const fetch = answer(200, {});
-    vi.stubGlobal("fetch", fetch);
-    setRenderedOrganization("org-1");
-    await callApi("/api/x", "GET");
-    expect(fetch).toHaveBeenCalledWith("/api/x", expect.objectContaining({ headers: { "x-miasdr-organization": "org-1" } }));
   });
 
   it("reads the error, the issues and the body of a refusal", async () => {

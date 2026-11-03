@@ -9,7 +9,7 @@ export const RESTORE_REFUSAL_TEXT: Record<RestoreRefusal, string> = {
   campaign_closed: "The campaign is completed or archived. Restore the lead to a campaign that is still open.",
   replied: "The person has replied, so no automated message goes to them.",
   do_not_contact: "The person is marked do not contact.",
-  suppressed: "The email address is on the suppression list.",
+  suppressed: "The address is on the suppression list.",
   contact: "The person is a contact, so no campaign enrolls them.",
   active_elsewhere: "The person is already in another active campaign on this channel.",
   nothing_left: "Every step of the campaign was already sent, so nothing is left to send.",
@@ -28,7 +28,7 @@ export interface RestoreFacts {
   /** A genuine reply from the person exists on any channel, or one of their enrollments ended as replied. */
   replied: boolean;
   doNotContact: boolean;
-  /** Email only. LinkedIn has no suppression list. */
+  /** The address is on the suppression list for a reason that blocks this channel (`suppressionBlocks`). A bounce leaves LinkedIn open. */
   suppressed: boolean;
   /** The person became a contact (`people.lifecycle`). A contact is never enrolled again. */
   contact: boolean;
@@ -45,7 +45,7 @@ const DAY_MS = 86_400_000;
 /**
  * The progress a removed lead really has. `current_step` stops moving while a lead is removed, but a send in flight at removal
  * still completes and an acceptance still arrives. The sends rows (`sent` or `unknown`, never retried) and the connection state
- * are the record of what happened, so the larger of the three wins.
+ * are the conversation of what happened, so the larger of the three wins.
  */
 export function restoredProgress(input: { channel: Channel; currentStep: number; lastSentStep: number; connectionState: "none" | "request_sent" | "connected" | null }): number {
   const fromConnection = input.channel === "linkedin" && input.connectionState !== null && input.connectionState !== "none" ? 1 : 0;

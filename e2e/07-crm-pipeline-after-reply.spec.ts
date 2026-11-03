@@ -38,7 +38,7 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await expect(stops).toContainText("lands on the suppression list");
     await expect(stops.getByRole("heading", { name: "Stops for these reply types" })).toBeVisible();
     await expect(stops).toContainText("Asked to stop");
-    await expect(stops.getByRole("link", { name: "Change in Settings" })).toHaveAttribute("href", "/settings/replies");
+    await expect(stops.getByRole("link", { name: "See all reply types" })).toHaveAttribute("href", "/settings/replies");
 
     // The run shows under Follow-ups in progress on the campaign and links to the conversation.
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
@@ -47,7 +47,7 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await settings.getByRole("link", { name: "Rae Costa" }).click();
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}$/);
 
-    // A reply asking for a demo is classified and starts the run. The thread's side column holds what the record page had.
+    // A reply asking for a demo is classified and starts the run. The thread's side column holds the follow-ups.
     await expect(typeLine(page).getByTestId("type-name")).toContainText("Demo request");
     await expect(page.locator("#main-content").getByTestId("thread-person").getByRole("link", { name: "Open lead" })).toBeVisible();
     // Campaigns, like the other histories, folds behind its count.
@@ -138,7 +138,7 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     const settings = afterReplySettings(page);
     await expect(settings.getByRole("radio", { name: /Off, hand to the Inbox/ })).toBeChecked();
     await expect(settings.getByRole("radio", { name: /AI drafts, you approve/ })).not.toBeChecked();
-    await expect(settings.getByText("The AI still drafts a first reply for reply types set to Write one.", { exact: false })).toBeVisible();
+    await expect(settings.getByText("The AI still drafts a first reply for reply types that write one.", { exact: false })).toBeVisible();
     await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
     await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("0");
     await expect(settings.getByText("No follow-ups are running for this campaign.")).toBeVisible();

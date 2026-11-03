@@ -44,7 +44,7 @@ export async function produceDraft(
     person: ctx.person,
     thread: ctx.thread,
     subject: ctx.subject,
-    // A stage move after the last reply outdates the classifier's reading of that reply.
+    // A type change after the last reply outdates the classifier's reading of that reply.
     classification: ctx.classification ? { replyTypeName: ctx.classification.replyTypeName, reason: ctx.replyTypeChange ? null : ctx.classification.reason } : null,
     replyTypeChange: ctx.replyTypeChange,
     operatorInstructions: ctx.operatorInstructions,
@@ -64,10 +64,6 @@ export async function produceDraft(
   return { output: { subject: normalizeSubject(parsed.data.subject ?? "") || normalizeSubject(ctx.subject), bodyText: parsed.data.bodyText }, usage: result.usage };
 }
 
-export function draftCitations(ctx: DraftContext) {
-  return ctx.knowledge.map((k) => ({ documentVersionId: k.documentVersionId, excerpt: k.content.slice(0, 400) }));
-}
-
 async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadClassifyContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
@@ -82,14 +78,14 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
     operatorInstructions: ctx.operatorInstructions,
     businessContext: ctx.businessContext,
   });
-  // The closed set is enforced here, whatever the adapter did: a key outside the pipeline never reaches the record.
+  // The closed set is enforced here, whatever the adapter did: a key outside the set never reaches the conversation.
   const parsed = schema.safeParse(result.output);
-  if (!parsed.success) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
-  const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.subcategoryKey);
-  if (!proposal) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
+  if (!parsed.success) throw new AiError("The AI answered outside the allowed reply types.", "transient", "shape");
+  const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.replyTypeKey);
+  if (!proposal) throw new AiError("The AI answered outside the allowed reply types.", "transient", "shape");
 
-  // The store decides under the record lock (`decideReplyType`): the hold, the draft, the settle and the follow-ups.
-  const stopRequested = stopRequestedBy(ctx.messageText, proposal);
+  // The store decides under the conversation lock (`decideReplyType`): the hold, the draft, the settle and the follow-ups.
+  const stopRequested = stopRequestedBy(ctx.stopAsked, proposal);
 
   const outcome = await deps.jobs.finishClassification({
     job,
@@ -114,8 +110,8 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
   const result = await produceDraft(provider, ctx);
   const written = await deps.jobs.insertDraft(job, {
     organizationId: ctx.organizationId,
-    recordId: ctx.recordId,
     conversationId: ctx.conversationId,
+    threadId: ctx.threadId,
     replyForMessageId: ctx.replyForMessageId,
     expectedContextVersion: ctx.contextVersion,
     channel: ctx.channel,
@@ -125,7 +121,6 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     model: provider.model,
     request: { replyTypePickId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
     response: { usage: result.usage ?? null },
-    citations: draftCitations(ctx),
   });
   // Another worker claimed the job after this lease ran out; its run writes the draft. A person marked reply handling done
   // while the AI wrote: the job completes with nothing written.

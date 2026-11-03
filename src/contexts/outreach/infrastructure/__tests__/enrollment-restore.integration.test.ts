@@ -147,9 +147,9 @@ describeDb("restore of removed enrollments", () => {
       const e = await f.enroll(c, p);
       // The reply arrived after the lead was removed: only the message shows it.
       const [{ id: pipeline }] = await sql`select id from reply_type_sets where organization_id = ${f.org} limit 1`.then((r) => (r.length ? r : sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'P') returning id`));
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
-      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${f.org}, ${record}, 'linkedin', 'acct') returning id`;
-      await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at) values (${f.org}, ${conversation}, 'linkedin', 'acct', 'inbound', 'm1', 'Thanks, not now', now())`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
+      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${f.org}, ${conversationId}, 'linkedin', 'acct') returning id`;
+      await sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at) values (${f.org}, ${thread}, 'linkedin', 'acct', 'inbound', 'm1', 'Thanks, not now', now())`;
       await refuses(f, c, e, "replied");
     });
 
@@ -159,9 +159,9 @@ describeDb("restore of removed enrollments", () => {
       const p = await f.person("Away Person");
       const e = await f.enroll(c, p);
       const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'P') returning id`;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
-      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${f.org}, ${record}, 'email', 'me@x.test') returning id`;
-      await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, raw, sent_at) values (${f.org}, ${conversation}, 'email', 'me@x.test', 'inbound', 'm1', 'Out of office', ${sql.json({ autoReply: true } as never)}, now())`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
+      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${f.org}, ${conversationId}, 'email', 'me@x.test') returning id`;
+      await sql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, raw, sent_at) values (${f.org}, ${thread}, 'email', 'me@x.test', 'inbound', 'm1', 'Out of office', ${sql.json({ autoReply: true } as never)}, now())`;
       expect(await restore(f, c, [e], "email")).toMatchObject({ restored: 1 });
     });
 
@@ -196,7 +196,7 @@ describeDb("restore of removed enrollments", () => {
       }
     });
 
-    it("a suppressed address on an email campaign, and not on LinkedIn", async () => {
+    it("a suppressed address on an email campaign, and on LinkedIn unless it bounced", async () => {
       const mail = await fixture("email");
       const mc = await mail.campaign("Mail");
       const p = await mail.person("Unsubscribed Person", "gone@unsub.test");
@@ -209,7 +209,12 @@ describeDb("restore of removed enrollments", () => {
       const q = await li.person("Linked Person", "gone2@unsub.test");
       const le = await li.enroll(lc, q);
       await sql`insert into suppression_list (organization_id, email, reason) values (${li.org}, 'gone2@unsub.test', 'unsubscribed')`;
-      expect(await restore(li, lc, [le])).toMatchObject({ restored: 1 });
+      await refuses(li, lc, le, "suppressed");
+
+      const r = await li.person("Bounced Person", "gone3@unsub.test");
+      const be = await li.enroll(lc, r);
+      await sql`insert into suppression_list (organization_id, email, reason) values (${li.org}, 'gone3@unsub.test', 'bounced')`;
+      expect(await restore(li, lc, [be])).toMatchObject({ restored: 1 });
     });
 
     it("a person who is pending or active in another campaign on the channel, named in the answer", async () => {
@@ -380,7 +385,7 @@ describeDb("restore of removed enrollments", () => {
       const p = await f.person("Replier");
       const ex = await f.enroll(x, p);
       const { db } = await import("@/platform/db/client");
-      const { stopPersonOutreachOnReplyTx } = await import("@/contexts/conversations/after-reply/infrastructure/sequence-stop");
+      const { stopContactTx } = await import("@/contexts/conversations/stopping/infrastructure/stop-contact");
       let proceed!: () => void;
       const gate = new Promise<void>((resolve) => (proceed = resolve));
       let stopped!: () => void;
@@ -388,11 +393,11 @@ describeDb("restore of removed enrollments", () => {
       // The reply transaction stores the message, stops the outreach and has not committed yet.
       const reply = db.transaction(async (tx) => {
         const [{ id: pipeline }] = await tx.execute(drizzleSql`insert into reply_type_sets (organization_id, name, is_default) values (${f.org}, 'p', true) returning id`) as unknown as Array<{ id: string }>;
-        const [{ id: record }] = (await tx.execute(drizzleSql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`)) as unknown as Array<{ id: string }>;
-        const [{ id: conversation }] = (await tx.execute(drizzleSql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${f.org}, ${record}, 'linkedin', 'acct', 'chat') returning id`)) as unknown as Array<{ id: string }>;
-        await tx.execute(drizzleSql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, from_address, to_address, body_text, sent_at)
-                             values (${f.org}, ${conversation}, 'linkedin', 'acct', 'inbound', 'k-reply', 'p', 'me', 'Hello', now())`);
-        await stopPersonOutreachOnReplyTx(tx, { organizationId: f.org, personId: p, channel: "linkedin", now: NOW });
+        const [{ id: conversationId }] = (await tx.execute(drizzleSql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`)) as unknown as Array<{ id: string }>;
+        const [{ id: thread }] = (await tx.execute(drizzleSql`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${f.org}, ${conversationId}, 'linkedin', 'acct', 'chat') returning id`)) as unknown as Array<{ id: string }>;
+        await tx.execute(drizzleSql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, from_address, to_address, body_text, sent_at)
+                             values (${f.org}, ${thread}, 'linkedin', 'acct', 'inbound', 'k-reply', 'p', 'me', 'Hello', now())`);
+        await stopContactTx(tx, { organizationId: f.org, personId: p }, { kind: "reply", channel: "linkedin", now: NOW });
         stopped();
         await gate;
       });

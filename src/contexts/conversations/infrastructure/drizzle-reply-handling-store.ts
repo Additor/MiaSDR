@@ -3,9 +3,10 @@ import { isAppliedPick, pickFlags, pickResponse } from "../domain/reply-type-pic
 import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { interruptPersonRunsTx } from "../after-reply/infrastructure/sequence-stop";
-import { personReviewedStopsTx } from "./stop-review";
-import { personTypeDecisionTx, restartRecordWorkTx } from "./restart-record-work";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
+import { personReviewedStopsTx } from "../stopping/infrastructure/stop-review";
+import { stopReviewOpen } from "../stopping/infrastructure/stop-requested-sql";
+import { personTypeDecisionTx, restartConversationWorkTx } from "./restart-conversation-work";
 import {
   aiJobs,
   campaignEnrollments,
@@ -13,7 +14,7 @@ import {
   replyTypePicks,
   companies,
   contactPolicies,
-  conversations,
+  threads,
   drafts,
   events,
   identityExceptions,
@@ -21,10 +22,9 @@ import {
   notes,
   people,
   replyHandlingSettings,
-  records,
+  conversations,
   sendAttempts,
   replyTypes,
-  stopReviews,
   users,
 } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
@@ -35,20 +35,17 @@ import type {
   DraftEntry,
   EventEntry,
   NoteEntry,
-  RecordDetail,
+  ConversationDetail,
   ReplyHandlingSettingsRow,
   ReplyTypeCatalog,
-  ReplyTypeOption,
 } from "../application/reply-handling-ports";
 import { byGroupThenOrder, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
 import { MARKED_DONE } from "../domain/reply-send";
 import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
-import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
-import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
-import { advanceRecordContextTx } from "./record-context";
-import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
+import { defaultReplyTypeSetId, type Tx } from "./drizzle-thread-store";
+import { advanceConversationContextTx } from "./conversation-context";
 import { isSuppressed, writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
 import { rowsOf } from "@/platform/db/sql-values";
 
@@ -63,26 +60,24 @@ async function replyTypeSetFor(organizationId: string) {
   });
 }
 
-/** The confidence floor and the AI instructions of a set. `replyTypeSetFor` makes sure the row exists. */
+/** The AI instructions of a set. `replyTypeSetFor` makes sure the row exists. */
 async function settingsOf(replyTypeSetId: string): Promise<ReplyHandlingSettingsRow> {
   const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId));
   return {
-    autoApplyConfidence: Number(settings.autoApplyConfidence),
     draftInstructions: settings.draftInstructions,
     classificationInstructions: settings.classificationInstructions,
   };
 }
 
 /**
- * Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does.
- * No key update: a writer lock that lets a draft insert's foreign key check (a key share) through (docs/database.md,
+ * Locks a conversation of the organization. No key update: a writer lock that lets a draft insert's foreign key check (a key share) through (docs/database.md,
  * "Lock modes").
  */
-async function lockRecord(tx: Tx, organizationId: string, recordId: string) {
+async function lockConversation(tx: Tx, organizationId: string, conversationId: string) {
   const [row] = await tx
     .select()
-    .from(records)
-    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")))
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .for("no key update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
@@ -104,62 +99,54 @@ async function personGoneAsNotFound<T>(run: () => Promise<T>): Promise<T> {
 }
 
 export const drizzleReplyHandlingStore: ReplyHandlingStore = {
-  async recordDetail(organizationId, recordId): Promise<RecordDetail | null> {
+  async conversationDetail(organizationId, conversationId): Promise<ConversationDetail | null> {
     const [head] = await db
-      .select({ record: records, person: people, company: companies.name })
-      .from(records)
-      .innerJoin(people, eq(people.id, records.personId))
+      .select({ conversation: conversations, person: people, company: companies.name })
+      .from(conversations)
+      .innerJoin(people, eq(people.id, conversations.personId))
       .leftJoin(companies, eq(companies.id, people.companyId))
-      .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")));
+      .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)));
     if (!head) return null;
-    const { record, person } = head;
+    const { conversation, person } = head;
 
-    const subs = await db.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId)));
+    const subs = await db.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, conversation.replyTypeSetId)));
     const subName = (id: string | null) => subs.find((s) => s.id === id)?.name ?? null;
 
     const [convs, cls, draftRows, eventRows, noteRows, enrollmentRows, policy, suppressed] = await Promise.all([
       db
-        .select({ id: conversations.id, channel: conversations.channel, accountRef: conversations.accountRef, status: conversations.status, updatedAt: conversations.updatedAt })
-        .from(conversations)
-        .where(and(eq(conversations.recordId, recordId), eq(conversations.organizationId, organizationId), publicConversation))
-        .orderBy(conversations.createdAt),
+        .select({ id: threads.id, channel: threads.channel, accountRef: threads.accountRef, status: threads.status, updatedAt: threads.updatedAt })
+        .from(threads)
+        .where(and(eq(threads.conversationId, conversationId), eq(threads.organizationId, organizationId)))
+        .orderBy(threads.createdAt),
       db
-        .select({ c: replyTypePicks, conversationId: messages.conversationId })
+        .select({ c: replyTypePicks, threadId: messages.threadId })
         .from(replyTypePicks)
         .innerJoin(messages, eq(messages.id, replyTypePicks.messageId))
-        .where(and(eq(replyTypePicks.recordId, recordId), eq(replyTypePicks.organizationId, organizationId), visibleReplyTypePickSql("reply_type_picks")))
+        .where(and(eq(replyTypePicks.conversationId, conversationId), eq(replyTypePicks.organizationId, organizationId)))
         .orderBy(desc(replyTypePicks.createdAt))
         .limit(30),
-      db.select().from(drafts).where(and(eq(drafts.recordId, recordId), eq(drafts.organizationId, organizationId), visibleDraftSql("drafts"))).orderBy(desc(drafts.createdAt)).limit(30),
+      db.select().from(drafts).where(and(eq(drafts.conversationId, conversationId), eq(drafts.organizationId, organizationId))).orderBy(desc(drafts.createdAt)).limit(30),
       db
         .select({ e: events, actorName: users.name })
         .from(events)
         .leftJoin(users, eq(users.id, events.actorUserId))
-        // The person's events: this record's, the ones no record owns (a conversion, a deal), and those of other records
-        // with a public thread. Events of a record that exists only for a private thread stay out.
-        .where(
-          and(
-            eq(events.organizationId, organizationId),
-            eq(events.personId, person.id),
-            sql`(${events.recordId} is null or ${events.recordId} = ${recordId} or exists (select 1 from records er where er.id = ${events.recordId} and ${visibleRecordSql("er")}))`,
-          ),
-        )
+        // The person's events: this conversation's, the ones no conversation owns (a conversion, a deal), and those of other conversations.
+        .where(and(eq(events.organizationId, organizationId), eq(events.personId, person.id)))
         .orderBy(desc(events.createdAt), desc(events.id))
         .limit(60),
       db
         .select({ n: notes, authorName: users.name })
         .from(notes)
         .leftJoin(users, eq(users.id, notes.createdBy))
-        // Notes written on this record. The person's other notes live on the contact page.
-        .where(and(eq(notes.organizationId, organizationId), eq(notes.recordId, recordId)))
+        // Notes written on this conversation. The person's other notes live on the contact page.
+        .where(and(eq(notes.organizationId, organizationId), eq(notes.conversationId, conversationId)))
         .orderBy(desc(notes.createdAt))
         .limit(100),
       db
         .select({ id: campaignEnrollments.id, campaignId: campaigns.id, campaignName: campaigns.name, channel: campaignEnrollments.channel, status: campaignEnrollments.status, stopReason: campaignEnrollments.stopReason })
         .from(campaignEnrollments)
         .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
-        // Enrollments in a personal campaign stay out of the shared record.
-        .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, person.id), eq(campaigns.type, "regular")))
+        .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, person.id)))
         .orderBy(desc(campaignEnrollments.createdAt)),
       db.select().from(contactPolicies).where(and(eq(contactPolicies.personId, person.id), eq(contactPolicies.organizationId, organizationId))),
       isSuppressed(db, organizationId, person.email),
@@ -169,13 +156,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       ? await db.select({ id: sendAttempts.id, draftId: sendAttempts.draftId }).from(sendAttempts).where(and(eq(sendAttempts.organizationId, organizationId), inArray(sendAttempts.draftId, draftRows.map((d) => d.id)))).orderBy(sendAttempts.createdAt)
       : [];
     const attemptOf = new Map(attempts.map((a) => [a.draftId, a.id]));
-    const currentType = subs.find((s) => s.id === record.replyTypeId);
+    const currentType = subs.find((s) => s.id === conversation.replyTypeId);
     // Only the latest pick of the latest reply drafts for what the thread shows: newest first, a stale pick only when the
     // reply has nothing else, as the type line picks it. Its job writes a draft only while the pick is applied at the
-    // record's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
-    const ofLatest = cls.filter(({ c }) => c.messageId === record.latestInboundMessageId);
+    // conversation's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
+    const ofLatest = cls.filter(({ c }) => c.messageId === conversation.latestInboundMessageId);
     const latestPick = (ofLatest.find(({ c }) => c.status !== "stale") ?? ofLatest[0])?.c;
-    const pickDrafts = latestPick && isAppliedPick(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
+    const pickDrafts = latestPick && isAppliedPick(latestPick.status) && latestPick.expectedContextVersion === conversation.contextVersion;
     const [pendingJob] = pickDrafts
       ? await db
           .select({ id: aiJobs.id })
@@ -185,20 +172,15 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const draftJobPending = pendingJob !== undefined;
 
-    const roleOf = (c: (typeof cls)[number]["c"]) => subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null;
-    const reviewed = cls.length
-      ? await db.select({ messageId: stopReviews.messageId }).from(stopReviews).where(and(eq(stopReviews.organizationId, organizationId), inArray(stopReviews.messageId, [...new Set(cls.map(({ c }) => c.messageId))])))
-      : [];
-    const reviewedReplies = new Set(reviewed.map((r) => r.messageId));
-    const asksToStop = new Set(cls.filter(({ c }) => pickResponse(c.response).stopRequested === true || roleOf(c) === "stop_request").map(({ c }) => c.messageId));
+    const stopOpen = await stopReviewOpen(db, conversation.latestInboundMessageId);
 
-    const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
+    const replyTypePickEntries = cls.map(({ c, threadId }): ReplyTypePickEntry => {
       const response = pickResponse(c.response);
       return {
         id: c.id,
         status: c.status,
         messageId: c.messageId,
-        conversationId,
+        threadId,
         previous: { groupKey: c.previousGroupKey, name: subName(c.previousReplyTypeId) },
         proposed: { groupKey: c.proposedGroupKey, name: subName(c.proposedReplyTypeId) },
         applied: { groupKey: c.appliedGroupKey, name: subName(c.appliedReplyTypeId) },
@@ -207,40 +189,38 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         reasoning: c.reasoning,
         error: c.error,
         provider: c.provider,
-        acknowledged: c.acknowledgedAt !== null,
         rules: (c.rules as TypeRules | null) ?? null,
         proposedSystemRole: subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null,
-        proposedActive: subs.find((s) => s.id === c.proposedReplyTypeId)?.active === true,
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
-        stopReviewOpen: asksToStop.has(c.messageId) && !reviewedReplies.has(c.messageId),
         createdAt: c.createdAt,
-        ...pickFlags(c, record),
+        ...pickFlags(c, conversation),
       };
     });
 
     return {
-      record: {
-        id: record.id,
-        replyTypeSetId: record.replyTypeSetId,
-        groupKey: record.groupKey,
-        replyTypeId: record.replyTypeId,
-        replyTypeName: subName(record.replyTypeId),
-        replyTypeSource: record.replyTypeSource,
-        replyTypeLocked: record.replyTypeLocked,
+      conversation: {
+        id: conversation.id,
+        replyTypeSetId: conversation.replyTypeSetId,
+        groupKey: conversation.groupKey,
+        replyTypeId: conversation.replyTypeId,
+        replyTypeName: subName(conversation.replyTypeId),
+        replyTypeSource: conversation.replyTypeSource,
+        replyTypeLocked: conversation.replyTypeLocked,
         replyTypeRules: currentType ? typeRulesOf(currentType) : null,
         replyTypeSystemRole: currentType?.systemRole ?? null,
         draftJobPending,
-        workflowState: record.workflowState,
-        activeChannel: record.activeChannel,
-        contextVersion: record.contextVersion,
-        latestInboundMessageId: record.latestInboundMessageId,
-        lastInboundAt: record.lastInboundAt,
-        lastOutboundAt: record.lastOutboundAt,
-        nextActionAt: record.nextActionAt,
-        closedReason: record.closedReason,
-        assignedTo: record.assignedTo,
-        createdAt: record.createdAt,
+        workflowState: conversation.workflowState,
+        activeChannel: conversation.activeChannel,
+        contextVersion: conversation.contextVersion,
+        latestInboundMessageId: conversation.latestInboundMessageId,
+        stopReviewOpen: stopOpen,
+        lastInboundAt: conversation.lastInboundAt,
+        lastOutboundAt: conversation.lastOutboundAt,
+        nextActionAt: conversation.nextActionAt,
+        closedReason: conversation.closedReason,
+        assignedTo: conversation.assignedTo,
+        createdAt: conversation.createdAt,
       },
       person: {
         id: person.id,
@@ -253,12 +233,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       },
       policy: policy[0] ? { doNotContact: policy[0].doNotContact, reason: policy[0].reason, source: policy[0].source, setAt: policy[0].setAt, clearedAt: policy[0].clearedAt } : null,
       suppressed,
-      conversations: convs,
+      threads: convs,
       replyTypePicks: replyTypePickEntries,
       drafts: draftRows.map(
         (d): DraftEntry => ({
           id: d.id,
-          conversationId: d.conversationId,
+          threadId: d.threadId,
           channel: d.channel,
           status: d.status,
           subject: d.subject,
@@ -272,10 +252,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       events: eventRows.map(({ e, actorName }): EventEntry => ({ id: e.id, eventType: e.eventType, actorType: e.actorType, actorName, createdAt: e.createdAt, fromData: e.fromData, toData: e.toData, meta: e.meta })),
       notes: noteRows.map(({ n, authorName }): NoteEntry => ({ id: n.id, title: n.title, body: n.body, createdAt: n.createdAt, authorName, createdBy: n.createdBy })),
       enrollments: enrollmentRows,
-      replyTypes: subs
-        .filter((s) => s.active)
-        .sort(byGroupThenOrder)
-        .map(replyTypeOption),
+      replyTypes: subs.sort(byGroupThenOrder).map(replyTypeOption),
     };
   },
 
@@ -284,13 +261,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return row?.draftId ?? null;
   },
 
-  async typeChangeFacts(organizationId, recordId) {
-    return typeChangeFactsOf(organizationId, recordId);
+  async typeChangeFacts(organizationId, conversationId) {
+    return typeChangeFactsOf(organizationId, conversationId);
   },
 
   async changeReplyType(input) {
     return db.transaction(async (tx) => {
-      const before = await lockRecord(tx, input.organizationId, input.recordId);
+      const before = await lockConversation(tx, input.organizationId, input.conversationId);
       let sub: typeof replyTypes.$inferSelect | undefined;
       if (input.replyTypeId) {
         [sub] = await tx
@@ -299,7 +276,6 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           .where(and(eq(replyTypes.id, input.replyTypeId), eq(replyTypes.organizationId, input.organizationId), eq(replyTypes.replyTypeSetId, before.replyTypeSetId)));
         if (!sub) throw new NotFoundError("Reply type not found");
         if (sub.groupKey !== input.groupKey) throw new ValidationError("That reply type belongs to another group.");
-        if (!sub.active) throw new ConflictError("An archived reply type cannot be assigned.");
       }
       const { replyTypeLocked } = checkReplyTypeChange({
         before: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeLocked: before.replyTypeLocked, contextVersion: before.contextVersion, workflowState: before.workflowState },
@@ -307,12 +283,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         expectedContextVersion: input.expectedContextVersion,
         confirmUnlock: input.confirmUnlock,
       });
-      // The type's rules decide, as a person's pick: a type that writes a draft keeps the record in front of a person,
+      // The type's rules decide, as a person's pick: a type that writes a draft keeps the conversation in front of a person,
       // and its follow-ups rule decides whether a run starts. A change to a group without a type has no rules: no run.
       const rules = sub ? typeRulesOf(sub) : null;
-      const decision = sub && rules ? await personTypeDecisionTx(tx, { organizationId: input.organizationId, record: before, target: { groupKey: sub.groupKey, rules } }) : null;
+      const decision = sub && rules ? await personTypeDecisionTx(tx, { organizationId: input.organizationId, conversation: before, target: { groupKey: sub.groupKey, systemRole: sub.systemRole, rules } }) : null;
       await tx
-        .update(records)
+        .update(conversations)
         .set({
           groupKey: input.groupKey,
           replyTypeId: input.replyTypeId,
@@ -321,22 +297,22 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           workflowState: afterTypeChange(before.workflowState as WorkflowState, { wantsDraft: decision?.wantsDraft ?? false }),
           nextActionAt: null,
         })
-        .where(eq(records.id, before.id));
-      // The old type's run and drafts end, the version goes up, and the new type's sequence starts, all in this commit.
-      const { contextVersion: version, draftsRetired, runsEnded, runStarted } = await restartRecordWorkTx(tx, {
+        .where(eq(conversations.id, before.id));
+      // The old type's run and drafts end, the version goes up, and the new type's flow starts, all in this commit.
+      const { contextVersion: version, draftsRetired, runsEnded, runStarted } = await restartConversationWorkTx(tx, {
         organizationId: input.organizationId,
-        recordId: before.id,
-        reason: "stage_moved",
+        conversationId: before.id,
+        reason: "type_changed",
         draftReason: "A person changed the reply type after this draft was written.",
         followUps: decision?.followUps ?? "not_applicable",
         now: input.now,
         actorUserId: input.actorUserId,
       });
-      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: before.id, actorUserId: input.actorUserId, via: input.via, now: input.now });
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, conversationId: before.id, actorUserId: input.actorUserId, via: input.via, now: input.now });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: before.personId,
-        recordId: before.id,
+        conversationId: before.id,
         eventType: "reply_type.changed",
         actorType: "human",
         actorUserId: input.actorUserId,
@@ -345,30 +321,30 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && !replyTypeLocked, rules, ...viaMeta(input.via) },
         contextVersion: version,
       });
-      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted, runEnded: runsEnded > 0 };
+      return { conversationId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted, runEnded: runsEnded > 0 };
     });
   },
 
   async undoReplyTypePick(input) {
     return db.transaction(async (tx) => {
       const [candidate] = await tx
-        .select({ recordId: replyTypePicks.recordId })
+        .select({ conversationId: replyTypePicks.conversationId })
         .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId), visibleReplyTypePickSql("reply_type_picks")));
+        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
       if (!candidate) throw new NotFoundError("AI pick not found");
-      const record = await lockRecord(tx, input.organizationId, candidate.recordId);
+      const conversation = await lockConversation(tx, input.organizationId, candidate.conversationId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
-      if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
+      if (cls.messageId !== conversation.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
       if (!cls.appliedGroupKey || !isAppliedPick(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
-      if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
+      if (conversation.groupKey !== cls.appliedGroupKey || conversation.replyTypeId !== cls.appliedReplyTypeId) {
         throw new ConflictError("A person changed the reply type after this pick. Change the type by hand.");
       }
       const previous = cls.previousGroupKey;
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
-      // The lock comes back as the record had it before the pick.
+      // The lock comes back as the conversation had it before the pick.
       const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
-      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(and(eq(replyTypePicks.id, cls.id), pickMayBecome("rejected")));
-      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, messageId: cls.messageId, actorUserId: input.actorUserId, via: input.via, now: input.now });
+      await tx.update(replyTypePicks).set({ status: "rejected" }).where(and(eq(replyTypePicks.id, cls.id), pickMayBecome("rejected")));
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, conversationId: conversation.id, messageId: cls.messageId, actorUserId: input.actorUserId, via: input.via, now: input.now });
       // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
       // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx
@@ -383,61 +359,34 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")))
         .returning({ id: aiJobs.id });
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
-      const { contextVersion: version, draftsRetired, runsEnded } = await advanceRecordContextTx(tx, {
+      const { contextVersion: version, draftsRetired, runsEnded } = await advanceConversationContextTx(tx, {
         organizationId: input.organizationId,
-        recordId: record.id,
+        conversationId: conversation.id,
         now: input.now,
         set: {
           groupKey: previous,
           replyTypeId: previousTypeId,
           replyTypeSource: previous ? "human" : null,
           replyTypeLocked: previousLocked,
-          workflowState: afterPersonDecision(record.workflowState),
+          workflowState: afterPersonDecision(conversation.workflowState),
           nextActionAt: null,
         },
         drafts: { reason: "The classification was undone after this draft was written." },
-        runs: "classification_undone",
+        runs: "pick_undone",
       });
       await tx.insert(events).values({
         organizationId: input.organizationId,
-        personId: record.personId,
-        recordId: record.id,
+        personId: conversation.personId,
+        conversationId: conversation.id,
         eventType: "reply_type_pick.undone",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
+        fromData: { groupKey: conversation.groupKey, replyTypeId: conversation.replyTypeId },
         toData: { groupKey: previous, replyTypeId: previous ? cls.previousReplyTypeId : null },
         meta: { replyTypePickId: cls.id, draftsRetired, runsEnded, ...viaMeta(input.via) },
         contextVersion: version,
       });
-      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length + running.length > 0 };
-    });
-  },
-
-  async acknowledgeReplyTypePick(input) {
-    await db.transaction(async (tx) => {
-      const [candidate] = await tx
-        .select({ recordId: replyTypePicks.recordId })
-        .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId), visibleReplyTypePickSql("reply_type_picks")));
-      if (!candidate) throw new NotFoundError("AI pick not found");
-      const record = await lockRecord(tx, input.organizationId, candidate.recordId);
-      const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
-      if (cls.status === "proposed") throw new ConflictError("Accept or change the AI's suggestion instead of acknowledging it.");
-      // Before the seen check: an agent may have marked the pick seen, and a person looking at it still reviews the stop.
-      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, messageId: cls.messageId, actorUserId: input.actorUserId, via: input.via, now: input.now });
-      if (cls.acknowledgedAt) return;
-      await tx.update(replyTypePicks).set({ acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
-      await tx.insert(events).values({
-        organizationId: input.organizationId,
-        personId: record.personId,
-        recordId: record.id,
-        eventType: "reply_type_pick.acknowledged",
-        actorType: "human",
-        actorUserId: input.actorUserId,
-        meta: { replyTypePickId: cls.id, ...viaMeta(input.via) },
-        contextVersion: record.contextVersion,
-      });
+      return { conversationId: conversation.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length + running.length > 0 };
     });
   },
 
@@ -445,11 +394,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return personGoneAsNotFound(() => db.transaction(async (tx) => {
       const [person] = await tx.select({ id: people.id }).from(people).where(and(eq(people.id, input.personId), eq(people.organizationId, input.organizationId)));
       if (!person) throw new NotFoundError("Person not found");
-      // People writes the policy under the person's `dnc:` lock; the follow-through on records, drafts, runs and enrollments is ours.
+      if (input.enabled) {
+        const stop = await stopContactTx(tx, { organizationId: input.organizationId, personId: input.personId }, { kind: "do_not_contact", reason: input.reason, actorUserId: input.actorUserId, now: input.now });
+        return { changed: stop.changed, doNotContact: true, conversationsUpdated: stop.conversations, draftsRetired: stop.drafts, enrollmentsStopped: stop.enrollments };
+      }
+      // Clearing the flag stops nothing, and enrollments that were stopped stay stopped.
       const { changed, previous } = await writeDoNotContactTx(tx, input);
-      if (!changed) return { changed: false, doNotContact: input.enabled, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
-
-      if (!input.enabled) {
+      if (changed) {
         await tx.insert(events).values({
           organizationId: input.organizationId,
           personId: input.personId,
@@ -460,75 +411,35 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           toData: { doNotContact: false },
           meta: { reason: input.reason },
         });
-        return { changed: true, doNotContact: false, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
       }
-
-
-      const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("no key update");
-      const recordIds = owned.map((r) => r.id);
-      let draftsRetired = 0;
-      for (const record of owned) {
-        const advanced = await advanceRecordContextTx(tx, {
-          organizationId: input.organizationId,
-          recordId: record.id,
-          now: input.now,
-          set: { workflowState: afterPersonDecision(record.workflowState), nextActionAt: null },
-          drafts: { reason: "The person was marked do not contact." },
-        });
-        await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, actorUserId: input.actorUserId, now: input.now });
-        draftsRetired += advanced.draftsRetired;
-        await tx.insert(events).values({
-          organizationId: input.organizationId,
-          personId: input.personId,
-          recordId: record.id,
-          eventType: "contact_policy.enforced",
-          actorType: "human",
-          actorUserId: input.actorUserId,
-          fromData: { workflowState: record.workflowState },
-          meta: { policy: "do_not_contact", reason: input.reason },
-          contextVersion: advanced.contextVersion,
-        });
-      }
-      await interruptPersonRunsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
-      const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
-      await tx.insert(events).values({
-        organizationId: input.organizationId,
-        personId: input.personId,
-        eventType: "contact_policy.dnc_set",
-        actorType: "human",
-        actorUserId: input.actorUserId,
-        fromData: previous ? { doNotContact: previous.doNotContact, reason: previous.reason } : null,
-        toData: { doNotContact: true, reason: input.reason },
-        meta: { enrollmentsStopped: stopped.length, draftsRetired, records: recordIds.length },
-      });
-      return { changed: true, doNotContact: true, recordsUpdated: recordIds.length, draftsRetired, enrollmentsStopped: stopped.length };
+      return { changed, doNotContact: false, conversationsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
     }));
   },
 
-  async closeRecord(input) {
+  async closeConversation(input) {
     await db.transaction(async (tx) => {
-      const record = await lockRecord(tx, input.organizationId, input.recordId);
-      if (record.workflowState === "closed") throw new ConflictError("Reply handling is already closed.");
+      const conversation = await lockConversation(tx, input.organizationId, input.conversationId);
+      if (conversation.workflowState === "closed") throw new ConflictError("Reply handling is already closed.");
       // A reply send holds its conversation FOR UPDATE from before it reads the workflow state to its commit. The share lock
       // waits for one in progress, so the close lands after it, and a send that starts later reads the close
-      // (docs/decisions.md, "Reply send rules"). Sends refuse a private conversation, so the lock leaves those out.
-      await tx.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.recordId, record.id), publicConversation)).for("share");
-      const { contextVersion: version } = await advanceRecordContextTx(tx, {
+      // (docs/decisions.md, "Reply send rules").
+      await tx.select({ id: threads.id }).from(threads).where(eq(threads.conversationId, conversation.id)).for("share");
+      const { contextVersion: version } = await advanceConversationContextTx(tx, {
         organizationId: input.organizationId,
-        recordId: record.id,
+        conversationId: conversation.id,
         now: input.now,
         set: { workflowState: "closed", closedReason: input.reason, nextActionAt: null },
         drafts: { reason: MARKED_DONE },
-        runs: "record_closed",
+        runs: "conversation_closed",
       });
       await tx.insert(events).values({
         organizationId: input.organizationId,
-        personId: record.personId,
-        recordId: record.id,
+        personId: conversation.personId,
+        conversationId: conversation.id,
         eventType: "workflow.state_changed",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { workflowState: record.workflowState },
+        fromData: { workflowState: conversation.workflowState },
         toData: { workflowState: "closed" },
         meta: { reason: input.reason, ...viaMeta(input.via) },
         contextVersion: version,
@@ -536,21 +447,21 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     });
   },
 
-  async reopenRecord(input) {
+  async reopenConversation(input) {
     await db.transaction(async (tx) => {
-      const record = await lockRecord(tx, input.organizationId, input.recordId);
-      if (record.workflowState !== "closed") throw new ConflictError("Reply handling is already open.");
-      const next = afterReopen(record.latestInboundMessageId !== null);
-      const { contextVersion: version } = await advanceRecordContextTx(tx, {
+      const conversation = await lockConversation(tx, input.organizationId, input.conversationId);
+      if (conversation.workflowState !== "closed") throw new ConflictError("Reply handling is already open.");
+      const next = afterReopen(conversation.latestInboundMessageId !== null);
+      const { contextVersion: version } = await advanceConversationContextTx(tx, {
         organizationId: input.organizationId,
-        recordId: record.id,
+        conversationId: conversation.id,
         now: input.now,
         set: { workflowState: next, closedReason: null },
       });
       await tx.insert(events).values({
         organizationId: input.organizationId,
-        personId: record.personId,
-        recordId: record.id,
+        personId: conversation.personId,
+        conversationId: conversation.id,
         eventType: "workflow.state_changed",
         actorType: "human",
         actorUserId: input.actorUserId,
@@ -564,16 +475,16 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
 
   async addNote(input) {
     const { scope } = input;
-    let owner: { personId: string; recordId: string | null };
-    if (scope.recordId !== undefined) {
-      const [record] = await db.select({ id: records.id, personId: records.personId }).from(records).where(and(eq(records.id, scope.recordId), eq(records.organizationId, input.organizationId)));
-      if (!record) throw new NotFoundError("Reply handling not found");
-      owner = { personId: record.personId, recordId: record.id };
+    let owner: { personId: string; conversationId: string | null };
+    if (scope.conversationId !== undefined) {
+      const [conversation] = await db.select({ id: conversations.id, personId: conversations.personId }).from(conversations).where(and(eq(conversations.id, scope.conversationId), eq(conversations.organizationId, input.organizationId)));
+      if (!conversation) throw new NotFoundError("Reply handling not found");
+      owner = { personId: conversation.personId, conversationId: conversation.id };
     } else {
-      // A note by person works without a reply record, so it is stored with a null record_id.
+      // A note by person works without a conversation, so it is stored with a null conversation_id.
       const [person] = await db.select({ id: people.id }).from(people).where(and(eq(people.id, scope.personId), eq(people.organizationId, input.organizationId)));
       if (!person) throw new NotFoundError("Person not found");
-      owner = { personId: person.id, recordId: null };
+      owner = { personId: person.id, conversationId: null };
     }
     const [row] = await db
       .insert(notes)
@@ -590,8 +501,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         and(
           eq(notes.id, input.noteId),
           eq(notes.organizationId, input.organizationId),
-          // Through the person, only the notes `personNotes` lists: a note on a private-thread-only record is not found.
-          scope.recordId !== undefined ? eq(notes.recordId, scope.recordId) : and(eq(notes.personId, scope.personId), onVisibleRecordSql(notes.recordId)),
+          scope.conversationId !== undefined ? eq(notes.conversationId, scope.conversationId) : eq(notes.personId, scope.personId),
         ),
       )
       .returning({ id: notes.id });
@@ -601,46 +511,26 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
   async replyTypeCatalog(organizationId): Promise<ReplyTypeCatalog> {
     const replyTypeSetId = await replyTypeSetFor(organizationId);
     const [replyTypeSet] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from reply_type_sets where id = ${replyTypeSetId}`));
-    // One grouped count per table. A pick that names a type in more than one column counts once for it.
-    const rows = rowsOf<Record<string, unknown>>(
-      await db.execute(sql`
-        with record_counts as (
-          select r.reply_type_id as id, count(*)::int as n from records r
-          where r.organization_id = ${organizationId} and r.reply_type_id is not null group by r.reply_type_id
-        ), history_counts as (
-          select named.id, count(distinct k.id)::int as n
-          from reply_type_picks k
-          cross join lateral (values (k.previous_reply_type_id), (k.proposed_reply_type_id), (k.applied_reply_type_id)) as named(id)
-          where k.organization_id = ${organizationId} and named.id is not null
-          group by named.id
-        )
-        select s.*, coalesce(rc.n, 0) as record_count, coalesce(hc.n, 0) as history_count
-        from reply_types s
-        left join record_counts rc on rc.id = s.id
-        left join history_counts hc on hc.id = s.id
-        where s.organization_id = ${organizationId} and s.reply_type_set_id = ${replyTypeSetId}
-        order by s.sort_order, s.name`),
-    );
-    const settings = await settingsOf(replyTypeSetId);
+    const rows = await db
+      .select()
+      .from(replyTypes)
+      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, replyTypeSetId)));
     return {
       replyTypeSet,
       replyTypes: rows
         .map((r) => ({
-          id: r.id as string,
-          groupKey: r.group_key as ReplyTypeGroup,
-          key: r.key as string,
-          name: r.name as string,
-          description: r.description as string | null,
-          classificationGuidance: r.classification_guidance as string | null,
-          active: r.active as boolean,
-          rules: typeRulesOf({ checkMode: r.check_mode as string, replyDraft: r.reply_draft as boolean, followUps: r.follow_ups as string }),
-          systemRole: (r.system_role as ReplyTypeOption["systemRole"]) ?? null,
-          sortOrder: Number(r.sort_order),
-          recordCount: Number(r.record_count),
-          historyCount: Number(r.history_count),
+          id: r.id,
+          groupKey: r.groupKey as ReplyTypeGroup,
+          key: r.key,
+          name: r.name,
+          description: r.description,
+          classificationGuidance: r.classificationGuidance,
+          rules: typeRulesOf(r),
+          systemRole: r.systemRole ?? null,
+          sortOrder: r.sortOrder,
         }))
         .sort(byGroupThenOrder),
-      settings,
+      settings: await settingsOf(replyTypeSetId),
     };
   },
 
@@ -648,59 +538,11 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return settingsOf(await replyTypeSetFor(organizationId));
   },
 
-  async createReplyType(organizationId, input) {
-    const replyTypeSetId = await replyTypeSetFor(organizationId);
-    const [{ next }] = await db
-      .select({ next: sql<number>`coalesce(max(${replyTypes.sortOrder}), -1) + 1` })
-      .from(replyTypes)
-      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, replyTypeSetId)));
-    const [row] = await db
-      .insert(replyTypes)
-      .values({
-        organizationId,
-        replyTypeSetId,
-        groupKey: input.groupKey,
-        key: input.key,
-        name: input.name,
-        description: input.description,
-        classificationGuidance: input.classificationGuidance,
-        checkMode: input.rules.checkMode,
-        replyDraft: input.rules.replyDraft,
-        followUps: input.rules.followUps,
-        sortOrder: Number(next),
-      })
-      .onConflictDoNothing()
-      .returning({ id: replyTypes.id });
-    if (!row) throw new ConflictError(`A reply type with the key "${input.key}" already exists.`);
-    return row;
-  },
-
-  async updateReplyType(organizationId, id, { rules, ...fields }) {
-    const updated = await db
-      .update(replyTypes)
-      .set({ ...fields, ...rules })
-      .where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId)))
-      .returning({ id: replyTypes.id });
-    if (updated.length === 0) throw new NotFoundError("Reply type not found");
-  },
-
-  async deleteReplyType(organizationId, id) {
-    try {
-      const removed = await db.delete(replyTypes).where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId))).returning({ id: replyTypes.id });
-      if (removed.length === 0) throw new NotFoundError("Reply type not found");
-    } catch (error) {
-      // The composite foreign key on records stops a delete that raced with a new assignment.
-      if (error instanceof NotFoundError) throw error;
-      throw new ConflictError("People have this reply type. Change their type first, or archive it.");
-    }
-  },
-
   async updateSettings(organizationId, patch) {
     const replyTypeSetId = await replyTypeSetFor(organizationId);
-    const { autoApplyConfidence, ...rest } = patch;
     await db
       .update(replyHandlingSettings)
-      .set({ ...rest, ...(autoApplyConfidence === undefined ? {} : { autoApplyConfidence: autoApplyConfidence.toFixed(3) }) })
+      .set(patch)
       .where(and(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId), eq(replyHandlingSettings.organizationId, organizationId)));
   },
 

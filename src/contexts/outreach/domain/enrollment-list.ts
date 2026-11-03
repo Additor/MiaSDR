@@ -4,7 +4,7 @@
  */
 import { campaignLeadState } from "./campaign-lead-status";
 import { LEAD_STATE_LABELS, type LeadState } from "./lead-status";
-import type { EnrollmentStatus } from "./enrollment-status";
+import { STOPPED_ENROLLMENT_STATUSES, type EnrollmentStatus } from "./enrollment-status";
 
 export const ENROLLMENT_TABS = ["all", "queued", "in_sequence", "paused", "replied", "finished", "stopped", "removed"] as const;
 export type EnrollmentTab = (typeof ENROLLMENT_TABS)[number];
@@ -32,7 +32,7 @@ export const TAB_STATUSES: Record<Exclude<EnrollmentTab, "all">, readonly Enroll
   paused: ["pending", "active"],
   replied: ["replied"],
   finished: ["completed"],
-  stopped: ["bounced", "suppressed", "failed", "cancelled"],
+  stopped: STOPPED_ENROLLMENT_STATUSES,
   removed: ["removed"],
 };
 

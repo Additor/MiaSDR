@@ -7,7 +7,7 @@ import { rowsOf } from "@/platform/db/sql-values";
 /*
  * The deals side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md).
  * Callee-owned functions with no route: the leads use case calls them through its ports, in its own transaction, after it
- * holds the person's records, advisory lock and people row. Every statement filters by organization.
+ * holds the person's conversations, advisory lock and people row. Every statement filters by organization.
  */
 
 /** A won deal's title goes into the delete dialog when the person has this many won deals or fewer. */

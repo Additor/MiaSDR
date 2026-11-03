@@ -4,12 +4,10 @@ import { effectiveColumnType, isStaticColumnType } from "../domain/column-types"
 import { activeConditionCount } from "../domain/view-query";
 import { notifyCellsChanged, type CellChange } from "./cell-events";
 import { GRID_LIMITS } from "./limits";
-import { refreshAfterSourceWrite } from "./formula-lookup-refresh";
-import { recalculateFormulasQuietly } from "./formula-recalc";
 import { resolveView } from "./structure-management";
-import type { GridDeps, PasteWrite, RowRecord } from "./ports";
+import type { GridDeps, PasteWrite } from "./ports";
 
-type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
+type Deps = Pick<GridDeps, "structure" | "columns" | "rows">;
 
 /** Most new columns one paste may create. */
 export const MAX_PASTE_NEW_COLUMNS = GRID_LIMITS.pasteNewColumns;
@@ -74,7 +72,6 @@ export async function pasteCells(deps: Deps, actor: Actor, tableId: string, raw:
 
   const height = input.values.length;
   let skippedRunner = 0;
-  let skippedFormula = 0;
   const invalid: Array<{ rowIndex: number; columnKey: string; error: string }> = [];
   const written: PasteWrite["cells"] = [];
 
@@ -91,7 +88,6 @@ export async function pasteCells(deps: Deps, actor: Actor, tableId: string, raw:
         const type = column.type;
         if (!isStaticColumnType(type)) {
           skippedRunner += height;
-          if (type === "formula") skippedFormula += height;
           return;
         }
         input.values.forEach((line, r) => {
@@ -116,18 +112,13 @@ export async function pasteCells(deps: Deps, actor: Actor, tableId: string, raw:
   }
 
   const { queued, skippedByCap } = await notifyCellsChanged({ organizationId: org, tableId, userId: actor.userId, changes: changed });
-  const rowIds = result.rows.map((r) => r.id);
-  const recalculated = await recalculateFormulasQuietly(deps, org, tableId, { rowIds, changedKeys: changed.map((c) => c.columnKey) });
-  const lookups = changed.length > 0 ? await refreshAfterSourceWrite(deps, org, table, [...new Set(changed.map((c) => c.columnKey))]) : null;
-  const rows = recalculated > 0 || (lookups && lookups.recalculated + lookups.stale > 0) ? ((await deps.rows.listByIds(org, tableId, rowIds)) as RowRecord[]) : result.rows;
 
   return {
-    rows,
+    rows: result.rows,
     applied,
     addedRows: result.addedRows,
     createdColumns: result.createdColumns,
     skippedRunner,
-    skippedFormula,
     invalid: invalid.slice(0, 20),
     invalidCount: invalid.length,
     queued,

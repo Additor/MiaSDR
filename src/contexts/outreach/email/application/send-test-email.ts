@@ -151,7 +151,7 @@ export async function sendTestEmail(deps: TestSendDeps, actor: Actor, mailboxId:
       rfcMessageId,
       inReplyTo: null,
       references: [],
-      threadId: null,
+      providerThreadId: null,
       listUnsubscribeUrl: oneClickUrl,
     });
     await deps.store.markSent(claim.sendId, sent, deps.clock.now());

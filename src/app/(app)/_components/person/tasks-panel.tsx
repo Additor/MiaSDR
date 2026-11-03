@@ -45,8 +45,8 @@ export function useBrowserZone(): string | null {
   );
 }
 
-/** Where the panel writes: a reply record's tasks, or a person's tasks without a record. */
-export type TaskTarget = { recordId: string; personId?: never } | { personId: string; recordId?: never };
+/** Where the panel writes: a conversation's tasks, or a person's tasks without a conversation. */
+export type TaskTarget = { conversationId: string; personId?: never } | { personId: string; conversationId?: never };
 
 export type TasksPanelProps = TaskTarget & {
   tasks: TaskItem[];
@@ -59,9 +59,9 @@ export type TasksPanelProps = TaskTarget & {
 
 export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = false, ...target }: TasksPanelProps) {
   const router = useRouter();
-  const createUrl = target.recordId !== undefined ? `/api/records/${target.recordId}/tasks` : `/api/people/${target.personId}/tasks`;
+  const createUrl = target.conversationId !== undefined ? `/api/conversations/${target.conversationId}/tasks` : `/api/people/${target.personId}/tasks`;
   // Ids of the form fields: unique per panel, so two panels on one page keep their labels apart.
-  const fieldKey = target.recordId ?? target.personId;
+  const fieldKey = target.conversationId ?? target.personId;
   const zone = useBrowserZone();
   const [name, setName] = useState("");
   const [dueDay, setDueDay] = useState("");

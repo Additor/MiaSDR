@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import type { Actor } from "@/shared/errors";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 
 /**
@@ -17,7 +16,6 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
   let outreach: typeof import("../person-outreach");
   let db: typeof import("@/platform/db/client").db;
   const orgs: string[] = [];
-  const users: string[] = [];
   const now = new Date("2026-10-19T12:00:00.000Z");
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
 
@@ -27,7 +25,7 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
   });
 
   afterAll(async () => {
-    await dropOrgs(sql, orgs.map((organizationId) => ({ organizationId })), users);
+    await dropOrgs(sql, orgs.map((organizationId) => ({ organizationId })));
     await sql.end();
   });
 
@@ -38,33 +36,20 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     const tag = uniqueKey();
     const org = await one(sql`insert into organizations (name, slug) values ('Outreach purge', ${"outreach-purge-" + tag}) returning id`);
     orgs.push(org);
-    const user = async (name: string) => {
-      const id = await one(sql`insert into users (name, email) values (${name}, ${`${name}-${tag}@x.test`}) returning id`);
-      users.push(id);
-      return id;
-    };
-    const member = await user("member");
-    const other = await user("other");
-    const admin = await user("admin");
     const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${`box-${tag}@x.test`}, 'connected') returning id`);
     const account = await one(sql`
       insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${`acc-${tag}`}, ${`li-${tag}`}) returning id`);
-    const actors = {
-      member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
-      other: { userId: other, organizationId: org, role: "member" } satisfies Actor,
-      admin: { userId: admin, organizationId: org, role: "admin" } satisfies Actor,
-    };
-    return { org, tag, mailbox, account, actors };
+    return { org, tag, mailbox, account };
   }
   type Org = Awaited<ReturnType<typeof organization>>;
 
   let campaignNo = 0;
-  async function campaign(o: Org, opts: { channel?: "email" | "linkedin"; type?: "regular" | "personal"; createdBy?: string; status?: string } = {}) {
+  async function campaign(o: Org, opts: { channel?: "email" | "linkedin"; createdBy?: string; status?: string } = {}) {
     campaignNo += 1;
     const channel = opts.channel ?? "email";
     return one(sql`
-      insert into campaigns (organization_id, channel, name, type, status, created_by)
-      values (${o.org}, ${channel}, ${`C${campaignNo}`}, ${opts.type ?? "regular"}, ${opts.status ?? "active"}, ${opts.createdBy ?? null}) returning id`);
+      insert into campaigns (organization_id, channel, name, status, created_by)
+      values (${o.org}, ${channel}, ${`C${campaignNo}`}, ${opts.status ?? "active"}, ${opts.createdBy ?? null}) returning id`);
   }
 
   /** A person; a contact unless `lead` is set. Enrollments for a contact go in as `completed`, which the contact guard allows. */
@@ -90,8 +75,8 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
               ${channel === "email" ? o.mailbox : null}, ${channel === "linkedin" ? o.account : null}, ${claimedAt}) returning id`);
   }
 
-  const blockers = (actor: Actor, personId: string) => inTx((tx) => outreach.personOutreachBlockers(tx, actor, personId, now));
-  const reasons = async (actor: Actor, personId: string) => (await blockers(actor, personId)).map((b) => b.reason);
+  const blockers = (o: Org, personId: string) => inTx((tx) => outreach.personOutreachBlockers(tx, o.org, personId, now));
+  const reasons = async (o: Org, personId: string) => (await blockers(o, personId)).map((b) => b.reason);
 
   it("blocks on a campaign send claimed 23 hours ago and not on one claimed 25 hours ago", async () => {
     const o = await organization();
@@ -101,9 +86,9 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     const older = await person(o, "older");
     await send(o, await enroll(o, c, older.id), 1, ago(25 * HOUR));
 
-    const found = await blockers(o.actors.member, recent.id);
+    const found = await blockers(o, recent.id);
     expect(found).toEqual([{ reason: "recent_send", until: new Date(now.getTime() + HOUR) }]);
-    expect(await reasons(o.actors.member, older.id)).toEqual([]);
+    expect(await reasons(o, older.id)).toEqual([]);
   });
 
   it("does not count a test send to the person's address as a campaign send", async () => {
@@ -114,7 +99,7 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     await sql`
       insert into sends (organization_id, kind, channel, status, mailbox_id, to_address, claimed_at)
       values (${o.org}, 'test', 'email', 'sent', ${o.mailbox}, ${contact.email}, ${ago(HOUR)})`;
-    expect(await reasons(o.actors.member, contact.id)).toEqual([]);
+    expect(await reasons(o, contact.id)).toEqual([]);
   });
 
   it("blocks on a LinkedIn invitation claimed 6 days ago and not on one claimed 8 days ago", async () => {
@@ -130,9 +115,9 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     await send(o, e, 1, ago(9 * DAY), { channel: "linkedin" });
     await send(o, e, 2, ago(6 * DAY), { channel: "linkedin" });
 
-    expect(await blockers(o.actors.member, recent.id)).toEqual([{ reason: "recent_invite", until: new Date(now.getTime() + DAY) }]);
-    expect(await reasons(o.actors.member, older.id)).toEqual([]);
-    expect(await reasons(o.actors.member, messaged.id)).toEqual([]);
+    expect(await blockers(o, recent.id)).toEqual([{ reason: "recent_invite", until: new Date(now.getTime() + DAY) }]);
+    expect(await reasons(o, older.id)).toEqual([]);
+    expect(await reasons(o, messaged.id)).toEqual([]);
   });
 
   it("blocks on a send in flight, sending or unknown", async () => {
@@ -141,43 +126,22 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     for (const status of ["sending", "unknown"]) {
       const p = await person(o, `flight-${status}`);
       await send(o, await enroll(o, c, p.id), 1, ago(2 * DAY), { status });
-      expect(await reasons(o.actors.member, p.id)).toEqual(["send_in_flight"]);
+      expect(await reasons(o, p.id)).toEqual(["send_in_flight"]);
     }
   });
 
-  it("blocks a member on another member's personal campaign and lets the creator and an admin through", async () => {
+  it("counts enrollments and sends", async () => {
     const o = await organization();
-    const personal = await campaign(o, { channel: "linkedin", type: "personal", createdBy: o.actors.other.userId });
-    const p = await person(o, "personal");
-    await send(o, await enroll(o, personal, p.id, "completed", "linkedin"), 1, ago(10 * DAY), { channel: "linkedin" });
-
-    expect(await reasons(o.actors.member, p.id)).toEqual(["personal_campaign_sends"]);
-    expect(await reasons(o.actors.other, p.id)).toEqual([]);
-    expect(await reasons(o.actors.admin, p.id)).toEqual([]);
-
-    // An enrollment with no send yet blocks too, and so does a personal campaign whose creator left.
-    const orphan = await campaign(o, { channel: "linkedin", type: "personal" });
-    const q = await person(o, "orphaned");
-    await enroll(o, orphan, q.id, "cancelled", "linkedin");
-    expect(await reasons(o.actors.member, q.id)).toEqual(["personal_campaign_sends"]);
-    expect(await reasons(o.actors.admin, q.id)).toEqual([]);
-  });
-
-  it("counts enrollments and sends as the actor may see them", async () => {
-    const o = await organization();
-    const regular = await campaign(o);
-    const personal = await campaign(o, { channel: "linkedin", type: "personal", createdBy: o.actors.other.userId });
+    const email = await campaign(o);
+    const linkedin = await campaign(o, { channel: "linkedin" });
     const p = await person(o, "counted");
-    const e1 = await enroll(o, regular, p.id);
+    const e1 = await enroll(o, email, p.id);
     await send(o, e1, 1, ago(5 * DAY));
     await send(o, e1, 2, ago(4 * DAY));
-    const e2 = await enroll(o, personal, p.id, "completed", "linkedin");
+    const e2 = await enroll(o, linkedin, p.id, "completed", "linkedin");
     await send(o, e2, 1, ago(10 * DAY), { channel: "linkedin" });
 
-    const count = (actor: Actor) => inTx((tx) => outreach.personOutreachCounts(tx, actor, p.id));
-    expect(await count(o.actors.member)).toEqual({ campaigns: 1, sends: 2, hidden: true });
-    expect(await count(o.actors.other)).toEqual({ campaigns: 2, sends: 3, hidden: false });
-    expect(await count(o.actors.admin)).toEqual({ campaigns: 2, sends: 3, hidden: false });
+    expect(await inTx((tx) => outreach.personOutreachCounts(tx, o.org, p.id))).toEqual({ campaigns: 2, sends: 3 });
   });
 
   it("purges the person's enrollments with their sends and LinkedIn details and touches no one else", async () => {

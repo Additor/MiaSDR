@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { lockRetryStats } from "@/platform/db/errors";
 import { setLockTimeout } from "@/platform/db/person-locks";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import { bootDealsKit, holdLocks, type DealsKit, type DealsOrg } from "../../../../test-support/deals-test-kit";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 
 /**
  * The deals context against Postgres ("Leads and CRM" in docs/decisions.md): conversion plus deal in one
- * transaction, idempotency, rollback per step, the preview, stage moves and settings, validation, attribution, the
- * personal-campaign rule, organization scope and bulk creation. The lock races are in conversion-races.integration.test.ts.
+ * transaction, idempotency, rollback per step, the preview, stage moves and settings, validation, attribution,
+ * organization scope and bulk creation. The lock races are in conversion-races.integration.test.ts.
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
 describeDb("deals context", () => {
@@ -38,7 +38,7 @@ describeDb("deals context", () => {
   const failure = async (run: Promise<unknown>) => run.then(() => null, (error: unknown) => error);
   const conflictCode = async (run: Promise<unknown>) => ((await failure(run)) as ConflictError | null)?.details?.code;
 
-  /** A lead who replied to a regular campaign, with an active follow-up run, its reply draft, and a live enrollment elsewhere. */
+  /** A lead who replied to a campaign, with an active follow-up run, its reply draft, and a live enrollment elsewhere. */
   async function repliedLeadWithRun(f: DealsOrg) {
     const lead = await f.ingest();
     const { campaignId, repliedEnrollmentId } = await f.emailedBy(lead.personId);
@@ -53,8 +53,8 @@ describeDb("deals context", () => {
   async function snapshot(f: DealsOrg, personId: string) {
     const person = await kit.one("select lifecycle, converted_at from people where id = $1", [personId]);
     const enrollments = await kit.sql`select id, status, stop_reason from campaign_enrollments where person_id = ${personId} order by id`;
-    const runs = await kit.sql`select r.id, r.status from sequence_runs r join records rec on rec.id = r.record_id where rec.person_id = ${personId} order by r.id`;
-    const drafts = await kit.sql`select d.id, d.status from drafts d join records rec on rec.id = d.record_id where rec.person_id = ${personId} order by d.id`;
+    const runs = await kit.sql`select r.id, r.status from follow_up_runs r join conversations rec on rec.id = r.conversation_id where rec.person_id = ${personId} order by r.id`;
+    const drafts = await kit.sql`select d.id, d.status from drafts d join conversations rec on rec.id = d.conversation_id where rec.person_id = ${personId} order by d.id`;
     const events = await kit.count("events", f.org, `person_id = '${personId}' and (event_type like 'deal.%' or event_type = 'lifecycle.converted')`);
     const dealRows = await kit.count("deals", f.org, `person_id = '${personId}'`);
     return { person, enrollments: [...enrollments], runs: [...runs], drafts: [...drafts], events, deals: dealRows };
@@ -66,11 +66,11 @@ describeDb("deals context", () => {
       const lead = await repliedLeadWithRun(f);
       const before = await snapshot(f, lead.personId);
       expect(before.runs.map((r) => r.status)).toEqual(["active"]);
-      const retirable = before.drafts.filter((d) => ["generating", "awaiting_review", "failed"].includes(d.status as string)).length;
+      const retirable = before.drafts.filter((d) => ["awaiting_review", "failed"].includes(d.status as string)).length;
       expect(retirable).toBeGreaterThan(0);
 
       const preview = await leadsApp.previewConvert(composition.convertPreviewDeps(), f.owner, [lead.personId]);
-      expect(preview).toEqual({ people: 1, alreadyContacts: 0, enrollments: 2, runs: 1, followUpDraftsToRetire: retirable, skippedPersonalCampaign: 0 });
+      expect(preview).toEqual({ people: 1, alreadyContacts: 0, enrollments: 2, runs: 1, followUpDraftsToRetire: retirable });
 
       const result = await deals.createDealFromLead(deps(), f.owner, lead.personId, { amount: "1200", currency: "EUR" });
       expect(result.stopped).toEqual({ enrollments: preview.enrollments, runs: preview.runs, drafts: preview.followUpDraftsToRetire });
@@ -79,15 +79,15 @@ describeDb("deals context", () => {
       expect(after.enrollments.filter((e) => e.status === "cancelled" && e.stop_reason === "converted").map((e) => e.id).sort()).toEqual([lead.live, lead.pending].sort());
       expect(after.enrollments.find((e) => e.id === lead.repliedEnrollmentId)?.status).toBe("replied");
       expect(after.runs.map((r) => r.status)).toEqual(["interrupted"]);
-      expect(await kit.count("drafts", f.org, `record_id = '${lead.recordId}' and status = 'stale' and error = 'The follow-up sequence ended.'`)).toBe(result.stopped.drafts);
+      expect(await kit.count("drafts", f.org, `conversation_id = '${lead.conversationId}' and status = 'stale' and error = 'The follow-ups ended.'`)).toBe(result.stopped.drafts);
 
       const deal = await kit.one("select * from deals where id = $1", [result.dealId]);
       expect(deal).toMatchObject({ person_id: lead.personId, stage_kind: "open", owner_user_id: f.owner.userId, currency: "EUR", source_enrollment_id: lead.repliedEnrollmentId, version: 0, closed_at: null });
       expect(Number(deal.amount_minor)).toBe(120000);
       expect(new Date(deal.stage_changed_at).getTime()).toBe(new Date(deal.created_at).getTime());
-      const events = await kit.sql`select event_type, actor_type, actor_user_id, record_id, meta from events where person_id = ${lead.personId} and (event_type like 'deal.%' or event_type = 'lifecycle.converted') order by created_at, event_type`;
+      const events = await kit.sql`select event_type, actor_type, actor_user_id, conversation_id, meta from events where person_id = ${lead.personId} and (event_type like 'deal.%' or event_type = 'lifecycle.converted') order by created_at, event_type`;
       expect(events.map((e) => e.event_type).sort()).toEqual(["deal.created", "lifecycle.converted"]);
-      expect(events.every((e) => e.actor_type === "human" && e.actor_user_id === f.owner.userId && e.record_id === null)).toBe(true);
+      expect(events.every((e) => e.actor_type === "human" && e.actor_user_id === f.owner.userId && e.conversation_id === null)).toBe(true);
       expect(events.find((e) => e.event_type === "deal.created")?.meta).toMatchObject({ dealId: result.dealId, stopped: result.stopped });
 
       // The stage list was created by the first write; the deal sits in the first open stage.
@@ -135,7 +135,7 @@ describeDb("deals context", () => {
   });
 
   describe("a failure in any step rolls back all steps", () => {
-    const steps = ["lockPerson", "stopEnrollments", "interruptRuns", "appendEvent", "latestRepliedEnrollment", "insert", "dealEvent"] as const;
+    const steps = ["lockPerson", "stopContact", "appendEvent", "latestRepliedEnrollment", "insert", "dealEvent"] as const;
     for (const step of steps) {
       it(`a failing ${step} leaves the lead, its enrollments, run, drafts and events as they were`, async () => {
         const f = await kit.organization();
@@ -145,7 +145,7 @@ describeDb("deals context", () => {
           throw new Error(`${step} failed`);
         };
         const conversion = { ...composition.conversionDeps };
-        if (step === "lockPerson" || step === "stopEnrollments" || step === "interruptRuns" || step === "appendEvent") {
+        if (step === "lockPerson" || step === "stopContact" || step === "appendEvent") {
           const original = conversion[step] as (...args: unknown[]) => Promise<unknown>;
           // The failing port runs its real write first, so the rollback has something to undo.
           (conversion as Record<string, unknown>)[step] = async (...args: unknown[]) => {
@@ -227,7 +227,7 @@ describeDb("deals context", () => {
       await deals.moveDealStage(deps(), f.owner, dealId, { stageId: by("Proposal"), expectedVersion: 2 });
       await deals.updateDeal(deps(), f.owner, dealId, { expectedVersion: 3, title: "Renamed" });
       const kinds = await kit.sql`select event_type from events where person_id = ${personId} and event_type like 'deal.%' order by created_at`;
-      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.stage_moved", "deal.stage_moved", "deal.stage_moved", "deal.updated"]);
+      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.stage_changed", "deal.stage_changed", "deal.stage_changed", "deal.updated"]);
     });
 
     it("deletes only an open deal, and the person stays a contact", async () => {
@@ -372,7 +372,7 @@ describeDb("deals context", () => {
   });
 
   describe("source enrollment", () => {
-    it("takes the latest replied enrollment by updated_at, then id; null without one; From is hidden for a personal campaign", async () => {
+    it("takes the latest replied enrollment by updated_at, then id; null without one", async () => {
       const f = await kit.organization();
       const personId = await f.person();
       const older = await f.enrollment(await f.campaign({ name: "Older" }), personId, "replied");
@@ -393,68 +393,6 @@ describeDb("deals context", () => {
 
       const none = await deals.createDealFromLead(deps(), f.owner, await f.person());
       expect((await deals.getDeal(deps(), f.owner, none.dealId)).source).toBeNull();
-
-      const personal = await f.person();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.owner.userId, name: "Private" });
-      await f.enrollment(privateCampaign, personal, "replied", "linkedin");
-      const hidden = await deals.createDealFromLead(deps(), f.owner, personal);
-      expect((await kit.one("select source_enrollment_id from deals where id = $1", [hidden.dealId])).source_enrollment_id).not.toBeNull();
-      expect((await deals.getDeal(deps(), f.owner, hidden.dealId)).source).toBeNull();
-      const card = (await deals.board(deps(), f.owner)).columns.flatMap((c) => c.cards).find((c) => c.id === hidden.dealId);
-      expect(card?.source).toBeNull();
-      expect(JSON.stringify(await deals.board(deps(), f.owner))).not.toContain("Private");
-    });
-  });
-
-  describe("personal campaigns", () => {
-    it("skips a member who did not create the campaign and converts for the creator or an admin", async () => {
-      const f = await kit.organization();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.creator.userId });
-      const a = await f.person();
-      const b = await f.person();
-      await f.enrollment(privateCampaign, a, "active", "linkedin");
-      await f.enrollment(privateCampaign, b, "pending", "linkedin");
-      const before = await snapshot(f, a);
-      expect(await failure(deals.createDealFromLead(deps(), f.member, a))).toBeInstanceOf(ForbiddenError);
-      expect(await snapshot(f, a)).toEqual(before);
-      expect(await deals.createDealsFromLeads(deps(), f.member, [a])).toEqual({ created: [], skipped: [{ personId: a, reason: "personal_campaign" }] });
-      expect((await leadsApp.previewConvert(composition.convertPreviewDeps(), f.member, [a, b])).skippedPersonalCampaign).toBe(2);
-
-      expect((await deals.createDealFromLead(deps(), f.creator, a)).stopped.enrollments).toBe(1);
-      expect((await deals.createDealFromLead(deps(), f.owner, b)).stopped.enrollments).toBe(1);
-      expect(await kit.count("campaign_enrollments", f.org, "status = 'cancelled' and stop_reason = 'converted'")).toBe(2);
-    });
-  });
-
-  describe("the personal-campaign rule holds under the person's locks", () => {
-    it("catches an enrollment that commits between the early read and the locks, for one deal and in bulk", async () => {
-      const f = await kit.organization();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.creator.userId });
-      const outreach = deps().outreach;
-      /** Deps whose first live-enrollment read is followed by a committed enrollment of the person in the private campaign. */
-      const racing = (personId: string) => {
-        let reads = 0;
-        return composition.dealsDeps({
-          outreach: {
-            ...outreach,
-            liveEnrollmentSummary: async (organizationId, ids, tx) => {
-              const summary = await outreach.liveEnrollmentSummary(organizationId, ids, tx);
-              reads += 1;
-              if (reads === 1) await f.enrollment(privateCampaign, personId, "active", "linkedin");
-              return summary;
-            },
-          },
-        });
-      };
-      const one = await f.person();
-      expect(await failure(deals.createDealFromLead(racing(one), f.member, one))).toBeInstanceOf(deals.PersonalCampaignError);
-      expect((await kit.one("select lifecycle from people where id = $1", [one])).lifecycle).toBe("lead");
-      expect(await kit.count("deals", f.org, `person_id = '${one}'`)).toBe(0);
-      expect(await kit.count("campaign_enrollments", f.org, `person_id = '${one}' and status = 'active'`)).toBe(1);
-
-      const bulk = await f.person();
-      expect(await deals.createDealsFromLeads(racing(bulk), f.member, [bulk])).toEqual({ created: [], skipped: [{ personId: bulk, reason: "personal_campaign" }] });
-      expect((await kit.one("select lifecycle from people where id = $1", [bulk])).lifecycle).toBe("lead");
     });
   });
 
@@ -493,7 +431,7 @@ describeDb("deals context", () => {
       const held = await f.ingest();
       const b = await f.person({ name: "Bob" });
       const before = lockRetryStats.retries;
-      // A 200 ms lock timeout stands in for the 5 s one, so the held record times out twice without a 10 s wait.
+      // A 200 ms lock timeout stands in for the 5 s one, so the held conversation times out twice without a 10 s wait.
       const quick = composition.dealsDeps({
         uow: {
           run: (fn, options) =>
@@ -503,8 +441,8 @@ describeDb("deals context", () => {
             }),
         },
       });
-      // Another transaction holds the record of `held` for both attempts.
-      const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from records where id = ${held.recordId} for update`);
+      // Another transaction holds the conversation of `held` for both attempts.
+      const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from conversations where id = ${held.conversationId} for update`);
       const result = await deals.createDealsFromLeads(quick, f.member, [a, contact, held.personId, "00000000-0000-4000-8000-000000000001", b]).finally(() => gate.release());
       expect(result.created.map((c) => c.personId)).toEqual([a, b]);
       expect(result.skipped).toEqual([

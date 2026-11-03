@@ -5,7 +5,7 @@ import { OpenAiChatModel } from "../openai-chat-model";
 const schema = { type: "object", properties: { k: { type: "string" } }, required: ["k"], additionalProperties: false };
 const request: GenerateRequest = {
   task: "grid.answer",
-  system: [{ text: "STABLE RULES", cacheable: true }],
+  system: [{ text: "STABLE RULES" }],
   messages: [{ role: "user", content: "SECRET-BODY" }],
   output: { name: "row_fields", schema },
   maxTokens: 4000,

@@ -4,7 +4,6 @@ import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
-import { createCampaign } from "../../after-reply/infrastructure/after-reply-test-kit";
 
 /**
  * Characterization of every reason a reply send is refused before the provider call, per channel: the status the route
@@ -49,9 +48,9 @@ describeDb("Email reply send refusals", () => {
   /** A reply with the AI draft awaiting review. */
   async function withDraft(f: ReplyFixture) {
     const r = await receive(f);
-    const draft = (await panel(f, r.conversationId)).draft!;
-    const { record_id: recordId } = await one("select record_id from conversations where id = $1", [r.conversationId]);
-    return { r, draft, recordId: recordId as string };
+    const draft = (await panel(f, r.threadId)).draft!;
+    const { conversation_id: conversationId } = await one("select conversation_id from threads where id = $1", [r.threadId]);
+    return { r, draft, conversationId: conversationId as string };
   }
   const approve = (f: ReplyFixture, draft: { id: string; revision: number }, key = sendKey()) => mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: key });
 
@@ -96,24 +95,24 @@ describeDb("Email reply send refusals", () => {
 
   it("answers 409 for a draft on a conversation that is not email", async () => {
     const f = await fixture();
-    // A LinkedIn draft on the same record, approved through the email path. A conversation's channel cannot change.
+    // A LinkedIn draft on the same conversation, approved through the email path. A conversation's channel cannot change.
     const first = await withDraft(f);
     const [chat] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
-      values (${f.org}, ${first.recordId}, 'linkedin', ${RANDOM_ID}, ${"chat-" + f.tag}) returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id)
+      values (${f.org}, ${first.conversationId}, 'linkedin', ${RANDOM_ID}, ${"chat-" + f.tag}) returning id`;
     const [linkedin] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status)
-      select ${f.org}, id, ${chat.id}, context_version, 'linkedin', 'Tuesday works.', 'awaiting_review' from records where id = ${first.recordId}
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, ai_body_text, status)
+      select ${f.org}, id, ${chat.id}, context_version, 'linkedin', 'Tuesday works.', 'awaiting_review' from conversations where id = ${first.conversationId}
       returning id, revision`;
     expect(await refusal(approve(f, { id: linkedin.id, revision: linkedin.revision }))).toEqual({ status: 409, error: "This is not an email conversation." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
-  it("answers 409 and marks the draft stale when the record moved on after the draft was written", async () => {
+  it("answers 409 and marks the draft stale when the conversation moved on after the draft was written", async () => {
     const f = await fixture();
-    const { draft, recordId } = await withDraft(f);
+    const { draft, conversationId } = await withDraft(f);
     // A write that bumps the version without retiring the draft, so the send's own version check catches it.
-    await sql`update records set context_version = context_version + 1 where id = ${recordId}`;
+    await sql`update conversations set context_version = context_version + 1 where id = ${conversationId}`;
     expect(await refusal(approve(f, draft))).toEqual({ status: 409, error: "A newer message arrived after this draft was written. Review the thread and regenerate the draft." });
     expect(await one("select status, error from drafts where id = $1", [draft.id])).toMatchObject({ status: "stale", error: "A newer message arrived after this draft was written." });
     expect(await count("send_attempts", f.org)).toBe(0);
@@ -122,7 +121,7 @@ describeDb("Email reply send refusals", () => {
   it("answers 409 for a closed conversation", async () => {
     const f = await fixture();
     const { r, draft } = await withDraft(f);
-    await sql`update conversations set status = 'closed' where id = ${r.conversationId}`;
+    await sql`update threads set status = 'closed' where id = ${r.threadId}`;
     expect(await refusal(approve(f, draft))).toEqual({ status: 409, error: "This conversation is closed." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
@@ -165,11 +164,11 @@ describeDb("Email reply send refusals", () => {
 
     it("answers 409 for the draft the close retired, and names the close once reply handling reopens", async () => {
       const f = await fixture();
-      const { draft, recordId } = await withDraft(f);
-      await handling.closeRecord(handlingDeps, f.actor, recordId, { reason: "Went with a competitor" });
+      const { draft, conversationId } = await withDraft(f);
+      await handling.closeConversation(handlingDeps, f.actor, conversationId, { reason: "Went with a competitor" });
       expect(await one("select status, error from drafts where id = $1", [draft.id])).toMatchObject({ status: "stale", error: "A person marked reply handling done after this draft was written." });
       expect(await refusal(approve(f, draft))).toEqual(CLOSED);
-      await handling.reopenRecord(handlingDeps, f.actor, recordId);
+      await handling.reopenConversation(handlingDeps, f.actor, conversationId);
       expect(await refusal(approve(f, draft))).toEqual({ status: 409, error: "A person marked reply handling done after this draft was written. Review the thread and regenerate the draft." });
       expect(await count("send_attempts", f.org)).toBe(0);
     });
@@ -180,8 +179,8 @@ describeDb("Email reply send refusals", () => {
       const ai = f.ai!;
       const write = ai.draft.bind(ai);
       ai.draft = async (input) => {
-        const [{ id }] = await sql`select id from records where organization_id = ${f.org}`;
-        await handling.closeRecord(handlingDeps, f.actor, id, { reason: "Went with a competitor" });
+        const [{ id }] = await sql`select id from conversations where organization_id = ${f.org}`;
+        await handling.closeConversation(handlingDeps, f.actor, id, { reason: "Went with a competitor" });
         return write(input);
       };
       const { detail } = await receive(f);
@@ -189,24 +188,24 @@ describeDb("Email reply send refusals", () => {
       expect(await count("drafts", f.org)).toBe(0);
     });
 
-    it("refuses a typed reply and the send of a draft written after the close, says so on the panel, and the record stays closed", async () => {
+    it("refuses a typed reply and the send of a draft written after the close, says so on the panel, and the conversation stays closed", async () => {
       const f = await fixture();
-      const { r, recordId } = await withDraft(f);
-      await handling.closeRecord(handlingDeps, f.actor, recordId, { reason: "Went with a competitor" });
-      expect(await refusal(mgmt.createManualDraft(f.replyDeps, f.actor, r.conversationId, { subject: "Re: hello", bodyText: "One last note." }))).toEqual(CLOSED);
+      const { r, conversationId } = await withDraft(f);
+      await handling.closeConversation(handlingDeps, f.actor, conversationId, { reason: "Went with a competitor" });
+      expect(await refusal(mgmt.createManualDraft(f.replyDeps, f.actor, r.threadId, { subject: "Re: hello", bodyText: "One last note." }))).toEqual(CLOSED);
       // A draft for the current version that no close retired, as an AI job that read its context after the close writes.
       const [late] = await sql`
-        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, edited_body_text, status, provider)
-        select organization_id, id, ${r.conversationId}, context_version, 'email', 'Re: hello', 'One last note.', 'awaiting_review', 'manual' from records where id = ${recordId}
+        insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject, edited_body_text, status, provider)
+        select organization_id, id, ${r.threadId}, context_version, 'email', 'Re: hello', 'One last note.', 'awaiting_review', 'manual' from conversations where id = ${conversationId}
         returning id, revision`;
       const before = mailbox.delivered.length;
       expect(await refusal(approve(f, { id: late.id, revision: late.revision }))).toEqual(CLOSED);
       expect(mailbox.delivered.length).toBe(before);
       expect(await count("send_attempts", f.org)).toBe(0);
-      expect(await one("select workflow_state, closed_reason from records where id = $1", [recordId])).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
+      expect(await one("select workflow_state, closed_reason from conversations where id = $1", [conversationId])).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
       // The panel says so in place of the composer and offers no AI draft; asked anyway, the AI writes none.
-      expect(await panel(f, r.conversationId)).toMatchObject({ mailboxIssue: CLOSED.error, closed: CLOSED.error, canGenerate: false });
-      expect(await refusal(mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId))).toEqual(CLOSED);
+      expect(await panel(f, r.threadId)).toMatchObject({ mailboxIssue: CLOSED.error, closed: CLOSED.error, canGenerate: false });
+      expect(await refusal(mgmt.requestDraft(f.replyDeps, f.actor, r.threadId))).toEqual(CLOSED);
       expect(await refusal(mgmt.regenerateDraft(f.replyDeps, f.actor, late.id, {}))).toEqual(CLOSED);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
@@ -250,30 +249,30 @@ describeDb("LinkedIn reply send refusals", () => {
     const ingested = await composition.ingestInboundLinkedInMessage(input);
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
     const deps: LinkedInReplySendDeps = { store, sender: makeSender(fake), now: () => new Date() };
-    const [{ record_id: recordId }] = await sql`select record_id from conversations where id = ${ingested.conversationId}`;
-    return { org, tag, account: account as string, actor, fake, deps, input, conversationId: ingested.conversationId, recordId: recordId as string };
+    const [{ conversation_id: conversationId }] = await sql`select conversation_id from threads where id = ${ingested.threadId}`;
+    return { org, tag, account: account as string, actor, fake, deps, input, threadId: ingested.threadId, conversationId: conversationId as string };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
   const key = () => `key-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
   const one = async (query: string, params: unknown[]) => (await sql.unsafe(query, params as never[]))[0];
   const count = async (table: string, org: string, where = "true") => Number((await sql.unsafe(`select count(*)::int as n from ${table} where organization_id = $1 and ${where}`, [org]))[0].n);
-  const send = (f: Fx, input: { text?: string; idempotencyKey?: string; draftId?: string; revision?: number } = {}, conversationId = f.conversationId) =>
-    app.sendLinkedInReply(f.deps, f.actor, conversationId, { text: "Happy to share more.", idempotencyKey: key(), ...input });
+  const send = (f: Fx, input: { text?: string; idempotencyKey?: string; draftId?: string; revision?: number } = {}, threadId = f.threadId) =>
+    app.sendLinkedInReply(f.deps, f.actor, threadId, { text: "Happy to share more.", idempotencyKey: key(), ...input });
 
-  /** A second conversation on the fixture's record. A conversation's channel, account and chat cannot change once written. */
-  async function conversationOn(f: Fx, input: { channel?: string; accountRef: string; chat: string | null }) {
+  /** A second conversation on the fixture's conversation. A conversation's channel, account and chat cannot change once written. */
+  async function threadOn(f: Fx, input: { channel?: string; accountRef: string; chat: string | null }) {
     const [row] = await sql`
-      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
-      values (${f.org}, ${f.recordId}, ${input.channel ?? "linkedin"}, ${input.accountRef}, ${input.chat}) returning id`;
+      insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id)
+      values (${f.org}, ${f.conversationId}, ${input.channel ?? "linkedin"}, ${input.accountRef}, ${input.chat}) returning id`;
     return row.id as string;
   }
 
-  /** A LinkedIn draft awaiting review, written against the record's current version. */
+  /** A LinkedIn draft awaiting review, written against the conversation's current version. */
   async function draftFor(f: Fx, status = "awaiting_review", error: string | null = null) {
     const [d] = await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status, error)
-      select ${f.org}, r.id, ${f.conversationId}, r.context_version, 'linkedin', 'Tuesday works for me.', ${status}, ${error} from records r where r.id = ${f.recordId}
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, ai_body_text, status, error)
+      select ${f.org}, r.id, ${f.threadId}, r.context_version, 'linkedin', 'Tuesday works for me.', ${status}, ${error} from conversations r where r.id = ${f.conversationId}
       returning id, revision`;
     return { draftId: d.id as string, revision: d.revision as number };
   }
@@ -318,30 +317,30 @@ describeDb("LinkedIn reply send refusals", () => {
 
   it("answers 409 for a conversation on another channel", async () => {
     const f = await fixture();
-    const email = await conversationOn(f, { channel: "email", accountRef: "me@corp.test", chat: `thread-${f.tag}` });
+    const email = await threadOn(f, { channel: "email", accountRef: "me@corp.test", chat: `thread-${f.tag}` });
     expect(await refusal(send(f, {}, email))).toEqual({ status: 409, error: "This is not a LinkedIn conversation." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 for a closed conversation", async () => {
     const f = await fixture();
-    await sql`update conversations set status = 'closed' where id = ${f.conversationId}`;
+    await sql`update threads set status = 'closed' where id = ${f.threadId}`;
     expect(await refusal(send(f))).toEqual({ status: 409, error: "This conversation is closed." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 for a conversation with no LinkedIn chat yet", async () => {
     const f = await fixture();
-    const noChat = await conversationOn(f, { accountRef: f.account, chat: null });
+    const noChat = await threadOn(f, { accountRef: f.account, chat: null });
     expect(await refusal(send(f, {}, noChat))).toEqual({ status: 409, error: "There is no LinkedIn chat for this conversation yet." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 when the conversation's account ref is not an account id, or names no account of the organization", async () => {
     const f = await fixture();
-    const notAnId = await conversationOn(f, { accountRef: "jo@linkedin", chat: `chat-a-${f.tag}` });
+    const notAnId = await threadOn(f, { accountRef: "jo@linkedin", chat: `chat-a-${f.tag}` });
     expect(await refusal(send(f, {}, notAnId))).toEqual({ status: 409, error: "No LinkedIn account is connected for this conversation." });
-    const noAccount = await conversationOn(f, { accountRef: RANDOM_ID, chat: `chat-b-${f.tag}` });
+    const noAccount = await threadOn(f, { accountRef: RANDOM_ID, chat: `chat-b-${f.tag}` });
     expect(await refusal(send(f, {}, noAccount))).toEqual({ status: 409, error: "No LinkedIn account is connected for this conversation." });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
@@ -393,10 +392,10 @@ describeDb("LinkedIn reply send refusals", () => {
       expect(await count("send_attempts", f.org)).toBe(0);
     });
 
-    it("answers 409 and marks the draft stale when the record moved on after the draft was written", async () => {
+    it("answers 409 and marks the draft stale when the conversation moved on after the draft was written", async () => {
       const f = await fixture();
       const draft = await draftFor(f);
-      await sql`update records set context_version = context_version + 1 where id = ${f.recordId}`;
+      await sql`update conversations set context_version = context_version + 1 where id = ${f.conversationId}`;
       expect(await refusal(send(f, draft))).toEqual({ status: 409, error: "A newer message arrived after this draft was written. Review the thread and regenerate the draft." });
       expect(await one("select status, error from drafts where id = $1", [draft.draftId])).toMatchObject({ status: "stale", error: "A newer message arrived after this draft was written." });
       expect(await count("send_attempts", f.org)).toBe(0);
@@ -415,36 +414,12 @@ describeDb("LinkedIn reply send refusals", () => {
     it("answers 409 for the draft the close retired, and names the close once reply handling reopens", async () => {
       const f = await fixture();
       const draft = await draftFor(f);
-      await handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
+      await handling.closeConversation(handlingDeps, f.actor, f.conversationId, { reason: "Not a fit" });
       expect(await one("select status, error from drafts where id = $1", [draft.draftId])).toMatchObject({ status: "stale", error: "A person marked reply handling done after this draft was written." });
       expect(await refusal(send(f, draft))).toEqual(CLOSED);
-      await handling.reopenRecord(handlingDeps, f.actor, f.recordId);
+      await handling.reopenConversation(handlingDeps, f.actor, f.conversationId);
       expect(await refusal(send(f, draft))).toEqual({ status: 409, error: "A person marked reply handling done after this draft was written. Review the thread and regenerate the draft." });
       expect(await count("send_attempts", f.org)).toBe(0);
-    });
-
-    it("closes while a LinkedIn message turns another chat of the person private, without a deadlock", async () => {
-      // The close locks the record, then shares each public conversation in turn. The ingest that makes chat B private
-      // updates B and then detaches the record. Both take the record before a conversation (docs/database.md, "Lock modes").
-      const f = await fixture();
-      const chatB = await composition.ingestInboundLinkedInMessage({ ...f.input, providerThreadId: `chat-b-${f.tag}`, providerMessageId: `msg-b-${f.tag}` });
-      expect(await one("select record_id from conversations where id = $1", [chatB.conversationId])).toMatchObject({ record_id: f.recordId });
-      const campaignId = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
-      let close!: Promise<unknown>;
-      let ingest!: Promise<unknown>;
-      await sql.begin(async (tx) => {
-        // Chat A held: the close stops on it, holding the record, with chat B still ahead of it.
-        await tx`select id from conversations where id = ${f.conversationId} for update`;
-        close = handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
-        close.catch(() => undefined);
-        await waitForLockWaiters(sql, 1, 10_000, "%conversations%for share%");
-        ingest = composition.ingestInboundLinkedInMessage({ ...f.input, providerThreadId: `chat-b-${f.tag}`, providerMessageId: `msg-b2-${f.tag}`, privateCampaignId: campaignId });
-        ingest.catch(() => undefined);
-        await waitForLockWaiters(sql, 2, 10_000);
-      });
-      await expect(close).resolves.toBeUndefined();
-      await expect(ingest).resolves.toMatchObject({ status: "created" });
-      expect(await one("select private_campaign_id from conversations where id = $1", [chatB.conversationId])).toMatchObject({ private_campaign_id: campaignId });
     });
 
     it("lands a close after a typed reply that already read reply handling open, and refuses the next one", async () => {
@@ -458,27 +433,27 @@ describeDb("LinkedIn reply send refusals", () => {
         reply = send(f, { text: "Sent before the close." });
         reply.catch(() => undefined);
         await waitForLockWaiters(sql, 1, 10_000, "%linkedin_accounts%");
-        close = handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
+        close = handling.closeConversation(handlingDeps, f.actor, f.conversationId, { reason: "Not a fit" });
         close.catch(() => undefined);
-        await waitForLockWaiters(sql, 1, 10_000, "%conversations%for share%");
+        await waitForLockWaiters(sql, 1, 10_000, "%threads%for share%");
       });
       expect(await reply).toMatchObject({ status: "sent" });
       await close;
       expect(f.fake.messages.map((m) => m.text)).toEqual(["Sent before the close."]);
-      expect(await one("select workflow_state from records where id = $1", [f.recordId])).toMatchObject({ workflow_state: "closed" });
+      expect(await one("select workflow_state from conversations where id = $1", [f.conversationId])).toMatchObject({ workflow_state: "closed" });
       expect(await refusal(send(f, { text: "And one more." }))).toEqual(CLOSED);
     });
 
-    it("refuses typed text with no draft, says so on the panel, and the record stays closed", async () => {
+    it("refuses typed text with no draft, says so on the panel, and the conversation stays closed", async () => {
       const f = await fixture();
-      await handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
+      await handling.closeConversation(handlingDeps, f.actor, f.conversationId, { reason: "Not a fit" });
       expect(await refusal(send(f, { text: "One last note." }))).toEqual(CLOSED);
       expect(f.fake.messages).toEqual([]);
       expect(await count("send_attempts", f.org)).toBe(0);
       // AI is on for the organization, and the panel still offers no draft.
       const withAi = { ...f.deps, aiStatus: async () => ({ state: "demo" as const }) };
-      expect(await app.getLinkedInReplyPanel(withAi, f.actor, f.conversationId)).toMatchObject({ issue: CLOSED.error, markedDone: true, canGenerate: false });
-      expect(await one("select workflow_state, closed_reason from records where id = $1", [f.recordId])).toMatchObject({ workflow_state: "closed", closed_reason: "Not a fit" });
+      expect(await app.getLinkedInReplyPanel(withAi, f.actor, f.threadId)).toMatchObject({ issue: CLOSED.error, markedDone: true, canGenerate: false });
+      expect(await one("select workflow_state, closed_reason from conversations where id = $1", [f.conversationId])).toMatchObject({ workflow_state: "closed", closed_reason: "Not a fit" });
     });
   });
 });

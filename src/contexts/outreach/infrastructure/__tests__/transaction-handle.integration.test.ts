@@ -12,8 +12,7 @@ describeDb("transaction handle through stores", () => {
     leadStore: typeof import("@/contexts/people/infrastructure/drizzle-lead-store").drizzleLeadStore;
     campaigns: typeof import("../drizzle-management-stores").drizzleCampaignStore;
     liCampaigns: typeof import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
-    enrollEmailPeople: typeof import("../drizzle-management-stores").enrollEmailPeople;
-    enrollPeople: typeof import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store").enrollPeople;
+    enrollPicked: typeof import("../enrollment-eligibility").enrollPickedTx;
   };
 
   beforeAll(async () => {
@@ -24,14 +23,14 @@ describeDb("transaction handle through stores", () => {
       import("../drizzle-management-stores"),
       import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store"),
     ]);
+    const { enrollPickedTx } = await import("../enrollment-eligibility");
     mods = {
       db: client.db,
       importLeads: leads.importLeads,
       leadStore: leadStore.drizzleLeadStore,
       campaigns: email.drizzleCampaignStore,
       liCampaigns: linkedin.drizzleLinkedInCampaignStore,
-      enrollEmailPeople: email.enrollEmailPeople,
-      enrollPeople: linkedin.enrollPeople,
+      enrollPicked: enrollPickedTx,
     };
     const s = uniqueKey();
     [{ id: org }] = await sql`insert into organizations (name, slug) values ('Tx', ${"tx-" + s}) returning id`;
@@ -66,7 +65,7 @@ describeDb("transaction handle through stores", () => {
           // The new campaign is visible inside the transaction only.
           expect(await store.get(org, id, tx)).not.toBeNull();
           const [person] = await tx.execute<{ id: string }>(`select id from people where organization_id = '${org}'` as never);
-          const added = channel === "email" ? await mods.enrollEmailPeople(org, id, [person.id], tx) : await mods.enrollPeople(org, id, [person.id], tx);
+          const { added } = await mods.enrollPicked(tx, org, id, channel, [person.id], { viaTokenId: null });
           expect(added).toBe(1);
           throw rollback;
         }),
@@ -81,7 +80,7 @@ describeDb("transaction handle through stores", () => {
       const id = await mods.campaigns.create(org, { name: "Kept", createdBy: user, steps: [] }, tx);
       await mods.importLeads({ store: mods.leadStore }, { tx, organizationId: org, userId: user, filename: "t.csv", headers: ["Email"], rows: [{ Email: "tx2@acme.io" }], mapping: { Email: "email" } });
       const [person] = await tx.execute<{ id: string }>(`select id from people where organization_id = '${org}' and email = 'tx2@acme.io'` as never);
-      await mods.enrollEmailPeople(org, id, [person.id], tx);
+      await mods.enrollPicked(tx, org, id, "email", [person.id], { viaTokenId: null });
     });
     expect(await counts()).toEqual({ campaigns: before.campaigns + 1, people: before.people + 1, enrollments: before.enrollments + 1 });
   });

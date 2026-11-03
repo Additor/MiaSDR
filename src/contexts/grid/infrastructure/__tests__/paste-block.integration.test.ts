@@ -135,18 +135,20 @@ describeDb("paste block", () => {
   });
 
   it("skips runner columns and values a column refuses, and reports both", async () => {
-    const { actor, tableId, keys, rows } = await setup([["Name", "text"], ["Score", "number"]], 2);
-    const formula = await columnsUc.createColumn(deps, actor, tableId, { name: "Double", type: "formula", config: { expression: `{{${keys[1]}}} * 2` } });
+    const { actor, org, tableId, keys, rows } = await setup([["Name", "text"], ["Score", "number"]], 2);
+    await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position, auto_run)
+      values (${org}, ${tableId}, 'summary', 'Summary', 'ai', ${sql.json({ prompt: `Summarize {{${keys[1]}}}` } as never)}, ${[keys[1]]}, 99, false)`;
     const result = await pasteUc.pasteCells(deps, actor, tableId, {
       anchorRowId: rows[0].id,
-      columnKeys: [keys[0], keys[1], formula.column.key],
+      columnKeys: [keys[0], keys[1], "summary"],
       values: [["Ann", "7", "1"], ["x".repeat(60_000), "abc", "2"]],
     });
     expect(result.skippedRunner).toBe(2);
     expect(result.invalidCount).toBe(1);
     expect(result.invalid[0]).toMatchObject({ rowIndex: 1, columnKey: keys[0] });
     const order = await tableOrder(tableId);
-    expect(order[0].cells).toMatchObject({ [keys[0]]: "Ann", [keys[1]]: 7, [formula.column.key]: 14 });
+    expect(order[0].cells).toMatchObject({ [keys[0]]: "Ann", [keys[1]]: 7 });
+    expect(order[0].cells.summary).toBeUndefined();
     // The refused cell stays empty, its neighbour is written (a number column keeps text it cannot parse as typed).
     expect(order[1].cells[keys[0]]).toBeUndefined();
     expect(order[1].cells[keys[1]]).toBe("abc");
@@ -159,7 +161,7 @@ describeDb("paste block", () => {
     await expect(pasteUc.pasteCells(deps, actor, tableId, { anchorRowId: rows[1].id, columnKeys: ["gone"], values: [["a"]] })).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it("queues the auto-run columns that read pasted cells and recalculates formulas", async () => {
+  it("queues the auto-run columns that read pasted cells", async () => {
     const { actor, org, tableId, keys, rows } = await setup([["Note", "text"]], 2);
     await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position, auto_run)
       values (${org}, ${tableId}, 'summary', 'Summary', 'ai', ${sql.json({ prompt: `Summarize {{${keys[0]}}}` } as never)}, ${[keys[0]]}, 99, true)`;
