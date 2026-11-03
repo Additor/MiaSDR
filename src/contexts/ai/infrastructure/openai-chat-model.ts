@@ -69,7 +69,7 @@ export class OpenAiChatModel implements LanguageModel {
       model: this.model,
       max_tokens: request.maxTokens,
       messages: [
-        { role: "system", content: request.system.map((s) => ({ type: "text", text: s.text, ...(marksCache && s.cacheable ? { cache_control: { type: "ephemeral" } } : {}) })) },
+        { role: "system", content: request.system.map((s) => ({ type: "text", text: s.text, ...(marksCache ? { cache_control: { type: "ephemeral" } } : {}) })) },
         ...request.messages,
       ],
       response_format: { type: "json_schema", json_schema: { name: request.output.name, strict: true, schema: request.output.schema } },

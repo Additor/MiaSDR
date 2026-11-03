@@ -20,7 +20,7 @@ function stub(result: Partial<GenerateResult>) {
 const ask = (model: LanguageModel) =>
   generateStructured(model, {
     task: "reply.classify",
-    system: [{ text: "s", cacheable: true }],
+    system: [{ text: "s" }],
     messages: [{ role: "user", content: "u" }],
     schema: { name: "thing", json: { type: "object" }, parse: z.strictObject({ k: z.enum(["a", "b"]) }) },
     shapeError: "Outside the set.",

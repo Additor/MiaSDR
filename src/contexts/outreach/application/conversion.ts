@@ -13,9 +13,9 @@ export interface EnrollmentSource {
 
 export interface ConversionOutreach {
   /** Live (pending and active) enrollments per requested person. Every requested id has an entry. */
-  liveEnrollmentCounts(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, number>>;
+  liveEnrollmentCounts(organizationId: string, personIds: string[]): Promise<Map<string, number>>;
   /** Person id to the id of the most recently updated enrollment with status `replied` (`updated_at` desc, `id` desc). People without one are absent. */
   latestRepliedEnrollment(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, string>>;
   /** Enrollment id to its campaign. Ids that do not exist in the organization are absent. */
-  enrollmentSources(organizationId: string, enrollmentIds: string[], tx?: DbHandle): Promise<Map<string, EnrollmentSource>>;
+  enrollmentSources(organizationId: string, enrollmentIds: string[]): Promise<Map<string, EnrollmentSource>>;
 }

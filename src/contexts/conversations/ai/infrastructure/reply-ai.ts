@@ -22,7 +22,7 @@ export function createReplyAi(model: LanguageModel): ReplyAi {
       const prompt = buildClassifyPrompt(input, nonce());
       const { output, usage } = await generateStructured(model, {
         task: "reply.classify",
-        system: [{ text: prompt.system, cacheable: true }],
+        system: [{ text: prompt.system }],
         messages: [{ role: "user", content: prompt.user }],
         schema: { name: "classification", json: classificationJsonSchema(keys), parse: classificationSchema(keys) },
         shapeError: "The model answered outside the allowed reply types.",
@@ -35,7 +35,7 @@ export function createReplyAi(model: LanguageModel): ReplyAi {
       const linkedin = input.channel === "linkedin";
       const request = {
         task: "reply.draft" as const,
-        system: [{ text: prompt.system, cacheable: true }],
+        system: [{ text: prompt.system }],
         messages: [{ role: "user" as const, content: prompt.user }],
         shapeError: "The model returned a draft in an unexpected shape.",
       };

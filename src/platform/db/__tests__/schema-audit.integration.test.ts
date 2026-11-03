@@ -42,11 +42,11 @@ describeDb("schema audit (organization scope)", () => {
     }
   });
 
-  it("keeps INDEX_DEBT at its 12 tables, each with the shared reason", () => {
+  it("keeps INDEX_DEBT at its 10 tables, each with the shared reason", () => {
     // The audit reports an entry that gained an index, but not a new entry: this list is the only check that INDEX_DEBT does not grow.
     expect(Object.keys(INDEX_DEBT).sort()).toEqual([
       "campaign_senders", "events", "follow_up_step_runs",
-      "grid_columns", "grid_provider_credentials",
+      "grid_columns",
       "grid_user_views", "linkedin_connections", "linkedin_enrollment_details",
       "linkedin_search_results", "notes", "reply_handling_settings",
     ]);

@@ -1,9 +1,12 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db } from "@/platform/db/client";
 import { integrationAccounts, integrationCredentials } from "@/platform/db/schema";
 import type { IntegrationStore } from "../application/integration-management";
 import { saveProviderCredentialTx } from "./provider-accounts";
+
+/** Accounts Settings, Integrations manages. A grid provider owns its `enrichment` account, and Tables manages it. */
+const manageable = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), ne(integrationAccounts.kind, "enrichment"));
 
 export const drizzleIntegrationStore: IntegrationStore = {
   async list(organizationId) {
@@ -21,7 +24,7 @@ export const drizzleIntegrationStore: IntegrationStore = {
       })
       .from(integrationAccounts)
       .leftJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-      .where(eq(integrationAccounts.organizationId, organizationId))
+      .where(manageable(organizationId))
       .orderBy(asc(integrationAccounts.name));
     return rows.map(({ credentialId, config, ...row }) => ({ ...row, hasCredential: credentialId !== null, primary: config?.primary === true, model: typeof config?.model === "string" && config.model ? config.model : null }));
   },
@@ -30,7 +33,7 @@ export const drizzleIntegrationStore: IntegrationStore = {
     const [row] = await db
       .select({ id: integrationAccounts.id, key: integrationAccounts.key })
       .from(integrationAccounts)
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.id, id)));
+      .where(and(manageable(organizationId), eq(integrationAccounts.id, id)));
     return row ?? null;
   },
 

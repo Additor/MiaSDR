@@ -15,9 +15,8 @@ import { FOLLOW_UP_RUN_STATUSES, FLOW_STATUSES, STEP_RUN_STATUSES, type RunStatu
  * pointers on the flow (the "one draft" and "highest published" facts come
  * from the versions table), so no circular foreign keys.
  *
- * A campaign owns at most one flow: its "Follow-ups after a reply" flow (`campaign_id` set). No code path creates a
- * flow without a campaign, though the column allows one. Deleting a campaign deletes its flow with the versions and
- * steps; the RESTRICT keys from runs block that when any run exists.
+ * A campaign owns at most one flow: its "Follow-ups after a reply" flow. Deleting a campaign deletes its flow with the
+ * versions and steps; the RESTRICT keys from runs block that when any run exists.
  */
 
 
@@ -30,7 +29,7 @@ export const followUpFlows = pgTable(
     description: text("description"),
     status: text("status").$type<FlowStatus>().notNull().default("active"),
     /** The campaign this flow belongs to. */
-    campaignId: uuid("campaign_id"),
+    campaignId: uuid("campaign_id").notNull(),
     /** When the Follow-ups after a reply setting last turned on. Only the flow save writes it. The engine's "new reply" cutoff reads it. */
     afterReplyEnabledAt: tstz("after_reply_enabled_at"),
     createdAt: createdAt(),
@@ -38,8 +37,7 @@ export const followUpFlows = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.campaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("cascade"),
-    uniqueIndex("follow_up_flows_org_name_uq").on(t.organizationId, t.name).where(sql`${t.campaignId} is null`),
-    uniqueIndex("follow_up_flows_campaign_uq").on(t.campaignId).where(sql`${t.campaignId} is not null`),
+    uniqueIndex("follow_up_flows_campaign_uq").on(t.campaignId),
     unique("follow_up_flows_id_org_uq").on(t.id, t.organizationId),
     check("follow_up_flows_name_ck", sql`length(btrim(${t.name})) > 0`),
     check("follow_up_flows_status_ck", inList(t.status, FLOW_STATUSES)),

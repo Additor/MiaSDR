@@ -1,4 +1,3 @@
-import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { randomBytes } from "node:crypto";
 import type { LanguageModel, LanguageModelResolver } from "@/contexts/ai/application/ports";
 import { generateStructured } from "@/contexts/ai/application/structured";
@@ -14,12 +13,6 @@ export interface GridAnswerer {
   answer(input: AnswerInput): Promise<{ output: AnswerOutput; usage?: Record<string, number> }>;
 }
 
-export interface GridAnswererResolver {
-  forOrganization(organizationId: string): Promise<GridAnswerer | null>;
-  /** Whether AI is on and why not, for the message a null answerer turns into. */
-  status(organizationId: string): Promise<AiStatus>;
-}
-
 export function createGridAnswerer(model: LanguageModel): GridAnswerer {
   return {
     provider: model.provider,
@@ -28,7 +21,7 @@ export function createGridAnswerer(model: LanguageModel): GridAnswerer {
       const prompt = buildAnswerPrompt(input, randomBytes(6).toString("hex"));
       const { output, usage } = await generateStructured(model, {
         task: "grid.answer",
-        system: [{ text: prompt.system, cacheable: true }],
+        system: [{ text: prompt.system }],
         messages: [{ role: "user", content: prompt.user }],
         schema: { name: "row_fields", json: answerJsonSchema(input.outputs), parse: answerSchema(input.outputs) },
         shapeError: "The model answered with fields that were not requested.",
@@ -41,13 +34,13 @@ export function createGridAnswerer(model: LanguageModel): GridAnswerer {
 const globalForGridAi = globalThis as unknown as { __miasdrFakeGridAi?: FakeGridAi };
 
 /** AI_PROVIDER=fake answers with fixed samples; otherwise the organization's configured language model. */
-export function createGridAnswererResolver(models: LanguageModelResolver = languageModels): GridAnswererResolver {
+export function createGridAnswererResolver(models: LanguageModelResolver = languageModels) {
   return {
-    async forOrganization(organizationId) {
+    async forOrganization(organizationId: string): Promise<GridAnswerer | null> {
       if (aiFakeMode()) return (globalForGridAi.__miasdrFakeGridAi ??= new FakeGridAi());
       const model = await models.forOrganization(organizationId);
       return model ? createGridAnswerer(model) : null;
     },
-    status: (organizationId) => models.status(organizationId),
+    status: (organizationId: string) => models.status(organizationId),
   };
 }

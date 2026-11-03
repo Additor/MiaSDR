@@ -1,5 +1,5 @@
 import { and, count, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
-import { db, inTransaction, type DbHandle } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaignSenders, campaigns, channelSettings, linkedinAccounts, mailboxes } from "@/platform/db/schema";
 import { readAgentSendGate } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
 import { isOutboundPaused } from "@/shared/outbound-pause";
@@ -23,7 +23,7 @@ async function lockCampaign(tx: DbHandle, organizationId: string, campaignId: st
  * organization's `agent-enroll` lock exclusive, so two agent enrolls count the daily limit one after the other.
  */
 export const drizzleAgentCampaignStore: AgentCampaignStore = {
-  transaction: (fn, within) => inTransaction(within, fn),
+  transaction: (fn) => db.transaction(fn),
 
   snapshot(organizationId, campaignId, fn) {
     // One snapshot for the token and the checks a preview reports, so both describe the same moment.

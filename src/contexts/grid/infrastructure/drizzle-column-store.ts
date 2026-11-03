@@ -130,7 +130,7 @@ export const drizzleColumnStore: ColumnStore = {
       for (const update of decision.configUpdates) {
         await tx
           .update(gridColumns)
-          .set({ config: update.config, ...(update.dependsOn ? { dependsOn: update.dependsOn } : {}), updatedAt: new Date() })
+          .set({ config: update.config, updatedAt: new Date() })
           .where(and(eq(gridColumns.organizationId, organizationId), eq(gridColumns.id, update.id)));
       }
       await tx

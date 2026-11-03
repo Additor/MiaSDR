@@ -432,14 +432,16 @@ CREATE TABLE "integration_accounts" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "integration_accounts_org_key_uq" UNIQUE("organization_id","key"),
+	CONSTRAINT "integration_accounts_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "integration_accounts_kind_ck" CHECK ("integration_accounts"."kind" in ('enrichment', 'platform', 'ai'))
 );
 --> statement-breakpoint
 CREATE TABLE "integration_credentials" (
 	"account_id" uuid PRIMARY KEY NOT NULL,
 	"encrypted_payload" text NOT NULL,
-	"encryption_version" text DEFAULT 'v1' NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"encryption_version" text DEFAULT 'v2' NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "integration_credentials_envelope_ck" CHECK ("integration_credentials"."encrypted_payload" like "integration_credentials"."encryption_version" || ':%')
 );
 --> statement-breakpoint
 CREATE TABLE "campaign_enrollments" (
@@ -796,7 +798,7 @@ CREATE TABLE "drafts" (
 	"ai_body_text" text,
 	"edited_body_text" text,
 	"cc" text[] DEFAULT '{}'::text[] NOT NULL,
-	"status" text DEFAULT 'generating' NOT NULL,
+	"status" text DEFAULT 'awaiting_review' NOT NULL,
 	"provider" text,
 	"model" text,
 	"request" jsonb,
@@ -807,7 +809,7 @@ CREATE TABLE "drafts" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "drafts_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "drafts_context_version_ck" CHECK ("drafts"."expected_context_version" >= 0),
-	CONSTRAINT "drafts_status_ck" CHECK ("drafts"."status" in ('generating', 'awaiting_review', 'sending', 'sent', 'discarded', 'stale', 'failed', 'delivery_uncertain')),
+	CONSTRAINT "drafts_status_ck" CHECK ("drafts"."status" in ('awaiting_review', 'sending', 'sent', 'discarded', 'stale', 'failed', 'delivery_uncertain')),
 	CONSTRAINT "drafts_channel_ck" CHECK ("drafts"."channel" in ('email', 'linkedin', 'whatsapp')),
 	CONSTRAINT "drafts_revision_ck" CHECK ("drafts"."revision" >= 1),
 	CONSTRAINT "drafts_cc_email_only_ck" CHECK ("drafts"."channel" = 'email' or cardinality("drafts"."cc") = 0),
@@ -1192,7 +1194,7 @@ CREATE TABLE "follow_up_flows" (
 	"name" text NOT NULL,
 	"description" text,
 	"status" text DEFAULT 'active' NOT NULL,
-	"campaign_id" uuid,
+	"campaign_id" uuid NOT NULL,
 	"after_reply_enabled_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -1275,16 +1277,6 @@ CREATE TABLE "grid_jobs" (
 	CONSTRAINT "grid_jobs_lock_ck" CHECK ("grid_jobs"."status" <> 'running' or "grid_jobs"."locked_at" is not null)
 );
 --> statement-breakpoint
-CREATE TABLE "grid_provider_credentials" (
-	"provider_id" uuid PRIMARY KEY NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"encrypted_payload" text NOT NULL,
-	"encryption_version" text DEFAULT 'v1' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "grid_provider_credentials_envelope_ck" CHECK ("grid_provider_credentials"."encrypted_payload" like "grid_provider_credentials"."encryption_version" || ':%')
-);
---> statement-breakpoint
 CREATE TABLE "grid_providers" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -1295,6 +1287,7 @@ CREATE TABLE "grid_providers" (
 	"rate_limit_per_min" integer,
 	"config" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"enabled" boolean DEFAULT true NOT NULL,
+	"account_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "grid_providers_org_key_uq" UNIQUE("organization_id","key"),
@@ -1568,8 +1561,7 @@ ALTER TABLE "grid_folders" ADD CONSTRAINT "grid_folders_parent_id_organization_i
 ALTER TABLE "grid_jobs" ADD CONSTRAINT "grid_jobs_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grid_jobs" ADD CONSTRAINT "grid_jobs_table_id_organization_id_grid_tables_id_organization_id_fk" FOREIGN KEY ("table_id","organization_id") REFERENCES "public"."grid_tables"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grid_jobs" ADD CONSTRAINT "grid_jobs_row_id_organization_id_grid_rows_id_organization_id_fk" FOREIGN KEY ("row_id","organization_id") REFERENCES "public"."grid_rows"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "grid_provider_credentials" ADD CONSTRAINT "grid_provider_credentials_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "grid_provider_credentials" ADD CONSTRAINT "grid_provider_credentials_provider_id_organization_id_grid_providers_id_organization_id_fk" FOREIGN KEY ("provider_id","organization_id") REFERENCES "public"."grid_providers"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "grid_providers" ADD CONSTRAINT "grid_providers_account_id_organization_id_integration_accounts_id_organization_id_fk" FOREIGN KEY ("account_id","organization_id") REFERENCES "public"."integration_accounts"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grid_providers" ADD CONSTRAINT "grid_providers_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grid_rows" ADD CONSTRAINT "grid_rows_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grid_rows" ADD CONSTRAINT "grid_rows_table_id_organization_id_grid_tables_id_organization_id_fk" FOREIGN KEY ("table_id","organization_id") REFERENCES "public"."grid_tables"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1679,8 +1671,7 @@ CREATE UNIQUE INDEX "follow_up_step_runs_draft_uq" ON "follow_up_step_runs" USIN
 CREATE INDEX "follow_up_step_runs_due_idx" ON "follow_up_step_runs" USING btree ("status","due_at");--> statement-breakpoint
 CREATE INDEX "follow_up_step_runs_sent_message_idx" ON "follow_up_step_runs" USING btree ("sent_message_id") WHERE "follow_up_step_runs"."sent_message_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "follow_up_versions_one_draft_uq" ON "follow_up_versions" USING btree ("flow_id") WHERE "follow_up_versions"."status" = 'draft';--> statement-breakpoint
-CREATE UNIQUE INDEX "follow_up_flows_org_name_uq" ON "follow_up_flows" USING btree ("organization_id","name") WHERE "follow_up_flows"."campaign_id" is null;--> statement-breakpoint
-CREATE UNIQUE INDEX "follow_up_flows_campaign_uq" ON "follow_up_flows" USING btree ("campaign_id") WHERE "follow_up_flows"."campaign_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "follow_up_flows_campaign_uq" ON "follow_up_flows" USING btree ("campaign_id");--> statement-breakpoint
 CREATE INDEX "follow_up_flows_org_status_idx" ON "follow_up_flows" USING btree ("organization_id","status","name");--> statement-breakpoint
 CREATE INDEX "grid_cell_runs_cell_idx" ON "grid_cell_runs" USING btree ("row_id","column_key");--> statement-breakpoint
 CREATE INDEX "grid_cell_runs_table_created_idx" ON "grid_cell_runs" USING btree ("table_id","created_at");--> statement-breakpoint

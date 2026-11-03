@@ -421,32 +421,6 @@ describeDb("inbox filters, views and search", () => {
       expect(byMailbox.total).toBe(2);
       expect((await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { dateMode: "custom", dateFrom: "2020-01-01", dateTo: "2020-01-02" })).total).toBe(0);
     });
-
-    it("keeps the steps of a flow with no campaign listed while its run is active", async () => {
-      const f = await fixture();
-      // A flow with no campaign is archived. Its runs in flight keep going, so their steps stay scheduled.
-      const [seq] = await sql`insert into follow_up_flows (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
-      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
-      const [step] = await sql`
-        insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
-        values (${f.org}, ${ver.id}, 2, 'follow_up', 'Legacy check in', 60, 'Say hi') returning id`;
-      await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${ver.id}`;
-      const t = await inboundThread(f, { email: "legacy@acme.test", name: "Legacy Lou" });
-      await classify(t.threadId, "demo_request");
-      const [rec] = await sql`select r.id, r.reply_type_id from conversations r join threads c on c.conversation_id = r.id where c.id = ${t.threadId}`;
-      const [msg] = await sql`select id from messages where thread_id = ${t.threadId} limit 1`;
-      const [run] = await sql`
-        insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${rec.id}, ${t.threadId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
-      const [sr] = await sql`
-        insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version)
-        values (${f.org}, ${run.id}, ${step.id}, 'scheduled', ${new Date(Date.now() + 2 * HOUR)}, 1) returning id`;
-
-      const result = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
-      expect(result.rows.map((r) => r.id)).toEqual([sr.id]);
-      expect(result.rows[0]).toMatchObject({ kind: "sequence", sourceName: "Legacy nurture", stepLabel: "Legacy check in" });
-      expect(result.total).toBe(1);
-    });
   });
 });
 

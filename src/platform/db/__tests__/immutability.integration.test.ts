@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
+import { describeDb, dropOrgs, insertFollowUpFlow, testSql } from "../../../test-support/db";
 import { seedWorld, uid, type World } from "../../../test-support/full-world";
 
 /**
@@ -41,13 +41,13 @@ describeDb("immutable identity and versions", () => {
 
   /** A sequence with a published version 1 that holds one step. Returns the ids. */
   async function flowWithPublished(w: World) {
-    const [seq] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"s-" + uid()}) returning id`;
-    const [version] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${seq.id}, 1, 'draft') returning id`;
+    const seq = await insertFollowUpFlow(sql, w.org, "s-" + uid());
+    const [version] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${seq}, 1, 'draft') returning id`;
     const [step] = await sql`
       insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${w.org}, ${version.id}, 1, 'reply', 'Reply', 0, 'Answer the question.') returning id`;
     await sql`update follow_up_versions set status = 'published', published_at = now(), updated_at = now() where id = ${version.id}`;
-    return { sequence: seq.id as string, version: version.id as string, step: step.id as string };
+    return { sequence: seq, version: version.id as string, step: step.id as string };
   }
 
   describe("threads_identity_trg", () => {
@@ -131,8 +131,8 @@ describeDb("immutable identity and versions", () => {
       const s = await flowWithPublished(w);
       const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
       await expect(sql`update follow_up_versions set version = 7 where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
-      const [other] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"o-" + uid()}) returning id`;
-      await expect(sql`update follow_up_versions set flow_id = ${other.id} where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
+      const other = await insertFollowUpFlow(sql, w.org, "o-" + uid());
+      await expect(sql`update follow_up_versions set flow_id = ${other} where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
     });
 
     it("raises when a published version changes status or published_at", async () => {

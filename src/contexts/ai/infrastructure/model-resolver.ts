@@ -6,7 +6,7 @@ import { buildLanguageModel } from "./model-factory";
  * The organization's running AI connection with its key, decrypted for this call only, and the model it runs. No key,
  * or a gateway connection with no model picked yet, means null: AI is not configured.
  */
-export function createModelResolver(options: { fetch?: typeof fetch } = {}): LanguageModelResolver {
+export function createModelResolver(): LanguageModelResolver {
   return {
     async forOrganization(organizationId): Promise<LanguageModel | null> {
       const running = await runningAiConnection(organizationId);
@@ -16,7 +16,7 @@ export function createModelResolver(options: { fetch?: typeof fetch } = {}): Lan
         console.error(`The stored ${running.spec.label} credential could not be read. Save the key again in Settings, Integrations.`);
         return null;
       }
-      return buildLanguageModel(running.spec, { apiKey, model: running.model }, { fetch: options.fetch });
+      return buildLanguageModel(running.spec, { apiKey, model: running.model });
     },
 
     status: aiStatus,

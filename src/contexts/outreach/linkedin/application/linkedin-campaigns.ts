@@ -38,7 +38,7 @@ export interface LinkedInEnrollResult {
   skippedStopRequest: number;
   /** Contacts are not enrolled in campaigns. */
   skippedContact: number;
-  /** People this call enrolled. Present only when the caller passed `collectIds`. */
+  /** People this call enrolled. Absent on a dry run. */
   addedPersonIds?: string[];
   /** Dry run only: people the same call would enroll, up to the limit. */
   wouldAdd?: number;
@@ -120,10 +120,9 @@ export interface LinkedInCampaignStore {
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** People with a LinkedIn profile become enrollments with their LinkedIn progress row, in one transaction. */
-  /** `collectIds` asks for `addedPersonIds` in the result. */
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
   /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<LinkedInEnrollResult>;
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<LinkedInEnrollResult>;
   countConnectedAccounts(organizationId: string, tx?: DbHandle): Promise<number>;
   /** `total` counts the rows of the active tab and search. `counts` and `sent` cover the whole campaign. */
   listEnrollments(organizationId: string, id: string, query: EnrollmentListQuery): Promise<{ rows: LinkedInEnrollmentRow[]; total: number; counts: TabCounts; sent: number }>;
@@ -181,7 +180,7 @@ export const unarchiveLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Act
 
 export const deleteLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> => deleteOn(lifecycle(deps), "linkedin", actor, id);
 
-export function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<LinkedInEnrollResult> {
+export function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<LinkedInEnrollResult> {
   return enrollOn(lifecycle(deps).campaigns, actor, id, input, options, tx);
 }
 

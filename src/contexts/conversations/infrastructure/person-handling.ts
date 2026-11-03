@@ -5,7 +5,7 @@ import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { OPEN_STEPS, RETIRABLE_DRAFTS, type Tx } from "../after-reply/infrastructure/follow-up-stop";
 import { threads, events, conversations } from "@/platform/db/schema";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
-import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
+import type { PersonChannel, PersonEventInput, PersonEventView, PersonRunStop } from "../application/person-ports";
 import { rowsOf, uuidList } from "@/platform/db/sql-values";
 
 /**
@@ -70,6 +70,7 @@ export async function appendPersonEvent(tx: DbHandle, input: PersonEventInput): 
   });
 }
 
+/** The conversation of the person's active channel, else the most recently updated one. Null when the person has none. */
 export async function activeThreadOfPerson(organizationId: string, personId: string): Promise<{ threadId: string; channel: PersonChannel } | null> {
   const [row] = await db
     .select({ id: threads.id, channel: threads.channel })
@@ -81,6 +82,7 @@ export async function activeThreadOfPerson(organizationId: string, personId: str
   return row ? { threadId: row.id, channel: row.channel as PersonChannel } : null;
 }
 
+/** Newest first. */
 export async function listPersonEvents(organizationId: string, personId: string, limit: number): Promise<PersonEventView[]> {
   const rows = await db
     .select({
@@ -222,4 +224,4 @@ export async function peopleWithHistory(tx: DbHandle, organizationId: string, pe
   return new Set(rows.map((row) => row.person_id));
 }
 
-export const personReplyHandling: PersonReplyHandling ={ lockPersonConversations, lockPersonConversationRows, previewPersonRunStop, appendPersonEvent, activeThreadOfPerson, listPersonEvents };
+export const personReplyHandling = { lockPersonConversations, lockPersonConversationRows, previewPersonRunStop, appendPersonEvent, activeThreadOfPerson, listPersonEvents };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { credentialKeyId, decryptCredential, encryptCredential, encryptCredentialV1, envelopeVersion, parseLegacyKeys } from "../credential-crypto";
+import { credentialKeyId, decryptCredential, encryptCredential, envelopeVersion, parseLegacyKeys } from "../credential-crypto";
 
 const key = "k".repeat(40);
 const oldKey = "o".repeat(40);
@@ -14,16 +14,14 @@ const FIXED = {
   legacyKey: "fixed-vector-legacy-key-0123456789abcd",
   v2: "v2:8f35df7f:GXhIX14ReocRVgOO:UWjTH3rqrUoiiDVno4wkSQ:VMZTUWZIwbz2_HOvl2r8gqhrF2zJm-be",
   v2Legacy: "v2:a24a3cf7:ZH0wD6ui6GRN9Zj6:wo_JT0akqnHsEYYisIJNsQ:ExstTdCzRaxGxl3T5j0YO_UreW8UHbfyiDDJX9aEaQ",
-  v1Legacy: "v1:NR7th5VJMPJ68QuU:2nvIRDZNWmNyLW3O-Cx7jA:HMQ7akkxAj_bOSQ-af5bNe5l9YFMJpb8",
 };
 
 describe("credential envelope", () => {
-  it("opens stored v1 and v2 envelopes", () => {
+  it("opens stored envelopes", () => {
     expect(credentialKeyId(FIXED.key)).toBe("8f35df7f");
     expect(credentialKeyId(FIXED.legacyKey)).toBe("a24a3cf7");
     expect(decryptCredential(FIXED.v2, FIXED.key)).toBe('{"apiKey":"sk-fixed-v2"}');
     expect(decryptCredential(FIXED.v2Legacy, FIXED.key, [FIXED.legacyKey])).toBe('{"apiKey":"sk-fixed-v2-legacy"}');
-    expect(decryptCredential(FIXED.v1Legacy, FIXED.key, [FIXED.legacyKey])).toBe('{"apiKey":"sk-fixed-v1"}');
   });
   it("round-trips and uses the v2 layout with the key id", () => {
     const envelope = encryptCredential('{"apiKey":"sk-secret"}', key);
@@ -39,15 +37,6 @@ describe("credential envelope", () => {
   });
   it("uses a fresh iv each time", () => {
     expect(encryptCredential("a", key)).not.toBe(encryptCredential("a", key));
-  });
-  it("still decrypts a v1 envelope with the current key", () => {
-    const v1 = encryptCredentialV1("old-data", key);
-    expect(v1.split(":")).toHaveLength(4);
-    expect(envelopeVersion(v1)).toBe("v1");
-    expect(decryptCredential(v1, key)).toBe("old-data");
-  });
-  it("decrypts a v1 envelope written under a legacy key", () => {
-    expect(decryptCredential(encryptCredentialV1("old-data", oldKey), key, [oldKey])).toBe("old-data");
   });
   it("decrypts a v2 envelope written under a legacy key and ignores list order", () => {
     const envelope = encryptCredential("legacy-data", oldKey);
@@ -65,9 +54,6 @@ describe("credential envelope", () => {
     expect(message).not.toContain(oldKey);
     expect(message).not.toContain(key);
   });
-  it("rejects a v1 envelope no known key opens", () => {
-    expect(() => decryptCredential(encryptCredentialV1("x", oldKey), key, ["z".repeat(40)])).toThrow();
-  });
   it("rejects tampering in tag and body, a swapped key id and unknown versions", () => {
     const envelope = encryptCredential("secret", key);
     const parts = envelope.split(":");
@@ -82,14 +68,15 @@ describe("credential envelope", () => {
     expect(() => decryptCredential(swapped.join(":"), key, [oldKey])).toThrow();
     expect(() => decryptCredential(envelope.replace("v2:", "v9:"), key)).toThrow(/Unsupported/);
     expect(() => decryptCredential("garbage", key)).toThrow(/Unsupported/);
+    expect(() => decryptCredential("v1:NR7th5VJMPJ68QuU:2nvIRDZNWmNyLW3O-Cx7jA:HMQ7akkxAj_bOSQ-af5bNe5l9YFMJpb8", key)).toThrow(/Unsupported/);
     expect(() => decryptCredential(`${envelope}:extra`, key)).toThrow(/Unsupported/);
   });
   it("rejects a wrong key", () => {
-    expect(() => decryptCredential(encryptCredentialV1("s", key), "z".repeat(40))).toThrow();
+    expect(() => decryptCredential(encryptCredential("s", key), "z".repeat(40))).toThrow();
   });
   it("refuses a key shorter than 32 characters", () => {
     expect(() => encryptCredential("a", "short")).toThrow(/32/);
-    expect(() => decryptCredential(encryptCredentialV1("a", key), "short")).toThrow(/32/);
+    expect(() => decryptCredential(`v2:${credentialKeyId("short")}:a:b:c`, "short")).toThrow(/32/);
   });
   it("parses the legacy key list", () => {
     expect(parseLegacyKeys(undefined)).toEqual([]);

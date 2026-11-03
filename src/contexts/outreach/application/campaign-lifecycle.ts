@@ -38,7 +38,7 @@ export interface CampaignLifecycleStore<Step, Row extends CampaignRow<Step> = Ca
   /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
   delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<Enrolled>;
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<Enrolled>;
 }
 
 export interface CampaignLifecycleDeps<Step, Row extends CampaignRow<Step> = CampaignRow<Step>, Enrolled = unknown> {
@@ -202,7 +202,7 @@ export async function enrollOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   campaigns: CampaignLifecycleStore<Step, Row, Enrolled>,
   actor: Actor,
   id: string,
-  input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean },
+  input: { query?: string; limit?: number; dryRun?: boolean },
   options: EnrollOptions = {},
   tx?: DbHandle,
 ): Promise<Enrolled> {
@@ -210,7 +210,7 @@ export async function enrollOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? MAX_ENROLL_BATCH)), MAX_ENROLL_BATCH);
   return enrollUnder(campaigns, async (t) => (await loadCampaign(campaigns, actor, id, t)).status, options, tx, (t) =>
-    campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, collectIds: input.collectIds, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
+    campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
   );
 }
 

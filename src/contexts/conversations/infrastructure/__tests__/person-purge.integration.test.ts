@@ -2,7 +2,7 @@ import { sql as dsql } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
-import { describeDb, dropOrgs, TEST_DATABASE_URL, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
+import { describeDb, dropOrgs, insertFollowUpFlow, TEST_DATABASE_URL, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 
 /**
  * The conversations side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md): the delete locks,
@@ -91,7 +91,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const attempt = await one(sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa-${t}`}, ${o.actors.member.userId}, 'prepared') returning id`);
     await sql`update send_attempts set status = 'sent' where id = ${attempt}`;
-    const sequence = await one(sql`insert into follow_up_flows (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
+    const sequence = await insertFollowUpFlow(sql, o.org, `Seq ${t}`);
     const version = await one(sql`insert into follow_up_versions (organization_id, flow_id, version) values (${o.org}, ${sequence}, 1) returning id`);
     const step = await one(sql`
       insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)

@@ -42,17 +42,15 @@ export function watchedDraftStatus(
   return drafts.find((d) => d.threadId === threadId && d.expectedContextVersion === contextVersion && d.status !== "discarded" && d.status !== "stale")?.status ?? null;
 }
 
-const draftComing = (snapshot: WatchSnapshot) => snapshot.drafting || snapshot.draftStatus === "generating";
-
-/** A draft job or a draft already generating when the page opens starts a watch; otherwise the page waits for a version bump. */
+/** A draft job waiting when the page opens starts a watch; otherwise the page waits for a version bump. */
 export function initialWatch(snapshot: WatchSnapshot, now: number): WatchState {
-  return { version: snapshot.contextVersion, startedAt: draftComing(snapshot) ? now : null };
+  return { version: snapshot.contextVersion, startedAt: snapshot.drafting ? now : null };
 }
 
 /** Called whenever fresh server data arrives. A higher context version means someone reclassified the thread. */
 export function observe(state: WatchState, snapshot: WatchSnapshot, now: number): WatchState {
   if (snapshot.contextVersion > state.version) return { version: snapshot.contextVersion, startedAt: now };
-  if (draftComing(snapshot) && state.startedAt === null) return { ...state, startedAt: now };
+  if (snapshot.drafting && state.startedAt === null) return { ...state, startedAt: now };
   return state;
 }
 
@@ -61,5 +59,5 @@ export function isWatching(state: WatchState, snapshot: WatchSnapshot, now: numb
   if (now - state.startedAt >= DRAFT_WATCH_MS) return false;
   if (snapshot.draftStatus !== null && SETTLED_DRAFTS.has(snapshot.draftStatus)) return false;
   if (NO_DRAFT_STATES.has(snapshot.workflowState)) return false;
-  return draftComing(snapshot);
+  return snapshot.drafting;
 }

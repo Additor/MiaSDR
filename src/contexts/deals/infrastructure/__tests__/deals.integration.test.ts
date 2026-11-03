@@ -66,7 +66,7 @@ describeDb("deals context", () => {
       const lead = await repliedLeadWithRun(f);
       const before = await snapshot(f, lead.personId);
       expect(before.runs.map((r) => r.status)).toEqual(["active"]);
-      const retirable = before.drafts.filter((d) => ["generating", "awaiting_review", "failed"].includes(d.status as string)).length;
+      const retirable = before.drafts.filter((d) => ["awaiting_review", "failed"].includes(d.status as string)).length;
       expect(retirable).toBeGreaterThan(0);
 
       const preview = await leadsApp.previewConvert(composition.convertPreviewDeps(), f.owner, [lead.personId]);

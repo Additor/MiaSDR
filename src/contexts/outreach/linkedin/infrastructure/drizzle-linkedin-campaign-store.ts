@@ -213,7 +213,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
       const { addedPersonIds, skippedContact } = await insertEnrollments(tx, organizationId, id, eligible, filter.viaTokenId ?? null);
       const added = addedPersonIds.length;
       return {
-        ...(filter.collectIds ? { addedPersonIds } : {}),
+        addedPersonIds,
         requested: skipped.matched,
         skippedMissingIdentity: skipped.noProfile,
         skippedDuplicate: skipped.already,

@@ -142,7 +142,7 @@ export interface InterruptFacts {
   suppression: "unsubscribed" | "bounced" | "manual" | null;
   /** The person is a contact (`people.lifecycle`). A contact starts no follow-up run, and a run that survives a conversion ends here. */
   contact: boolean;
-  /** The run's flow may keep running: a campaign-owned flow that is still active, or a flow with no campaign. False once its campaign switches Follow-ups after a reply off. */
+  /** The run's flow may keep running. False once its campaign switches Follow-ups after a reply off. */
   flowActive: boolean;
 }
 

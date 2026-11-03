@@ -91,14 +91,14 @@ Provider keys are saved per provider in the app (encrypted with `INTEGRATION_CRE
 
 ## Rotating the credential key
 
-`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: AI provider keys (Anthropic, Vercel AI Gateway, OpenRouter), Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all. Older `v1:` envelopes (no key id) still decrypt.
+`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: AI provider keys (Anthropic, Vercel AI Gateway, OpenRouter), Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all.
 
 Rotate when the key leaked or on your own schedule. Nothing needs re-entering and the app stays up.
 
 1. Make the new key: `openssl rand -hex 32`. Keep a copy outside the server.
 2. In `.env`, move the current value into `INTEGRATION_CREDENTIALS_LEGACY_KEYS` (comma separated when you keep several) and put the new key in `INTEGRATION_CREDENTIALS_KEY`. Each key needs 32 characters or more.
 3. Deploy: `docker compose up -d`. New saves use the new key. Rows still on the old key keep working because the old key is on the legacy list.
-4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints, per table (`integration_credentials`, `grid_provider_credentials`), how many rows are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
+4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints how many rows of `integration_credentials` are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
 5. Apply: `docker compose exec app node scripts/rotate-credentials.mjs --apply`. Each row is decrypted with whichever known key fits, re-encrypted with the current key, checked, and written in its own transaction. Rows already on the current key are skipped, so you can run it again. Outside Docker the same run is `pnpm credentials:rotate` and `pnpm credentials:rotate --apply`.
 6. Run the dry run again. Every row should show as already on the current key and 0 undecryptable.
 7. Remove the old key from `INTEGRATION_CREDENTIALS_LEGACY_KEYS` and deploy again.

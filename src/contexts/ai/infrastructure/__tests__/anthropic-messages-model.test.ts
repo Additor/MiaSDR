@@ -4,7 +4,7 @@ import { AnthropicMessagesModel } from "../anthropic-messages-model";
 
 const request: GenerateRequest = {
   task: "reply.classify",
-  system: [{ text: "STABLE RULES", cacheable: true }, { text: "volatile" }],
+  system: [{ text: "STABLE RULES" }],
   messages: [{ role: "user", content: "SECRET-BODY please book a demo" }],
   output: { name: "classification", schema: { type: "object", properties: { k: { type: "string" } }, required: ["k"], additionalProperties: false } },
   maxTokens: 4000,
@@ -40,7 +40,7 @@ describe("AnthropicMessagesModel", () => {
     expect(body.max_tokens).toBe(4000);
     expect(body.tool_choice).toBeUndefined();
     expect(body.output_config.format).toEqual({ type: "json_schema", schema: request.output.schema });
-    expect(body.system).toEqual([{ type: "text", text: "STABLE RULES", cache_control: { type: "ephemeral" } }, { type: "text", text: "volatile" }]);
+    expect(body.system).toEqual([{ type: "text", text: "STABLE RULES", cache_control: { type: "ephemeral" } }]);
     expect(body.messages[0].content).toContain("SECRET-BODY");
   });
 

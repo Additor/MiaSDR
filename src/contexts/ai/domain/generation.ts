@@ -3,10 +3,9 @@ import type { AiTaskKey } from "./ai-tasks";
 /** A JSON Schema object as the providers accept it: closed objects, no range or length keywords. */
 export type JsonSchema = Record<string, unknown>;
 
-/** One part of the system prompt. `cacheable` marks text that stays the same across requests, so a provider that caches prompts may cache up to it. */
+/** One part of the system prompt: text that stays the same across requests, so a provider that caches prompts may cache up to it. */
 export interface PromptSegment {
   text: string;
-  cacheable?: boolean;
 }
 
 /** Every task asks for JSON that fits a named schema. */

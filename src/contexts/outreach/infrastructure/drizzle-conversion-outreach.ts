@@ -13,11 +13,11 @@ function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
 }
 
 /** Callee-owned reads of the conversion. `haltEnrollmentsTx` (`./enrollment-end`) ends the enrollments. */
-export async function liveEnrollmentCounts(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, number>> {
+export async function liveEnrollmentCounts(organizationId: string, personIds: string[]): Promise<Map<string, number>> {
   const ids = [...new Set(personIds)];
   const out = new Map<string, number>(ids.map((id) => [id, 0]));
   for (const part of chunked(ids)) {
-    const rows = await (tx ?? db)
+    const rows = await db
       .select({ personId: campaignEnrollments.personId })
       .from(campaignEnrollments)
       .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, part), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])));
@@ -39,10 +39,10 @@ export async function latestRepliedEnrollment(organizationId: string, personIds:
   return out;
 }
 
-export async function enrollmentSources(organizationId: string, enrollmentIds: string[], tx?: DbHandle): Promise<Map<string, EnrollmentSource>> {
+export async function enrollmentSources(organizationId: string, enrollmentIds: string[]): Promise<Map<string, EnrollmentSource>> {
   const out = new Map<string, EnrollmentSource>();
   for (const part of chunked([...new Set(enrollmentIds)])) {
-    const rows = await (tx ?? db)
+    const rows = await db
       .select({ enrollmentId: campaignEnrollments.id, campaignId: campaigns.id, name: campaigns.name })
       .from(campaignEnrollments)
       .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))

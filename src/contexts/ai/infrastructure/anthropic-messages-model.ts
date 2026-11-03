@@ -51,7 +51,7 @@ export class AnthropicMessagesModel implements LanguageModel {
       message = await this.client.messages.create({
         model: this.model,
         max_tokens: request.maxTokens,
-        system: request.system.map((segment) => ({ type: "text" as const, text: segment.text, ...(segment.cacheable ? { cache_control: { type: "ephemeral" as const } } : {}) })),
+        system: request.system.map((segment) => ({ type: "text" as const, text: segment.text, cache_control: { type: "ephemeral" as const } })),
         messages: request.messages,
         output_config: { format: { type: "json_schema", schema: request.output.schema } },
       });

@@ -65,12 +65,12 @@ describeDb("grid provider key verification", () => {
     const t = await org();
     const created = await m.providers.createProvider(deps(verifier({ ok: true })), t.actor, { adapter: "hunter", credentials: { apiKey: KEY } });
     expect(created.hasCredential).toBe(true);
-    const [before] = await sql`select encrypted_payload from grid_provider_credentials where provider_id = ${created.id}`;
+    const [before] = await sql`select c.encrypted_payload from integration_credentials c join grid_providers p on p.account_id = c.account_id where p.id = ${created.id}`;
     await expect(m.providers.updateProvider(deps(verifier({ ok: false, reason: "unreachable" })), t.actor, created.id, { credentials: { apiKey: "typo" } })).rejects.toThrow("Hunter could not be reached. Check your connection and try again.");
-    const [after] = await sql`select encrypted_payload from grid_provider_credentials where provider_id = ${created.id}`;
+    const [after] = await sql`select c.encrypted_payload from integration_credentials c join grid_providers p on p.account_id = c.account_id where p.id = ${created.id}`;
     expect(after.encrypted_payload).toBe(before.encrypted_payload);
     await m.providers.updateProvider(deps(verifier({ ok: true })), t.actor, created.id, { credentials: { apiKey: "good-two" } });
-    const [rotated] = await sql`select encrypted_payload from grid_provider_credentials where provider_id = ${created.id}`;
+    const [rotated] = await sql`select c.encrypted_payload from integration_credentials c join grid_providers p on p.account_id = c.account_id where p.id = ${created.id}`;
     expect(rotated.encrypted_payload).not.toBe(before.encrypted_payload);
   });
 

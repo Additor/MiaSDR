@@ -145,7 +145,7 @@ export interface ColumnUpdate {
 export interface ColumnDeletePlan {
   deleteIds: string[];
   /** Config rewrites for columns that listed a deleted column as an output. */
-  configUpdates: Array<{ id: string; config: Record<string, unknown>; dependsOn?: string[] }>;
+  configUpdates: Array<{ id: string; config: Record<string, unknown> }>;
   view: TableView;
 }
 
