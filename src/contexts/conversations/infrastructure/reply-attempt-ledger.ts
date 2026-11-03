@@ -111,6 +111,7 @@ export async function settleAttemptSentTx(tx: DbTx, attemptId: string, sent: { p
     .set({
       // A reply that arrived while this one was going out keeps the record waiting for a person.
       workflowState: sql`case when ${records.contextVersion} = ${snap.expectedContextVersion} then 'waiting' else ${records.workflowState} end`,
+      closedReason: sql`case when ${records.contextVersion} = ${snap.expectedContextVersion} then null else ${records.closedReason} end`,
       lastOutboundAt: at,
       lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})`,
     })

@@ -532,6 +532,15 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.reopenRecord(deps, f.actor, l.recordId)).rejects.toThrow(ConflictError);
     });
 
+    it("forgets why a record closed when a new reply reopens it", async () => {
+      const l = await lead(f);
+      await replies.closeRecord(deps, f.actor, l.recordId, { reason: "Went with a competitor" });
+      const [conv] = await sql`select provider_thread_id from conversations where id = ${l.conversationId}`;
+      await composition.ingestInbound(mail(f, { providerThreadId: conv.provider_thread_id, from: { email: "x@acme.test", name: null } }));
+      const reopened = await rec(l.recordId);
+      expect(reopened).toMatchObject({ workflow_state: "action_required", closed_reason: null });
+    });
+
     it("adds a note, rejects a blank one, and deletes a note once", async () => {
       const l = await lead(f);
       const note = await replies.addRecordNote(deps, f.actor, l.recordId, { body: "  First  " });

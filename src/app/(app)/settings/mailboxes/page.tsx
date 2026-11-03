@@ -6,7 +6,7 @@ import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getEmailRules } from "@/contexts/outreach/email/application/email-rules";
 import { listMailboxes } from "@/contexts/outreach/email/application/mailbox-management";
-import { mailboxDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
+import { mailboxDeps, emailRulesDeps, unsubscribeUnreachable } from "@/contexts/outreach/infrastructure/composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { timeZoneOptions } from "../time-zone-options";
@@ -42,6 +42,7 @@ async function Mailboxes() {
       takeoverAfterHours={rules.takeoverAfterHours}
       allowedDomains={policy.allowedDomains}
       signupBlocked={policy.allowedDomains === null && policy.openSignup}
+      unsubscribeUnreachable={unsubscribeUnreachable()}
       zones={zones}
       defaultTimeZone={orgTimeZone}
       rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours }} canEdit={canManage} />}

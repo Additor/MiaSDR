@@ -29,7 +29,7 @@ export interface TypeLineProps {
   types: TypeOption[];
   /** The AI's pick of the latest reply, behind Why. */
   why: { failed: string | null; name: string | null; group: string | null; confidence: number | null; reasoning: string | null } | null;
-  decision: { kind: DecisionKind; pickId: string; proposed: string | null; proposedGroup: string | null; confidence: number | null; holdReason: HoldReason | null } | null;
+  decision: { kind: DecisionKind; pickId: string | null; proposed: string | null; proposedGroup: string | null; confidence: number | null; holdReason: HoldReason | null } | null;
   draftAwaits: boolean;
   closed: boolean;
   stop: StopTarget & { doNotContact: boolean };

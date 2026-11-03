@@ -17,7 +17,7 @@ const item = z.object({
   waitingSince: z.string(),
   lastInbound: z.string().nullable(),
   draft: z.object({ draftId: z.string(), status: z.string(), subject: z.string().nullable() }).nullable(),
-  aiPick: z.object({ replyTypePickId: z.string(), kind: z.string(), name: z.string().nullable(), confidence: z.number().nullable(), contextVersion: z.number() }).nullable(),
+  aiPick: z.object({ replyTypePickId: z.string().nullable(), kind: z.string(), name: z.string().nullable(), confidence: z.number().nullable(), contextVersion: z.number() }).nullable(),
   problem: z.object({ kind: z.string(), message: z.string() }).nullable(),
   appUrl: z.string().nullable(),
 });

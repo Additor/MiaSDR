@@ -4,12 +4,12 @@ import { connectMailbox, mailboxPolicyViolation, parseAllowedDomains, retestMail
 
 const actor: Actor = { userId: "u", organizationId: "o", role: "owner" };
 
-function setup(policy: MailboxDomainPolicy, existing = "ceo@operator.com") {
+function setup(policy: MailboxDomainPolicy, existing = "ceo@operator.com", status = "connected") {
   const setStatus = vi.fn(async () => undefined);
   const insert = vi.fn(async () => "m1");
   const verify = vi.fn(async () => undefined);
   const deps = {
-    mailboxes: { insert, setStatus, get: async () => ({ id: "m1", emailAddress: existing, lastTestedAt: null }) },
+    mailboxes: { insert, setStatus, get: async () => ({ id: "m1", emailAddress: existing, status, lastTestedAt: null }) },
     provider: { verify },
     now: () => new Date("2026-10-15T00:00:00Z"),
     policy,
@@ -60,6 +60,13 @@ describe("mailbox domain policy", () => {
     const t = setup({ allowedDomains: ["other.com"], openSignup: false });
     await retestMailbox(t.deps, actor, "m1");
     expect(t.verify).not.toHaveBeenCalled();
-    expect(t.setStatus).toHaveBeenCalledWith("o", "m1", "failed", expect.stringMatching(/not an allowed mailbox domain/), expect.anything());
+    expect(t.setStatus).toHaveBeenCalledWith("o", "m1", "failed", expect.stringMatching(/not an allowed mailbox domain/), expect.anything(), ["connected", "failed"]);
+  });
+
+  it("Recheck leaves a disabled mailbox disabled and asks nobody", async () => {
+    const t = setup({ allowedDomains: null, openSignup: false }, "ceo@operator.com", "disabled");
+    await expect(retestMailbox(t.deps, actor, "m1")).rejects.toThrow(/Enable it/);
+    expect(t.verify).not.toHaveBeenCalled();
+    expect(t.setStatus).not.toHaveBeenCalled();
   });
 });

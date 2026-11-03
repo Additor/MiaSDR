@@ -2,6 +2,8 @@
 
 This guide takes you from a running instance to a first email campaign. Install the app first with the [README quick start](../../README.md#quick-start). Read [Responsible use](../responsible-use.md) before you send to real people.
 
+To send real email, set `APP_URL` in `.env` to this server's public HTTPS address first. Every email's unsubscribe link uses it, and a campaign refuses to start on a local address.
+
 ## 1. Create your account and organization
 
 Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` shows what is connected and what is missing, and you can return to it at any time.

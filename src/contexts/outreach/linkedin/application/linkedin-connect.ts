@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { LinkedInGatewayError } from "./linkedin-ports";
-import { explain, isLocalOrigin, storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
+import { isLocalOrigin } from "@/shared/local-origin";
+import { explain, storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
 
 /** How long the wizard link stays valid. Unipile expires every link at its daily restart anyway. */
 export const CONNECT_LINK_MINUTES = 15;

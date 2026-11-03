@@ -41,7 +41,7 @@ export interface QueueItemView {
   snippet: string | null;
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
-  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
+  classification: { replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
@@ -271,7 +271,7 @@ export function QueueGroup({
    */
   async function settle(item: QueueItemView): Promise<boolean> {
     const c = item.classification;
-    if (!c || c.kind === "stop_review" || (c.kind === "held" && c.unlocksCustomer)) return false;
+    if (!c || !c.replyTypePickId || c.kind === "stop_review" || (c.kind === "held" && c.unlocksCustomer)) return false;
     const result =
       c.kind === "held"
         ? item.conversationId

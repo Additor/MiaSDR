@@ -1,3 +1,4 @@
+import { isLocalOrigin } from "@/shared/local-origin";
 import { readFileSync } from "node:fs";
 import { env } from "@/shared/env";
 import type { CampaignDeps } from "../application/campaign-management";
@@ -98,7 +99,10 @@ export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionSt
 /** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-up sequences. */
 export const suppressionListDeps = (followUps: FollowUpStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(followUps) });
 
-export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore });
+/** Real mail is on and `APP_URL` is an address recipients cannot open. The demo `fake` provider sends nothing, so it passes. */
+export const unsubscribeUnreachable = (): boolean => env().MAILBOX_PROVIDER === "gmail" && isLocalOrigin(env().APP_URL);
+
+export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore, unreachableUnsubscribe: unsubscribeUnreachable() });
 
 function mailboxDomainPolicy(): MailboxDomainPolicy {
   return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS), openSignup: env().AUTH_SIGNUP === "open" };

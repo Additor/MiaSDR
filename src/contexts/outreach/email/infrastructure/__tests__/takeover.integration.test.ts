@@ -221,7 +221,7 @@ describeDb("follow-up takeover by another mailbox", () => {
   it("the original mailbox coming back wins over a takeover and no one sends twice", async () => {
     const f = await fixture();
     await takeDown(f.mailboxIds[0], 48);
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, current);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, current, ["connected", "failed", "disabled"]);
     const provider = new FakeMailboxProvider();
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[1])).kind).toBe("idle");
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
@@ -257,16 +257,16 @@ describeDb("follow-up takeover by another mailbox", () => {
     expect(before.find((m) => m.id === f.mailboxIds[0])?.waitingLeads).toBe(2);
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(0);
 
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "disabled", null, null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "disabled", null, null, ["connected", "failed", "disabled"]);
     const [first] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(first.unavailable_since).not.toBeNull();
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "failed", "boom", null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "failed", "boom", null, ["connected", "failed", "disabled"]);
     const [second] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(second.unavailable_since).toEqual(first.unavailable_since); // the clock keeps running across disabled to failed
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(2);
     expect((await mailboxStore.get(f.org, f.mailboxIds[0]))?.waitingLeads).toBe(2);
 
-    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, null);
+    await mailboxStore.setStatus(f.org, f.mailboxIds[0], "connected", null, null, ["connected", "failed", "disabled"]);
     const [third] = await sql`select unavailable_since from mailboxes where id = ${f.mailboxIds[0]}`;
     expect(third.unavailable_since).toBeNull();
     expect(await campaignStore.waitingOnUnavailableMailbox(f.org, f.campaign)).toBe(0);

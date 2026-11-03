@@ -54,7 +54,7 @@ docker compose up -d --build
 
 **2. Create your organization.** Open `http://localhost:3000` and create the first account.
 
-**3. Look around, then connect.** Set `MAILBOX_PROVIDER=fake` in `.env` to try campaigns without Google: the fake provider keeps mail in memory and sends nothing. To send real email, follow [Gmail setup](docs/setup/gmail.md).
+**3. Look around, then connect.** Set `MAILBOX_PROVIDER=fake` in `.env` to try campaigns without Google: the fake provider keeps mail in memory and sends nothing. To send real email, set `APP_URL` to this server's public address, because every email's unsubscribe link uses it, then follow [Gmail setup](docs/setup/gmail.md).
 
 The [quick start guide](docs/guides/quick-start.md) walks from install to a first campaign.
 
@@ -70,6 +70,8 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 - **CRM**: a pipeline board of deals. A lead becomes a contact when you create a deal from it, and leaves its campaigns.
 - **Tables**: a spreadsheet with formulas, AI columns and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
+
+**In preview:** LinkedIn outreach and the enrichment vendors. Tests run them against local stand-ins and live key checks, but no full LinkedIn campaign has run on a real account and no vendor has run with a paid key. Start small and watch the results.
 
 <p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft or lets an agent send it" width="100%"></p>
 

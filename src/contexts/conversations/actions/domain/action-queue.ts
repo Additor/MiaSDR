@@ -46,8 +46,8 @@ export interface QueueFacts {
  * (`typeDecision` in `inbox/[id]/_lib/type-line.ts`); `work-queue-read.ts` computes it in SQL and
  * `action-queue.integration.test.ts` checks that the two agree.
  *
- * - `stop_review`: a pick reads the reply as a request to stop and no person reviewed it (`stopReviewOpenSql`), whatever the
- *   pick's status. Accept would only change the type, so the row offers Review stop request. A person already marked do not
+ * - `stop_review`: the reply asks to stop, in a pick's reading or in its own words, and no person reviewed it
+ *   (`stopReviewOpenSql`), whatever the pick's status. The query also lists a reply no pick has read. Accept would only change the type, so the row offers Review stop request. A person already marked do not
  *   contact, or an email address on the suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
  * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
@@ -64,7 +64,7 @@ export interface PickReviewFacts {
   /** The held pick names a type that still exists and is active. An archived type cannot be accepted. */
   hasProposedType: boolean;
   proposedSystemRole: SystemRole | null;
-  /** A pick reads the reply as a request to stop and no person reviewed it. */
+  /** The reply asks to stop and no person reviewed it. */
   stopReviewOpen: boolean;
   acknowledged: boolean;
   /** The applied type is the record's type now. A person who changed the type since has answered the pick. */

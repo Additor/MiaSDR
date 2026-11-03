@@ -80,6 +80,17 @@ describeDb("campaign and mailbox management", () => {
       expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("connected");
     });
 
+    it("keeps a mailbox disabled when a person disables it while a check is running", async () => {
+      const t = await org();
+      const address = `busy${Math.random().toString(36).slice(2, 6)}@corp.test`;
+      const { id } = await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: address });
+      const racing = { ...t.mailboxDeps, provider: { ...t.mailboxDeps.provider, verify: () => mailboxUc.setMailboxEnabled(t.mailboxDeps, t.actor, id, false) } };
+      await mailboxUc.retestMailbox(racing, t.actor, id);
+      expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("disabled");
+      await mailboxUc.setMailboxEnabled(t.mailboxDeps, t.actor, id, true);
+      expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("connected");
+    });
+
     it("rejects bad addresses and addresses connected anywhere else", async () => {
       const t = await org();
       const u = await org();
@@ -161,6 +172,7 @@ describeDb("campaign and mailbox management", () => {
       const { id: unfinishedId } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "unfinished" });
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, unfinishedId, "active")).rejects.toThrow(/Replace the \[\[bracketed text\]\] in step 1/);
       await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: `go${Math.random().toString(36).slice(2, 6)}@corp.test` });
+      await expect(campaignsUc.changeCampaignStatus({ ...t.campaignDeps, unreachableUnsubscribe: true }, t.actor, id, "active")).rejects.toThrow(/APP_URL/);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active");
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toBeInstanceOf(ConflictError);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");

@@ -57,6 +57,7 @@ export function MailboxList({
   takeoverAfterHours,
   allowedDomains,
   signupBlocked,
+  unsubscribeUnreachable,
   zones,
   defaultTimeZone,
   rules,
@@ -66,6 +67,7 @@ export function MailboxList({
   takeoverAfterHours: number;
   allowedDomains: string[] | null;
   signupBlocked: boolean;
+  unsubscribeUnreachable: boolean;
   zones: string[];
   defaultTimeZone: string;
   /** The sending rules block, which closes the page. */
@@ -134,6 +136,11 @@ export function MailboxList({
         </SettingsSection>
       )}
 
+      {unsubscribeUnreachable && (
+        <p role="alert" className="mb-4 text-sm text-destructive" data-testid="unsubscribe-unreachable">
+          Campaigns can&apos;t start yet. Set APP_URL in .env to this server&apos;s public address: every email carries an unsubscribe link built from it.
+        </p>
+      )}
       <SettingsSection
         title="Mailboxes"
         description={canManage && mailboxes.length > 0 ? "Recheck connection asks Google whether MiaSDR can still send as an address. To deliver one real message, open More and choose Send test email." : undefined}
@@ -187,14 +194,16 @@ export function MailboxList({
                 )}
                 {canManage && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={isBusy(`mailbox:${mailbox.id}`)}
-                      onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."), "test")}
-                    >
-                      {busyTag(`mailbox:${mailbox.id}`) === "test" ? "Checking…" : "Recheck connection"}
-                    </Button>
+                    {mailbox.status !== "disabled" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={isBusy(`mailbox:${mailbox.id}`)}
+                        onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."), "test")}
+                      >
+                        {busyTag(`mailbox:${mailbox.id}`) === "test" ? "Checking…" : "Recheck connection"}
+                      </Button>
+                    )}
                     <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} refresh={refresh} />
                     <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={isBusy(`mailbox:${mailbox.id}`)} run={run} refresh={refresh} />
                   </div>

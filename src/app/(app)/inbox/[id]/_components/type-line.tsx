@@ -62,11 +62,11 @@ export async function TypeLine({ actor, conversationId, channel, recordId, queue
         decision
           ? {
               kind: decision.kind,
-              pickId: decision.pick.id,
-              proposed: decision.pick.proposed.name,
-              proposedGroup: decision.pick.proposed.groupKey ? groupLabel(decision.pick.proposed.groupKey) : null,
-              confidence: decision.pick.confidence,
-              holdReason: decision.pick.holdReason,
+              pickId: decision.pick?.id ?? null,
+              proposed: decision.pick?.proposed.name ?? null,
+              proposedGroup: decision.pick?.proposed.groupKey ? groupLabel(decision.pick.proposed.groupKey) : null,
+              confidence: decision.pick?.confidence ?? null,
+              holdReason: decision.pick?.holdReason ?? null,
             }
           : null
       }

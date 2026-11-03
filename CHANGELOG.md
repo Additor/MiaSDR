@@ -22,6 +22,11 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 
 ### Fixed
 
+- Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.
+- A reply whose own words ask to stop now shows Review stop request in Actions and on the thread before any AI pick reads it. An MCP work queue row for one has `aiPick.replyTypePickId: null`.
+- A new reply on a closed conversation clears its old closed reason.
+- A campaign can't start with Gmail on while `APP_URL` is a local address, because every unsubscribe link would point there.
+
 - The contact delete preview no longer waits on its own database connection when the pool holds one connection.
 
 - The OAuth consent route now refuses access the app did not ask for. Before, a person who edited their own consent request could grant more than the page offered.

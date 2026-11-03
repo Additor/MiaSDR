@@ -6031,7 +6031,7 @@
       "checkConstraints": {
         "mailboxes_status_ck": {
           "name": "mailboxes_status_ck",
-          "value": "\"mailboxes\".\"status\" in ('connecting', 'connected', 'failed', 'disabled')"
+          "value": "\"mailboxes\".\"status\" in ('connected', 'failed', 'disabled')"
         },
         "mailboxes_limit_ck": {
           "name": "mailboxes_limit_ck",
@@ -9077,6 +9077,10 @@
         "records_workflow_ck": {
           "name": "records_workflow_ck",
           "value": "\"records\".\"workflow_state\" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')"
+        },
+        "records_closed_reason_ck": {
+          "name": "records_closed_reason_ck",
+          "value": "\"records\".\"closed_reason\" is null or \"records\".\"workflow_state\" = 'closed'"
         },
         "records_source_ck": {
           "name": "records_source_ck",

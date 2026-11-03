@@ -760,4 +760,27 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       "applied, Skip": null,
     });
   });
+
+  it("lists a stop request no pick has read, and a person's review ends it", async () => {
+    const f = await fixture();
+    const asked = await lead(f, { bodyText: "Please unsubscribe me." });
+    const quiet = await lead(f, { bodyText: "Tell me more." });
+    await sql`update records set workflow_state = 'idle' where id in (${asked.recordId}, ${quiet.recordId})`;
+
+    const listed = await queue(f, { limit: 200 });
+    const row = listed.groups.classification.items.find((i) => i.recordId === asked.recordId);
+    expect(row?.classification).toMatchObject({ kind: "stop_review", replyTypePickId: null });
+    expect(ids(listed.groups.classification)).not.toContain(quiet.recordId);
+
+    const details = (await import("../../../infrastructure/reply-handling-composition")).replyHandlingDeps();
+    const { getRecordDetail } = await import("../../../application/reply-handling");
+    expect((await getRecordDetail(details, f.actor, asked.recordId)).record.stopReviewOpen).toBe(true);
+    expect((await getRecordDetail(details, f.actor, quiet.recordId)).record.stopReviewOpen).toBe(false);
+
+    const [r] = await sql`select latest_inbound_message_id from records where id = ${asked.recordId}`;
+    await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) values (${f.org}, ${r.latest_inbound_message_id}, now())`;
+    const reviewed = await queue(f, { limit: 200 });
+    expect(ids(reviewed.groups.classification)).not.toContain(asked.recordId);
+    expect((await getRecordDetail(details, f.actor, asked.recordId)).record.stopReviewOpen).toBe(false);
+  });
 });

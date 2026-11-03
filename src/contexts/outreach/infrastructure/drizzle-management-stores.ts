@@ -476,12 +476,12 @@ export const drizzleMailboxStore: MailboxStore = {
       .where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id)));
   },
 
-  async setStatus(organizationId, id, status, error, testedAt) {
+  async setStatus(organizationId, id, next, error, testedAt, from) {
     await db
       .update(mailboxes)
       // The unable period starts the first time the status leaves connected and ends when it returns.
-      .set({ status, lastError: error, lastTestedAt: testedAt, unavailableSince: status === "connected" ? null : sql`coalesce(${mailboxes.unavailableSince}, now())` })
-      .where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id)));
+      .set({ status: next, lastError: error, lastTestedAt: testedAt, unavailableSince: next === "connected" ? null : sql`coalesce(${mailboxes.unavailableSince}, now())` })
+      .where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id), inArray(mailboxes.status, [...from])));
   },
 
   async activeEnrollmentCount(organizationId, id) {

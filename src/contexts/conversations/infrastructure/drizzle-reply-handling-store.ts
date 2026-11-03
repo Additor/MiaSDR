@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptPersonRunsTx } from "../after-reply/infrastructure/sequence-stop";
 import { personReviewedStopsTx } from "./stop-review";
+import { stopReviewOpen } from "./stop-requested-sql";
 import { personTypeDecisionTx, restartRecordWorkTx } from "./restart-record-work";
 import {
   aiJobs,
@@ -24,7 +25,6 @@ import {
   records,
   sendAttempts,
   replyTypes,
-  stopReviews,
   users,
 } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
@@ -185,12 +185,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const draftJobPending = pendingJob !== undefined;
 
-    const roleOf = (c: (typeof cls)[number]["c"]) => subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null;
-    const reviewed = cls.length
-      ? await db.select({ messageId: stopReviews.messageId }).from(stopReviews).where(and(eq(stopReviews.organizationId, organizationId), inArray(stopReviews.messageId, [...new Set(cls.map(({ c }) => c.messageId))])))
-      : [];
-    const reviewedReplies = new Set(reviewed.map((r) => r.messageId));
-    const asksToStop = new Set(cls.filter(({ c }) => pickResponse(c.response).stopRequested === true || roleOf(c) === "stop_request").map(({ c }) => c.messageId));
+    const stopOpen = await stopReviewOpen(db, record.latestInboundMessageId);
 
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const response = pickResponse(c.response);
@@ -213,7 +208,6 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         proposedActive: subs.find((s) => s.id === c.proposedReplyTypeId)?.active === true,
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
-        stopReviewOpen: asksToStop.has(c.messageId) && !reviewedReplies.has(c.messageId),
         createdAt: c.createdAt,
         ...pickFlags(c, record),
       };
@@ -235,6 +229,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         activeChannel: record.activeChannel,
         contextVersion: record.contextVersion,
         latestInboundMessageId: record.latestInboundMessageId,
+        stopReviewOpen: stopOpen,
         lastInboundAt: record.lastInboundAt,
         lastOutboundAt: record.lastOutboundAt,
         nextActionAt: record.nextActionAt,

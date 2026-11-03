@@ -58,6 +58,12 @@ const GUARDED: Rule[] = [
     target: { binding: "sequenceStepRuns", helpers: ["stepMayBecome", "heldStep"] },
   },
   {
+    table: "mailboxes",
+    drizzle: /\.update\(mailboxes\)/g,
+    raw: /update mailboxes( m)? set status/g,
+    guard: /(eq|inArray)\(mailboxes\.status|\$\{mailboxes\.status\} =/,
+  },
+  {
     table: "reply_type_picks",
     drizzle: /\.update\(replyTypePicks\)/g,
     raw: /update (?:reply_type_picks|\$\{replyTypePicks\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,

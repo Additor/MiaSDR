@@ -53,12 +53,12 @@ const queueRowsSql = (organizationId: string) => sql`
            pd.id as pd_id, pd.status as pd_status, pd.error as pd_error, pd.conversation_id as pd_conv, pd.subject as pd_subject, pd.updated_at as pd_updated, pd.agent_token as pd_agent,
            rd.id as rd_id, rd.conversation_id as rd_conv, rd.subject as rd_subject, rd.updated_at as rd_updated,
            fj.id as fj_id, fj.last_error as fj_error, fj.failed_at as fj_at,
-           nk.id as k_id, nk.kind as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub, nk.hold_reason as k_hold,
+           nk.id as k_id, case when st.review then 'stop_review' else nk.kind end as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub, nk.hold_reason as k_hold,
            cv.id as conv_id,
            case
              when r.workflow_state = 'error' or pd.id is not null or fj.id is not null then 'problem'
              when rd.id is not null then 'reply'
-             when nk.kind is not null then 'classification'
+             when st.review or nk.kind is not null then 'classification'
              when r.workflow_state = 'waiting' then 'follow_up'
              else 'next_step'
            end as grp,
@@ -94,10 +94,14 @@ const queueRowsSql = (organizationId: string) => sql`
       order by j.failed_at desc limit 1
     ) fj on true
     left join lateral (
+      -- A stop request waits on the reply, with or without a pick: its own words can ask before any pick reads it.
+      select ${stopReviewOpenSql(sql`r.latest_inbound_message_id`)}
+             and not (${doNotContactSql("p")} or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null and ${suppressedSql("p")})) as review
+    ) st on true
+    left join lateral (
       -- The pick of the latest reply (a stale one only when nothing else exists), and what it waits for: pickReviewOf.
       select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name, lp.hold_reason,
              case
-               when lp.stop_open and not lp.stopped then 'stop_review'
                when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
                when lp.applied and coalesce(lp.check_mode, 'after') = 'after' then 'looks_right'
              end as kind
@@ -106,10 +110,7 @@ const queueRowsSql = (organizationId: string) => sql`
                kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode, k.response->>'holdReason' as hold_reason,
                k.status = 'proposed' and k.expected_context_version = r.context_version as held,
                k.status = 'auto_applied' and k.acknowledged_at is null
-                 and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,
-               ${stopReviewOpenSql(sql`r.latest_inbound_message_id`)} as stop_open,
-               ${doNotContactSql("p")}
-                 or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null and ${suppressedSql("p")}) as stopped
+                 and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied
         from reply_type_picks k
         left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
         -- An archived proposed type cannot be accepted, so its held pick waits for nothing here.
@@ -124,7 +125,7 @@ const queueRowsSql = (organizationId: string) => sql`
     where r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
       -- A person checks an agent's unconfirmed send, and a stop request that keeps refusing agents, whatever state the record
       -- is in: no one else may have seen it.
-      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or nk.kind = 'stop_review')
+      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or st.review)
   ) q
   where not (q.grp = 'next_step' and q.has_task)`;
 
@@ -223,7 +224,7 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
         : null
       : null,
     classification: r.k_kind
-      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx), unlocksCustomer: holdReasonOf(r.k_hold) === "protected_customer" }
+      ? { replyTypePickId: r.k_id as string | null, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx ?? 0), unlocksCustomer: holdReasonOf(r.k_hold) === "protected_customer" }
       : null,
     problem: problemKind ? { kind: problemKind, message: problemMessage[problemKind] } : null,
   };

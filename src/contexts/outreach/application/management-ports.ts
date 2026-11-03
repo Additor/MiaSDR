@@ -3,6 +3,7 @@ import type { DbHandle } from "@/platform/db/client";
 import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
 import type { WorkingHours } from "../domain/working-hours";
+import type { MailboxStatus } from "../domain/mailbox-status";
 
 export interface CampaignSummary {
   id: string;
@@ -135,7 +136,8 @@ export interface MailboxStore {
   /** Stores a mailbox the provider verified. Throws ConflictError when the address is already connected anywhere. */
   insert(organizationId: string, input: { emailAddress: string; displayName: string | null; testedAt: Date }): Promise<string>;
   update(organizationId: string, id: string, patch: Partial<Pick<MailboxRecord, "displayName" | "dailySendLimit" | "signatureHtml" | "workingHours">>): Promise<void>;
-  setStatus(organizationId: string, id: string, status: "connected" | "failed" | "disabled", error: string | null, testedAt: Date | null): Promise<void>;
+  /** Changes nothing unless the mailbox is in one of `from`, so a person's Disable holds against a check that was already running. */
+  setStatus(organizationId: string, id: string, next: MailboxStatus, error: string | null, testedAt: Date | null, from: readonly MailboxStatus[]): Promise<void>;
   /** Enrollments that finished a step from this mailbox and are still going. */
   activeEnrollmentCount(organizationId: string, id: string): Promise<number>;
   /** Names of campaigns that are not completed and list this mailbox as their only assigned sender. */

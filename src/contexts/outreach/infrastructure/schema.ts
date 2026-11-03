@@ -21,6 +21,7 @@ import type { CampaignStatus } from "../domain/campaign";
 import { SEND_STATUSES, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
 import { SEARCH_STATUSES, type SearchStatus } from "../linkedin/domain/linkedin-search";
 import { inList } from "@/platform/db/sql-values";
+import type { MailboxStatus } from "../domain/mailbox-status";
 
 /**
  * Outreach: email and LinkedIn share one campaign and enrollment model,
@@ -42,7 +43,7 @@ export const mailboxes = pgTable(
     /** Globally unique: inbound Gmail pushes resolve the organization through it. */
     emailAddress: text("email_address").notNull().unique(),
     displayName: text("display_name"),
-    status: text("status").notNull(),
+    status: text("status").$type<MailboxStatus>().notNull(),
     lastError: text("last_error"),
     lastTestedAt: tstz("last_tested_at"),
     /** When the mailbox stopped sending. A send that succeeds or a person's check clears it, not the hourly check. Drives follow-up takeover by another mailbox. */
@@ -61,7 +62,7 @@ export const mailboxes = pgTable(
   },
   (t) => [
     unique("mailboxes_id_org_uq").on(t.id, t.organizationId),
-    check("mailboxes_status_ck", sql`${t.status} in ('connecting', 'connected', 'failed', 'disabled')`),
+    check("mailboxes_status_ck", sql`${t.status} in ('connected', 'failed', 'disabled')`),
     check("mailboxes_limit_ck", sql`${t.dailySendLimit} between 1 and 200`),
     index("mailboxes_org_idx").on(t.organizationId),
   ],

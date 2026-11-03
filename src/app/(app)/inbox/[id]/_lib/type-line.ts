@@ -22,8 +22,6 @@ export interface PickFacts {
   proposedActive: boolean;
   holdReason: HoldReason | null;
   stopRequested: boolean;
-  /** A pick reads this reply as a request to stop and no person reviewed it, whatever this pick's status. */
-  stopReviewOpen: boolean;
   confidence: number | null;
   reasoning: string | null;
   error: string | null;
@@ -42,7 +40,8 @@ export function latestAiPick<T extends Pick<PickFacts, "latest" | "status" | "pr
 
 export type DecisionKind = "stop" | "held" | "archived" | "looks_right";
 
-export type TypeDecision<T extends PickFacts = PickFacts> = { kind: DecisionKind; pick: T } | null;
+/** A stop request can wait with no pick: the reply's own words asked, before any pick read it. */
+export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop"; pick: T | null } | { kind: Exclude<DecisionKind, "stop">; pick: T } | null;
 
 /**
  * What the type line asks of a person, if anything. A stop request comes first: Accept would only change the type, so the
@@ -55,13 +54,13 @@ export type TypeDecision<T extends PickFacts = PickFacts> = { kind: DecisionKind
 export function typeDecision<T extends PickFacts>(
   pick: T | undefined,
   reach: { doNotContact: boolean; suppressed: boolean; channel: string },
-  record: { groupKey: string | null; replyTypeId: string | null },
+  record: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean },
 ): TypeDecision<T> {
+  const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
+  if (record.stopReviewOpen && !stopped) return { kind: "stop", pick: pick?.latest ? pick : null };
   if (!pick || !pick.latest) return null;
   const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.appliedReplyTypeId === record.replyTypeId;
   const unchecked = applied && (pick.rules === null || pick.rules.checkMode === "after");
-  const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
-  if (pick.stopReviewOpen && !stopped) return { kind: "stop", pick };
   if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: pick.proposedActive ? "held" : "archived", pick };
   if (unchecked) return { kind: "looks_right", pick };
   return null;
@@ -111,7 +110,7 @@ export const LOOKS_RIGHT_DONE = "Marked as looked at.";
 /** What the reply panel says when no draft is open, read from the record behind the thread. */
 export function draftState(
   detail: {
-    record: { groupKey: string | null; replyTypeId: string | null; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
+    record: { groupKey: string | null; replyTypeId: string | null; stopReviewOpen: boolean; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
     replyTypePicks: readonly PickFacts[];
     policy: { doNotContact: boolean } | null;
     suppressed: boolean;
@@ -126,7 +125,7 @@ export function draftState(
 }
 
 /** The key of one decision on the type line: a new key is a new question for the person. */
-export const decisionKey = (decision: { kind: DecisionKind; pickId: string } | null): string | null => (decision ? `${decision.kind}:${decision.pickId}` : null);
+export const decisionKey = (decision: { kind: DecisionKind; pickId: string | null } | null): string | null => (decision ? `${decision.kind}:${decision.pickId}` : null);
 
 /**
  * What the type line shows around a decision a person just answered. The answer hides the decision at once, so a second

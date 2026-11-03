@@ -2,6 +2,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { normalizeEmail } from "@/contexts/people/domain/normalize";
 import { canonicalTimeZone } from "@/shared/time-zone";
+import { MAILBOX_CHECK_FROM, MAILBOX_DISABLE_FROM, MAILBOX_ENABLE_FROM, type MailboxStatus } from "../../domain/mailbox-status";
 import { type WorkingHours } from "../../domain/working-hours";
 import type { MailboxProvider } from "./ports";
 import type { MailboxRecord, MailboxStore } from "../../application/management-ports";
@@ -61,14 +62,14 @@ export function listMailboxes(deps: MailboxDeps, actor: Actor) {
   return deps.mailboxes.list(actor.organizationId, deps.now());
 }
 
-async function verifyAndRecord(deps: MailboxDeps, actor: Actor, id: string, emailAddress: string) {
+async function verifyAndRecord(deps: MailboxDeps, actor: Actor, id: string, emailAddress: string, from: readonly MailboxStatus[]) {
   try {
     const violation = mailboxPolicyViolation(deps.policy, emailAddress);
     if (violation) throw new Error(violation);
     await deps.provider.verify(emailAddress);
-    await deps.mailboxes.setStatus(actor.organizationId, id, "connected", null, deps.now());
+    await deps.mailboxes.setStatus(actor.organizationId, id, "connected", null, deps.now(), from);
   } catch (error) {
-    await deps.mailboxes.setStatus(actor.organizationId, id, "failed", error instanceof Error ? error.message : "Could not verify this mailbox.", deps.now());
+    await deps.mailboxes.setStatus(actor.organizationId, id, "failed", error instanceof Error ? error.message : "Could not verify this mailbox.", deps.now(), from);
   }
 }
 
@@ -91,7 +92,8 @@ export async function connectMailbox(deps: MailboxDeps, actor: Actor, input: { e
 export async function retestMailbox(deps: MailboxDeps, actor: Actor, id: string): Promise<void> {
   requireAdmin(actor);
   const mailbox = await load(deps, actor, id);
-  await verifyAndRecord(deps, actor, id, mailbox.emailAddress);
+  if (mailbox.status === "disabled") throw new ConflictError("This mailbox is disabled. Enable it to check the connection.");
+  await verifyAndRecord(deps, actor, id, mailbox.emailAddress, MAILBOX_CHECK_FROM);
 }
 
 export interface MailboxSettings {
@@ -126,8 +128,8 @@ export async function updateMailbox(deps: MailboxDeps, actor: Actor, id: string,
 export async function setMailboxEnabled(deps: MailboxDeps, actor: Actor, id: string, enabled: boolean): Promise<void> {
   requireAdmin(actor);
   const mailbox = await load(deps, actor, id);
-  if (!enabled) await deps.mailboxes.setStatus(actor.organizationId, id, "disabled", null, mailbox.lastTestedAt);
-  else await verifyAndRecord(deps, actor, id, mailbox.emailAddress);
+  if (!enabled) await deps.mailboxes.setStatus(actor.organizationId, id, "disabled", null, mailbox.lastTestedAt, MAILBOX_DISABLE_FROM);
+  else await verifyAndRecord(deps, actor, id, mailbox.emailAddress, MAILBOX_ENABLE_FROM);
 }
 
 export async function removeMailbox(deps: MailboxDeps, actor: Actor, id: string): Promise<void> {

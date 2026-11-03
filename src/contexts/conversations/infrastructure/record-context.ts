@@ -56,6 +56,7 @@ export async function recordInboundTx(tx: DbTx, input: { organizationId: string;
     now: input.now,
     set: {
       workflowState: "action_required",
+      closedReason: null,
       activeChannel: input.channel,
       latestInboundMessageId: sql`case when ${newest} then ${input.messageId}::uuid else ${records.latestInboundMessageId} end`,
       lastInboundAt: sql`greatest(coalesce(${records.lastInboundAt}, ${input.at}), ${input.at})`,

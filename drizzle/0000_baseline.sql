@@ -687,7 +687,7 @@ CREATE TABLE "mailboxes" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "mailboxes_email_address_unique" UNIQUE("email_address"),
 	CONSTRAINT "mailboxes_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "mailboxes_status_ck" CHECK ("mailboxes"."status" in ('connecting', 'connected', 'failed', 'disabled')),
+	CONSTRAINT "mailboxes_status_ck" CHECK ("mailboxes"."status" in ('connected', 'failed', 'disabled')),
 	CONSTRAINT "mailboxes_limit_ck" CHECK ("mailboxes"."daily_send_limit" between 1 and 200)
 );
 --> statement-breakpoint
@@ -982,6 +982,7 @@ CREATE TABLE "records" (
 	CONSTRAINT "records_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "records_group_ck" CHECK ("records"."group_key" is null or "records"."group_key" in ('customer', 'interested', 'not_interested', 'other')),
 	CONSTRAINT "records_workflow_ck" CHECK ("records"."workflow_state" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')),
+	CONSTRAINT "records_closed_reason_ck" CHECK ("records"."closed_reason" is null or "records"."workflow_state" = 'closed'),
 	CONSTRAINT "records_source_ck" CHECK ("records"."reply_type_source" is null or "records"."reply_type_source" in ('ai', 'human', 'integration')),
 	CONSTRAINT "records_reply_type_source_pair_ck" CHECK (("records"."group_key" is null) = ("records"."reply_type_source" is null)),
 	CONSTRAINT "records_locked_ck" CHECK (not "records"."reply_type_locked" or "records"."group_key" = 'customer'),

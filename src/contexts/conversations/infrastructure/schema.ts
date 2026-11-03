@@ -179,6 +179,7 @@ export const records = pgTable(
     unique("records_id_org_uq").on(t.id, t.organizationId),
     check("records_group_ck", sql`${t.groupKey} is null or ${inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)}`),
     check("records_workflow_ck", inList(t.workflowState, WORKFLOW_STATES)),
+    check("records_closed_reason_ck", sql`${t.closedReason} is null or ${t.workflowState} = 'closed'`),
     check("records_source_ck", sql`${t.replyTypeSource} is null or ${t.replyTypeSource} in ('ai', 'human', 'integration')`),
     check("records_reply_type_source_pair_ck", sql`(${t.groupKey} is null) = (${t.replyTypeSource} is null)`),
     check("records_locked_ck", sql`not ${t.replyTypeLocked} or ${t.groupKey} = 'customer'`),

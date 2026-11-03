@@ -18,6 +18,8 @@ export interface CampaignDeps {
   audit: AuditSink;
   /** Set by composition. Hand-picked enroll, removal and senders need it. */
   admin?: EnrollmentAdminStore;
+  /** Set by composition: real mail would carry unsubscribe links on an address no recipient can open. */
+  unreachableUnsubscribe?: boolean;
   /** Defaults to the system clock. */
   now?: () => Date;
 }
@@ -63,6 +65,8 @@ export function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, pat
   return updateCampaignOn(lifecycle(deps), email(deps), actor, id, patch, tx);
 }
 
+export const UNREACHABLE_UNSUBSCRIBE = "Set APP_URL in .env to this server's public address before starting. Every email carries an unsubscribe link built from it, and recipients can't open a local address.";
+
 /** Leads checked for an empty first subject when a campaign launches. */
 export const SUBJECT_SAMPLE = 20;
 
@@ -71,6 +75,7 @@ async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign
   let emptySubjectLeads = 0;
   let sampled = 0;
   const problems = await startProblemsOn(lifecycle(deps), email(deps), actor, id, campaign, tx, async () => {
+    if (deps.unreachableUnsubscribe) return [new ValidationError(UNREACHABLE_UNSUBSCRIBE)];
     // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
     if (campaign.status !== "draft") return [];
     const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
