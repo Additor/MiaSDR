@@ -1,10 +1,10 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { conversations, draftKnowledgeCitations, drafts, events, mcpTokens, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
+import { conversations, drafts, events, mcpTokens, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
 import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
-import { buildDraftContext, excerptHash } from "./thread-context";
+import { buildDraftContext } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toAttempt } from "./reply-attempt-ledger";
 import { toDraftRow, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
@@ -88,12 +88,6 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
     .update(drafts)
     .set({ status: "stale" })
     .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
-  if (input.citations.length > 0) {
-    await tx
-      .insert(draftKnowledgeCitations)
-      .values(input.citations.map((c, rank) => ({ organizationId: input.organizationId, draftId: created.id, documentVersionId: c.documentVersionId, excerptHash: excerptHash(c.excerpt), excerpt: c.excerpt, rank: String(rank) })))
-      .onConflictDoNothing();
-  }
   return { id: created.id, stale: false };
 }
 

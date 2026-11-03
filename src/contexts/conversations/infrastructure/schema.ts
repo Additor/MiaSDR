@@ -8,7 +8,6 @@ import {
   jsonb,
   numeric,
   pgTable,
-  primaryKey,
   text,
   unique,
   uniqueIndex,
@@ -243,7 +242,6 @@ export const messages = pgTable(
     toAddress: text("to_address"),
     cc: text("cc").array(),
     bodyText: text("body_text").notNull(),
-    bodyHtml: text("body_html"),
     important: boolean("important").notNull().default(false),
     openedAt: tstz("opened_at"),
     raw: jsonb("raw").$type<unknown>(),
@@ -350,7 +348,6 @@ export const events = pgTable(
     actorType: text("actor_type").notNull(),
     /** The real user for human actions. */
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-    actorRef: text("actor_ref"),
     fromData: jsonb("from_data").$type<unknown>(),
     toData: jsonb("to_data").$type<unknown>(),
     meta: jsonb("meta").$type<Record<string, unknown>>().default({}).notNull(),
@@ -457,9 +454,7 @@ export const drafts = pgTable(
     channel: text("channel").notNull(),
     subject: text("subject"),
     aiBodyText: text("ai_body_text"),
-    aiBodyHtml: text("ai_body_html"),
     editedBodyText: text("edited_body_text"),
-    editedBodyHtml: text("edited_body_html"),
     /** CC recipients the human chose for this reply (lowercased addresses from lead_ccs). Empty by default. */
     cc: text("cc").array().notNull().default(sql`'{}'::text[]`),
     status: text("status").$type<DraftStatus>().notNull().default("generating"),
@@ -508,10 +503,8 @@ export const sendAttempts = pgTable(
     actorUserId: uuid("actor_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    requestId: text("request_id"),
     provider: text("provider"),
     accountRef: text("account_ref"),
-    providerRequestId: text("provider_request_id"),
     providerMessageId: text("provider_message_id"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
@@ -541,7 +534,6 @@ export const sendAttempts = pgTable(
     check(
       "send_attempts_refs_ck",
       sql`length(btrim(${t.idempotencyKey})) > 0
-        and (${t.requestId} is null or length(btrim(${t.requestId})) > 0)
         and (${t.provider} is null or length(btrim(${t.provider})) > 0)
         and (${t.accountRef} is null or length(btrim(${t.accountRef})) > 0)`,
     ),
@@ -593,25 +585,6 @@ export const knowledgeDocumentVersions = pgTable(
     unique("knowledge_versions_doc_version_uq").on(t.documentId, t.version),
     unique("knowledge_versions_id_org_uq").on(t.id, t.organizationId),
     check("knowledge_versions_ck", sql`${t.version} > 0 and length(btrim(${t.content})) > 0`),
-  ],
-);
-
-/** Which knowledge version a draft cited. */
-export const draftKnowledgeCitations = pgTable(
-  "draft_knowledge_citations",
-  {
-    organizationId: orgId(),
-    draftId: uuid("draft_id").notNull(),
-    documentVersionId: uuid("document_version_id").notNull(),
-    excerptHash: text("excerpt_hash").notNull(),
-    excerpt: text("excerpt").notNull(),
-    rank: numeric("rank").notNull().default("0"),
-  },
-  (t) => [
-    primaryKey({ columns: [t.draftId, t.documentVersionId, t.excerptHash] }),
-    foreignKey({ columns: [t.draftId, t.organizationId], foreignColumns: [drafts.id, drafts.organizationId] }).onDelete("cascade"),
-    foreignKey({ columns: [t.documentVersionId, t.organizationId], foreignColumns: [knowledgeDocumentVersions.id, knowledgeDocumentVersions.organizationId] }).onDelete("restrict"),
-    check("draft_citations_rank_ck", sql`${t.rank} >= 0`),
   ],
 );
 

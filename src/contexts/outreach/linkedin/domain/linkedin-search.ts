@@ -170,8 +170,6 @@ export function searchNotice(input: { status: SearchStatus; lastError: string | 
 
 export const allowedFrom = (action: SearchAction): SearchStatus[] => FROM[action];
 
-export const isFinished = (status: SearchStatus) => status === "completed" || status === "cancelled";
-
 /** Resume restarts from the stored cursor, except a failed search, which a person retries on purpose. */
 export function statusAfter(action: SearchAction): SearchStatus {
   return action === "pause" ? "paused" : action === "resume" ? "queued" : "cancelled";

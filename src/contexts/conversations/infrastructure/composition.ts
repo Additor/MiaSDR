@@ -43,4 +43,4 @@ export const ingestInbound = (input: InboundEmailInput): Promise<IngestResult> =
 export const ingestInboundLinkedInMessage = (input: InboundLinkedInInput): Promise<IngestResult> => filed(receiveInboundLinkedIn(input));
 
 /** Reply handling of one person or record, for the record pages and the old record URL. */
-export { activeConversationOfRecord, personReplyHandling } from "./person-handling";
+export { personReplyHandling } from "./person-handling";

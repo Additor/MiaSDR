@@ -105,7 +105,6 @@ export interface NewDraft {
   model: string;
   request: unknown;
   response: unknown;
-  citations: Array<{ documentVersionId: string; excerpt: string }>;
   /** Draft this one replaces: it becomes `discarded`, and the lineage is recorded in `request`. */
   regeneratesDraftId?: string;
   /** Any other open draft of the record turns `stale`. */

@@ -27,7 +27,6 @@ const FOREIGN_KEYS: Array<[string, string, string | null]> = [
   ["identity_exceptions", "identity_exceptions_resolved_person_fk", "resolved_person_id"],
   ["notes", "notes_record_fk", "record_id"],
   ["tasks", "tasks_record_fk", "record_id"],
-  ["import_runs", "import_runs_destination_campaign_fk", "destination_campaign_id"],
   ["deals", "deals_source_enrollment_fk", "source_enrollment_id"],
   ["company_domain_aliases", "company_domain_aliases_company_fk", "CASCADE"],
 ];
@@ -100,7 +99,6 @@ describeDb("foreign keys and checks", () => {
       ["linkedin_search_queries_current_account_fk", "query", (w, id) => sql`update linkedin_search_queries set current_account_id = ${id} where id = ${w.searchQuery}`],
       ["notes_record_fk", "note", (w, id) => sql`update notes set record_id = ${id} where id = ${w.note}`],
       ["tasks_record_fk", "task", (w, id) => sql`update tasks set record_id = ${id} where id = ${w.task}`],
-      ["import_runs_destination_campaign_fk", "import run", (w, id) => sql`update import_runs set destination_campaign_id = ${id} where id = ${w.importRun}`],
       ["deals_source_enrollment_fk", "deal", (w, id) => sql`update deals set source_enrollment_id = ${id} where id = ${w.deal}`],
       ["company_domain_aliases_company_fk", "company alias", (w, id) => sql`update company_domain_aliases set company_id = ${id} where id = ${w.companyAlias}`],
     ];
@@ -170,14 +168,6 @@ describeDb("foreign keys and checks", () => {
       const w = await world();
       await sql`delete from companies where id = ${w.company}`;
       expect((await sql`select count(*)::int as n from company_domain_aliases where id = ${w.companyAlias}`)[0].n).toBe(0);
-    });
-
-    it("deleting a campaign nulls the import run's destination", async () => {
-      const w = await world();
-      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
-      await sql`delete from campaigns where id = ${w.campaign}`;
-      const [r] = await sql`select organization_id, destination_campaign_id from import_runs where id = ${w.importRun}`;
-      expect(r).toMatchObject({ organization_id: w.org, destination_campaign_id: null });
     });
 
     it("deleting a campaign nulls the search batch's target campaign", async () => {
@@ -328,9 +318,8 @@ describeDb("foreign keys and checks", () => {
       await expect(sql`insert into events (organization_id, person_id, event_type, actor_type) values (${w.org}, ${w.person}, ' ', 'system')`).rejects.toThrow(fails("events_type_ck"));
       await expect(sql`update send_attempts set idempotency_key = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
       await expect(sql`update send_attempts set provider = '' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
-      await expect(sql`update send_attempts set request_id = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
       await expect(sql`update send_attempts set account_ref = ' ' where id = ${w.sendAttempt}`).rejects.toThrow(fails("send_attempts_refs_ck"));
-      await sql`update send_attempts set provider = null, request_id = 'r' where id = ${w.sendAttempt}`;
+      await sql`update send_attempts set provider = null where id = ${w.sendAttempt}`;
       const ex = (channel: string, account: string, key: string, reason: string) =>
         sql`insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason) values (${w.org}, ${channel}, ${account}, ${key}, ${reason})`;
       await expect(ex("sms", "a", "k1", "r")).rejects.toThrow(fails("identity_exceptions_channel_ck"));

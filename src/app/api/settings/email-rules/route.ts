@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { getEmailRules, updateEmailRules } from "@/contexts/outreach/email/application/email-rules";
+import { updateEmailRules } from "@/contexts/outreach/email/application/email-rules";
 import { emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor, withAdmin } from "@/app/_lib/api";
-
-export const GET = () => withActor((actor) => getEmailRules(emailRulesDeps(), actor));
+import { withAdmin } from "@/app/_lib/api";
 
 export const PATCH = (request: Request) =>
   withAdmin("Only an owner or admin can change email rules.", async (actor) =>

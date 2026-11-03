@@ -1,5 +1,4 @@
 import { APPLIED_PICK_STATUSES } from "../domain/reply-type-pick";
-import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
@@ -78,8 +77,6 @@ export async function knowledgeFor(organizationId: string, options: { alwaysOnly
     .limit(KNOWLEDGE_CANDIDATES);
   return selectKnowledge(rows, { alwaysOnly: options.alwaysOnly, stepTags: options.stepTags, includeUnmatched: options.includeUnmatched ?? true });
 }
-
-export const excerptHash = (excerpt: string) => createHash("sha256").update(excerpt).digest("hex").slice(0, 32);
 
 export async function threadEntries(organizationId: string, conversationId: string): Promise<{ person: AiPersonContext; entries: ThreadEntry[]; channel: string; accountRef: string } | null> {
   const thread = await drizzleInboxStore.thread(organizationId, conversationId);

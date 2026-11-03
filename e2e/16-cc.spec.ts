@@ -23,14 +23,6 @@ test.describe("CC recipients on inbound mail and replies", () => {
     await expect(options).toHaveCount(1);
     await expect(options.first()).not.toBeChecked();
     await expect(page.getByTestId("cc-options")).toContainText("boss@s16a.test");
-
-    // The record page folded into the thread: an old /crm/records/[id] link lands on this conversation, with the same CC.
-    const thread = new URL(page.url()).pathname;
-    const [record] = await sql()`select r.id from records r join people p on p.id = r.person_id where p.email = ${l.email}`;
-    await page.goto(`/crm/records/${record.id}`);
-    await expect(page).toHaveURL(new RegExp(`${thread}$`));
-    await expect(page.getByText(/, cc boss@s16a\.test/).first()).toBeVisible();
-    await expect(page.getByTestId("cc-option")).toHaveCount(1);
   });
 
   test("a reply with the CC ticked sends once with the CC header, and the CC is stored on the outbound message", async ({ page }) => {

@@ -311,7 +311,6 @@ describeDb("LinkedIn conversation replies", () => {
         model: "fake",
         request: {},
         response: {},
-        citations: [],
       });
       written.catch(() => undefined);
       // Either the AI write finishes, or it waits on the conversation the send holds; then the send goes on.

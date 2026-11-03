@@ -13,7 +13,6 @@ export const INVITE_LIMIT_RULE = { min: 1, max: 100, safeMax: 30, label: "Invita
 export const MESSAGE_LIMIT_RULE = { min: 1, max: 200, safeMax: 100, label: "Messages per day" } as const satisfies LimitRule;
 /** A free account has a far smaller weekly invitation allowance. */
 export const FREE_INVITE_SAFE_MAX = 10;
-export const DEFAULT_MESSAGE_LIMIT = 50;
 
 /** Null when the value is a whole number inside the hard bounds. */
 export function limitProblem(rule: LimitRule, value: unknown): string | null {

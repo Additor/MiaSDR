@@ -35,11 +35,6 @@ export interface TaskListFilter {
   limit: number;
 }
 
-export interface MemberOption {
-  userId: string;
-  name: string;
-}
-
 export interface NoteRow {
   id: string;
   createdBy: string | null;

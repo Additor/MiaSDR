@@ -250,17 +250,6 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
       return rows.length;
     },
 
-    async rawKeyStats(organizationId) {
-      const result = await db.execute<{ key: string; leads: number }>(sql`
-        select k.key as key, count(*)::int as leads
-        from ${people}, jsonb_object_keys(${people.raw}) as k(key)
-        where ${people.organizationId} = ${organizationId}
-        group by k.key
-        order by leads desc, k.key asc
-        limit 200`);
-      return [...result];
-    },
-
     async *exportBatches(organizationId, filter) {
       // Keyset on (created_at, id). The cursor carries created_at as text, because a JS Date drops microseconds.
       let cursor: { createdAt: string; id: string } | null = null;

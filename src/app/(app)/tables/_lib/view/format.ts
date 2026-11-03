@@ -1,4 +1,4 @@
-import { effectiveColumnType, isStaticColumnType, RUNNABLE_TYPES, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
+import { effectiveColumnType, isStaticColumnType, RUNNABLE_TYPES, STATIC_COLUMN_TYPES } from "@/contexts/grid/domain/column-types";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
@@ -156,9 +156,6 @@ export const DEFAULT_WIDTH: Record<string, number> = {
 };
 
 export const columnWidth = (column: Pick<GridColumn, "type">) => DEFAULT_WIDTH[column.type] ?? 180;
-
-/** Column key for a freshly typed name, only for display hints. The server derives the real key. */
-export const isRunnerType = (type: ColumnType | string) => !isStaticColumnType(type) && type !== "formula";
 
 /** "Reused, no charge", "$0.03 · 1 credit", "1 credit" or "No charge": a billed call is never called free. */
 export function runCost(r: { costCents: number; credits: number | null; reused?: boolean }): string {

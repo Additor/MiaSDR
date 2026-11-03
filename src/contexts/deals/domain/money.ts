@@ -59,8 +59,6 @@ export const CURRENCY_EXPONENTS: Readonly<Record<string, number>> = {
 
 export const CURRENCIES: readonly string[] = Object.keys(CURRENCY_EXPONENTS).sort();
 
-export const DEFAULT_CURRENCY = "USD";
-
 /** The largest amount a deal holds, in minor units (`deals_amount_ck`). */
 export const MAX_AMOUNT_MINOR = Number.MAX_SAFE_INTEGER;
 

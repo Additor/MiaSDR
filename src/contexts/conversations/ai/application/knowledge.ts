@@ -4,8 +4,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 /**
  * Pasted-text knowledge documents that drafts may draw on. Any member reads them; only an owner or admin adds or changes one.
- * Every content edit stores a new version, so a draft's citations keep
- * pointing at the text the model saw.
+ * Every content edit stores a new version, and a draft's stored request names the versions the model saw.
  */
 
 export interface KnowledgeDoc {

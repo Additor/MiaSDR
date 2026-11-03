@@ -31,7 +31,7 @@ describeDb("a request from a page rendered for another organization", () => {
     await sql.end();
   });
 
-  const read = (headers?: Record<string, string>) => callRoute("settings/replies/route.ts", "GET", { as: member, headers });
+  const read = (headers?: Record<string, string>) => callRoute("deal-stages/route.ts", "GET", { as: member, headers });
 
   it("answers when it names the session's organization, or none", async () => {
     expect((await read()).status).toBe(200);

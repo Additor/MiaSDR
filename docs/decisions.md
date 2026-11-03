@@ -57,7 +57,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 | Error (`src/shared/errors.ts`) | Status | `code` |
 |---|---|---|
-| No session (the wrappers, `invitations/[id]` GET and the proxy) | 401 | `unauthenticated` |
+| No session (the wrappers and the proxy) | 401 | `unauthenticated` |
 | `NotFoundError`, and a Postgres `22P02` (path id that is not a UUID) | 404 | `not_found` |
 | `ForbiddenError` | 403 | `forbidden`, or the class's own `code` (`PersonalCampaignError`: `personal_campaign`) |
 | `ConflictError` (its `details` merge into the body) | 409 | `details.code`, else `conflict` |
@@ -65,7 +65,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 | `ValidationError` (message plus `issues`), and its subclasses `CsvError` (`platform/files/csv.ts`, an unreadable upload) and `ImportInputError` (`people/application/import-leads.ts`, no rows, too many rows, a broken mapping) | 422 | `validation` |
 | `ZodError`, `SyntaxError` from `request.json()` | 400 | `bad_request` |
 
-- Every protected handler goes through a wrapper. `src/architecture/route-wrappers.test.ts` checks imports: no file under `src/app/api` or `src/app/_lib`, and no `route.ts` elsewhere in `src/app`, imports the Better Auth module or reaches `identity/infrastructure/session.ts` other than through `_lib/api.ts`, at any depth. Its shrink-only list names four files with reasons: `invitations/[id]` (the GET view depends on the session's email, which `withUser` does not hand over), Better Auth's `auth/[...all]` handler, and the two legacy redirects under `(legacy)/crm`, which send a browser without a session to a fallback page instead of answering 401 JSON.
+- Every protected handler goes through a wrapper. `src/architecture/route-wrappers.test.ts` checks imports: no file under `src/app/api` or `src/app/_lib`, and no `route.ts` elsewhere in `src/app`, imports the Better Auth module or reaches `identity/infrastructure/session.ts` other than through `_lib/api.ts`, at any depth. Its shrink-only list names one file: Better Auth's `auth/[...all]` handler.
 - A `Response` that `run` returns (a CSV file, a stream) goes out unchanged. Any other value is the JSON body, and `undefined` is 204.
 - Handlers parse the body inside the wrapper's callback, so a malformed body answers 400 instead of 500.
 - The lead import routes (`/api/leads/import`, `preview`, `summary`) moved into `withActor` and answer 422 where they answered 400: an unreadable file, an import the file or mapping cannot make, a missing file and a missing or invalid mapping. A file over 5 MB still answers 413. A 409 now merges the `ConflictError` details into the body, as every other route does; before, the import answered `{ error }` only. The import wizard reads `error`, so it shows the same message.
@@ -627,7 +627,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 ### Drafts and approval
 
 - **Who sends.** `approveAndSendDraft` is the only email reply sender, and LinkedIn replies go through `sendLinkedInReply`. Only these two take send deps (`ReplySendDeps`, `LinkedInReplySendDeps`), built in `reply-send-composition.ts`. Three modules import it: the two Send routes and the MCP `send_reply` tool. Every other use case, AI job and MCP tool gets deps whose mail and LinkedIn ports look and cannot send; `reply-send-imports.test.ts` checks the import graph. Any member may edit, regenerate, discard, approve and send; an agent sends only under "Agent sends".
-- **Knowledge.** Documents are pasted text with versions and tags (`/settings/knowledge`, any member). `selectKnowledge` takes always-included documents first (3,000 characters each, 5,000 together while others compete), then documents by shared step tags, within 8,000 characters. Citations go to `draft_knowledge_citations`.
+- **Knowledge.** Documents are pasted text with versions and tags (`/settings/knowledge`, any member). `selectKnowledge` takes always-included documents first (3,000 characters each, 5,000 together while others compete), then documents by shared step tags, within 8,000 characters. A draft's stored request names the versions it used.
 - Discard and Regenerate take the `revision` the person saw, as Edit and Send do: a stale tab answers 409 and the newer text stays.
 - A new draft turns other open drafts of the record and channel `stale`. Regenerate writes a new row and discards the old one. `drafts.revision` counts edits.
 - A draft a person asks for (Write draft, Regenerate) that `insertDraft` stores stale, because the record's version moved while the AI wrote, answers 409 "The thread changed while the draft was written." The jobs keep writing such drafts stale without an error.
@@ -835,21 +835,6 @@ Events: `deal.created`, `deal.stage_moved`, `deal.updated` and `deal.deleted`, e
 - Contacts lists Email, Latest deal, Deal owner and Reach, 25 per page, with `owner` (a member id, `me` or `none`) and `stage` filters. Malformed values answer 422; unknown ids list nothing. Contacts has bulk select, Export CSV (`/api/contacts/export`, dates in the organization zone) and bulk Mark do not contact.
 - A contact carries no lead status. Contact since and the source campaign are Details facts; the deal stage shows in the Deals section.
 - `previewConvert` (up to 500 ids; the bulk dialog sums chunks) feeds the effects text in `crm/_components/deal-effects.ts`, for example "Stops 2 campaign enrollments. Ends 1 follow-up in progress." Lines with a zero count drop. Each conversion dialog states "{Name} cannot go back to Leads or join a campaign again", and a bulk conversion above 50 leads (`SECOND_CONFIRM_ABOVE`) asks a second time.
-
-#### URL map
-
-Every redirect answers 307. Static rules live in `next.config.ts`; the rest are route handlers.
-
-| Old | New |
-|---|---|
-| `/crm` | `/crm/pipeline` |
-| `/crm/records` | `/leads?hasConversation=yes&lifecycle=all`, carrying only `q` (`src/app/(legacy)/crm/records/route.ts`) |
-| `/crm/records/[id]` | `/inbox/[conversationId]` of the active public channel through `activeConversationOfRecord`, else `/crm/pipeline` |
-| `/crm/actions` | `/actions` |
-| `/crm/identity-exceptions` | `/inbox/unmatched` |
-| `/crm/settings`, `/settings/crm` | `/settings/replies` |
-| `/leads?tab=companies` | `/crm/companies` |
-| `/leads/[id]` for a contact | `/crm/contacts/[id]` (in-page `redirect()`) |
 
 ### Contacts and Companies CRUD
 

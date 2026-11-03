@@ -6,7 +6,7 @@ import { AiError } from "@/contexts/ai/domain/ai-error";
 import { aiIsOn, aiOffMessage } from "@/contexts/integrations/domain/ai-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { ReplyAiResolver } from "../ai/application/ai-ports";
-import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
+import { produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendBlocker, type SendContext, type SentFinder } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
 import { checkNoneInFlight, checkRecordOpen, checkReplyText, replyRefusal, type ReplyChannel } from "../domain/reply-send";
@@ -94,7 +94,6 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
           request: { requestedBy: actor.userId, contextVersion: ctx.contextVersion },
           writtenViaTokenId: actor.via?.tokenId ?? null,
           response: { usage: result.usage ?? null },
-          citations: draftCitations(ctx),
         }),
         ctx.channel,
       ),
@@ -153,7 +152,6 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
           request: { regeneratedBy: actor.userId, contextVersion: ctx.contextVersion },
           writtenViaTokenId: actor.via?.tokenId ?? null,
           response: { usage: result.usage ?? null },
-          citations: draftCitations(ctx),
           regeneratesDraftId: draftId,
           feedback: note,
         }),

@@ -34,7 +34,6 @@ export const enrichmentConfigSchema = z.strictObject({
   reuseDays,
   settledStatuses,
 });
-export type EnrichmentConfig = z.infer<typeof enrichmentConfigSchema>;
 
 export const waterfallConfigSchema = z.strictObject({
   /** Logical input key to column. Every step reads its action inputs from these. */
@@ -51,7 +50,6 @@ export const waterfallConfigSchema = z.strictObject({
   settledStatuses,
   delaySeconds,
 });
-export type WaterfallConfig = z.infer<typeof waterfallConfigSchema>;
 
 /** Email, url, date and json arrive from the model as text and are checked and converted before they are written (ai-output-coerce.ts). */
 export const AI_OUTPUT_TYPES = ["text", "number", "boolean", "email", "url", "date", "json"] as const;
@@ -67,12 +65,6 @@ export const aiConfigSchema = z.strictObject({
   delaySeconds,
 });
 export type AiConfig = z.infer<typeof aiConfigSchema>;
-
-export const outputColumnConfigSchema = z.strictObject({
-  sourceColumnKey: columnKey,
-  outputKey: z.string().min(1).max(60),
-  valueType: z.string().max(20),
-});
 
 const valueType = z.enum(["text", "email", "url", "number", "boolean", "json", "domain"]);
 
@@ -108,7 +100,6 @@ export const httpProviderConfigSchema = z.strictObject({
   actions: z.record(actionKey, httpActionSchema).refine((a) => Object.keys(a).length >= 1 && Object.keys(a).length <= 20, "Define 1 to 20 actions"),
 });
 export type HttpProviderConfig = z.infer<typeof httpProviderConfigSchema>;
-export type HttpAction = z.infer<typeof httpActionSchema>;
 
 export const simpleAdapterConfigSchema = z.strictObject({ adapter: z.string().refine((key) => SIMPLE_ADAPTER_KEYS.includes(key), "Unknown adapter") });
 

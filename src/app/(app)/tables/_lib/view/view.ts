@@ -73,10 +73,6 @@ export function toggleHidden(view: TableView, columnKey: string, hidden: boolean
   return { ...view, hiddenColumns: [...set] };
 }
 
-export const sortOf = (view: TableView, columnKey: string): "asc" | "desc" | null => view.sorts?.find((s) => s.columnKey === columnKey)?.direction ?? null;
-
-export const hasQuery = (view: TableView) => (view.filters?.conditions.length ?? 0) > 0 || (view.sorts?.length ?? 0) > 0;
-
 /** True when a filter condition narrows the rows. Muted conditions, blank values and conditions on lost columns do not. */
 export const filtersNarrow = (view: TableView, types?: ReadonlyMap<string, string>) => activeConditionCount(view.filters, types) > 0;
 

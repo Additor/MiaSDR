@@ -83,9 +83,6 @@ export function evaluateFormula(expression: string | CompiledFormula, row: Recor
   }
 }
 
-/** True when the value counts as empty for MISS/HIT style outcomes. */
-export const isEmptyResult = (value: FormulaValue): boolean => value === null || value === "" || (Array.isArray(value) && value.length === 0);
-
 class Run {
   private steps = 0;
 

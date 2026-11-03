@@ -1,10 +1,8 @@
 import { z } from "zod";
-import { createKnowledge, listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
+import { createKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
 import { KNOWLEDGE_KINDS } from "@/contexts/conversations/ai/domain/knowledge";
-import { withActor, withAdmin } from "@/app/_lib/api";
-
-export const GET = () => withActor((actor) => listKnowledge(knowledgeStore, actor));
+import { withAdmin } from "@/app/_lib/api";
 
 export const POST = (request: Request) =>
   withAdmin(

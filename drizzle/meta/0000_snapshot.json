@@ -2818,7 +2818,7 @@
       "checkConstraints": {
         "contact_policies_source_ck": {
           "name": "contact_policies_source_ck",
-          "value": "\"contact_policies\".\"source\" is null or \"contact_policies\".\"source\" in ('human', 'integration', 'inbound_request')"
+          "value": "\"contact_policies\".\"source\" is null or \"contact_policies\".\"source\" in ('human', 'integration')"
         },
         "contact_policies_state_ck": {
           "name": "contact_policies_state_ck",
@@ -2974,19 +2974,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "destination": {
-          "name": "destination",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'database'"
-        },
-        "destination_campaign_id": {
-          "name": "destination_campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "mapping": {
           "name": "mapping",
           "type": "jsonb",
@@ -3069,12 +3056,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "import_runs_destination_ck": {
-          "name": "import_runs_destination_ck",
-          "value": "\"import_runs\".\"destination\" in ('database', 'campaign')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.people": {
@@ -5128,13 +5110,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "invite_retry_count": {
-          "name": "invite_retry_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "resolve_retry_count": {
           "name": "resolve_retry_count",
           "type": "integer",
@@ -5779,18 +5754,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "followers_count": {
-          "name": "followers_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "shared_connections_count": {
-          "name": "shared_connections_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "raw": {
           "name": "raw",
           "type": "jsonb",
@@ -5922,12 +5885,6 @@
         "gmail_history_cursor": {
           "name": "gmail_history_cursor",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gmail_watch_expires_at": {
-          "name": "gmail_watch_expires_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -7066,114 +7023,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.draft_knowledge_citations": {
-      "name": "draft_knowledge_citations",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_version_id": {
-          "name": "document_version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "excerpt_hash": {
-          "name": "excerpt_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "excerpt": {
-          "name": "excerpt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rank": {
-          "name": "rank",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "draft_knowledge_citations_organization_id_organizations_id_fk": {
-          "name": "draft_knowledge_citations_organization_id_organizations_id_fk",
-          "tableFrom": "draft_knowledge_citations",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_knowledge_citations_draft_id_organization_id_drafts_id_organization_id_fk": {
-          "name": "draft_knowledge_citations_draft_id_organization_id_drafts_id_organization_id_fk",
-          "tableFrom": "draft_knowledge_citations",
-          "tableTo": "drafts",
-          "columnsFrom": [
-            "draft_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_knowledge_citations_document_version_id_organization_id_knowledge_document_versions_id_organization_id_fk": {
-          "name": "draft_knowledge_citations_document_version_id_organization_id_knowledge_document_versions_id_organization_id_fk",
-          "tableFrom": "draft_knowledge_citations",
-          "tableTo": "knowledge_document_versions",
-          "columnsFrom": [
-            "document_version_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "draft_knowledge_citations_draft_id_document_version_id_excerpt_hash_pk": {
-          "name": "draft_knowledge_citations_draft_id_document_version_id_excerpt_hash_pk",
-          "columns": [
-            "draft_id",
-            "document_version_id",
-            "excerpt_hash"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "draft_citations_rank_ck": {
-          "name": "draft_citations_rank_ck",
-          "value": "\"draft_knowledge_citations\".\"rank\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.drafts": {
       "name": "drafts",
       "schema": "",
@@ -7240,20 +7089,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ai_body_html": {
-          "name": "ai_body_html",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "edited_body_text": {
           "name": "edited_body_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "edited_body_html": {
-          "name": "edited_body_html",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -7552,12 +7389,6 @@
         "actor_user_id": {
           "name": "actor_user_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_ref": {
-          "name": "actor_ref",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -8382,12 +8213,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "body_html": {
-          "name": "body_html",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "important": {
           "name": "important",
@@ -9884,12 +9709,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "request_id": {
-          "name": "request_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "provider": {
           "name": "provider",
           "type": "text",
@@ -9898,12 +9717,6 @@
         },
         "account_ref": {
           "name": "account_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_request_id": {
-          "name": "provider_request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -10180,7 +9993,7 @@
         },
         "send_attempts_refs_ck": {
           "name": "send_attempts_refs_ck",
-          "value": "length(btrim(\"send_attempts\".\"idempotency_key\")) > 0\n        and (\"send_attempts\".\"request_id\" is null or length(btrim(\"send_attempts\".\"request_id\")) > 0)\n        and (\"send_attempts\".\"provider\" is null or length(btrim(\"send_attempts\".\"provider\")) > 0)\n        and (\"send_attempts\".\"account_ref\" is null or length(btrim(\"send_attempts\".\"account_ref\")) > 0)"
+          "value": "length(btrim(\"send_attempts\".\"idempotency_key\")) > 0\n        and (\"send_attempts\".\"provider\" is null or length(btrim(\"send_attempts\".\"provider\")) > 0)\n        and (\"send_attempts\".\"account_ref\" is null or length(btrim(\"send_attempts\".\"account_ref\")) > 0)"
         }
       },
       "isRLSEnabled": false

@@ -1,6 +1,5 @@
 import { pickResponse } from "./reply-type-pick";
 import { ConflictError, ValidationError } from "@/shared/errors";
-import type { WorkflowState } from "./workflow-state";
 import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type SystemRole, type TypeRules } from "./reply-type";
 
 /**
@@ -223,17 +222,4 @@ export function checkReplyTypeChange({ before, target, expectedContextVersion, c
   }
   return { replyTypeLocked: lockAfterPersonMove(target) };
 }
-
-export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
-  unclassified: "No type yet",
-  classifying: "Picking a type",
-  action_required: "Needs action",
-  waiting: "Waiting on them",
-  idle: "Idle",
-  paused: "Paused",
-  closed: "Closed",
-  error: "Error",
-} satisfies Record<WorkflowState, string>;
-
-export const workflowLabel = (state: string) => WORKFLOW_LABELS[state] ?? state.replace(/_/g, " ");
 

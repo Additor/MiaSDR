@@ -46,8 +46,6 @@ export interface GridStoreDeps {
   };
 }
 
-export type GridStore = ReturnType<typeof createGridStore>;
-
 let actionCounter = 0;
 /** An id for one undo step. `crypto.randomUUID` is missing outside secure contexts, so a counter backs it. */
 const newActionId = () => `a${Date.now().toString(36)}-${(actionCounter += 1)}`;

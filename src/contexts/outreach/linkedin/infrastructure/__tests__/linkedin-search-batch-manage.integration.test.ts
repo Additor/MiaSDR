@@ -251,7 +251,6 @@ describeDb("linkedin search batch management", () => {
       expect(claim?.searchId).toBe(query.id);
       await sql`update linkedin_search_queries set status = 'cancelled' where id = ${query.id}`;
       await expect(batchUc.removeSearchBatchUrls(f.batchDeps, f.actor, report.id, [query.id as string])).resolves.toMatchObject({ removed: 1 });
-      expect(await engineStore.isCurrent(claim!)).toBe(false);
       expect(await results(report.id)).toBe(0);
     });
 

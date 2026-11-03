@@ -64,10 +64,6 @@ export async function produceDraft(
   return { output: { subject: normalizeSubject(parsed.data.subject ?? "") || normalizeSubject(ctx.subject), bodyText: parsed.data.bodyText }, usage: result.usage };
 }
 
-export function draftCitations(ctx: DraftContext) {
-  return ctx.knowledge.map((k) => ({ documentVersionId: k.documentVersionId, excerpt: k.content.slice(0, 400) }));
-}
-
 async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadClassifyContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
@@ -125,7 +121,6 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     model: provider.model,
     request: { replyTypePickId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
     response: { usage: result.usage ?? null },
-    citations: draftCitations(ctx),
   });
   // Another worker claimed the job after this lease ran out; its run writes the draft. A person marked reply handling done
   // while the AI wrote: the job completes with nothing written.

@@ -1,6 +1,6 @@
 import type { Job } from "@/platform/jobs/types";
 import { assertStepsBelongToVersion, draftRetryDelayMs, interruptReason, MAX_DRAFT_ATTEMPTS, renderTemplate, stepGuidance } from "../domain/sequences";
-import { produceDraft, draftCitations } from "../../ai/application/ai-jobs";
+import { produceDraft } from "../../ai/application/ai-jobs";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAiResolver } from "../../ai/application/ai-ports";
 import type { ReplyStore } from "../../application/reply-ports";
@@ -150,7 +150,6 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
     model: provider.model,
     request: { sequenceStepRunId: claim.stepRunId, sequenceRunId: claim.run.id, stepPosition: claim.step.position, knowledge: guided.knowledge.map((k) => k.documentVersionId) },
     response: { usage: result.usage ?? null },
-    citations: draftCitations(guided),
   });
   if (typeof created === "string") {
     // A stop or a pause ended the claim while the model wrote, or another claim took the step over. Nothing is written.

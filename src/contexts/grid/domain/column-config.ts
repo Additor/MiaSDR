@@ -3,11 +3,8 @@ import { cleanJson } from "./cell-values";
 import { isStaticColumnType, type ColumnType } from "./column-types";
 import { compileFormula } from "./formula";
 import { TOKEN, normalizeKey } from "./keys";
-
-export const MAX_COLUMNS_PER_TABLE = 200;
 export const MAX_CONFIG_BYTES = 64 * 1024;
 export const MAX_CONFIG_DEPTH = 12;
-
 
 export const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 

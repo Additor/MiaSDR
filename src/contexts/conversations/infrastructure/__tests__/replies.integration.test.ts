@@ -464,7 +464,6 @@ describeDb("AI classification, drafts and approval", () => {
       });
       await receive(f);
       expect(f.ai!.lastDraftInput?.knowledge.map((k) => k.title)).toEqual(["Pricing"]);
-      expect(await count("draft_knowledge_citations", f.org)).toBe(1);
     });
 
     it("answers 404 for another organization's draft and conversation", async () => {

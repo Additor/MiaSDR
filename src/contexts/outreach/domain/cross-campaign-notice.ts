@@ -3,9 +3,6 @@
 /** `campaign_enrollments.stop_reason` set by the LinkedIn claim when the same account already invited the person through another campaign. */
 export const ALREADY_CONTACTED_BY_ACCOUNT = "already_contacted_by_account";
 
-/** `campaign_enrollments.stop_reason` set when the person became a contact and their pending and active enrollments were cancelled. */
-export const CONVERTED_STOP_REASON = "converted";
-
 export const NOTICE_LIST_LIMIT = 50;
 
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;

@@ -60,11 +60,8 @@ async function gapFor(tx: Tx | typeof db, organizationId: string): Promise<numbe
   return replyGapSeconds(row?.values ?? null);
 }
 
-/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`; older composer drafts carry `manual: true`. */
-const typedDraft = (request: unknown): boolean => {
-  const meta = request as { source?: string; manual?: boolean } | null;
-  return meta?.source === "manual" || meta?.manual === true;
-};
+/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`. */
+const typedDraft = (request: unknown): boolean => (request as { source?: string } | null)?.source === "manual";
 
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {

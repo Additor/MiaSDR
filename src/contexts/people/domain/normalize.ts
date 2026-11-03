@@ -11,7 +11,6 @@ const blank = (value: string | null | undefined): string | null => {
   return trimmed === "" ? null : trimmed;
 };
 
-
 /** A bare domain from a URL, an email address or a domain; null when none can be read. */
 export function normalizeDomain(value: string | null | undefined): string | null {
   let text = blank(value)?.toLowerCase();

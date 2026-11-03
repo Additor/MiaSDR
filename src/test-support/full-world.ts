@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
-import { dropOrgs } from "./db";
 
 /**
  * Test fixture for the schema integration tests: one organization with a row in every table the foreign keys, checks
@@ -94,7 +93,7 @@ export async function seedWorld(sql: Sql): Promise<World> {
     values (${org}, ${searchBatch}, 'https://example.test/search', ${linkedinAccount}) returning id`);
   const note = await one(sql`insert into notes (organization_id, person_id, record_id, body) values (${org}, ${person}, ${record}, 'n') returning id`);
   const task = await one(sql`insert into tasks (organization_id, person_id, record_id, name) values (${org}, ${person}, ${record}, 't') returning id`);
-  const importRun = await one(sql`insert into import_runs (organization_id, destination, destination_campaign_id) values (${org}, 'campaign', ${campaign}) returning id`);
+  const importRun = await one(sql`insert into import_runs (organization_id) values (${org}) returning id`);
   const contact = await one(sql`
     insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org}, ${"c-" + tag + "@lead.test"}, 'Contact', 'contact', now()) returning id`);
   const dealStage = await one(sql`insert into deal_stages (organization_id, name, kind, position) values (${org}, 'New', 'open', 1) returning id`);
@@ -120,10 +119,3 @@ export async function seedWorld(sql: Sql): Promise<World> {
   };
 }
 
-/**
- * Deletes the organization (cascades) and the user. Swallows errors: a failed test must not hide behind its own cleanup.
- * Deals go first: deals_stage_fk and deals_person_fk are RESTRICT, which a cascade from the organization does not wait out.
- */
-export async function dropWorld(sql: Sql, w: Pick<World, "org" | "user">): Promise<void> {
-  await dropOrgs(sql, [{ organizationId: w.org, userId: w.user }]);
-}

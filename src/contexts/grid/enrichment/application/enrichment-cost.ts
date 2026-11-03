@@ -82,16 +82,6 @@ export async function estimateColumn(deps: CostDeps, organizationId: string, col
   };
 }
 
-/** Checks that every provider a column calls is connected, switched on and has its key. Returns the worst-case cents per cell. */
-export async function preflight(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<number> {
-  return (await estimateColumn(deps, organizationId, column, true)).cents;
-}
-
-/** Worst-case cents of one cell of this column, counting only the steps that can run. A broken column costs nothing. */
-export async function cellCents(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<number> {
-  return (await cellEstimate(deps, organizationId, column)).cents;
-}
-
 /**
  * The lenient estimate. An invalid configuration costs nothing and still counts as reachable: its cell fails with
  * "Save it again", which tells the person what to fix, where a column whose providers are all off would only fail.

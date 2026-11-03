@@ -36,14 +36,6 @@ const text = (value: unknown, label: string, max: number, required: boolean): st
   return trimmed;
 };
 
-export function parseSequenceName(value: unknown): string {
-  return text(value, "Name", 160, true) as string;
-}
-
-export function parseDescription(value: unknown): string | null {
-  return text(value, "Description", 4000, false);
-}
-
 /** Validates the editable shape of every step and fixes the delay rules by position. */
 export function parseSteps(raw: unknown): StepInput[] {
   if (!Array.isArray(raw)) throw new ValidationError("Steps must be a list.");

@@ -1,14 +1,9 @@
-import { createColumn, listColumns } from "@/contexts/grid/application/column-management";
+import { createColumn } from "@/contexts/grid/application/column-management";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
 import { withActor } from "@/app/_lib/api";
 import { idField, idParam, readJsonObject } from "../../../http";
-
-export async function GET(_request: Request, ctx: RouteContext<"/api/grid/tables/[tableId]/columns">) {
-  const { tableId } = await ctx.params;
-  return withActor((actor) => listColumns(gridDeps(), actor, idParam(tableId)));
-}
 
 /** Body `{ name, type, config?, autoRun?, afterColumnId?, beforeColumnId?, copyValuesFrom? }`. */
 export async function POST(request: Request, ctx: RouteContext<"/api/grid/tables/[tableId]/columns">) {

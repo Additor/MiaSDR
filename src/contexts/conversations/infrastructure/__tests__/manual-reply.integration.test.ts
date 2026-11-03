@@ -233,7 +233,6 @@ describeDb("manual email replies (no AI)", () => {
       model: "fake-1",
       request: {},
       response: {},
-      citations: [],
     });
     const created = await compose(f);
     expect(await one("select status from drafts where id = $1", [(ai as { id: string }).id])).toMatchObject({ status: "stale" });

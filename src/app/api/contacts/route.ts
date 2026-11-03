@@ -1,21 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { addContactWithDealDeps, createContact } from "@/composition/person-lifecycle";
-import { addContactWithDeal, listContacts } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/composition/deals";
+import { addContactWithDeal } from "@/contexts/deals/application/deals";
 import { withActor } from "@/app/_lib/api";
 import { dealFieldsSchema } from "@/app/api/deals/validation";
-
-/**
- * The Contacts list: `q`, `page`, `sort` (`converted`, the default, newest conversion first; `name`; `activity`), `owner` (a
- * user id, `me` or `none`) and `stage` (a deal stage id). Both filters read each contact's latest deal. 25 per page.
- */
-export function GET(request: Request) {
-  return withActor(async (actor) => {
-    const { q, page, sort, owner, stage } = Object.fromEntries(new URL(request.url).searchParams);
-    return listContacts(dealsDeps(), actor, { q, page: page === undefined ? null : Number(page), sort, owner, stage });
-  });
-}
 
 const field = (max: number) => z.string().max(max).nullable().optional();
 

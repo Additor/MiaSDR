@@ -291,7 +291,6 @@ describeDb("failed AI jobs: requeue and sweep", () => {
         model: "fake",
         request: {},
         response: {},
-        citations: [],
       });
       expect(written).toBeNull();
       expect(await sql`select 1 from drafts where organization_id = ${f.org}`).toHaveLength(0);

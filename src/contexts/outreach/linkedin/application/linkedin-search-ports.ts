@@ -95,9 +95,7 @@ export interface LinkedInSearchEngineStore {
    * the most allowance left), take both leases. Null when nothing is due or no account is free.
    */
   claimPage(options: { now: Date; random: () => number }): Promise<SearchPageClaim | null>;
-  /** The search still wants this page: running or paused, not cancelled, and the claim has not expired. */
-  isCurrent(claim: SearchPageClaim): Promise<boolean>;
-  /**
+    /**
    * Stores the page, moves the cursor, counts the allowance and starts the pacing gap.
    * `page.results` runs inside the same transaction, after the claim is confirmed current, so the leads it creates, the
    * enrollments and the stored page commit or roll back together. Null (and `results` not called) when the claim is no longer current.

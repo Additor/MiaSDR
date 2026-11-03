@@ -6,9 +6,9 @@ import type { SequenceDeps } from "../application/sequences";
 import { replyAiResolver } from "../../ai/infrastructure/ai-composition";
 import { drizzleSequenceEngine } from "./drizzle-sequence-engine";
 import { drizzleAfterReplyStore, drizzleRunStore } from "./drizzle-sequence-store";
+import { drizzleReplyStore } from "../../infrastructure/drizzle-reply-store";
 
 export { campaignIdOfSequence } from "./drizzle-sequence-store";
-import { drizzleReplyStore } from "../../infrastructure/drizzle-reply-store";
 
 /** The per-record controls: pause, resume, skip, stop, restart. */
 export const sequenceDeps = (): SequenceDeps => ({ runs: drizzleRunStore, now: () => new Date() });

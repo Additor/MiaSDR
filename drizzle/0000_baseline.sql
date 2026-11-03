@@ -345,7 +345,7 @@ CREATE TABLE "contact_policies" (
 	"set_at" timestamp with time zone,
 	"cleared_at" timestamp with time zone,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "contact_policies_source_ck" CHECK ("contact_policies"."source" is null or "contact_policies"."source" in ('human', 'integration', 'inbound_request')),
+	CONSTRAINT "contact_policies_source_ck" CHECK ("contact_policies"."source" is null or "contact_policies"."source" in ('human', 'integration')),
 	CONSTRAINT "contact_policies_state_ck" CHECK ((
         ("contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is null)
         or (not "contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is not null and "contact_policies"."cleared_at" >= "contact_policies"."set_at")
@@ -375,13 +375,10 @@ CREATE TABLE "import_runs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"filename" text,
-	"destination" text DEFAULT 'database' NOT NULL,
-	"destination_campaign_id" uuid,
 	"mapping" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"stats" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "import_runs_destination_ck" CHECK ("import_runs"."destination" in ('database', 'campaign'))
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "people" (
@@ -597,7 +594,6 @@ CREATE TABLE "linkedin_enrollment_details" (
 	"connection_state" text DEFAULT 'none' NOT NULL,
 	"request_sent_at" timestamp with time zone,
 	"accepted_at" timestamp with time zone,
-	"invite_retry_count" integer DEFAULT 0 NOT NULL,
 	"resolve_retry_count" integer DEFAULT 0 NOT NULL,
 	"resolve_next_attempt_at" timestamp with time zone,
 	"resolve_last_error" text,
@@ -660,8 +656,6 @@ CREATE TABLE "linkedin_search_results" (
 	"headline" text,
 	"location" text,
 	"network_distance" text,
-	"followers_count" integer,
-	"shared_connections_count" integer,
 	"raw" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "linkedin_search_results_query_url_uq" UNIQUE("query_id","profile_url")
@@ -677,7 +671,6 @@ CREATE TABLE "mailboxes" (
 	"last_tested_at" timestamp with time zone,
 	"unavailable_since" timestamp with time zone,
 	"gmail_history_cursor" text,
-	"gmail_watch_expires_at" timestamp with time zone,
 	"last_synced_at" timestamp with time zone,
 	"daily_send_limit" integer DEFAULT 30 NOT NULL,
 	"signature_html" text,
@@ -793,16 +786,6 @@ CREATE TABLE "conversations" (
 	CONSTRAINT "conversations_account_ref_ck" CHECK (length(btrim("conversations"."account_ref")) > 0)
 );
 --> statement-breakpoint
-CREATE TABLE "draft_knowledge_citations" (
-	"organization_id" uuid NOT NULL,
-	"draft_id" uuid NOT NULL,
-	"document_version_id" uuid NOT NULL,
-	"excerpt_hash" text NOT NULL,
-	"excerpt" text NOT NULL,
-	"rank" numeric DEFAULT '0' NOT NULL,
-	CONSTRAINT "draft_knowledge_citations_draft_id_document_version_id_excerpt_hash_pk" PRIMARY KEY("draft_id","document_version_id","excerpt_hash"),
-	CONSTRAINT "draft_citations_rank_ck" CHECK ("draft_knowledge_citations"."rank" >= 0)
-);
 --> statement-breakpoint
 CREATE TABLE "drafts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -815,9 +798,7 @@ CREATE TABLE "drafts" (
 	"channel" text NOT NULL,
 	"subject" text,
 	"ai_body_text" text,
-	"ai_body_html" text,
 	"edited_body_text" text,
-	"edited_body_html" text,
 	"cc" text[] DEFAULT '{}'::text[] NOT NULL,
 	"status" text DEFAULT 'generating' NOT NULL,
 	"provider" text,
@@ -845,7 +826,6 @@ CREATE TABLE "events" (
 	"event_type" text NOT NULL,
 	"actor_type" text NOT NULL,
 	"actor_user_id" uuid,
-	"actor_ref" text,
 	"from_data" jsonb,
 	"to_data" jsonb,
 	"meta" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -932,7 +912,6 @@ CREATE TABLE "messages" (
 	"to_address" text,
 	"cc" text[],
 	"body_text" text NOT NULL,
-	"body_html" text,
 	"important" boolean DEFAULT false NOT NULL,
 	"opened_at" timestamp with time zone,
 	"raw" jsonb,
@@ -1088,10 +1067,8 @@ CREATE TABLE "send_attempts" (
 	"idempotency_key" text NOT NULL,
 	"status" text DEFAULT 'prepared' NOT NULL,
 	"actor_user_id" uuid NOT NULL,
-	"request_id" text,
 	"provider" text,
 	"account_ref" text,
-	"provider_request_id" text,
 	"provider_message_id" text,
 	"request" jsonb,
 	"response" jsonb,
@@ -1108,7 +1085,6 @@ CREATE TABLE "send_attempts" (
 	CONSTRAINT "send_attempts_status_ck" CHECK ("send_attempts"."status" in ('prepared', 'sending', 'sent', 'failed', 'delivery_uncertain', 'reconciled')),
 	CONSTRAINT "send_attempts_reconciled_ck" CHECK ("send_attempts"."status" <> 'reconciled' or "send_attempts"."reconciliation_note" is not null),
 	CONSTRAINT "send_attempts_refs_ck" CHECK (length(btrim("send_attempts"."idempotency_key")) > 0
-        and ("send_attempts"."request_id" is null or length(btrim("send_attempts"."request_id")) > 0)
         and ("send_attempts"."provider" is null or length(btrim("send_attempts"."provider")) > 0)
         and ("send_attempts"."account_ref" is null or length(btrim("send_attempts"."account_ref")) > 0))
 );
@@ -1521,9 +1497,6 @@ ALTER TABLE "ai_jobs" ADD CONSTRAINT "ai_jobs_organization_id_organizations_id_f
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_private_campaign_fk" FOREIGN KEY ("private_campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "draft_knowledge_citations" ADD CONSTRAINT "draft_knowledge_citations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "draft_knowledge_citations" ADD CONSTRAINT "draft_knowledge_citations_draft_id_organization_id_drafts_id_organization_id_fk" FOREIGN KEY ("draft_id","organization_id") REFERENCES "public"."drafts"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "draft_knowledge_citations" ADD CONSTRAINT "draft_knowledge_citations_document_version_id_organization_id_knowledge_document_versions_id_organization_id_fk" FOREIGN KEY ("document_version_id","organization_id") REFERENCES "public"."knowledge_document_versions"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_conversation_id_organization_id_conversations_id_organization_id_fk" FOREIGN KEY ("conversation_id","organization_id") REFERENCES "public"."conversations"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1738,8 +1711,6 @@ CREATE INDEX "deals_org_stage_idx" ON "deals" USING btree ("organization_id","st
 CREATE INDEX "deals_org_person_idx" ON "deals" USING btree ("organization_id","person_id");--> statement-breakpoint
 -- ---- Written by hand below this marker: the foreign keys schema.ts leaves out (circular references), then the
 -- functions and the triggers they back.
-ALTER TABLE ONLY public.import_runs
-    ADD CONSTRAINT import_runs_destination_campaign_fk FOREIGN KEY (destination_campaign_id, organization_id) REFERENCES public.campaigns(id, organization_id) ON DELETE SET NULL (destination_campaign_id);--> statement-breakpoint
 
 ALTER TABLE ONLY public.knowledge_documents
     ADD CONSTRAINT knowledge_documents_latest_version_fk FOREIGN KEY (id, latest_version) REFERENCES public.knowledge_document_versions(document_id, version) DEFERRABLE INITIALLY DEFERRED;--> statement-breakpoint
@@ -1920,7 +1891,6 @@ BEGIN
 		OR NEW."to_address" IS DISTINCT FROM OLD."to_address"
 		OR NEW."cc" IS DISTINCT FROM OLD."cc"
 		OR NEW."body_text" IS DISTINCT FROM OLD."body_text"
-		OR NEW."body_html" IS DISTINCT FROM OLD."body_html"
 		OR NEW."raw" IS DISTINCT FROM OLD."raw"
 		OR NEW."sent_at" IS DISTINCT FROM OLD."sent_at"
 		OR NEW."created_at" IS DISTINCT FROM OLD."created_at" THEN

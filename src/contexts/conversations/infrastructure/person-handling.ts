@@ -110,19 +110,6 @@ export async function activeConversationOfPerson(organizationId: string, personI
   return row ? { conversationId: row.id, channel: row.channel as PersonChannel } : null;
 }
 
-/**
- * Where an old `/crm/records/[id]` link lands: the active-channel public conversation of the record's person
- * (`activeConversationOfPerson`). Null for an unknown record, another organization's record, or a person whose
- * threads are all private.
- */
-export async function activeConversationOfRecord(organizationId: string, recordId: string): Promise<{ conversationId: string; channel: PersonChannel } | null> {
-  const [row] = await db
-    .select({ personId: records.personId })
-    .from(records)
-    .where(and(eq(records.organizationId, organizationId), eq(records.id, recordId)));
-  return row ? activeConversationOfPerson(organizationId, row.personId) : null;
-}
-
 export async function listPersonEvents(organizationId: string, personId: string, limit: number): Promise<PersonEventView[]> {
   const rows = await db
     .select({

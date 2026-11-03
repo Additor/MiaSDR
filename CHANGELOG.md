@@ -20,6 +20,15 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### Removed
+
+Nothing used these, and the database baseline drops them, so start from an empty database.
+
+- The redirects from old URLs such as `/crm/records/[id]` and `/settings/email`.
+- 24 `GET` API handlers that no screen, MCP tool or test called. Screens read through the server, and MCP tools call the same use cases.
+- `draft_knowledge_citations` and 12 columns with no reader. A draft's stored request still names the knowledge it used.
+- The `shadcn` and `date-fns` packages. `src/app/globals.css` keeps the few CSS rules the app uses.
+
 ### Fixed
 
 - Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.

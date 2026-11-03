@@ -149,12 +149,5 @@ describeDb("deal routes", () => {
     const empty = await callRoute("deals/route.ts", "GET", { query: { stage, cursor: pastEnd }, as: world.admin });
     expect(empty.status).toBe(200);
     expect((empty.body as { columns: Array<{ cards: unknown[]; nextCursor: string | null }> }).columns).toMatchObject([{ cards: [], nextCursor: null }]);
-
-    const contacts = await callRoute("contacts/route.ts", "GET", { query: { q: "Bulk" }, as: world.admin });
-    expect(contacts.body).toMatchObject({ total: 2, page: 1, pageSize: 25, rows: [{ name: "Eve Bulk", openDeals: 1 }, { name: "Dee Bulk", openDeals: 1 }] });
-    expect((await callRoute("contacts/route.ts", "GET", { query: { sort: "nope" }, as: world.admin })).status).toBe(422);
-    const companies = await callRoute("companies/route.ts", "GET", { as: world.admin });
-    expect(companies.status).toBe(200);
-    expect(companies.body).toMatchObject({ page: 1, pageSize: 25 });
   });
 });

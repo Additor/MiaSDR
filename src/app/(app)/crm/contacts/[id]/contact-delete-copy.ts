@@ -32,8 +32,6 @@ export interface DeletePreview {
 
 export const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const upperFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-
-export const CAN_DELETE = "This contact can be deleted.";
 export const CANNOT_DELETE = "This contact cannot be deleted.";
 export const COUNTS_INTRO = "It also deletes:";
 

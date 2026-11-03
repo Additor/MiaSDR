@@ -1,11 +1,9 @@
 import { z } from "zod";
 import {
-  cancelSequenceRun,
-  getRecordSequence,
-  pauseSequenceRun,
-  restartSequenceRun,
-  resumeSequenceRun,
-  skipSequenceStep,
+cancelSequenceRun,pauseSequenceRun,
+restartSequenceRun,
+resumeSequenceRun,
+skipSequenceStep
 } from "@/contexts/conversations/after-reply/application/sequences";
 import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { withActor } from "@/app/_lib/api";
@@ -14,12 +12,6 @@ import { ValidationError } from "@/shared/errors";
 type Ctx = RouteContext<"/api/records/[id]/after-reply">;
 
 const ACTIONS = ["pause", "resume", "skip", "cancel", "restart"] as const;
-
-/** The record's follow-up run under its campaign's "Follow-ups after a reply" setting. */
-export async function GET(_request: Request, ctx: Ctx) {
-  const { id } = await ctx.params;
-  return withActor((actor) => getRecordSequence(sequenceDeps(), actor, id));
-}
 
 /**
  * Controls for the record's run. Body: `{ action: "pause" | "resume" | "skip" | "cancel" | "restart" }`.

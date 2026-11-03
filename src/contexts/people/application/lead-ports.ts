@@ -144,9 +144,7 @@ export interface LeadRepository {
    * unless `overwrite` is set. Returns how many leads gained or changed a value.
    */
   mapRawToCustom(organizationId: string, input: { rawKey: string; customKey: string; overwrite: boolean }): Promise<number>;
-  /** The raw keys in use with the number of leads that have each, most common first. */
-  rawKeyStats(organizationId: string): Promise<Array<{ key: string; leads: number }>>;
-  /** Creates the custom column when it does not exist; returns the key. */
+    /** Creates the custom column when it does not exist; returns the key. */
   ensureCustomColumn(organizationId: string, name: string, options?: { restoreArchived?: boolean }): Promise<{ key: string; name: string }>;
   /** Batches of rows in a stable order, so a long export never loads the whole table. */
   exportBatches(organizationId: string, filter: LeadFilter): AsyncIterable<ExportRow[]>;

@@ -10,8 +10,6 @@ export type CampaignField = (typeof CAMPAIGN_FIELDS)[number];
 
 /** Field to grid column key. */
 export type CampaignFieldMapping = Partial<Record<CampaignField, string>>;
-
-export const MAX_CAMPAIGN_ROWS = 5_000;
 export const MAX_CAMPAIGN_CUSTOM_COLUMNS = 20;
 
 const IMPORT_TARGET: Record<CampaignField, string> = {

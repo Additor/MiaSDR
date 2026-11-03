@@ -47,7 +47,6 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
   await tx.execute(sql`
     delete from send_attempts where organization_id = ${org}
       and draft_id in (select d.id from drafts d where d.organization_id = ${org} and d.record_id in ${recs})`);
-  // Cascades to draft_knowledge_citations.
   await tx.execute(sql`delete from drafts where organization_id = ${org} and record_id in ${recs}`);
   await tx.execute(sql`delete from reply_type_picks where organization_id = ${org} and record_id in ${recs}`);
   const events = await deleted(tx, sql`delete from events where organization_id = ${org} and (person_id = ${personId}::uuid or record_id in ${recs})`);

@@ -1,15 +1,9 @@
 import { z } from "zod";
-import { getCampaignAfterReply, saveCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
+import { saveCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { withActor } from "@/app/_lib/api";
 
 type Ctx = RouteContext<"/api/campaigns/[id]/after-reply">;
-
-/** The campaign's "Follow-ups after a reply" setting: the mode, the follow-up steps and the runs in progress. Any member may read it. */
-export async function GET(_request: Request, ctx: Ctx) {
-  const { id } = await ctx.params;
-  return withActor((actor) => getCampaignAfterReply(afterReplyDeps(), actor, id));
-}
 
 /**
  * Saves the setting. Body: `{ mode: "handoff" | "ai_drafts", steps?, confirmStopRuns? }`. The application layer validates the fields.

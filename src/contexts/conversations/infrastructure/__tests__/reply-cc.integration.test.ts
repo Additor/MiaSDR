@@ -62,7 +62,6 @@ describeDb("CC on a reply", () => {
       model: "fake",
       request: {},
       response: {},
-      citations: [],
     })) as { id: string };
     return { org, actor, deps, address, lead, draftId, conversationId: ingested.conversationId, personId: ingested.personId };
   }

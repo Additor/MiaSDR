@@ -444,29 +444,5 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       const other = await fixture();
       expect(await handling.activeConversationOfPerson(other.org, personId)).toBeNull();
     });
-
-    it("resolves an old record link through the record's person: two conversations, none, personal only, another organization", async () => {
-      const f = await fixture();
-      const { recordId } = await ingest(f);
-      const email = (await one("select id from conversations where record_id = $1", [recordId])).id as string;
-      const linkedin = await addConversation(f, recordId, "linkedin", { updatedAt: new Date(Date.now() + 60_000) });
-      await sql`update records set active_channel = 'email' where id = ${recordId}`;
-      expect(await handling.activeConversationOfRecord(f.org, recordId)).toEqual({ conversationId: email, channel: "email" });
-      await sql`update records set active_channel = 'linkedin' where id = ${recordId}`;
-      expect(await handling.activeConversationOfRecord(f.org, recordId)).toEqual({ conversationId: linkedin, channel: "linkedin" });
-
-      const bare = await person(f);
-      const [{ id: pipeline }] = await sql`select reply_type_set_id as id from records where id = ${recordId}`;
-      const [{ id: empty }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${bare}, ${pipeline}) returning id`;
-      expect(await handling.activeConversationOfRecord(f.org, empty)).toBeNull();
-
-      const priv = await personalOnly(f);
-      const [{ id: privateRecord }] = await sql`select id from records where person_id = ${priv.personId}`;
-      expect(await handling.activeConversationOfRecord(f.org, privateRecord)).toBeNull();
-
-      const other = await fixture();
-      expect(await handling.activeConversationOfRecord(other.org, recordId)).toBeNull();
-      expect(await handling.activeConversationOfRecord(f.org, "00000000-0000-4000-8000-000000000000")).toBeNull();
-    });
   });
 });

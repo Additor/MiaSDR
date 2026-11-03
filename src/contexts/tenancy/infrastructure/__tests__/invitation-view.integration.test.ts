@@ -7,7 +7,6 @@ vi.mock("next/headers", async () => (await import("@/test-support/route-client")
 vi.mock("next/server", async (original) => (await import("@/test-support/route-client")).nextServerStandIn(await original()));
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
-const ROUTE = "invitations/[id]/route.ts";
 const PASSWORD = "invitee-pw-12345";
 
 describeDb("invitation view and decline", () => {
@@ -38,7 +37,12 @@ describeDb("invitation view and decline", () => {
     return id;
   }
 
-  const view = (id: string, as: Identity | null) => callRoute(ROUTE, "GET", { params: { id }, as });
+  const view = async (id: string, as: Identity) => {
+    const { getInvitationView } = await import("../../application/invitation-view");
+    const { invitationViewDeps } = await import("../member-composition");
+    const body = await getInvitationView(invitationViewDeps(), { invitationId: id, viewerEmail: as.email });
+    return { body, text: JSON.stringify(body) };
+  };
   const post = (path: string, as: Identity, body: unknown) =>
     authRoute.POST(
       new Request(`http://localhost:3000/api/auth/${path}`, {
@@ -61,7 +65,6 @@ describeDb("invitation view and decline", () => {
   it("shows the invited person the organization, role, inviter name and expiry", async () => {
     const id = await invite();
     const result = await view(id, invitee);
-    expect(result.status).toBe(200);
     expect(result.body).toMatchObject({
       state: "ready",
       organizationName: expect.stringContaining("Matrix a"),
@@ -83,7 +86,6 @@ describeDb("invitation view and decline", () => {
       const id = await invite(overrides);
       for (const viewer of [stranger, world.member]) {
         const result = await view(id, viewer);
-        expect(result.status).toBe(200);
         expect(result.body, JSON.stringify(overrides)).toEqual({ state: "wrong-account", organizationName: expect.stringContaining("Matrix a"), viewerEmail: viewer.email });
         for (const secret of [invitee.email, world.admin.email, world.admin.name, id, "admin"]) expect(result.text, `${secret} ${JSON.stringify(overrides)}`).not.toContain(secret);
       }
@@ -96,16 +98,10 @@ describeDb("invitation view and decline", () => {
     expect((await view(await invite({ status: "rejected" }), invitee)).body).toMatchObject({ state: "declined" });
   });
 
-  it("answers 404 not-found for a canceled invitation, an unknown id and a non-uuid id", async () => {
-    const canceled = await view(await invite({ status: "canceled" }), invitee);
-    expect(canceled.status).toBe(404);
-    expect(canceled.body).toEqual({ error: "This invitation does not exist.", state: "not-found", code: "not_found" });
-    expect((await view("00000000-0000-4000-8000-000000000000", invitee)).status).toBe(404);
-    for (const bad of ["not-a-uuid", "x", "1; drop table invitations"]) expect((await view(bad, invitee)).status, bad).toBe(404);
-  });
-
-  it("answers 401 without a session", async () => {
-    expect((await view(await invite(), null)).status).toBe(401);
+  it("answers not-found for a canceled invitation, an unknown id and a non-uuid id", async () => {
+    expect((await view(await invite({ status: "canceled" }), invitee)).body).toEqual({ state: "not-found" });
+    expect((await view("00000000-0000-4000-8000-000000000000", invitee)).body).toEqual({ state: "not-found" });
+    for (const bad of ["not-a-uuid", "x", "1; drop table invitations"]) expect((await view(bad, invitee)).body, bad).toEqual({ state: "not-found" });
   });
 
   it("serves the page a minimal anonymous view and not-found for a bad id", async () => {
