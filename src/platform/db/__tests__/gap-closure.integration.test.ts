@@ -22,7 +22,7 @@ describeDb("gap-closure schema", () => {
     [{ id: personA }] = await sql`insert into people (organization_id, email) values (${orgA}, ${"a-" + s + "@x.com"}) returning id`;
     [{ id: personB }] = await sql`insert into people (organization_id, email) values (${orgB}, ${"b-" + s + "@x.com"}) returning id`;
     [{ id: mailboxA }] = await sql`
-      insert into mailboxes (organization_id, email_address) values (${orgA}, ${"mb-" + s + "@x.com"}) returning id`;
+      insert into mailboxes (organization_id, email_address, status) values (${orgA}, ${"mb-" + s + "@x.com"}, 'connected') returning id`;
     messageA = await makeMessage(orgA, personA, "a" + s);
     messageB = await makeMessage(orgB, personB, "b" + s);
   });

@@ -1,4 +1,4 @@
--- The MiaSDR schema at 0.1.0, in one file. The tables, indexes and keys above the marker below come from
+-- The MiaSDR schema, in one file. The tables, indexes and keys above the marker below come from
 -- src/platform/db/schema.ts through drizzle-kit generate, with two kinds of edit Drizzle cannot express: a composite
 -- foreign key that nulls one column (ON DELETE SET NULL (column)) and the deferred unique key on deal_stages.
 -- docs/database.md describes the rules below the marker.
@@ -17,6 +17,141 @@ CREATE TABLE "accounts" (
 	"password" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "jwks" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"public_key" text NOT NULL,
+	"private_key" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone,
+	"alg" text,
+	"crv" text
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_access_tokens" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"token" text NOT NULL,
+	"client_id" text NOT NULL,
+	"session_id" uuid,
+	"user_id" uuid,
+	"reference_id" text,
+	"authorization_code_id" text,
+	"resources" text[],
+	"requested_user_info_claims" text[],
+	"refresh_id" uuid,
+	"expires_at" timestamp with time zone NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"revoked" timestamp with time zone,
+	"confirmation" jsonb,
+	"scopes" text[] NOT NULL,
+	CONSTRAINT "oauth_access_tokens_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_client_assertions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_client_resources" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"client_id" text NOT NULL,
+	"resource_id" text NOT NULL,
+	"metadata" jsonb,
+	"created_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_clients" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"client_id" text NOT NULL,
+	"client_secret" text,
+	"client_discovery_id" text,
+	"disabled" boolean DEFAULT false,
+	"skip_consent" boolean,
+	"enable_end_session" boolean,
+	"subject_type" text,
+	"scopes" text[],
+	"client_credentials_scopes" text[],
+	"user_id" uuid,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone,
+	"name" text,
+	"uri" text,
+	"icon" text,
+	"contacts" text[],
+	"tos" text,
+	"policy" text,
+	"software_id" text,
+	"software_version" text,
+	"software_statement" text,
+	"redirect_uris" text[] NOT NULL,
+	"post_logout_redirect_uris" text[],
+	"backchannel_logout_uri" text,
+	"backchannel_logout_session_required" boolean,
+	"token_endpoint_auth_method" text,
+	"application_type" text,
+	"jwks" text,
+	"jwks_uri" text,
+	"grant_types" text[],
+	"response_types" text[],
+	"require_pkce" boolean,
+	"dpop_bound_access_tokens" boolean,
+	"reference_id" text,
+	"metadata" jsonb,
+	CONSTRAINT "oauth_clients_client_id_unique" UNIQUE("client_id")
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_consents" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"client_id" text NOT NULL,
+	"user_id" uuid,
+	"reference_id" text,
+	"resources" text[],
+	"requested_user_info_claims" text[],
+	"scopes" text[] NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_refresh_tokens" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"token" text NOT NULL,
+	"client_id" text NOT NULL,
+	"session_id" uuid,
+	"user_id" uuid NOT NULL,
+	"reference_id" text,
+	"authorization_code_id" text,
+	"resources" text[],
+	"requested_user_info_claims" text[],
+	"expires_at" timestamp with time zone NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"revoked" timestamp with time zone,
+	"rotated_at" timestamp with time zone,
+	"rotation_replay_response" text,
+	"rotation_replay_expires_at" timestamp with time zone,
+	"auth_time" timestamp with time zone,
+	"confirmation" jsonb,
+	"scopes" text[] NOT NULL,
+	CONSTRAINT "oauth_refresh_tokens_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
+CREATE TABLE "oauth_resources" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"identifier" text NOT NULL,
+	"name" text NOT NULL,
+	"access_token_ttl" integer,
+	"refresh_token_ttl" integer,
+	"signing_algorithm" text,
+	"signing_key_id" text,
+	"allowed_scopes" text[],
+	"custom_claims" jsonb,
+	"dpop_bound_access_tokens_required" boolean,
+	"disabled" boolean,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone,
+	"policy_version" integer,
+	"metadata" jsonb,
+	CONSTRAINT "oauth_resources_identifier_unique" UNIQUE("identifier")
 );
 --> statement-breakpoint
 CREATE TABLE "sessions" (
@@ -84,6 +219,71 @@ CREATE TABLE "invitations" (
 	"inviter_id" uuid NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "mcp_agent_usage" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"day" date NOT NULL,
+	"kind" text NOT NULL,
+	"amount" integer NOT NULL,
+	CONSTRAINT "mcp_agent_usage_org_day_kind_uq" UNIQUE("organization_id","day","kind"),
+	CONSTRAINT "mcp_agent_usage_kind_ck" CHECK ("mcp_agent_usage"."kind" in ('spend_cents', 'search_leads', 'irreversible')),
+	CONSTRAINT "mcp_agent_usage_amount_ck" CHECK ("mcp_agent_usage"."amount" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_rate_limits" (
+	"organization_id" uuid NOT NULL,
+	"token_id" uuid NOT NULL,
+	"bucket" text NOT NULL,
+	"window_start" timestamp with time zone NOT NULL,
+	"count" integer NOT NULL,
+	CONSTRAINT "mcp_rate_limits_organization_id_token_id_bucket_pk" PRIMARY KEY("organization_id","token_id","bucket"),
+	CONSTRAINT "mcp_rate_limits_count_ck" CHECK ("mcp_rate_limits"."count" >= 1)
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_tokens" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"name" text NOT NULL,
+	"token_hash" text,
+	"token_hint" text,
+	"oauth_grant_id" text,
+	"scopes" text[] NOT NULL,
+	"policy_epoch" integer DEFAULT 0 NOT NULL,
+	"spend_epoch" integer DEFAULT 0 NOT NULL,
+	"irreversible_epoch" integer DEFAULT 0 NOT NULL,
+	"expires_at" timestamp with time zone,
+	"last_used_at" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "mcp_tokens_token_hash_uq" UNIQUE("token_hash"),
+	CONSTRAINT "mcp_tokens_oauth_grant_uq" UNIQUE("oauth_grant_id"),
+	CONSTRAINT "mcp_tokens_id_org_uq" UNIQUE("id","organization_id"),
+	CONSTRAINT "mcp_tokens_kind_ck" CHECK ("mcp_tokens"."kind" in ('pat', 'oauth')),
+	CONSTRAINT "mcp_tokens_secret_ck" CHECK (("mcp_tokens"."kind" = 'pat' and "mcp_tokens"."token_hash" is not null and "mcp_tokens"."oauth_grant_id" is null) or ("mcp_tokens"."kind" = 'oauth' and "mcp_tokens"."oauth_grant_id" is not null and "mcp_tokens"."token_hash" is null and "mcp_tokens"."token_hint" is null)),
+	CONSTRAINT "mcp_tokens_name_ck" CHECK (length(btrim("mcp_tokens"."name")) between 1 and 100),
+	CONSTRAINT "mcp_tokens_policy_epoch_ck" CHECK ("mcp_tokens"."policy_epoch" >= 0),
+	CONSTRAINT "mcp_tokens_spend_epoch_ck" CHECK ("mcp_tokens"."spend_epoch" >= 0),
+	CONSTRAINT "mcp_tokens_irreversible_epoch_ck" CHECK ("mcp_tokens"."irreversible_epoch" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_tool_calls" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"token_id" uuid NOT NULL,
+	"tool" text NOT NULL,
+	"action" text,
+	"kind" text NOT NULL,
+	"target" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"error_code" text,
+	"client_name" text,
+	"duration_ms" integer NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "mcp_tool_calls_kind_ck" CHECK ("mcp_tool_calls"."kind" in ('read', 'write')),
+	CONSTRAINT "mcp_tool_calls_duration_ck" CHECK ("mcp_tool_calls"."duration_ms" >= 0)
+);
+--> statement-breakpoint
 CREATE TABLE "members" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -134,6 +334,23 @@ CREATE TABLE "company_domain_aliases" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "company_domain_aliases_org_domain_uq" UNIQUE("organization_id","domain"),
 	CONSTRAINT "company_domain_aliases_domain_ck" CHECK ("company_domain_aliases"."domain" = lower(btrim("company_domain_aliases"."domain")) and length("company_domain_aliases"."domain") between 3 and 253)
+);
+--> statement-breakpoint
+CREATE TABLE "contact_policies" (
+	"person_id" uuid PRIMARY KEY NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"do_not_contact" boolean DEFAULT false NOT NULL,
+	"reason" text,
+	"source" text,
+	"set_at" timestamp with time zone,
+	"cleared_at" timestamp with time zone,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "contact_policies_source_ck" CHECK ("contact_policies"."source" is null or "contact_policies"."source" in ('human', 'integration', 'inbound_request')),
+	CONSTRAINT "contact_policies_state_ck" CHECK ((
+        ("contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is null)
+        or (not "contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is not null and "contact_policies"."cleared_at" >= "contact_policies"."set_at")
+        or (not "contact_policies"."do_not_contact" and "contact_policies"."source" is null and "contact_policies"."set_at" is null and "contact_policies"."cleared_at" is null)
+      ))
 );
 --> statement-breakpoint
 CREATE TABLE "entity_columns" (
@@ -195,6 +412,18 @@ CREATE TABLE "people" (
 	CONSTRAINT "people_creation_key_ck" CHECK ("people"."creation_key" is null or char_length("people"."creation_key") between 8 and 200)
 );
 --> statement-breakpoint
+CREATE TABLE "suppression_list" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"email" text NOT NULL,
+	"reason" text NOT NULL,
+	"note" text,
+	"added_in_settings" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "suppression_org_email_uq" UNIQUE("organization_id","email"),
+	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual', 'complaint'))
+);
+--> statement-breakpoint
 CREATE TABLE "integration_accounts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -230,6 +459,7 @@ CREATE TABLE "campaign_enrollments" (
 	"last_sent_at" timestamp with time zone,
 	"merge_fields" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"stop_reason" text,
+	"enrolled_via_token_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "enrollments_campaign_person_uq" UNIQUE("campaign_id","person_id"),
@@ -258,6 +488,8 @@ CREATE TABLE "campaigns" (
 	"steps" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_by" uuid,
 	"archived_at" timestamp with time zone,
+	"started_via_token_id" uuid,
+	"person_paused" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "campaigns_id_org_uq" UNIQUE("id","organization_id"),
@@ -283,6 +515,7 @@ CREATE TABLE "inbound_events" (
 	"processed_at" timestamp with time zone,
 	"replay_count" integer DEFAULT 0 NOT NULL,
 	"last_replayed_at" timestamp with time zone,
+	"claim_token" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "inbound_events_replay_ck" CHECK ("inbound_events"."replay_count" >= 0),
 	CONSTRAINT "inbound_events_provider_ck" CHECK ("inbound_events"."provider" in ('gmail', 'unipile')),
@@ -308,6 +541,7 @@ CREATE TABLE "linkedin_accounts" (
 	"search_lease_until" timestamp with time zone,
 	"working_hours" jsonb,
 	"next_allowed_run_at" timestamp with time zone,
+	"owner_user_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "linkedin_accounts_provider_account_id_unique" UNIQUE("provider_account_id"),
@@ -330,6 +564,7 @@ CREATE TABLE "linkedin_connect_links" (
 	"linkedin_account_id" uuid,
 	"last_error" text,
 	"created_by" uuid,
+	"owner_user_id" uuid,
 	"completed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "linkedin_connect_links_provider_name_unique" UNIQUE("provider_name"),
@@ -382,7 +617,8 @@ CREATE TABLE "linkedin_search_batches" (
 	"max_results" integer,
 	"target_campaign_id" uuid,
 	"created_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "linkedin_search_batches_id_org_uq" UNIQUE("id","organization_id")
 );
 --> statement-breakpoint
 CREATE TABLE "linkedin_search_queries" (
@@ -408,7 +644,9 @@ CREATE TABLE "linkedin_search_queries" (
 	"lease_until" timestamp with time zone,
 	"started_at" timestamp with time zone,
 	"completed_at" timestamp with time zone,
+	"created_via_token_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "linkedin_search_queries_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "linkedin_search_queries_status_ck" CHECK ("linkedin_search_queries"."status" in ('queued', 'running', 'paused', 'paused_limit', 'completed', 'failed', 'cancelled'))
 );
 --> statement-breakpoint
@@ -434,7 +672,7 @@ CREATE TABLE "mailboxes" (
 	"organization_id" uuid NOT NULL,
 	"email_address" text NOT NULL,
 	"display_name" text,
-	"status" text DEFAULT 'connecting' NOT NULL,
+	"status" text NOT NULL,
 	"last_error" text,
 	"last_tested_at" timestamp with time zone,
 	"unavailable_since" timestamp with time zone,
@@ -477,6 +715,7 @@ CREATE TABLE "sends" (
 	"error" text,
 	"claimed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"sent_at" timestamp with time zone,
+	"next_check_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "sends_enrollment_step_uq" UNIQUE("enrollment_id","step_number"),
 	CONSTRAINT "sends_channel_ck" CHECK ("sends"."channel" in ('email', 'linkedin')),
@@ -485,18 +724,6 @@ CREATE TABLE "sends" (
         or ("sends"."kind" = 'test' and "sends"."enrollment_id" is null and "sends"."step_number" is null and "sends"."channel" = 'email'
             and "sends"."mailbox_id" is not null and "sends"."to_address" is not null)),
 	CONSTRAINT "sends_status_ck" CHECK ("sends"."status" in ('sending', 'sent', 'failed', 'unknown'))
-);
---> statement-breakpoint
-CREATE TABLE "suppression_list" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"email" text NOT NULL,
-	"reason" text NOT NULL,
-	"note" text,
-	"added_in_settings" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "suppression_org_email_uq" UNIQUE("organization_id","email"),
-	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual', 'complaint'))
 );
 --> statement-breakpoint
 CREATE TABLE "job_runs" (
@@ -533,6 +760,7 @@ CREATE TABLE "ai_jobs" (
 	"completed_at" timestamp with time zone,
 	"failed_at" timestamp with time zone,
 	"last_error" text,
+	"claim_token" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ai_jobs_idempotency_key_unique" UNIQUE("idempotency_key"),
 	CONSTRAINT "ai_jobs_entity_uq" UNIQUE("kind","entity_type","entity_id"),
@@ -544,56 +772,6 @@ CREATE TABLE "ai_jobs" (
 	CONSTRAINT "ai_jobs_attempts_range_ck" CHECK ("ai_jobs"."attempts" >= 0 and "ai_jobs"."max_attempts" > 0),
 	CONSTRAINT "ai_jobs_completion_ck" CHECK ("ai_jobs"."status" not in ('succeeded', 'skipped') or "ai_jobs"."completed_at" is not null),
 	CONSTRAINT "ai_jobs_failed_ck" CHECK ("ai_jobs"."status" <> 'failed' or ("ai_jobs"."failed_at" is not null and length(btrim("ai_jobs"."last_error")) > 0))
-);
---> statement-breakpoint
-CREATE TABLE "classifications" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"record_id" uuid NOT NULL,
-	"message_id" uuid NOT NULL,
-	"expected_context_version" integer NOT NULL,
-	"previous_category_key" text,
-	"previous_subcategory_id" uuid,
-	"proposed_category_key" text,
-	"proposed_subcategory_id" uuid,
-	"applied_category_key" text,
-	"applied_subcategory_id" uuid,
-	"confidence" numeric(5, 4),
-	"reasoning" text,
-	"status" text DEFAULT 'proposed' NOT NULL,
-	"provider" text,
-	"model" text,
-	"request" jsonb,
-	"response" jsonb,
-	"error" text,
-	"acknowledged_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "classifications_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "classifications_message_version_uq" UNIQUE("message_id","expected_context_version"),
-	CONSTRAINT "classifications_status_ck" CHECK ("classifications"."status" in ('proposed', 'auto_applied', 'accepted', 'rejected', 'overridden', 'stale', 'failed')),
-	CONSTRAINT "classifications_confidence_ck" CHECK ("classifications"."status" = 'failed' or "classifications"."confidence" is not null),
-	CONSTRAINT "classifications_confidence_range_ck" CHECK ("classifications"."confidence" is null or "classifications"."confidence" between 0 and 1),
-	CONSTRAINT "classifications_context_version_ck" CHECK ("classifications"."expected_context_version" >= 0),
-	CONSTRAINT "classifications_category_keys_ck" CHECK (("classifications"."previous_category_key" is null or "classifications"."previous_category_key" in ('customer', 'interested', 'not_interested', 'other'))
-        and ("classifications"."proposed_category_key" is null or "classifications"."proposed_category_key" in ('customer', 'interested', 'not_interested', 'other'))
-        and ("classifications"."applied_category_key" is null or "classifications"."applied_category_key" in ('customer', 'interested', 'not_interested', 'other')))
-);
---> statement-breakpoint
-CREATE TABLE "contact_policies" (
-	"person_id" uuid PRIMARY KEY NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"do_not_contact" boolean DEFAULT false NOT NULL,
-	"reason" text,
-	"source" text,
-	"set_at" timestamp with time zone,
-	"cleared_at" timestamp with time zone,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "contact_policies_source_ck" CHECK ("contact_policies"."source" is null or "contact_policies"."source" in ('human', 'integration', 'inbound_request')),
-	CONSTRAINT "contact_policies_state_ck" CHECK ((
-        ("contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is null)
-        or (not "contact_policies"."do_not_contact" and "contact_policies"."source" is not null and "contact_policies"."set_at" is not null and "contact_policies"."cleared_at" is not null and "contact_policies"."cleared_at" >= "contact_policies"."set_at")
-        or (not "contact_policies"."do_not_contact" and "contact_policies"."source" is null and "contact_policies"."set_at" is null and "contact_policies"."cleared_at" is null)
-      ))
 );
 --> statement-breakpoint
 CREATE TABLE "conversations" (
@@ -647,6 +825,7 @@ CREATE TABLE "drafts" (
 	"request" jsonb,
 	"response" jsonb,
 	"error" text,
+	"written_via_token_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "drafts_id_org_uq" UNIQUE("id","organization_id"),
@@ -690,7 +869,7 @@ CREATE TABLE "identity_exceptions" (
 	"resolved_person_id" uuid,
 	"resolved_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "identity_exceptions_event_uq" UNIQUE("channel","account_ref","source_event_key"),
+	CONSTRAINT "identity_exceptions_event_uq" UNIQUE("organization_id","channel","account_ref","source_event_key"),
 	CONSTRAINT "identity_exceptions_status_ck" CHECK ("identity_exceptions"."status" in ('open', 'resolved', 'ignored')),
 	CONSTRAINT "identity_exceptions_channel_ck" CHECK ("identity_exceptions"."channel" in ('email', 'linkedin', 'whatsapp')),
 	CONSTRAINT "identity_exceptions_keys_ck" CHECK (length(btrim("identity_exceptions"."account_ref")) > 0 and length(btrim("identity_exceptions"."source_event_key")) > 0 and length(btrim("identity_exceptions"."reason")) > 0),
@@ -760,7 +939,6 @@ CREATE TABLE "messages" (
 	"sent_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "messages_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "messages_idempotency_uq" UNIQUE("channel","account_ref","idempotency_key"),
 	CONSTRAINT "messages_direction_ck" CHECK ("messages"."direction" in ('inbound', 'outbound')),
 	CONSTRAINT "messages_body_ck" CHECK (length(btrim("messages"."body_text")) > 0),
 	CONSTRAINT "messages_keys_ck" CHECK (length(btrim("messages"."idempotency_key")) > 0 and length(btrim("messages"."account_ref")) > 0)
@@ -778,43 +956,16 @@ CREATE TABLE "notes" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "pipeline_settings" (
-	"pipeline_id" uuid PRIMARY KEY NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"auto_apply_confidence" numeric(4, 3) DEFAULT '0.850' NOT NULL,
-	"review_other" boolean DEFAULT true NOT NULL,
-	"customer_requires_review" boolean DEFAULT true NOT NULL,
-	"draft_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"classification_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "pipeline_settings_confidence_ck" CHECK ("pipeline_settings"."auto_apply_confidence" between 0 and 1),
-	CONSTRAINT "pipeline_settings_instructions_ck" CHECK (jsonb_typeof("pipeline_settings"."draft_instructions") = 'array' and jsonb_typeof("pipeline_settings"."classification_instructions") = 'array'
-        and length("pipeline_settings"."draft_instructions"::text) <= 100000 and length("pipeline_settings"."classification_instructions"::text) <= 100000)
-);
---> statement-breakpoint
-CREATE TABLE "pipelines" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"organization_id" uuid NOT NULL,
-	"name" text NOT NULL,
-	"is_default" boolean DEFAULT false NOT NULL,
-	"active" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "pipelines_org_name_uq" UNIQUE("organization_id","name"),
-	CONSTRAINT "pipelines_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "pipelines_name_ck" CHECK (length(btrim("pipelines"."name")) > 0)
-);
---> statement-breakpoint
 CREATE TABLE "records" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"person_id" uuid NOT NULL,
-	"pipeline_id" uuid NOT NULL,
-	"category_key" text,
-	"subcategory_id" uuid,
+	"reply_type_set_id" uuid NOT NULL,
+	"group_key" text,
+	"reply_type_id" uuid,
 	"workflow_state" text DEFAULT 'unclassified' NOT NULL,
-	"category_source" text,
-	"category_locked" boolean DEFAULT false NOT NULL,
+	"reply_type_source" text,
+	"reply_type_locked" boolean DEFAULT false NOT NULL,
 	"active_channel" text,
 	"latest_inbound_message_id" uuid,
 	"context_version" integer DEFAULT 0 NOT NULL,
@@ -827,17 +978,106 @@ CREATE TABLE "records" (
 	"assigned_source" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "records_person_pipeline_uq" UNIQUE("person_id","pipeline_id"),
+	CONSTRAINT "records_person_reply_type_set_uq" UNIQUE("person_id","reply_type_set_id"),
 	CONSTRAINT "records_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "records_category_ck" CHECK ("records"."category_key" is null or "records"."category_key" in ('customer', 'interested', 'not_interested', 'other')),
+	CONSTRAINT "records_group_ck" CHECK ("records"."group_key" is null or "records"."group_key" in ('customer', 'interested', 'not_interested', 'other')),
 	CONSTRAINT "records_workflow_ck" CHECK ("records"."workflow_state" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')),
-	CONSTRAINT "records_source_ck" CHECK ("records"."category_source" is null or "records"."category_source" in ('ai', 'human', 'integration')),
-	CONSTRAINT "records_category_source_pair_ck" CHECK (("records"."category_key" is null) = ("records"."category_source" is null)),
-	CONSTRAINT "records_locked_ck" CHECK (not "records"."category_locked" or "records"."category_key" = 'customer'),
-	CONSTRAINT "records_subcategory_needs_category_ck" CHECK ("records"."subcategory_id" is null or "records"."category_key" is not null),
+	CONSTRAINT "records_source_ck" CHECK ("records"."reply_type_source" is null or "records"."reply_type_source" in ('ai', 'human', 'integration')),
+	CONSTRAINT "records_reply_type_source_pair_ck" CHECK (("records"."group_key" is null) = ("records"."reply_type_source" is null)),
+	CONSTRAINT "records_locked_ck" CHECK (not "records"."reply_type_locked" or "records"."group_key" = 'customer'),
+	CONSTRAINT "records_reply_type_needs_group_ck" CHECK ("records"."reply_type_id" is null or "records"."group_key" is not null),
 	CONSTRAINT "records_version_ck" CHECK ("records"."context_version" >= 0),
 	CONSTRAINT "records_active_channel_ck" CHECK ("records"."active_channel" is null or "records"."active_channel" in ('email', 'linkedin', 'whatsapp')),
 	CONSTRAINT "records_assigned_source_ck" CHECK (("records"."assigned_source" is null or "records"."assigned_source" in ('auto', 'human', 'cleared')) and ("records"."assigned_to" is null or "records"."assigned_source" is not null))
+);
+--> statement-breakpoint
+CREATE TABLE "reply_handling_settings" (
+	"reply_type_set_id" uuid PRIMARY KEY NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"auto_apply_confidence" numeric(4, 3) DEFAULT '0.850' NOT NULL,
+	"draft_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"classification_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "reply_handling_settings_confidence_ck" CHECK ("reply_handling_settings"."auto_apply_confidence" between 0 and 1),
+	CONSTRAINT "reply_handling_settings_instructions_ck" CHECK (jsonb_typeof("reply_handling_settings"."draft_instructions") = 'array' and jsonb_typeof("reply_handling_settings"."classification_instructions") = 'array'
+        and length("reply_handling_settings"."draft_instructions"::text) <= 100000 and length("reply_handling_settings"."classification_instructions"::text) <= 100000)
+);
+--> statement-breakpoint
+CREATE TABLE "reply_type_picks" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"record_id" uuid NOT NULL,
+	"message_id" uuid NOT NULL,
+	"expected_context_version" integer NOT NULL,
+	"previous_group_key" text,
+	"previous_reply_type_id" uuid,
+	"proposed_group_key" text,
+	"proposed_reply_type_id" uuid,
+	"applied_group_key" text,
+	"applied_reply_type_id" uuid,
+	"confidence" numeric(5, 4),
+	"reasoning" text,
+	"status" text DEFAULT 'proposed' NOT NULL,
+	"provider" text,
+	"model" text,
+	"request" jsonb,
+	"response" jsonb,
+	"rules" jsonb,
+	"error" text,
+	"acknowledged_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "reply_type_picks_id_org_uq" UNIQUE("id","organization_id"),
+	CONSTRAINT "reply_type_picks_message_version_uq" UNIQUE("message_id","expected_context_version"),
+	CONSTRAINT "reply_type_picks_status_ck" CHECK ("reply_type_picks"."status" in ('proposed', 'auto_applied', 'accepted', 'rejected', 'overridden', 'stale', 'failed')),
+	CONSTRAINT "reply_type_picks_confidence_ck" CHECK ("reply_type_picks"."status" = 'failed' or "reply_type_picks"."confidence" is not null),
+	CONSTRAINT "reply_type_picks_confidence_range_ck" CHECK ("reply_type_picks"."confidence" is null or "reply_type_picks"."confidence" between 0 and 1),
+	CONSTRAINT "reply_type_picks_context_version_ck" CHECK ("reply_type_picks"."expected_context_version" >= 0),
+	CONSTRAINT "reply_type_picks_rules_ck" CHECK ("reply_type_picks"."rules" is null or jsonb_typeof("reply_type_picks"."rules") = 'object'),
+	CONSTRAINT "reply_type_picks_group_keys_ck" CHECK (("reply_type_picks"."previous_group_key" is null or "reply_type_picks"."previous_group_key" in ('customer', 'interested', 'not_interested', 'other'))
+        and ("reply_type_picks"."proposed_group_key" is null or "reply_type_picks"."proposed_group_key" in ('customer', 'interested', 'not_interested', 'other'))
+        and ("reply_type_picks"."applied_group_key" is null or "reply_type_picks"."applied_group_key" in ('customer', 'interested', 'not_interested', 'other')))
+);
+--> statement-breakpoint
+CREATE TABLE "reply_type_sets" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"name" text NOT NULL,
+	"is_default" boolean DEFAULT false NOT NULL,
+	"active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "reply_type_sets_org_name_uq" UNIQUE("organization_id","name"),
+	CONSTRAINT "reply_type_sets_id_org_uq" UNIQUE("id","organization_id"),
+	CONSTRAINT "reply_type_sets_name_ck" CHECK (length(btrim("reply_type_sets"."name")) > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "reply_types" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"reply_type_set_id" uuid NOT NULL,
+	"group_key" text NOT NULL,
+	"key" text NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"classification_guidance" text,
+	"active" boolean DEFAULT true NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"check_mode" text DEFAULT 'after' NOT NULL,
+	"reply_draft" boolean DEFAULT true NOT NULL,
+	"follow_ups" text DEFAULT 'continue' NOT NULL,
+	"system_role" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "reply_types_set_key_uq" UNIQUE("reply_type_set_id","key"),
+	CONSTRAINT "reply_types_id_set_group_uq" UNIQUE("id","reply_type_set_id","group_key"),
+	CONSTRAINT "reply_types_id_org_uq" UNIQUE("id","organization_id"),
+	CONSTRAINT "reply_types_group_ck" CHECK ("reply_types"."group_key" in ('customer', 'interested', 'not_interested', 'other')),
+	CONSTRAINT "reply_types_key_ck" CHECK ("reply_types"."key" ~ '^[a-z][a-z0-9_]*$'),
+	CONSTRAINT "reply_types_sort_ck" CHECK ("reply_types"."sort_order" >= 0),
+	CONSTRAINT "reply_types_rules_ck" CHECK ("reply_types"."check_mode" in ('before', 'after', 'skip') and "reply_types"."follow_ups" in ('continue', 'stop')),
+	CONSTRAINT "reply_types_system_role_ck" CHECK ("reply_types"."system_role" is null or "reply_types"."system_role" in ('stop_request', 'customer')),
+	CONSTRAINT "reply_types_stop_request_ck" CHECK ("reply_types"."system_role" is distinct from 'stop_request' or ("reply_types"."check_mode" = 'before' and not "reply_types"."reply_draft" and "reply_types"."follow_ups" = 'stop' and "reply_types"."active")),
+	CONSTRAINT "reply_types_customer_ck" CHECK ("reply_types"."system_role" is distinct from 'customer' or "reply_types"."group_key" = 'customer')
 );
 --> statement-breakpoint
 CREATE TABLE "send_attempts" (
@@ -857,9 +1097,13 @@ CREATE TABLE "send_attempts" (
 	"error" text,
 	"reconciled_at" timestamp with time zone,
 	"reconciliation_note" text,
+	"origin" text DEFAULT 'person' NOT NULL,
+	"mcp_token_id" uuid,
+	"client_name" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "send_attempts_idempotency_key_unique" UNIQUE("idempotency_key"),
+	CONSTRAINT "send_attempts_org_idempotency_uq" UNIQUE("organization_id","idempotency_key"),
+	CONSTRAINT "send_attempts_origin_ck" CHECK ("send_attempts"."origin" in ('person', 'agent') and ("send_attempts"."origin" = 'agent' or ("send_attempts"."mcp_token_id" is null and "send_attempts"."client_name" is null))),
 	CONSTRAINT "send_attempts_status_ck" CHECK ("send_attempts"."status" in ('prepared', 'sending', 'sent', 'failed', 'delivery_uncertain', 'reconciled')),
 	CONSTRAINT "send_attempts_reconciled_ck" CHECK ("send_attempts"."status" <> 'reconciled' or "send_attempts"."reconciliation_note" is not null),
 	CONSTRAINT "send_attempts_refs_ck" CHECK (length(btrim("send_attempts"."idempotency_key")) > 0
@@ -868,27 +1112,13 @@ CREATE TABLE "send_attempts" (
         and ("send_attempts"."account_ref" is null or length(btrim("send_attempts"."account_ref")) > 0))
 );
 --> statement-breakpoint
-CREATE TABLE "subcategories" (
+CREATE TABLE "stop_reviews" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
-	"pipeline_id" uuid NOT NULL,
-	"category_key" text NOT NULL,
-	"key" text NOT NULL,
-	"name" text NOT NULL,
-	"description" text,
-	"classification_guidance" text,
-	"active" boolean DEFAULT true NOT NULL,
-	"review_required" boolean DEFAULT false NOT NULL,
-	"sort_order" integer DEFAULT 0 NOT NULL,
-	"stage_rank" integer,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "subcategories_pipeline_key_uq" UNIQUE("pipeline_id","key"),
-	CONSTRAINT "subcategories_id_pipeline_category_uq" UNIQUE("id","pipeline_id","category_key"),
-	CONSTRAINT "subcategories_id_org_uq" UNIQUE("id","organization_id"),
-	CONSTRAINT "subcategories_category_ck" CHECK ("subcategories"."category_key" in ('customer', 'interested', 'not_interested', 'other')),
-	CONSTRAINT "subcategories_key_ck" CHECK ("subcategories"."key" ~ '^[a-z][a-z0-9_]*$'),
-	CONSTRAINT "subcategories_sort_ck" CHECK ("subcategories"."sort_order" >= 0 and ("subcategories"."stage_rank" is null or "subcategories"."stage_rank" >= 1))
+	"message_id" uuid NOT NULL,
+	"reviewed_by" uuid,
+	"reviewed_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "stop_reviews_message_uq" UNIQUE("message_id")
 );
 --> statement-breakpoint
 CREATE TABLE "tasks" (
@@ -915,7 +1145,7 @@ CREATE TABLE "sequence_runs" (
 	"conversation_id" uuid NOT NULL,
 	"sequence_id" uuid NOT NULL,
 	"sequence_version_id" uuid NOT NULL,
-	"subcategory_id" uuid NOT NULL,
+	"reply_type_id" uuid NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"current_step_position" integer DEFAULT 1 NOT NULL,
 	"start_step_position" integer DEFAULT 1 NOT NULL,
@@ -942,6 +1172,7 @@ CREATE TABLE "sequence_step_runs" (
 	"attempt_count" integer DEFAULT 0 NOT NULL,
 	"last_error" text,
 	"expected_context_version" integer NOT NULL,
+	"claim_token" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "sequence_step_runs_run_step_uq" UNIQUE("sequence_run_id","sequence_step_id"),
@@ -1201,6 +1432,18 @@ CREATE TABLE "deals" (
 );
 --> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_refresh_id_oauth_refresh_tokens_id_fk" FOREIGN KEY ("refresh_id") REFERENCES "public"."oauth_refresh_tokens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_resource_id_oauth_resources_identifier_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."oauth_resources"("identifier") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1208,21 +1451,32 @@ ALTER TABLE "channel_settings" ADD CONSTRAINT "channel_settings_organization_id_
 ALTER TABLE "channel_settings" ADD CONSTRAINT "channel_settings_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invitations" ADD CONSTRAINT "invitations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invitations" ADD CONSTRAINT "invitations_inviter_id_users_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_agent_usage" ADD CONSTRAINT "mcp_agent_usage_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_rate_limits" ADD CONSTRAINT "mcp_rate_limits_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_rate_limits" ADD CONSTRAINT "mcp_rate_limits_token_fk" FOREIGN KEY ("token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_tokens" ADD CONSTRAINT "mcp_tokens_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_tokens" ADD CONSTRAINT "mcp_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_token_fk" FOREIGN KEY ("token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "members" ADD CONSTRAINT "members_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "members" ADD CONSTRAINT "members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "companies" ADD CONSTRAINT "companies_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "company_domain_aliases" ADD CONSTRAINT "company_domain_aliases_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "company_domain_aliases" ADD CONSTRAINT "company_domain_aliases_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "company_domain_aliases" ADD CONSTRAINT "company_domain_aliases_company_fk" FOREIGN KEY ("company_id","organization_id") REFERENCES "public"."companies"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "contact_policies" ADD CONSTRAINT "contact_policies_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "contact_policies" ADD CONSTRAINT "contact_policies_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entity_columns" ADD CONSTRAINT "entity_columns_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_runs" ADD CONSTRAINT "import_runs_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_runs" ADD CONSTRAINT "import_runs_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "people" ADD CONSTRAINT "people_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "people" ADD CONSTRAINT "people_company_fk" FOREIGN KEY ("company_id","organization_id") REFERENCES "public"."companies"("id","organization_id") ON DELETE SET NULL ("company_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "suppression_list" ADD CONSTRAINT "suppression_list_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "integration_accounts" ADD CONSTRAINT "integration_accounts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "integration_credentials" ADD CONSTRAINT "integration_credentials_account_id_integration_accounts_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."integration_accounts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_campaign_id_organization_id_campaigns_id_organization_id_fk" FOREIGN KEY ("campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_enrolled_via_token_fk" FOREIGN KEY ("enrolled_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("enrolled_via_token_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_mailbox_id_organization_id_mailboxes_id_organization_id_fk" FOREIGN KEY ("mailbox_id","organization_id") REFERENCES "public"."mailboxes"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_linkedin_account_id_organization_id_linkedin_accounts_id_organization_id_fk" FOREIGN KEY ("linkedin_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1232,9 +1486,12 @@ ALTER TABLE "campaign_senders" ADD CONSTRAINT "campaign_senders_mailbox_id_organ
 ALTER TABLE "campaign_senders" ADD CONSTRAINT "campaign_senders_linkedin_account_id_organization_id_linkedin_accounts_id_organization_id_fk" FOREIGN KEY ("linkedin_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_started_via_token_fk" FOREIGN KEY ("started_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("started_via_token_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_accounts" ADD CONSTRAINT "linkedin_accounts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_accounts" ADD CONSTRAINT "linkedin_accounts_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_connect_links" ADD CONSTRAINT "linkedin_connect_links_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_connect_links" ADD CONSTRAINT "linkedin_connect_links_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_connect_links" ADD CONSTRAINT "linkedin_connect_links_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_connect_links" ADD CONSTRAINT "linkedin_connect_links_linkedin_account_id_organization_id_linkedin_accounts_id_organization_id_fk" FOREIGN KEY ("linkedin_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_connections" ADD CONSTRAINT "linkedin_connections_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_connections" ADD CONSTRAINT "linkedin_connections_linkedin_account_id_organization_id_linkedin_accounts_id_organization_id_fk" FOREIGN KEY ("linkedin_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1242,32 +1499,24 @@ ALTER TABLE "linkedin_connections" ADD CONSTRAINT "linkedin_connections_enrollme
 ALTER TABLE "linkedin_enrollment_details" ADD CONSTRAINT "linkedin_enrollment_details_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_enrollment_details" ADD CONSTRAINT "linkedin_enrollment_details_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk" FOREIGN KEY ("enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_search_batches" ADD CONSTRAINT "linkedin_search_batches_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "linkedin_search_batches" ADD CONSTRAINT "linkedin_search_batches_target_campaign_id_campaigns_id_fk" FOREIGN KEY ("target_campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_search_batches" ADD CONSTRAINT "linkedin_search_batches_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_batches" ADD CONSTRAINT "linkedin_search_batches_target_campaign_fk" FOREIGN KEY ("target_campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE SET NULL ("target_campaign_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_batch_id_linkedin_search_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "public"."linkedin_search_batches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_target_campaign_id_campaigns_id_fk" FOREIGN KEY ("target_campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_current_account_fk" FOREIGN KEY ("current_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE SET NULL ("current_account_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_batch_fk" FOREIGN KEY ("batch_id","organization_id") REFERENCES "public"."linkedin_search_batches"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_target_campaign_fk" FOREIGN KEY ("target_campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE SET NULL ("target_campaign_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_created_via_token_fk" FOREIGN KEY ("created_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("created_via_token_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "linkedin_search_results" ADD CONSTRAINT "linkedin_search_results_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "linkedin_search_results" ADD CONSTRAINT "linkedin_search_results_query_id_linkedin_search_queries_id_fk" FOREIGN KEY ("query_id") REFERENCES "public"."linkedin_search_queries"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "linkedin_search_results" ADD CONSTRAINT "linkedin_search_results_person_id_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_results" ADD CONSTRAINT "linkedin_search_results_query_fk" FOREIGN KEY ("query_id","organization_id") REFERENCES "public"."linkedin_search_queries"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_search_results" ADD CONSTRAINT "linkedin_search_results_person_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE SET NULL ("person_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "mailboxes" ADD CONSTRAINT "mailboxes_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sends" ADD CONSTRAINT "sends_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sends" ADD CONSTRAINT "sends_requested_by_users_id_fk" FOREIGN KEY ("requested_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sends" ADD CONSTRAINT "sends_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk" FOREIGN KEY ("enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sends" ADD CONSTRAINT "sends_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk" FOREIGN KEY ("enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sends" ADD CONSTRAINT "sends_mailbox_fk" FOREIGN KEY ("mailbox_id","organization_id") REFERENCES "public"."mailboxes"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sends" ADD CONSTRAINT "sends_taken_over_mailbox_fk" FOREIGN KEY ("taken_over_from_mailbox_id","organization_id") REFERENCES "public"."mailboxes"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sends" ADD CONSTRAINT "sends_linkedin_account_fk" FOREIGN KEY ("linkedin_account_id","organization_id") REFERENCES "public"."linkedin_accounts"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "suppression_list" ADD CONSTRAINT "suppression_list_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ai_jobs" ADD CONSTRAINT "ai_jobs_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_message_id_organization_id_messages_id_organization_id_fk" FOREIGN KEY ("message_id","organization_id") REFERENCES "public"."messages"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_previous_subcategory_fk" FOREIGN KEY ("previous_subcategory_id","organization_id") REFERENCES "public"."subcategories"("id","organization_id") ON DELETE SET NULL ("previous_subcategory_id") ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_proposed_subcategory_fk" FOREIGN KEY ("proposed_subcategory_id","organization_id") REFERENCES "public"."subcategories"("id","organization_id") ON DELETE SET NULL ("proposed_subcategory_id") ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classifications" ADD CONSTRAINT "classifications_applied_subcategory_fk" FOREIGN KEY ("applied_subcategory_id","organization_id") REFERENCES "public"."subcategories"("id","organization_id") ON DELETE SET NULL ("applied_subcategory_id") ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "contact_policies" ADD CONSTRAINT "contact_policies_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "contact_policies" ADD CONSTRAINT "contact_policies_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_private_campaign_fk" FOREIGN KEY ("private_campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1277,13 +1526,14 @@ ALTER TABLE "draft_knowledge_citations" ADD CONSTRAINT "draft_knowledge_citation
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_conversation_id_organization_id_conversations_id_organization_id_fk" FOREIGN KEY ("conversation_id","organization_id") REFERENCES "public"."conversations"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "drafts" ADD CONSTRAINT "drafts_written_via_token_fk" FOREIGN KEY ("written_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("written_via_token_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_reply_message_fk" FOREIGN KEY ("reply_for_message_id","organization_id") REFERENCES "public"."messages"("id","organization_id") ON DELETE SET NULL ("reply_for_message_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "identity_exceptions" ADD CONSTRAINT "identity_exceptions_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "identity_exceptions" ADD CONSTRAINT "identity_exceptions_resolved_person_id_people_id_fk" FOREIGN KEY ("resolved_person_id") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "identity_exceptions" ADD CONSTRAINT "identity_exceptions_resolved_person_fk" FOREIGN KEY ("resolved_person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE SET NULL ("resolved_person_id") ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "knowledge_document_versions" ADD CONSTRAINT "knowledge_document_versions_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "knowledge_document_versions" ADD CONSTRAINT "knowledge_document_versions_document_id_organization_id_knowledge_documents_id_organization_id_fk" FOREIGN KEY ("document_id","organization_id") REFERENCES "public"."knowledge_documents"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "knowledge_documents" ADD CONSTRAINT "knowledge_documents_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1297,19 +1547,29 @@ ALTER TABLE "notes" ADD CONSTRAINT "notes_organization_id_organizations_id_fk" F
 ALTER TABLE "notes" ADD CONSTRAINT "notes_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notes" ADD CONSTRAINT "notes_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notes" ADD CONSTRAINT "notes_record_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE SET NULL ("record_id") ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pipeline_settings" ADD CONSTRAINT "pipeline_settings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pipeline_settings" ADD CONSTRAINT "pipeline_settings_pipeline_id_organization_id_pipelines_id_organization_id_fk" FOREIGN KEY ("pipeline_id","organization_id") REFERENCES "public"."pipelines"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pipelines" ADD CONSTRAINT "pipelines_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "records" ADD CONSTRAINT "records_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "records" ADD CONSTRAINT "records_person_id_organization_id_people_id_organization_id_fk" FOREIGN KEY ("person_id","organization_id") REFERENCES "public"."people"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "records" ADD CONSTRAINT "records_pipeline_id_organization_id_pipelines_id_organization_id_fk" FOREIGN KEY ("pipeline_id","organization_id") REFERENCES "public"."pipelines"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "records" ADD CONSTRAINT "records_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk" FOREIGN KEY ("reply_type_set_id","organization_id") REFERENCES "public"."reply_type_sets"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "records" ADD CONSTRAINT "records_assigned_to_fk" FOREIGN KEY ("organization_id","assigned_to") REFERENCES "public"."members"("organization_id","user_id") ON DELETE SET NULL ("assigned_to") ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "records" ADD CONSTRAINT "records_subcategory_id_pipeline_id_category_key_subcategories_id_pipeline_id_category_key_fk" FOREIGN KEY ("subcategory_id","pipeline_id","category_key") REFERENCES "public"."subcategories"("id","pipeline_id","category_key") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "records" ADD CONSTRAINT "records_reply_type_id_reply_type_set_id_group_key_reply_types_id_reply_type_set_id_group_key_fk" FOREIGN KEY ("reply_type_id","reply_type_set_id","group_key") REFERENCES "public"."reply_types"("id","reply_type_set_id","group_key") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_handling_settings" ADD CONSTRAINT "reply_handling_settings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_handling_settings" ADD CONSTRAINT "reply_handling_settings_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk" FOREIGN KEY ("reply_type_set_id","organization_id") REFERENCES "public"."reply_type_sets"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_message_id_organization_id_messages_id_organization_id_fk" FOREIGN KEY ("message_id","organization_id") REFERENCES "public"."messages"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_previous_reply_type_fk" FOREIGN KEY ("previous_reply_type_id","organization_id") REFERENCES "public"."reply_types"("id","organization_id") ON DELETE SET NULL ("previous_reply_type_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_proposed_reply_type_fk" FOREIGN KEY ("proposed_reply_type_id","organization_id") REFERENCES "public"."reply_types"("id","organization_id") ON DELETE SET NULL ("proposed_reply_type_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_picks" ADD CONSTRAINT "reply_type_picks_applied_reply_type_fk" FOREIGN KEY ("applied_reply_type_id","organization_id") REFERENCES "public"."reply_types"("id","organization_id") ON DELETE SET NULL ("applied_reply_type_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_type_sets" ADD CONSTRAINT "reply_type_sets_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_types" ADD CONSTRAINT "reply_types_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "reply_types" ADD CONSTRAINT "reply_types_reply_type_set_id_organization_id_reply_type_sets_id_organization_id_fk" FOREIGN KEY ("reply_type_set_id","organization_id") REFERENCES "public"."reply_type_sets"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "send_attempts" ADD CONSTRAINT "send_attempts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "send_attempts" ADD CONSTRAINT "send_attempts_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "send_attempts" ADD CONSTRAINT "send_attempts_draft_id_organization_id_drafts_id_organization_id_fk" FOREIGN KEY ("draft_id","organization_id") REFERENCES "public"."drafts"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "subcategories" ADD CONSTRAINT "subcategories_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "subcategories" ADD CONSTRAINT "subcategories_pipeline_id_organization_id_pipelines_id_organization_id_fk" FOREIGN KEY ("pipeline_id","organization_id") REFERENCES "public"."pipelines"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "send_attempts" ADD CONSTRAINT "send_attempts_mcp_token_fk" FOREIGN KEY ("mcp_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("mcp_token_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stop_reviews" ADD CONSTRAINT "stop_reviews_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stop_reviews" ADD CONSTRAINT "stop_reviews_reviewed_by_users_id_fk" FOREIGN KEY ("reviewed_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stop_reviews" ADD CONSTRAINT "stop_reviews_message_fk" FOREIGN KEY ("message_id","organization_id") REFERENCES "public"."messages"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assigned_to_users_id_fk" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_completed_by_users_id_fk" FOREIGN KEY ("completed_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1321,7 +1581,7 @@ ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_record_id_organization
 ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_conversation_id_organization_id_conversations_id_organization_id_fk" FOREIGN KEY ("conversation_id","organization_id") REFERENCES "public"."conversations"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_sequence_id_organization_id_sequences_id_organization_id_fk" FOREIGN KEY ("sequence_id","organization_id") REFERENCES "public"."sequences"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_sequence_version_id_organization_id_sequence_versions_id_organization_id_fk" FOREIGN KEY ("sequence_version_id","organization_id") REFERENCES "public"."sequence_versions"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_subcategory_id_organization_id_subcategories_id_organization_id_fk" FOREIGN KEY ("subcategory_id","organization_id") REFERENCES "public"."subcategories"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_reply_type_id_organization_id_reply_types_id_organization_id_fk" FOREIGN KEY ("reply_type_id","organization_id") REFERENCES "public"."reply_types"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sequence_runs" ADD CONSTRAINT "sequence_runs_trigger_message_id_organization_id_messages_id_organization_id_fk" FOREIGN KEY ("trigger_message_id","organization_id") REFERENCES "public"."messages"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sequence_step_runs" ADD CONSTRAINT "sequence_step_runs_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sequence_step_runs" ADD CONSTRAINT "sequence_step_runs_sequence_run_id_organization_id_sequence_runs_id_organization_id_fk" FOREIGN KEY ("sequence_run_id","organization_id") REFERENCES "public"."sequence_runs"("id","organization_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1364,14 +1624,21 @@ ALTER TABLE "deals" ADD CONSTRAINT "deals_person_fk" FOREIGN KEY ("person_id","o
 ALTER TABLE "deals" ADD CONSTRAINT "deals_stage_fk" FOREIGN KEY ("stage_id","organization_id","stage_kind") REFERENCES "public"."deal_stages"("id","organization_id","kind") ON DELETE restrict ON UPDATE restrict;--> statement-breakpoint
 ALTER TABLE "deals" ADD CONSTRAINT "deals_source_enrollment_fk" FOREIGN KEY ("source_enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE SET NULL ("source_enrollment_id") ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "accounts_user_id_idx" ON "accounts" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "oauth_consents_grant_idx" ON "oauth_consents" USING btree ("client_id","user_id","reference_id");--> statement-breakpoint
+CREATE INDEX "oauth_refresh_tokens_grant_idx" ON "oauth_refresh_tokens" USING btree ("client_id","user_id","reference_id");--> statement-breakpoint
 CREATE INDEX "sessions_user_id_idx" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");--> statement-breakpoint
 CREATE INDEX "audit_log_org_created_idx" ON "audit_log" USING btree ("organization_id","created_at");--> statement-breakpoint
 CREATE INDEX "audit_log_org_action_idx" ON "audit_log" USING btree ("organization_id","action","created_at");--> statement-breakpoint
 CREATE INDEX "invitations_organization_id_idx" ON "invitations" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "invitations_email_idx" ON "invitations" USING btree ("email");--> statement-breakpoint
+CREATE INDEX "mcp_agent_usage_day_idx" ON "mcp_agent_usage" USING btree ("day");--> statement-breakpoint
+CREATE INDEX "mcp_tokens_org_user_idx" ON "mcp_tokens" USING btree ("organization_id","user_id");--> statement-breakpoint
+CREATE INDEX "mcp_tool_calls_org_created_idx" ON "mcp_tool_calls" USING btree ("organization_id","created_at");--> statement-breakpoint
+CREATE INDEX "mcp_tool_calls_created_idx" ON "mcp_tool_calls" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "members_user_id_idx" ON "members" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "company_domain_aliases_org_company_idx" ON "company_domain_aliases" USING btree ("organization_id","company_id");--> statement-breakpoint
+CREATE INDEX "contact_policies_org_dnc_idx" ON "contact_policies" USING btree ("organization_id") WHERE "contact_policies"."do_not_contact";--> statement-breakpoint
 CREATE INDEX "import_runs_org_created_idx" ON "import_runs" USING btree ("organization_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "people_org_email_uq" ON "people" USING btree ("organization_id",lower("email")) WHERE "people"."email" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "people_org_linkedin_uq" ON "people" USING btree ("organization_id","linkedin_slug") WHERE "people"."linkedin_slug" is not null;--> statement-breakpoint
@@ -1380,6 +1647,7 @@ CREATE INDEX "people_org_created_idx" ON "people" USING btree ("organization_id"
 CREATE INDEX "people_org_name_idx" ON "people" USING btree ("organization_id",lower("full_name"),"id");--> statement-breakpoint
 CREATE INDEX "people_org_contacts_idx" ON "people" USING btree ("organization_id","converted_at" DESC NULLS FIRST,"id") WHERE "people"."lifecycle" = 'contact';--> statement-breakpoint
 CREATE UNIQUE INDEX "people_creation_key_uq" ON "people" USING btree ("organization_id","creation_key") WHERE "people"."creation_key" is not null;--> statement-breakpoint
+CREATE INDEX "campaign_enrollments_agent_idx" ON "campaign_enrollments" USING btree ("organization_id","created_at") WHERE "campaign_enrollments"."enrolled_via_token_id" is not null;--> statement-breakpoint
 CREATE INDEX "enrollments_due_idx" ON "campaign_enrollments" USING btree ("channel","next_send_at") WHERE "campaign_enrollments"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "enrollments_person_idx" ON "campaign_enrollments" USING btree ("person_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "campaign_senders_mailbox_uq" ON "campaign_senders" USING btree ("campaign_id","mailbox_id") WHERE "campaign_senders"."mailbox_id" is not null;--> statement-breakpoint
@@ -1400,19 +1668,19 @@ CREATE INDEX "sends_mailbox_test_idx" ON "sends" USING btree ("mailbox_id","clai
 CREATE INDEX "sends_mailbox_day_idx" ON "sends" USING btree ("mailbox_id","claimed_at");--> statement-breakpoint
 CREATE INDEX "sends_linkedin_day_idx" ON "sends" USING btree ("linkedin_account_id","claimed_at");--> statement-breakpoint
 CREATE INDEX "sends_org_status_idx" ON "sends" USING btree ("organization_id","status");--> statement-breakpoint
+CREATE INDEX "sends_uncertain_due_idx" ON "sends" USING btree ("channel",coalesce("next_check_at", "claimed_at")) WHERE "sends"."status" in ('sending', 'unknown');--> statement-breakpoint
 CREATE UNIQUE INDEX "sends_rfc_message_uq" ON "sends" USING btree ("rfc_message_id") WHERE "sends"."rfc_message_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "sends_provider_message_uq" ON "sends" USING btree ("channel","provider_message_id") WHERE "sends"."provider_message_id" is not null;--> statement-breakpoint
 CREATE INDEX "ai_jobs_claim_idx" ON "ai_jobs" USING btree ("status","run_after","priority");--> statement-breakpoint
 CREATE INDEX "ai_jobs_stale_lock_idx" ON "ai_jobs" USING btree ("status","locked_at");--> statement-breakpoint
 CREATE INDEX "ai_jobs_org_failed_idx" ON "ai_jobs" USING btree ("organization_id","failed_at") WHERE "ai_jobs"."status" = 'failed';--> statement-breakpoint
-CREATE INDEX "classifications_record_created_idx" ON "classifications" USING btree ("record_id","created_at");--> statement-breakpoint
-CREATE INDEX "contact_policies_org_dnc_idx" ON "contact_policies" USING btree ("organization_id") WHERE "contact_policies"."do_not_contact";--> statement-breakpoint
 CREATE INDEX "conversations_private_idx" ON "conversations" USING btree ("organization_id","private_campaign_id") WHERE "conversations"."private_campaign_id" is not null;--> statement-breakpoint
-CREATE UNIQUE INDEX "conversations_thread_uq" ON "conversations" USING btree ("channel","account_ref","provider_thread_id") WHERE "conversations"."provider_thread_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "conversations_org_thread_uq" ON "conversations" USING btree ("organization_id","channel","account_ref","provider_thread_id") WHERE "conversations"."provider_thread_id" is not null;--> statement-breakpoint
 CREATE INDEX "conversations_record_idx" ON "conversations" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "drafts_record_status_idx" ON "drafts" USING btree ("record_id","status");--> statement-breakpoint
 CREATE INDEX "drafts_reply_for_message_idx" ON "drafts" USING btree ("reply_for_message_id") WHERE "drafts"."reply_for_message_id" is not null;--> statement-breakpoint
 CREATE INDEX "drafts_conversation_idx" ON "drafts" USING btree ("conversation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "drafts_one_in_flight_uq" ON "drafts" USING btree ("conversation_id") WHERE "drafts"."status" in ('sending', 'delivery_uncertain');--> statement-breakpoint
 CREATE INDEX "events_record_idx" ON "events" USING btree ("record_id","created_at");--> statement-breakpoint
 CREATE INDEX "events_person_created_idx" ON "events" USING btree ("person_id","created_at");--> statement-breakpoint
 CREATE INDEX "identity_exceptions_org_status_created_idx" ON "identity_exceptions" USING btree ("organization_id","status","created_at");--> statement-breakpoint
@@ -1420,16 +1688,23 @@ CREATE INDEX "knowledge_documents_org_active_idx" ON "knowledge_documents" USING
 CREATE UNIQUE INDEX "lead_ccs_person_email_uq" ON "lead_ccs" USING btree ("person_id","email");--> statement-breakpoint
 CREATE INDEX "lead_ccs_org_email_idx" ON "lead_ccs" USING btree ("organization_id","email");--> statement-breakpoint
 CREATE INDEX "lead_ccs_source_message_idx" ON "lead_ccs" USING btree ("source_message_id") WHERE "lead_ccs"."source_message_id" is not null;--> statement-breakpoint
-CREATE UNIQUE INDEX "messages_provider_id_uq" ON "messages" USING btree ("channel","account_ref","provider_message_id") WHERE "messages"."provider_message_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "messages_org_idempotency_uq" ON "messages" USING btree ("organization_id","channel","account_ref","idempotency_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "messages_org_provider_id_uq" ON "messages" USING btree ("organization_id","channel","account_ref","provider_message_id") WHERE "messages"."provider_message_id" is not null;--> statement-breakpoint
 CREATE INDEX "messages_conversation_sent_idx" ON "messages" USING btree ("conversation_id","sent_at");--> statement-breakpoint
 CREATE INDEX "messages_org_direction_sent_idx" ON "messages" USING btree ("organization_id","direction","sent_at");--> statement-breakpoint
 CREATE INDEX "notes_person_idx" ON "notes" USING btree ("person_id","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "pipelines_one_default_uq" ON "pipelines" USING btree ("organization_id") WHERE "pipelines"."is_default";--> statement-breakpoint
 CREATE INDEX "records_org_assigned_idx" ON "records" USING btree ("organization_id","assigned_to","workflow_state");--> statement-breakpoint
 CREATE INDEX "records_org_state_idx" ON "records" USING btree ("organization_id","workflow_state","last_interaction_at");--> statement-breakpoint
 CREATE INDEX "records_latest_inbound_message_idx" ON "records" USING btree ("latest_inbound_message_id") WHERE "records"."latest_inbound_message_id" is not null;--> statement-breakpoint
+CREATE INDEX "reply_type_picks_record_created_idx" ON "reply_type_picks" USING btree ("record_id","created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "reply_type_sets_one_default_uq" ON "reply_type_sets" USING btree ("organization_id") WHERE "reply_type_sets"."is_default";--> statement-breakpoint
+CREATE UNIQUE INDEX "reply_types_set_system_role_uq" ON "reply_types" USING btree ("reply_type_set_id","system_role") WHERE "reply_types"."system_role" is not null;--> statement-breakpoint
+CREATE INDEX "send_attempts_agent_org_idx" ON "send_attempts" USING btree ("organization_id","created_at") WHERE "send_attempts"."origin" = 'agent';--> statement-breakpoint
+CREATE INDEX "send_attempts_agent_user_idx" ON "send_attempts" USING btree ("organization_id","actor_user_id","created_at") WHERE "send_attempts"."origin" = 'agent';--> statement-breakpoint
+CREATE INDEX "send_attempts_agent_account_idx" ON "send_attempts" USING btree ("organization_id","account_ref","created_at") WHERE "send_attempts"."origin" = 'agent';--> statement-breakpoint
 CREATE UNIQUE INDEX "send_attempts_one_terminal_uq" ON "send_attempts" USING btree ("draft_id") WHERE "send_attempts"."status" in ('sent', 'delivery_uncertain', 'reconciled');--> statement-breakpoint
 CREATE INDEX "send_attempts_draft_created_idx" ON "send_attempts" USING btree ("draft_id","created_at");--> statement-breakpoint
+CREATE INDEX "stop_reviews_org_idx" ON "stop_reviews" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "tasks_person_idx" ON "tasks" USING btree ("person_id","is_completed");--> statement-breakpoint
 CREATE INDEX "tasks_org_open_due_idx" ON "tasks" USING btree ("organization_id","due_at") WHERE not "tasks"."is_completed";--> statement-breakpoint
 CREATE INDEX "tasks_assignee_open_idx" ON "tasks" USING btree ("assigned_to","due_at") WHERE not "tasks"."is_completed";--> statement-breakpoint
@@ -1460,7 +1735,6 @@ CREATE UNIQUE INDEX "deal_stages_org_name_uq" ON "deal_stages" USING btree ("org
 CREATE UNIQUE INDEX "deals_idempotency_uq" ON "deals" USING btree ("organization_id","person_id","idempotency_key") WHERE "deals"."idempotency_key" is not null;--> statement-breakpoint
 CREATE INDEX "deals_org_stage_idx" ON "deals" USING btree ("organization_id","stage_id","stage_changed_at" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "deals_org_person_idx" ON "deals" USING btree ("organization_id","person_id");--> statement-breakpoint
-
 -- ---- Written by hand below this marker: the foreign keys schema.ts leaves out (circular references), then the
 -- functions and the triggers they back.
 ALTER TABLE ONLY public.import_runs
@@ -1483,60 +1757,6 @@ BEGIN
 	IF person_lifecycle = 'contact' THEN
 		RAISE EXCEPTION 'contact_cannot_be_enrolled'
 			USING ERRCODE = 'check_violation', TABLE = 'campaign_enrollments', COLUMN = 'person_id';
-	END IF;
-	RETURN NEW;
-END $$;--> statement-breakpoint
-
-CREATE FUNCTION public.classification_subcategory_fits(org uuid, pipe uuid, sub uuid, cat_key text) RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-	-- A subcategory that does not exist in the organization is left to the foreign key.
-	SELECT sub IS NULL
-		OR NOT EXISTS (SELECT 1 FROM subcategories s WHERE s.id = sub AND s.organization_id = org)
-		OR EXISTS (
-			SELECT 1 FROM subcategories s
-			WHERE s.id = sub AND s.organization_id = org AND s.pipeline_id = pipe AND (cat_key IS NULL OR s.category_key = cat_key));
-$$;--> statement-breakpoint
-
-CREATE FUNCTION public.classifications_validate_message() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-	-- A message that does not exist in the organization is left to the foreign key, which names its own constraint.
-	IF EXISTS (SELECT 1 FROM messages m WHERE m.id = NEW.message_id AND m.organization_id = NEW.organization_id) AND NOT EXISTS (
-		SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id AND c.organization_id = m.organization_id
-		WHERE m.id = NEW.message_id AND m.organization_id = NEW.organization_id AND m.direction = 'inbound' AND c.record_id = NEW.record_id
-	) THEN
-		RAISE EXCEPTION 'classifications.message_id must be an inbound message of the classification''s record'
-			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'classifications', COLUMN = 'message_id';
-	END IF;
-	RETURN NEW;
-END $$;--> statement-breakpoint
-
-CREATE FUNCTION public.classifications_validate_subcategories() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-	pipe uuid;
-	moved boolean := TG_OP = 'INSERT';
-BEGIN
-	IF TG_OP = 'UPDATE' THEN moved := OLD.record_id IS DISTINCT FROM NEW.record_id; END IF;
-	SELECT r.pipeline_id INTO pipe FROM records r WHERE r.id = NEW.record_id AND r.organization_id = NEW.organization_id;
-	IF pipe IS NULL THEN RETURN NEW; END IF; -- the record foreign key reports a missing record
-	IF (moved OR NEW.previous_subcategory_id IS DISTINCT FROM OLD.previous_subcategory_id OR NEW.previous_category_key IS DISTINCT FROM OLD.previous_category_key)
-		AND NOT classification_subcategory_fits(NEW.organization_id, pipe, NEW.previous_subcategory_id, NEW.previous_category_key) THEN
-		RAISE EXCEPTION 'classifications.previous_subcategory_id must belong to the record''s pipeline and to previous_category_key'
-			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'classifications', COLUMN = 'previous_subcategory_id';
-	END IF;
-	IF (moved OR NEW.proposed_subcategory_id IS DISTINCT FROM OLD.proposed_subcategory_id OR NEW.proposed_category_key IS DISTINCT FROM OLD.proposed_category_key)
-		AND NOT classification_subcategory_fits(NEW.organization_id, pipe, NEW.proposed_subcategory_id, NEW.proposed_category_key) THEN
-		RAISE EXCEPTION 'classifications.proposed_subcategory_id must belong to the record''s pipeline and to proposed_category_key'
-			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'classifications', COLUMN = 'proposed_subcategory_id';
-	END IF;
-	IF (moved OR NEW.applied_subcategory_id IS DISTINCT FROM OLD.applied_subcategory_id OR NEW.applied_category_key IS DISTINCT FROM OLD.applied_category_key)
-		AND NOT classification_subcategory_fits(NEW.organization_id, pipe, NEW.applied_subcategory_id, NEW.applied_category_key) THEN
-		RAISE EXCEPTION 'classifications.applied_subcategory_id must belong to the record''s pipeline and to applied_category_key'
-			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'classifications', COLUMN = 'applied_subcategory_id';
 	END IF;
 	RETURN NEW;
 END $$;--> statement-breakpoint
@@ -1618,12 +1838,26 @@ END $$;--> statement-breakpoint
 CREATE FUNCTION public.drafts_validate_reply_target() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+	target_direction text;
+	target_record uuid;
 BEGIN
+	IF NEW.reply_for_message_id IS NULL THEN
+		RETURN NEW;
+	END IF;
+	SELECT m.direction, cv.record_id INTO target_direction, target_record
+	FROM messages m JOIN conversations cv ON cv.id = m.conversation_id AND cv.organization_id = m.organization_id
+	WHERE m.id = NEW.reply_for_message_id AND m.organization_id = NEW.organization_id;
 	-- A message that does not exist in the organization is left to the foreign key (drafts_reply_message_fk).
-	IF NEW.reply_for_message_id IS NOT NULL AND EXISTS (
-		SELECT 1 FROM messages m WHERE m.id = NEW.reply_for_message_id AND m.organization_id = NEW.organization_id AND m.direction <> 'inbound'
-	) THEN
+	IF NOT FOUND THEN
+		RETURN NEW;
+	END IF;
+	IF target_direction <> 'inbound' THEN
 		RAISE EXCEPTION 'drafts.reply_for_message_id must be an inbound message'
+			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'drafts', COLUMN = 'reply_for_message_id';
+	END IF;
+	IF target_record <> NEW.record_id THEN
+		RAISE EXCEPTION 'drafts.reply_for_message_id must be a message of the draft''s record'
 			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'drafts', COLUMN = 'reply_for_message_id';
 	END IF;
 	RETURN NEW;
@@ -1710,6 +1944,68 @@ BEGIN
 	RETURN NEW;
 END $$;--> statement-breakpoint
 
+CREATE FUNCTION public.reply_type_pick_type_fits(org uuid, type_set uuid, type_id uuid, grp text) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+	-- A reply type that does not exist in the organization is left to the foreign key.
+	SELECT type_id IS NULL
+		OR NOT EXISTS (SELECT 1 FROM reply_types t WHERE t.id = type_id AND t.organization_id = org)
+		OR EXISTS (
+			SELECT 1 FROM reply_types t
+			WHERE t.id = type_id AND t.organization_id = org AND t.reply_type_set_id = type_set AND (grp IS NULL OR t.group_key = grp));
+$$;--> statement-breakpoint
+
+CREATE FUNCTION public.reply_type_picks_validate_message() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+	-- A message that does not exist in the organization is left to the foreign key, which names its own constraint.
+	IF EXISTS (SELECT 1 FROM messages m WHERE m.id = NEW.message_id AND m.organization_id = NEW.organization_id) AND NOT EXISTS (
+		SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id AND c.organization_id = m.organization_id
+		WHERE m.id = NEW.message_id AND m.organization_id = NEW.organization_id AND m.direction = 'inbound' AND c.record_id = NEW.record_id
+	) THEN
+		RAISE EXCEPTION 'reply_type_picks.message_id must be an inbound message of the pick''s record'
+			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'reply_type_picks', COLUMN = 'message_id';
+	END IF;
+	RETURN NEW;
+END $$;--> statement-breakpoint
+
+CREATE FUNCTION public.reply_type_picks_validate_reply_types() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+	type_set uuid;
+	moved boolean := TG_OP = 'INSERT';
+BEGIN
+	IF TG_OP = 'UPDATE' THEN moved := OLD.record_id IS DISTINCT FROM NEW.record_id; END IF;
+	SELECT r.reply_type_set_id INTO type_set FROM records r WHERE r.id = NEW.record_id AND r.organization_id = NEW.organization_id;
+	IF type_set IS NULL THEN RETURN NEW; END IF; -- the record foreign key reports a missing record
+	IF (moved OR NEW.previous_reply_type_id IS DISTINCT FROM OLD.previous_reply_type_id OR NEW.previous_group_key IS DISTINCT FROM OLD.previous_group_key)
+		AND NOT reply_type_pick_type_fits(NEW.organization_id, type_set, NEW.previous_reply_type_id, NEW.previous_group_key) THEN
+		RAISE EXCEPTION 'reply_type_picks.previous_reply_type_id must belong to the record''s reply type set and to previous_group_key'
+			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'reply_type_picks', COLUMN = 'previous_reply_type_id';
+	END IF;
+	IF (moved OR NEW.proposed_reply_type_id IS DISTINCT FROM OLD.proposed_reply_type_id OR NEW.proposed_group_key IS DISTINCT FROM OLD.proposed_group_key)
+		AND NOT reply_type_pick_type_fits(NEW.organization_id, type_set, NEW.proposed_reply_type_id, NEW.proposed_group_key) THEN
+		RAISE EXCEPTION 'reply_type_picks.proposed_reply_type_id must belong to the record''s reply type set and to proposed_group_key'
+			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'reply_type_picks', COLUMN = 'proposed_reply_type_id';
+	END IF;
+	IF (moved OR NEW.applied_reply_type_id IS DISTINCT FROM OLD.applied_reply_type_id OR NEW.applied_group_key IS DISTINCT FROM OLD.applied_group_key)
+		AND NOT reply_type_pick_type_fits(NEW.organization_id, type_set, NEW.applied_reply_type_id, NEW.applied_group_key) THEN
+		RAISE EXCEPTION 'reply_type_picks.applied_reply_type_id must belong to the record''s reply type set and to applied_group_key'
+			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'reply_type_picks', COLUMN = 'applied_reply_type_id';
+	END IF;
+	RETURN NEW;
+END $$;--> statement-breakpoint
+
+CREATE FUNCTION public.reply_types_reject_key_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+	RAISE EXCEPTION 'reply_types keys are immutable: key, group_key, reply_type_set_id and system_role cannot change'
+		USING ERRCODE = 'integrity_constraint_violation', TABLE = 'reply_types';
+END $$;--> statement-breakpoint
+
 CREATE FUNCTION public.send_attempts_reject_final_status_change() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1746,7 +2042,7 @@ BEGIN
 	IF NEW.status IS NOT DISTINCT FROM OLD.status THEN
 		RETURN NEW;
 	END IF;
-	IF OLD.status = 'failed' AND NEW.status = 'sending' AND OLD.attempt < 3 AND NEW.attempt = OLD.attempt + 1 THEN
+	IF OLD.status = 'failed' AND NEW.status = 'sending' AND NEW.attempt = OLD.attempt + 1 THEN
 		RETURN NEW;
 	END IF;
 	IF OLD.status IN ('sent', 'failed') THEN
@@ -1754,6 +2050,17 @@ BEGIN
 			USING ERRCODE = 'check_violation', TABLE = 'sends';
 	END IF;
 	RETURN NEW;
+END $$;--> statement-breakpoint
+
+CREATE FUNCTION public.sends_reject_unsettled_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+	IF pg_trigger_depth() > 1 THEN
+		RETURN OLD;
+	END IF;
+	RAISE EXCEPTION 'sends row % is % and cannot be deleted until it settles', OLD.id, OLD.status
+		USING ERRCODE = 'integrity_constraint_violation', TABLE = 'sends';
 END $$;--> statement-breakpoint
 
 CREATE FUNCTION public.sequence_steps_reject_published_change() RETURNS trigger
@@ -1804,14 +2111,6 @@ BEGIN
 	END IF;
 	RAISE EXCEPTION 'a published sequence version cannot be deleted directly (delete the sequence, or set miasdr.allow_purge to on inside a transaction)'
 		USING ERRCODE = 'integrity_constraint_violation', TABLE = 'sequence_versions';
-END $$;--> statement-breakpoint
-
-CREATE FUNCTION public.subcategories_reject_key_change() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-	RAISE EXCEPTION 'subcategories keys are immutable: key, category_key and pipeline_id cannot change'
-		USING ERRCODE = 'integrity_constraint_violation', TABLE = 'subcategories';
 END $$;
 
 
@@ -1826,14 +2125,6 @@ CREATE TRIGGER audit_log_no_update_trg BEFORE UPDATE ON public.audit_log FOR EAC
 CREATE TRIGGER campaign_enrollments_contact_ins_trg BEFORE INSERT ON public.campaign_enrollments FOR EACH ROW WHEN ((new.status = ANY (ARRAY['pending'::text, 'active'::text]))) EXECUTE FUNCTION public.campaign_enrollments_reject_contact();--> statement-breakpoint
 
 CREATE TRIGGER campaign_enrollments_contact_upd_trg BEFORE UPDATE OF status ON public.campaign_enrollments FOR EACH ROW WHEN (((new.status = ANY (ARRAY['pending'::text, 'active'::text])) AND (old.status <> ALL (ARRAY['pending'::text, 'active'::text])))) EXECUTE FUNCTION public.campaign_enrollments_reject_contact();--> statement-breakpoint
-
-CREATE TRIGGER classifications_message_ins_trg BEFORE INSERT ON public.classifications FOR EACH ROW EXECUTE FUNCTION public.classifications_validate_message();--> statement-breakpoint
-
-CREATE TRIGGER classifications_message_upd_trg BEFORE UPDATE OF record_id, message_id ON public.classifications FOR EACH ROW WHEN (((old.record_id IS DISTINCT FROM new.record_id) OR (old.message_id IS DISTINCT FROM new.message_id))) EXECUTE FUNCTION public.classifications_validate_message();--> statement-breakpoint
-
-CREATE TRIGGER classifications_subcategories_ins_trg BEFORE INSERT ON public.classifications FOR EACH ROW EXECUTE FUNCTION public.classifications_validate_subcategories();--> statement-breakpoint
-
-CREATE TRIGGER classifications_subcategories_upd_trg BEFORE UPDATE OF record_id, previous_subcategory_id, previous_category_key, proposed_subcategory_id, proposed_category_key, applied_subcategory_id, applied_category_key ON public.classifications FOR EACH ROW WHEN (((old.record_id IS DISTINCT FROM new.record_id) OR (old.previous_subcategory_id IS DISTINCT FROM new.previous_subcategory_id) OR (old.previous_category_key IS DISTINCT FROM new.previous_category_key) OR (old.proposed_subcategory_id IS DISTINCT FROM new.proposed_subcategory_id) OR (old.proposed_category_key IS DISTINCT FROM new.proposed_category_key) OR (old.applied_subcategory_id IS DISTINCT FROM new.applied_subcategory_id) OR (old.applied_category_key IS DISTINCT FROM new.applied_category_key))) EXECUTE FUNCTION public.classifications_validate_subcategories();--> statement-breakpoint
 
 CREATE TRIGGER companies_domain_not_alias_trg BEFORE INSERT OR UPDATE OF domain ON public.companies FOR EACH ROW EXECUTE FUNCTION public.companies_reject_alias_domain();--> statement-breakpoint
 
@@ -1853,7 +2144,7 @@ CREATE TRIGGER drafts_channel_upd_trg BEFORE UPDATE OF channel, conversation_id 
 
 CREATE TRIGGER drafts_reply_target_ins_trg BEFORE INSERT ON public.drafts FOR EACH ROW EXECUTE FUNCTION public.drafts_validate_reply_target();--> statement-breakpoint
 
-CREATE TRIGGER drafts_reply_target_upd_trg BEFORE UPDATE OF reply_for_message_id ON public.drafts FOR EACH ROW WHEN ((old.reply_for_message_id IS DISTINCT FROM new.reply_for_message_id)) EXECUTE FUNCTION public.drafts_validate_reply_target();--> statement-breakpoint
+CREATE TRIGGER drafts_reply_target_upd_trg BEFORE UPDATE OF reply_for_message_id, record_id ON public.drafts FOR EACH ROW WHEN (((old.reply_for_message_id IS DISTINCT FROM new.reply_for_message_id) OR (old.record_id IS DISTINCT FROM new.record_id))) EXECUTE FUNCTION public.drafts_validate_reply_target();--> statement-breakpoint
 
 CREATE TRIGGER events_no_delete_trg BEFORE DELETE ON public.events FOR EACH ROW EXECUTE FUNCTION public.ledger_reject_delete();--> statement-breakpoint
 
@@ -1871,6 +2162,16 @@ CREATE TRIGGER messages_no_delete_trg BEFORE DELETE ON public.messages FOR EACH 
 
 CREATE TRIGGER people_lifecycle_trg BEFORE UPDATE OF lifecycle, converted_at ON public.people FOR EACH ROW WHEN (((old.lifecycle IS DISTINCT FROM new.lifecycle) OR (old.converted_at IS DISTINCT FROM new.converted_at))) EXECUTE FUNCTION public.people_reject_lifecycle_change();--> statement-breakpoint
 
+CREATE TRIGGER reply_type_picks_message_ins_trg BEFORE INSERT ON public.reply_type_picks FOR EACH ROW EXECUTE FUNCTION public.reply_type_picks_validate_message();--> statement-breakpoint
+
+CREATE TRIGGER reply_type_picks_message_upd_trg BEFORE UPDATE OF record_id, message_id ON public.reply_type_picks FOR EACH ROW WHEN (((old.record_id IS DISTINCT FROM new.record_id) OR (old.message_id IS DISTINCT FROM new.message_id))) EXECUTE FUNCTION public.reply_type_picks_validate_message();--> statement-breakpoint
+
+CREATE TRIGGER reply_type_picks_reply_types_ins_trg BEFORE INSERT ON public.reply_type_picks FOR EACH ROW EXECUTE FUNCTION public.reply_type_picks_validate_reply_types();--> statement-breakpoint
+
+CREATE TRIGGER reply_type_picks_reply_types_upd_trg BEFORE UPDATE OF record_id, previous_reply_type_id, previous_group_key, proposed_reply_type_id, proposed_group_key, applied_reply_type_id, applied_group_key ON public.reply_type_picks FOR EACH ROW WHEN (((old.record_id IS DISTINCT FROM new.record_id) OR (old.previous_reply_type_id IS DISTINCT FROM new.previous_reply_type_id) OR (old.previous_group_key IS DISTINCT FROM new.previous_group_key) OR (old.proposed_reply_type_id IS DISTINCT FROM new.proposed_reply_type_id) OR (old.proposed_group_key IS DISTINCT FROM new.proposed_group_key) OR (old.applied_reply_type_id IS DISTINCT FROM new.applied_reply_type_id) OR (old.applied_group_key IS DISTINCT FROM new.applied_group_key))) EXECUTE FUNCTION public.reply_type_picks_validate_reply_types();--> statement-breakpoint
+
+CREATE TRIGGER reply_types_keys_trg BEFORE UPDATE OF key, group_key, reply_type_set_id, system_role ON public.reply_types FOR EACH ROW WHEN (((old.key IS DISTINCT FROM new.key) OR (old.group_key IS DISTINCT FROM new.group_key) OR (old.reply_type_set_id IS DISTINCT FROM new.reply_type_set_id) OR (old.system_role IS DISTINCT FROM new.system_role))) EXECUTE FUNCTION public.reply_types_reject_key_change();--> statement-breakpoint
+
 CREATE TRIGGER send_attempts_account_ins_trg BEFORE INSERT ON public.send_attempts FOR EACH ROW EXECUTE FUNCTION public.send_attempts_validate_account();--> statement-breakpoint
 
 CREATE TRIGGER send_attempts_account_upd_trg BEFORE UPDATE OF account_ref, draft_id ON public.send_attempts FOR EACH ROW WHEN (((old.account_ref IS DISTINCT FROM new.account_ref) OR (old.draft_id IS DISTINCT FROM new.draft_id))) EXECUTE FUNCTION public.send_attempts_validate_account();--> statement-breakpoint
@@ -1879,10 +2180,10 @@ CREATE TRIGGER send_attempts_final_status_trg BEFORE UPDATE OF status ON public.
 
 CREATE TRIGGER sends_final_status_trg BEFORE UPDATE OF status ON public.sends FOR EACH ROW EXECUTE FUNCTION public.sends_reject_final_status_change();--> statement-breakpoint
 
+CREATE TRIGGER sends_unsettled_no_delete_trg BEFORE DELETE ON public.sends FOR EACH ROW WHEN ((old.status = ANY (ARRAY['sending'::text, 'unknown'::text]))) EXECUTE FUNCTION public.sends_reject_unsettled_delete();--> statement-breakpoint
+
 CREATE TRIGGER sequence_steps_frozen_trg BEFORE INSERT OR DELETE OR UPDATE ON public.sequence_steps FOR EACH ROW EXECUTE FUNCTION public.sequence_steps_reject_published_change();--> statement-breakpoint
 
 CREATE TRIGGER sequence_versions_frozen_trg BEFORE UPDATE OF organization_id, sequence_id, version, status, published_at ON public.sequence_versions FOR EACH ROW WHEN (((old.organization_id IS DISTINCT FROM new.organization_id) OR (old.sequence_id IS DISTINCT FROM new.sequence_id) OR (old.version IS DISTINCT FROM new.version) OR (old.status IS DISTINCT FROM new.status) OR (old.published_at IS DISTINCT FROM new.published_at))) EXECUTE FUNCTION public.sequence_versions_reject_change();--> statement-breakpoint
 
-CREATE TRIGGER sequence_versions_no_delete_trg BEFORE DELETE ON public.sequence_versions FOR EACH ROW WHEN ((old.status = 'published'::text)) EXECUTE FUNCTION public.sequence_versions_reject_delete();--> statement-breakpoint
-
-CREATE TRIGGER subcategories_keys_trg BEFORE UPDATE OF key, category_key, pipeline_id ON public.subcategories FOR EACH ROW WHEN (((old.key IS DISTINCT FROM new.key) OR (old.category_key IS DISTINCT FROM new.category_key) OR (old.pipeline_id IS DISTINCT FROM new.pipeline_id))) EXECUTE FUNCTION public.subcategories_reject_key_change();
+CREATE TRIGGER sequence_versions_no_delete_trg BEFORE DELETE ON public.sequence_versions FOR EACH ROW WHEN ((old.status = 'published'::text)) EXECUTE FUNCTION public.sequence_versions_reject_delete();

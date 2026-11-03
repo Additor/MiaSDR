@@ -96,11 +96,11 @@ describe("texts", () => {
 });
 
 describe("holdText", () => {
-  it("says why a held pick waits, and falls back for a reason stored before 0003 or none", () => {
+  it("says why a held pick waits, and falls back for an unknown reason or none", () => {
     expect(holdText("low_confidence")).toBe("The AI's confidence is under the confidence floor.");
     expect(holdText("protected_customer")).toBe("The person is locked as Existing customer. Accept takes them out of it.");
-    for (const legacy of ["protected_stage", "customer_requires_review", "review_other", "anything", null, undefined]) {
-      expect(holdText(legacy)).toBe("It waits for you.");
+    for (const unknown of ["anything", null, undefined]) {
+      expect(holdText(unknown)).toBe("It waits for you.");
     }
   });
 });

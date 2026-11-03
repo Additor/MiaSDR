@@ -2,7 +2,6 @@ import type { SystemRole, TypeRules } from "./reply-type";
 
 // Starter reply types for an organization's first reply type set.
 // The four groups are fixed by the schema; reply types and their rules are editable per organization afterwards.
-// Migration 0003 gives existing organizations the same rules, roles and names.
 
 export const DEFAULT_PIPELINE_NAME = "Default";
 

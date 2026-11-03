@@ -1,2 +1,0 @@
-ALTER TABLE "sends" ADD COLUMN "next_check_at" timestamp with time zone;--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "sends_uncertain_due_idx" ON "sends" USING btree ("channel",coalesce("next_check_at", "claimed_at")) WHERE "sends"."status" in ('sending', 'unknown');

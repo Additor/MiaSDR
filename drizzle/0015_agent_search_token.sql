@@ -1,2 +1,0 @@
-ALTER TABLE "linkedin_search_queries" ADD COLUMN "created_via_token_id" uuid;--> statement-breakpoint
-ALTER TABLE "linkedin_search_queries" ADD CONSTRAINT "linkedin_search_queries_created_via_token_fk" FOREIGN KEY ("created_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("created_via_token_id") ON UPDATE no action;

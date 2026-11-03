@@ -23,9 +23,9 @@ If you run 15 or 16, upgrade with `pg_upgrade` or a dump and restore before you 
 
 Migrations live in `drizzle/` and run at boot under an advisory lock (`src/platform/db/migrate.ts`). Drizzle applies all pending migrations in one transaction, so a failed migration leaves nothing behind.
 
-`0000_baseline.sql` creates the 0.1.0 schema in one file. The part above its marker comes from `drizzle-kit generate` over `src/platform/db/schema.ts`, with two kinds of edit: `ON DELETE SET NULL (column)` on composite foreign keys and the deferred unique key on `deal_stages`. Below the marker sits SQL that Drizzle cannot express: three foreign keys that would make the table types circular, and the functions and triggers that the sections below describe.
+`0000_baseline.sql` creates the whole schema in one file. The part above its marker comes from `drizzle-kit generate` over `src/platform/db/schema.ts`, with two kinds of edit: `ON DELETE SET NULL (column)` on composite foreign keys and the deferred unique key on `deal_stages`. Below the marker sits SQL that Drizzle cannot express: three foreign keys that would make the table types circular, and the functions and triggers that the sections below describe.
 
-A database that ran the pre-release migrations 0000 to 0032 already holds this schema. The baseline carries the timestamp of 0032, so the migrator skips it there and applies only the files that come after it. A database that stopped partway through the pre-release migrations fails on the baseline with `already exists`. Start that one from an empty database.
+A database built before this baseline holds the same tables under older migration records, so the baseline fails on it with `already exists`. Start that one from an empty database.
 
 ### Adding a migration
 
@@ -46,9 +46,9 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 
 ## Claims and drafts in flight
 
-`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason. Rows from before migration 0004 hold null.
+`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason.
 
-`drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505. Migration 0004 stops with the ids when a conversation already holds two: only a send attempt settles an in-flight draft, so the migration leaves them for a person.
+`drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505.
 
 ## Lock modes
 
@@ -113,7 +113,7 @@ The campaign setting Follow-ups after a reply (After a reply in code) lives in t
 
 `reply_types.check_mode` (`before`, `after` or `skip`, default `after`), `reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
 
-`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type. Migration 0003 filled it for existing picks from the applied type, else the proposed one.
+`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type.
 
 ## Leads and the CRM
 

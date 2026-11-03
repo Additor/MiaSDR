@@ -4,6 +4,10 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ## Unreleased
 
+### Database
+
+The migrations are now one baseline, `drizzle/0000_baseline.sql`. An install from an earlier version fails on it with `already exists`, so start from an empty database.
+
 ### MCP
 
 Agents can now spend on enrichment, run LinkedIn searches and take actions a person cannot undo. All of it stays off until an owner or admin sets a daily limit under Settings, Organization and creates a token with the option ticked. Connected apps need to connect again to ask for the new permissions.
@@ -65,7 +69,7 @@ For a server that ran a build from before this release:
 
 - Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
 - Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
-- You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) says how to find the session that holds it.
+- You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-and-table-locks) says how to find the session that holds it.
 - A campaign that uses a field no lead has sent those fields as blanks before. It now refuses to start or resume until you change its steps. A running campaign keeps running.
 - Campaigns paused at upgrade time count as paused by a person, so only a person resumes them.
 - Agent sending starts off in every organization. Nothing an agent does sends a message until an owner or admin turns it on.

@@ -342,7 +342,7 @@ describeDb("email send engine", () => {
     expect(provider.delivered).toHaveLength(0);
   });
 
-  // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
+  // The sends trigger holds no cap, so these two tests are what holds it.
   describe("the attempt cap", () => {
     it("is three attempts", () => {
       expect(MAX_SEND_ATTEMPTS).toBe(3);

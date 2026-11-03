@@ -73,7 +73,7 @@ const HOLD_TEXT: Record<HoldReason, string> = {
   low_confidence: "The AI's confidence is under the confidence floor.",
 };
 
-/** Why a held pick waits, in one sentence. A reason stored before 0003, or none, gets the fallback. */
+/** Why a held pick waits, in one sentence. An unknown reason, or none, gets the fallback. */
 export const holdText = (reason: string | null | undefined): string => {
   const known = holdReasonOf(reason);
   return known ? HOLD_TEXT[known] : "It waits for you.";

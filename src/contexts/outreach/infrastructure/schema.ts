@@ -42,7 +42,7 @@ export const mailboxes = pgTable(
     /** Globally unique: inbound Gmail pushes resolve the organization through it. */
     emailAddress: text("email_address").notNull().unique(),
     displayName: text("display_name"),
-    status: text("status").notNull().default("connecting"),
+    status: text("status").notNull(),
     lastError: text("last_error"),
     lastTestedAt: tstz("last_tested_at"),
     /** When the status last left `connected`; null while connected. Drives follow-up takeover by another mailbox. */
