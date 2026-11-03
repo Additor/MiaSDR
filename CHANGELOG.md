@@ -22,6 +22,7 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 
 ### Changed
 
+- The setup guide measures real progress: mailbox connected, leads present, campaign started, first email sent and first reply. A draft campaign no longer counts, the time zone and approve steps are gone, and the guide leaves the sidebar after the first email and first reply. A demo send counts only on an install that runs the fake provider.
 - A reply that asks to stop in Korean, Japanese, Spanish, German or French now raises Possible stop request without an AI key, like one in English. Replies already stored keep their reading.
 - Settings, Mailboxes gains a read-only Sender DNS block that shows Found, Missing or Could not check for SPF, DKIM on the `google` selector and DMARC on each sending domain. `docs/guides/sender-dns.md` has the Google Workspace records.
 - Email settings gain a postal address, under Settings, Mailboxes, Sending rules. Campaign email carries it in the footer, and with `MAILBOX_PROVIDER=gmail` a campaign refuses to start without it.

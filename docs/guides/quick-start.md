@@ -6,7 +6,7 @@ To send real email, set `APP_URL` in `.env` to this server's public HTTPS addres
 
 ## 1. Create your account and organization
 
-Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` shows what is connected and what is missing, and you can return to it at any time.
+Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` tracks the path to a first reply: a connected mailbox, leads, a started campaign, a first email sent and a first reply. It leaves the sidebar once the first email and the first reply have happened.
 
 ## 2. Connect a mailbox
 

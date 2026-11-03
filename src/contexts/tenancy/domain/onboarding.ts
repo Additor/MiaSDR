@@ -1,18 +1,17 @@
 /** Counts read from the organization's tables. The checklist status derives from these and nothing else. */
 export interface OnboardingFacts {
-  /** A time zone was saved for the organization (setup stores one unless it is UTC; Email rules stores it too). */
-  timeZoneSaved: boolean;
   connectedMailboxes: number;
   /** Mailboxes in any state, so a failed connection can be told apart from none. */
   totalMailboxes: number;
   connectedLinkedInAccounts: number;
   leads: number;
   campaigns: number;
-  activeCampaigns: number;
-  /** Drafts in `awaiting_review` that a person can see in the Inbox. */
-  draftsAwaiting: number;
-  /** Drafts a person approved that went out (`sent`). */
-  messagesApproved: number;
+  /** Campaigns past draft, by whoever started them. */
+  startedCampaigns: number;
+  /** Campaign emails with status `sent`. A demo send counts only on an install that runs the fake provider. */
+  emailsSent: number;
+  /** Replies received, without auto-replies. */
+  replies: number;
   /** Where AI setup stands. The integrations context decides it; the app wires it in. */
   aiSetup: AiSetup;
 }
@@ -31,7 +30,7 @@ function aiStepDetail(setup: AiSetup): string | null {
   return null;
 }
 
-export type StepId = "profile" | "mailbox" | "linkedin" | "leads" | "campaign" | "approve" | "ai";
+export type StepId = "mailbox" | "leads" | "campaign" | "send" | "reply" | "linkedin" | "ai";
 /** `attention`: the person started but something needs a fix (a mailbox that failed to connect). */
 export type StepStatus = "done" | "todo" | "attention";
 
@@ -55,6 +54,8 @@ export interface OnboardingChecklist {
   complete: boolean;
   /** First unfinished required step, falling back to the first unfinished optional one. */
   nextStepId: StepId | null;
+  /** The first send and the first reply both happened, so the guide leaves the sidebar. */
+  hidden: boolean;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -63,16 +64,6 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
   const mailboxStatus: StepStatus = facts.connectedMailboxes > 0 ? "done" : facts.totalMailboxes > 0 ? "attention" : "todo";
   // Required steps first, then the optional ones, so a list rendered in this order never puts an optional step in the way.
   const steps: OnboardingStep[] = [
-    {
-      id: "profile",
-      title: "Set the time zone",
-      description: "Working hours and daily limits follow this time zone.",
-      optional: false,
-      status: facts.timeZoneSaved ? "done" : "todo",
-      detail: facts.timeZoneSaved ? "Time zone saved" : null,
-      href: "/settings/organization",
-      action: "Set time zone",
-    },
     {
       id: "mailbox",
       title: "Connect a mailbox",
@@ -100,33 +91,33 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
     },
     {
       id: "campaign",
-      title: "Create your first campaign",
+      title: "Start a campaign",
       description: "Write the sequence, add leads and start it when the preview looks right.",
       optional: false,
-      status: facts.campaigns > 0 ? "done" : "todo",
-      detail:
-        facts.campaigns > 0
-          ? `${plural(facts.campaigns, "campaign")}, ${facts.activeCampaigns} running`
-          : null,
+      status: facts.startedCampaigns > 0 ? "done" : "todo",
+      detail: facts.startedCampaigns > 0 ? `${plural(facts.startedCampaigns, "campaign")} started` : facts.campaigns > 0 ? `${plural(facts.campaigns, "draft")}, none started` : null,
       href: "/campaigns",
-      action: "Create campaign",
+      action: facts.campaigns > 0 ? "Open campaigns" : "Create campaign",
     },
     {
-      id: "approve",
-      title: "Approve your first message",
-      description: "Review a draft and send it. Replies wait for a person unless an owner or admin lets agents send.",
+      id: "send",
+      title: "Send your first email",
+      description: "A running campaign sends inside each mailbox's working hours and daily limit, so the first email can take a while.",
       optional: false,
-      status: facts.messagesApproved > 0 ? "done" : "todo",
-      detail:
-        facts.messagesApproved > 0
-          ? `${plural(facts.messagesApproved, "message")} approved and sent`
-          : facts.draftsAwaiting > 0
-            ? `${plural(facts.draftsAwaiting, "draft")} waiting for your approval`
-            : facts.campaigns > 0
-              ? "No drafts waiting yet"
-              : "Nothing to approve yet: start a campaign first",
-      href: facts.draftsAwaiting > 0 ? "/inbox" : "/campaigns",
-      action: facts.draftsAwaiting > 0 ? "Review drafts" : "Open campaigns",
+      status: facts.emailsSent > 0 ? "done" : "todo",
+      detail: facts.emailsSent > 0 ? `${plural(facts.emailsSent, "email")} sent` : facts.startedCampaigns > 0 ? "Waiting for the first send" : "Nothing to send yet: start a campaign first",
+      href: "/campaigns",
+      action: "Open campaigns",
+    },
+    {
+      id: "reply",
+      title: "Get your first reply",
+      description: "Replies land in the Inbox and Actions, where you read them and decide what comes next.",
+      optional: false,
+      status: facts.replies > 0 ? "done" : "todo",
+      detail: facts.replies > 0 ? `${plural(facts.replies, "reply", "replies")} received` : facts.emailsSent > 0 ? "No replies yet" : null,
+      href: "/inbox",
+      action: "Open the Inbox",
     },
     {
       id: "linkedin",
@@ -159,5 +150,6 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
     requiredTotal: required.length,
     complete: requiredDone === required.length,
     nextStepId: next?.id ?? null,
+    hidden: facts.emailsSent > 0 && facts.replies > 0,
   };
 }

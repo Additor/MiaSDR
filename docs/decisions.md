@@ -198,15 +198,17 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 | Step | Done when |
 |---|---|
-| Set the time zone (`profile`) | a time zone is saved in `channel_settings` `general` |
 | Connect a mailbox | a `connected` mailbox exists; mailboxes with none connected show attention |
-| Import leads | any `people` row |
-| Create your first campaign | any campaign |
-| Approve your first message | any draft with status `sent` |
+| Import leads | any `people` row with lifecycle `lead` |
+| Start a campaign | any campaign past `draft`, whoever started it |
+| Send your first email | a `sends` row with kind `campaign`, channel `email` and status `sent` |
+| Get your first reply | an inbound `messages` row that is not an auto-reply, on any channel |
 | Connect LinkedIn (optional) | a `connected` `linkedin_accounts` row |
 | AI key (optional) | an enabled `anthropic` integration with a stored credential |
 
 - Required steps come first. An owner or admin can hide the guide (`POST /api/onboarding/dismiss`), stored per organization in `channel_settings` channel `onboarding` as `{ dismissedAt, dismissedBy }`. Hiding removes the sidebar count; the page stays reachable by URL.
+- The fake provider marks its message ids with `fake-`. A send or reply with that mark counts only while `MAILBOX_PROVIDER=fake`, so demo mail on an install that later moves to Gmail proves nothing. No flag is stored: every step reads the tables.
+- After the first send and the first reply, the guide leaves the sidebar and the command palette for everyone, and the page says so. The URL still answers.
 
 ### Organization settings and time zone
 
@@ -510,7 +512,7 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Preview and start agree.** The preview lists `campaignStartProblems` and `linkedInStartProblems`, the same checks the status change runs before a start, so "nothing stops it" means the start passes them.
 - **Enroll limit.** Every agent enroll, in any status and either channel, counts against `agentEnrollCap` (200 a UTC day); a batch that would pass it is refused whole, dry runs included (`agent_enroll_cap`, `retryAfterSeconds` to midnight UTC).
 - **Locks.** A launch locks the campaign `FOR UPDATE`, then takes `agent-send` shared; the status change runs in the same transaction. An enroll locks the campaign `FOR SHARE`, takes `agent-send` shared, then `agent-enroll:<organization id>` exclusive before it counts. A person's enroll takes no campaign lock: its insert's foreign key check waits for a start that holds the row.
-- **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. Onboarding counts only campaigns a person started.
+- **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. The setup guide counts a campaign an agent started as started, since its mail goes out all the same.
 - **Watching agents.** Settings > MCP shows owners and admins an Agent sends section (`read-models/agent-sends.ts`): the day's agent replies and enrolls against the limits, with a notice once one is reached, the latest agent replies, and the campaigns agents started. Pause campaigns agents started (`POST /api/settings/mcp/pause-agent-campaigns`, owner or admin) pauses every running one through the person's pause, then marks every campaign an agent paused as paused by a person, so no agent resumes it. An agent's unconfirmed send shows in Actions under Problems with the token's name.
 
 ### Agent spending

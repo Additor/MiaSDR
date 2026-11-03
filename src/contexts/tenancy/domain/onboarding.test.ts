@@ -2,24 +2,23 @@ import { describe, expect, it } from "vitest";
 import { deriveChecklist, type OnboardingFacts } from "./onboarding";
 
 const empty: OnboardingFacts = {
-  timeZoneSaved: false,
   connectedMailboxes: 0,
   totalMailboxes: 0,
   connectedLinkedInAccounts: 0,
   leads: 0,
   campaigns: 0,
-  activeCampaigns: 0,
-  draftsAwaiting: 0,
-  messagesApproved: 0,
+  startedCampaigns: 0,
+  emailsSent: 0,
+  replies: 0,
   aiSetup: { state: "none" },
 };
 const status = (facts: OnboardingFacts, id: string) => deriveChecklist(facts).steps.find((s) => s.id === id)!;
 
 describe("deriveChecklist", () => {
-  it("starts with nothing done and points at the profile step", () => {
+  it("starts with nothing done and points at the mailbox step", () => {
     const list = deriveChecklist(empty);
     expect(list.steps.map((s) => s.status)).toEqual(["todo", "todo", "todo", "todo", "todo", "todo", "todo"]);
-    expect(list).toMatchObject({ requiredDone: 0, requiredTotal: 5, complete: false, nextStepId: "profile" });
+    expect(list).toMatchObject({ requiredDone: 0, requiredTotal: 5, complete: false, nextStepId: "mailbox", hidden: false });
   });
 
   it("marks optional steps and keeps them out of the required count", () => {
@@ -29,10 +28,15 @@ describe("deriveChecklist", () => {
 
   it("lists required steps before optional ones", () => {
     const list = deriveChecklist(empty);
-    expect(list.steps.map((s) => s.id)).toEqual(["profile", "mailbox", "leads", "campaign", "approve", "linkedin", "ai"]);
+    expect(list.steps.map((s) => s.id)).toEqual(["mailbox", "leads", "campaign", "send", "reply", "linkedin", "ai"]);
   });
 
-  const allRequired = { ...empty, timeZoneSaved: true, connectedMailboxes: 1, totalMailboxes: 1, leads: 12, campaigns: 1, messagesApproved: 1 };
+  it("links each step to where you do it", () => {
+    const hrefs = Object.fromEntries(deriveChecklist(empty).steps.map((s) => [s.id, s.href]));
+    expect(hrefs).toMatchObject({ mailbox: "/settings/mailboxes", leads: "/leads/import", campaign: "/campaigns", send: "/campaigns", reply: "/inbox" });
+  });
+
+  const allRequired = { ...empty, connectedMailboxes: 1, totalMailboxes: 1, leads: 12, campaigns: 1, startedCampaigns: 1, emailsSent: 1, replies: 1 };
 
   it("is complete when the five required steps are done, even without optional ones", () => {
     const list = deriveChecklist(allRequired);
@@ -41,32 +45,36 @@ describe("deriveChecklist", () => {
     expect(list.nextStepId).toBe("linkedin");
   });
 
-  it("stays incomplete until a person has approved a message", () => {
-    const list = deriveChecklist({ ...allRequired, messagesApproved: 0, draftsAwaiting: 2 });
-    expect(list).toMatchObject({ complete: false, requiredDone: 4, nextStepId: "approve" });
+  it("does not count a draft as a started campaign", () => {
+    const step = status({ ...empty, campaigns: 2 }, "campaign");
+    expect(step).toMatchObject({ status: "todo", detail: "2 drafts, none started", action: "Open campaigns" });
+    expect(status({ ...empty, campaigns: 2, startedCampaigns: 1 }, "campaign")).toMatchObject({ status: "done", detail: "1 campaign started" });
+    expect(status(empty, "campaign")).toMatchObject({ detail: null, action: "Create campaign" });
   });
 
-  it("tells what is waiting on the approve step and links to where it lives", () => {
-    const waiting = status({ ...empty, campaigns: 1, draftsAwaiting: 2 }, "approve");
-    expect(waiting).toMatchObject({ status: "todo", detail: "2 drafts waiting for your approval", href: "/inbox", action: "Review drafts" });
-    expect(status({ ...empty, draftsAwaiting: 1 }, "approve").detail).toBe("1 draft waiting for your approval");
-    expect(status(empty, "approve")).toMatchObject({ detail: "Nothing to approve yet: start a campaign first", href: "/campaigns" });
-    expect(status({ ...empty, campaigns: 1 }, "approve").detail).toBe("No drafts waiting yet");
+  it("says what the send step waits on", () => {
+    expect(status(empty, "send")).toMatchObject({ status: "todo", detail: "Nothing to send yet: start a campaign first" });
+    expect(status({ ...empty, startedCampaigns: 1 }, "send")).toMatchObject({ status: "todo", detail: "Waiting for the first send" });
+    expect(status({ ...empty, emailsSent: 3 }, "send")).toMatchObject({ status: "done", detail: "3 emails sent" });
   });
 
-  it("marks the approve step done from an approved message, not from a waiting draft", () => {
-    expect(status({ ...empty, draftsAwaiting: 3 }, "approve").status).toBe("todo");
-    const done = status({ ...empty, messagesApproved: 2, draftsAwaiting: 1 }, "approve");
-    expect(done).toMatchObject({ status: "done", detail: "2 messages approved and sent" });
+  it("says what the reply step waits on", () => {
+    expect(status(empty, "reply")).toMatchObject({ status: "todo", detail: null, href: "/inbox" });
+    expect(status({ ...empty, emailsSent: 1 }, "reply").detail).toBe("No replies yet");
+    expect(status({ ...empty, replies: 1 }, "reply")).toMatchObject({ status: "done", detail: "1 reply received" });
+    expect(status({ ...empty, replies: 2 }, "reply").detail).toBe("2 replies received");
+  });
+
+  it("hides only after both the first send and the first reply", () => {
+    expect(deriveChecklist({ ...empty, emailsSent: 1 }).hidden).toBe(false);
+    expect(deriveChecklist({ ...empty, replies: 1 }).hidden).toBe(false);
+    // A mailbox that later fails shows on its own step, and the guide stays hidden.
+    expect(deriveChecklist({ ...empty, emailsSent: 1, replies: 1 }).hidden).toBe(true);
   });
 
   it("does not require the AI key", () => {
     expect(status(empty, "ai").optional).toBe(true);
     expect(deriveChecklist({ ...allRequired, aiSetup: { state: "none" } }).complete).toBe(true);
-  });
-
-  it("names the time zone step after what it checks", () => {
-    expect(status(empty, "profile").title).toBe("Set the time zone");
   });
 
   it("reports a mailbox that never connected as needing attention, not as missing", () => {
@@ -82,9 +90,8 @@ describe("deriveChecklist", () => {
     expect(step.detail).toBe("1 mailbox connected");
   });
 
-  it("shows real counts for leads and campaigns", () => {
+  it("shows a real count for leads", () => {
     expect(status({ ...empty, leads: 1 }, "leads").detail).toBe("1 lead imported");
-    expect(status({ ...empty, campaigns: 3, activeCampaigns: 2 }, "campaign").detail).toBe("3 campaigns, 2 running");
   });
 
   it("derives the optional steps from their own facts", () => {
@@ -94,7 +101,7 @@ describe("deriveChecklist", () => {
   });
 
   it("points at the first unfinished required step before optional ones", () => {
-    const list = deriveChecklist({ ...empty, timeZoneSaved: true, connectedLinkedInAccounts: 1, aiSetup: { state: "demo" } });
+    const list = deriveChecklist({ ...empty, connectedLinkedInAccounts: 1, aiSetup: { state: "demo" } });
     expect(list.nextStepId).toBe("mailbox");
   });
 
