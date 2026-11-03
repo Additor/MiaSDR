@@ -75,6 +75,7 @@ export function mailboxProvider(): MailboxProvider {
 /** The organization's email channel settings. */
 /** The onboarding checklist's campaign counts, which tenancy reads through a port. */
 export { onboardingCampaignFacts } from "./onboarding-campaign-facts";
+export { resolveTxtRecords } from "../email/infrastructure/dns-txt-resolver";
 
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });
 

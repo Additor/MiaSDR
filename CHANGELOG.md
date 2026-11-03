@@ -22,6 +22,7 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 
 ### Changed
 
+- Settings, Mailboxes gains a read-only Sender DNS block that shows Found, Missing or Could not check for SPF, DKIM on the `google` selector and DMARC on each sending domain. `docs/guides/sender-dns.md` has the Google Workspace records.
 - Email settings gain a postal address, under Settings, Mailboxes, Sending rules. Campaign email carries it in the footer, and with `MAILBOX_PROVIDER=gmail` a campaign refuses to start without it.
 - A verified hard bounce now pauses an email campaign when 5% or more of at least 20 sends since it last started or resumed bounced. The campaign page and Actions state the numbers, the resume dialog repeats them, and only a person resumes it. The MCP reads carry `pausedReason`, and agents get `agent_resume_bounce_paused` and `agent_complete_bounce_paused`. The database gains `campaigns.sends_counted_from`, `campaigns.bounce_pause` and `sends.bounced_at`.
 - One install now serves one organization. First-run setup creates it, and the server refuses another. Creating and switching organizations are gone. `AUTH_SIGNUP` is removed, so accounts need an invitation. `MAILBOX_ALLOWED_DOMAINS` stays optional.

@@ -387,6 +387,10 @@ A failed check stores the message as an auto-reply, sets `possibleBounce: true` 
 
 `channel_settings.email.senderPostalAddress`, set under Settings, Mailboxes, Sending rules, goes into the footer of campaign email above the unsubscribe link. With `MAILBOX_PROVIDER=gmail`, a start or resume refuses without it, and the MCP launch preview lists the same problem. A saved address can change but cannot go back to blank, so a running campaign keeps it. The fake provider sends nothing, so a demo starts without an address and with no seeded value that could later reach real mail. Test sends and replies carry no address.
 
+### Sender DNS check
+
+Settings, Mailboxes reads TXT records through `node:dns` for each domain among the organization's mailboxes: SPF on the domain, DKIM on `google._domainkey` and DMARC on `_dmarc`. `ENODATA` and `ENOTFOUND` mean DNS answered, so the record is Missing. Any other failure shows Could not check, because it says nothing about the record. The check runs in its own Suspense boundary with a 2 second timeout per lookup, stores nothing and blocks nothing. `docs/guides/sender-dns.md` has the Google Workspace records.
+
 ### Test send
 
 `POST /api/mailboxes/[id]/send-test` (owner or admin) writes a `sends` row with `kind = 'test'` and no enrollment.

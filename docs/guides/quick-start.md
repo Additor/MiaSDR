@@ -14,6 +14,7 @@ Campaigns send from mailboxes you connect.
 
 1. Follow [Gmail setup](../setup/gmail.md) once per Google Workspace domain. It creates a service account with domain-wide delegation.
 2. Open Settings, Mailboxes and add the address. Set its daily limit, working hours and signature.
+3. Add the [SPF, DKIM and DMARC records](sender-dns.md) to the domain. The Sender DNS block on the same page shows which ones it finds.
 
 To try the app without Google, set `MAILBOX_PROVIDER=fake` in `.env` and restart. The fake provider keeps mail in memory and sends nothing.
 
