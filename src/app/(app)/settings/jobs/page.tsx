@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { isInstanceOperator } from "@/contexts/identity/infrastructure/signup-facts";
 import { getLinkedInJobsOverview } from "@/contexts/outreach/linkedin/application/linkedin-operations";
 import { linkedinOperations } from "@/composition/inbox-filing";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
@@ -36,7 +37,7 @@ async function Jobs() {
     getLinkedInJobsOverview(linkedinOperations(), actor),
     getFailedAiJobs(aiJobOpsDeps(), actor),
     getSkippedAiJobs(aiJobOpsDeps(), actor),
-    recentTickFailures(20),
+    (await isInstanceOperator(ctx.user.id)) ? recentTickFailures(20) : [],
   ]);
   const linkedin = JSON.parse(JSON.stringify(overview));
   return (

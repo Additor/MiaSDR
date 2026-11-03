@@ -44,6 +44,14 @@ describeDb("create organization (AUTH_SIGNUP=invite-only)", () => {
     expect(await sql`select 1 from members where user_id in ${sql([member.userId, outsider.userId])} and organization_id <> ${first}`).toHaveLength(0);
   });
 
+  it("treats an admin of the first organization as the operator, and nobody else", async () => {
+    const { isInstanceOperator } = await import("@/contexts/identity/infrastructure/signup-facts");
+    const admin = await signedInUser(sql, `operator-${tag}`, [{ organizationId: first, role: "admin" }]);
+    expect(await isInstanceOperator(admin.userId)).toBe(true);
+    expect(await isInstanceOperator(member.userId)).toBe(false);
+    expect(await isInstanceOperator(outsider.userId)).toBe(false);
+  });
+
   it("reports canCreate false to them and true to an admin of the first organization", async () => {
     const asMember = (await callRoute("organizations/route.ts", "GET", { as: member })).body as { canCreate: boolean };
     expect(asMember.canCreate).toBe(false);

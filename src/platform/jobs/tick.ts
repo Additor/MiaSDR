@@ -1,3 +1,4 @@
+import { errorText } from "@/platform/db/error-text";
 import type { Job, TickReport } from "./types";
 
 const DEFAULT_BUDGET_MS = 50_000;
@@ -32,7 +33,7 @@ export async function runTick(
         name: job.name,
         processed: 0,
         more: true,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
         durationMs: Date.now() - jobStarted,
       });
     }

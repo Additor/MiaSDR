@@ -1,3 +1,4 @@
+import { errorText } from "@/platform/db/error-text";
 import { tickObserver } from "./observe";
 import { setKickRunner } from "./kick";
 import { runTick } from "./tick";
@@ -28,7 +29,7 @@ export function startEmbeddedScheduler(
       const report = await runTick(jobs, budgetMs);
       await observe(report);
     } catch (error) {
-      console.error(`[jobs] ${JSON.stringify({ event: "tick.crashed", error: error instanceof Error ? error.message : String(error) })}`);
+      console.error(`[jobs] ${JSON.stringify({ event: "tick.crashed", error: errorText(error) })}`);
     } finally {
       running = false;
     }

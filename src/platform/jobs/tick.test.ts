@@ -16,6 +16,12 @@ describe("runTick", () => {
     ]);
   });
 
+  it("keeps the database's reason and drops the statement and its values", async () => {
+    const bad: Job = { name: "bad", run: async () => { throw new Error("Failed query: select 1\nparams: secret@acme.test", { cause: new Error('column "x" does not exist') }); } };
+    const report = await runTick([bad]);
+    expect(report.jobs[0].error).toBe('column "x" does not exist');
+  });
+
   it("isolates a failing job", async () => {
     const bad: Job = { name: "bad", run: async () => { throw new Error("boom"); } };
     const report = await runTick([bad, ok("good")]);

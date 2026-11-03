@@ -4,6 +4,7 @@ import { env } from "@/shared/env";
 import { invitations, members, organizations, users } from "@/platform/db/schema";
 import {
   mayCreateAccount,
+  adminsTheFirstOrganization,
   mayCreateOrganization,
   publicSignupAvailable,
 } from "../domain/signup-policy";
@@ -35,22 +36,25 @@ export async function isPublicSignupAvailable(): Promise<boolean> {
   return publicSignupAvailable({ mode: env().AUTH_SIGNUP, hasAnyUser: await hasAnyUser() });
 }
 
-export async function canCreateOrganization(userId: string): Promise<boolean> {
+async function rolesInFirstOrganization(userId: string): Promise<{ organizationExists: boolean; roles: string | null }> {
   const [first] = await db.select({ id: organizations.id }).from(organizations).orderBy(asc(organizations.createdAt)).limit(1);
-  let roles: string | null = null;
-  if (first) {
-    const [membership] = await db
-      .select({ role: members.role })
-      .from(members)
-      .where(and(eq(members.organizationId, first.id), eq(members.userId, userId)))
-      .limit(1);
-    roles = membership?.role ?? null;
-  }
-  return mayCreateOrganization({
-    mode: env().AUTH_SIGNUP,
-    organizationExists: Boolean(first),
-    rolesInFirstOrganization: roles,
-  });
+  if (!first) return { organizationExists: false, roles: null };
+  const [membership] = await db
+    .select({ role: members.role })
+    .from(members)
+    .where(and(eq(members.organizationId, first.id), eq(members.userId, userId)))
+    .limit(1);
+  return { organizationExists: true, roles: membership?.role ?? null };
+}
+
+export async function canCreateOrganization(userId: string): Promise<boolean> {
+  const { organizationExists, roles } = await rolesInFirstOrganization(userId);
+  return mayCreateOrganization({ mode: env().AUTH_SIGNUP, organizationExists, rolesInFirstOrganization: roles });
+}
+
+/** Whoever runs this install: see `adminsTheFirstOrganization`. Install-wide facts such as job failures are for them only. */
+export async function isInstanceOperator(userId: string): Promise<boolean> {
+  return adminsTheFirstOrganization((await rolesInFirstOrganization(userId)).roles);
 }
 
 /** The organization a fresh session opens in: the one the user joined first. */

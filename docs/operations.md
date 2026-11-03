@@ -52,7 +52,7 @@ Pausing a single campaign or disabling a single mailbox stays available for a na
 
 - A job that threw, or reported failed items in `detail` (any key containing `fail` or `error` with a count above zero), writes one line `[jobs] {"event":"job.failed",...}` to stderr. The same fault repeating logs once, then at most every ten minutes with `repeatedSinceLastLine`. A job that runs clean afterwards logs `job.recovered`.
 - A tick that takes 30 seconds or more writes one `tick.slow` line (stderr) with the slowest jobs, at most every ten minutes.
-- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
+- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures, to owners and admins of the oldest organization: the operator on an install with several organizations. It stores the database's reason, never the failed statement or its values. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
 
 | Field | Meaning |
 | --- | --- |

@@ -1,3 +1,4 @@
+import { errorText } from "@/platform/db/error-text";
 import type { Job } from "@/platform/jobs/types";
 import { classificationSchema, draftSchema, linkedinDraftSchema } from "../domain/ai-contract";
 import { stopRequestedBy } from "../../domain/reply-type-pick-policy";
@@ -30,7 +31,7 @@ function failureKindOf(error: unknown): FailureKind {
   return error.reason === "shape" ? "shape" : "transient";
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
+const message = (error: unknown) => errorText(error).slice(0, 1000);
 
 /** Shared by the draft job, `requestDraft` and `regenerateDraft`: asks the provider and validates the answer. */
 export async function produceDraft(

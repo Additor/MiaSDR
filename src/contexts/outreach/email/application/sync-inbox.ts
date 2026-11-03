@@ -1,3 +1,4 @@
+import { errorText } from "@/platform/db/error-text";
 import { classifyInbound } from "../domain/inbound";
 import type { InboundOutcome, InboundStore } from "../../application/inbound-ports";
 import type { Clock, MailboxProvider } from "./ports";
@@ -86,7 +87,7 @@ export async function syncMailboxInbox(deps: InboxDeps, mailboxId: string): Prom
     await deps.store.completeSync(mailbox.id, mailbox.cursor, batch.cursor, now, notes.length > 0 ? notes.join(" ") : null);
     return { kind: "synced", counts, reset };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     await deps.store.recordFailure(mailbox.id, message.slice(0, 500));
     return { kind: "failed", error: message, counts };
   }

@@ -7,6 +7,7 @@ import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-re
 import type { Actor } from "@/shared/errors";
 import { formatCount } from "@/shared/format-number";
 import { recentTickFailures } from "@/platform/jobs/failure-log";
+import { isInstanceOperator } from "@/contexts/identity/infrastructure/signup-facts";
 
 export interface Attention {
   count: number;
@@ -30,7 +31,7 @@ async function count(read: () => Promise<number>): Promise<number> {
 export async function loadSettingsAttention(actor: Actor, isAdmin: boolean): Promise<AttentionMap> {
   const [mailboxes, jobs, inbound] = await Promise.all([
     count(async () => (await listMailboxes(mailboxDeps(), actor)).filter((m) => m.status === "failed").length),
-    isAdmin ? count(async () => (await getFailedAiJobs(aiJobOpsDeps(), actor)).total + (await recentTickFailures(20)).length) : 0,
+    isAdmin ? count(async () => (await getFailedAiJobs(aiJobOpsDeps(), actor)).total + ((await isInstanceOperator(actor.userId)) ? (await recentTickFailures(20)).length : 0)) : 0,
     isAdmin ? count(async () => (await listInboundEvents(inboundReviewDeps(), actor, { state: "open", limit: 1 })).total) : 0,
   ]);
   const entry = (n: number, label: string): Attention | undefined => (n > 0 ? { count: n, label: `${formatCount(n)} ${label}` } : undefined);

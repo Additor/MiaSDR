@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, notLike, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notLike, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { auditLog, inboundEvents, jobRuns, linkedinAccounts, users } from "@/platform/db/schema";
 import { TICK_FAILURE_PREFIX } from "@/platform/jobs/failure-log";
@@ -15,7 +15,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
     return db
       .select({ id: jobRuns.id, job: jobRuns.job, slot: jobRuns.slot, status: jobRuns.status, organizationId: jobRuns.organizationId, startedAt: jobRuns.startedAt, finishedAt: jobRuns.finishedAt, error: jobRuns.error })
       .from(jobRuns)
-      .where(and(or(eq(jobRuns.organizationId, organizationId), isNull(jobRuns.organizationId)), notLike(jobRuns.job, `${TICK_FAILURE_PREFIX}%`)))
+      .where(and(eq(jobRuns.organizationId, organizationId), notLike(jobRuns.job, `${TICK_FAILURE_PREFIX}%`)))
       .orderBy(desc(jobRuns.startedAt))
       .limit(limit);
   },
