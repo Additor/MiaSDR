@@ -151,6 +151,24 @@ test.describe("at 390x844 in dark mode", () => {
     await page.getByRole("button", { name: "Pause" }).click();
     await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
   });
+
+  test("a link right after a save does not ask, while the page has yet to refresh", async ({ page }) => {
+    await signInAdmin(page);
+    await page.goto("/campaigns");
+    await page.getByRole("link", { name: /S4 launch/ }).click();
+    await openCampaignTab(page, "sequence");
+    const body = page.getByLabel("Message").first();
+    await waitForHydrated(body);
+    await body.fill(`Saved ${unique("step")}`);
+    await page.route("**/*", async (route) => {
+      if (route.request().headers()["rsc"]) await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.fallback();
+    });
+    await page.getByRole("button", { name: "Save steps" }).click();
+    await expect(page.getByText("Steps saved.")).toBeVisible();
+    await openCampaignTab(page, "leads");
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toHaveCount(0);
+  });
 });
 
 /** The value beside a label in the import summary list. */

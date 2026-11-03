@@ -7,7 +7,9 @@ import { useState } from "react";
  * by a save, a colleague or an agent, shows as this person's unsaved change and Save writes the old value back.
  *
  * With no edits the draft follows the server. With edits it keeps them and sets `baseChanged`, so the form can say so.
- * Call `adoptNext` when a save succeeds: the server may have trimmed the text, and its copy is the one to keep.
+ * Call `adoptNext` when a save succeeds: the server may have trimmed the text, and its copy is the one to keep. Until the
+ * refresh brings that copy, `saved` still holds the old value, so `settling` says the text on screen is already stored and a
+ * form leaves it out of `dirty`.
  */
 export function useServerDraft<T>(saved: T) {
   const savedKey = JSON.stringify(saved);
@@ -36,5 +38,6 @@ export function useServerDraft<T>(saved: T) {
       setBaseChanged(false);
     },
     adoptNext: () => setAdopting(JSON.stringify(value)),
+    settling: adopting !== null && adopting === JSON.stringify(value),
   };
 }

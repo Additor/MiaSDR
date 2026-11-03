@@ -16,11 +16,11 @@ import { SettingsSection } from "../settings-section";
 export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidenceFloor: number; canManage: boolean }) {
   const router = useRouter();
   const saved = String(Math.round(confidenceFloor * 1000) / 10);
-  const { value: percent, setValue: setPercent, baseChanged, discard, adoptNext } = useServerDraft(saved);
+  const { value: percent, setValue: setPercent, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = Number(percent) !== Number(saved);
+  const dirty = !settling && Number(percent) !== Number(saved);
   useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {

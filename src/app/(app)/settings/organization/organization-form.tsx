@@ -24,11 +24,11 @@ interface Org {
 export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: Org; zones: string[]; canRename: boolean; canEditZone: boolean }) {
   const router = useRouter();
   const saved = { name: org.name, timeZone: org.timeZone, country: org.defaultPhoneCountry ?? "" };
-  const { value: values, setValue: setValues, baseChanged, discard, adoptNext } = useServerDraft(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = values.name.trim() !== saved.name || values.timeZone !== saved.timeZone || values.country !== saved.country;
+  const dirty = !settling && (values.name.trim() !== saved.name || values.timeZone !== saved.timeZone || values.country !== saved.country);
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {

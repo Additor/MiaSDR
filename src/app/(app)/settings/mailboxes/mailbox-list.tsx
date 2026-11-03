@@ -319,13 +319,14 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, refresh }: { mailbox: Ma
     hours: hoursDraft(mailbox.ownHours ? mailbox.workingHours : null, defaultTimeZone),
   };
   const [open, setOpen] = useState(false);
-  const { value: values, setValue: setValues, adoptNext } = useServerDraft(saved);
+  const { value: values, setValue: setValues, adoptNext, settling } = useServerDraft(saved);
   const dirty =
-    values.displayName.trim() !== saved.displayName ||
-    Number(values.limit) !== mailbox.dailySendLimit ||
-    values.signature.trim() !== saved.signature.trim() ||
-    values.hoursMode !== saved.hoursMode ||
-    (values.hoursMode === "custom" && !sameHours(values.hours, saved.hours));
+    !settling &&
+    (values.displayName.trim() !== saved.displayName ||
+      Number(values.limit) !== mailbox.dailySendLimit ||
+      values.signature.trim() !== saved.signature.trim() ||
+      values.hoursMode !== saved.hoursMode ||
+      (values.hoursMode === "custom" && !sameHours(values.hours, saved.hours)));
 
   async function save() {
     if (values.hoursMode === "custom" && values.hours.days.length === 0) throw new Error("Pick at least one sending day, or use organization hours.");

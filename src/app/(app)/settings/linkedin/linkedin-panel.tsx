@@ -411,12 +411,13 @@ function AccountRow({
 }) {
   const orgTimeZone = useOrgTimeZone();
   const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone), owner: account.ownerUserId ?? NO_OWNER };
-  const { value: values, setValue: setValues, baseChanged, discard, adoptNext } = useServerDraft(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
   const dirty =
-    Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours) || values.owner !== saved.owner;
+    !settling &&
+    (Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours) || values.owner !== saved.owner);
   const ownerItems = ownerChoices(members);
   useLeaveGuard(dirty);
 

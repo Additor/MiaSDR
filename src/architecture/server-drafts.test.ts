@@ -27,4 +27,12 @@ describe("forms that guard unsaved changes", () => {
       .map((file) => path.relative(ROOT, file));
     expect(offenders.sort()).toEqual(Object.keys(OWN_DRAFT).sort());
   });
+
+  it("leave the text a save just stored out of dirty", () => {
+    const offenders = sourceFiles(path.join(ROOT, "src/app")).filter((file) => {
+      const text = readFileSync(file, "utf8");
+      return text.includes("adoptNext") && !text.includes("!settling");
+    });
+    expect(offenders.map((file) => path.relative(ROOT, file)).filter((file) => !file.endsWith("use-server-draft.ts"))).toEqual([]);
+  });
 });

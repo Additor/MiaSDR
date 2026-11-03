@@ -45,7 +45,7 @@ const renumber = (steps: LinkedInEditableStep[]): LinkedInEditableStep[] => step
 
 export function LinkedInStepsEditor({ id, initial, editable }: { id: string; initial: LinkedInEditableStep[]; editable: boolean }) {
   const router = useRouter();
-  const { value: steps, setValue: setSteps, baseChanged, discard, adoptNext } = useServerDraft<LinkedInEditableStep[]>(initial);
+  const { value: steps, setValue: setSteps, baseChanged, discard, adoptNext, settling } = useServerDraft<LinkedInEditableStep[]>(initial);
   const [selected, setSelected] = useState(1);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
@@ -53,7 +53,7 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const dirty = useMemo(() => JSON.stringify(steps) !== JSON.stringify(initial), [steps, initial]);
+  const dirty = useMemo(() => !settling && JSON.stringify(steps) !== JSON.stringify(initial), [settling, steps, initial]);
   useLeaveGuard(dirty);
   const current = steps[Math.min(selected, steps.length) - 1];
   const fields = useMergeFields();

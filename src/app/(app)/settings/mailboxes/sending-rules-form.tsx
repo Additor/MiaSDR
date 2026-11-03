@@ -21,11 +21,11 @@ interface Rules {
 export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: boolean }) {
   const router = useRouter();
   const saved = { min: String(rules.sendGapMinutes[0]), max: String(rules.sendGapMinutes[1]), takeover: String(rules.takeoverAfterHours) };
-  const { value: values, setValue: setValues, baseChanged, discard, adoptNext } = useServerDraft(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours;
+  const dirty = !settling && (Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours);
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {

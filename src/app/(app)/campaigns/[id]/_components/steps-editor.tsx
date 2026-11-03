@@ -38,7 +38,7 @@ const renumber = (steps: EditableStep[]): EditableStep[] => steps.map((s, i) => 
 
 export function StepsEditor({ id, initial, editable }: { id: string; initial: EditableStep[]; editable: boolean }) {
   const router = useRouter();
-  const { value: steps, setValue: setSteps, baseChanged, discard, adoptNext } = useServerDraft<EditableStep[]>(initial);
+  const { value: steps, setValue: setSteps, baseChanged, discard, adoptNext, settling } = useServerDraft<EditableStep[]>(initial);
   const [selected, setSelected] = useState(1);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
@@ -46,7 +46,7 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const dirty = useMemo(() => JSON.stringify(steps) !== JSON.stringify(initial), [steps, initial]);
+  const dirty = useMemo(() => !settling && JSON.stringify(steps) !== JSON.stringify(initial), [settling, steps, initial]);
   useLeaveGuard(dirty);
   const current = steps[Math.min(selected, steps.length) - 1];
   const fields = useMergeFields();
