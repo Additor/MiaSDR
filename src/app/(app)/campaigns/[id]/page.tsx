@@ -21,7 +21,7 @@ import { stepsEditable, stepsWithPlaceholders, validateSteps } from "@/contexts/
 import { campaignSummary, leadsInProgress, parseCampaignTab, parseLeadsQuery, sendingRulesLine, startBlockers, startSummaryLines } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/follow-up-composition";
-import { campaignDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
+import { campaignDeps, emailRulesDeps, postalAddressRequired } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { countOf } from "@/shared/format-number";
@@ -100,6 +100,7 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
     offlineAssigned: senders.assigned.filter((s) => !s.connected).map((s) => s.label),
     stepIssues: validateSteps(campaign.steps).length,
     placeholderSteps: stepsWithPlaceholders(campaign.steps),
+    noPostalAddress: postalAddressRequired() && !rules?.senderPostalAddress,
   });
   const startLines = startSummaryLines({ channel: "email", leads: enrollments.counts.all, senders: senders.assigned.map((s) => s.label), gapMinutes: rules?.sendGapMinutes });
 

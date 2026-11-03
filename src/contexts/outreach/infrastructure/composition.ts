@@ -17,7 +17,7 @@ import type { EngineDeps } from "../email/application/send-next-email";
 import { reconcileTestSends, type TestSendDeps } from "../email/application/send-test-email";
 import type { SuppressionStore } from "../email/application/unsubscribe";
 import type { SuppressionListDeps } from "../application/suppression-list";
-import { drizzleChannelSettingsStore } from "./drizzle-channel-settings-store";
+import { drizzleChannelSettingsStore, readSenderPostalAddress } from "./drizzle-channel-settings-store";
 import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
 import { drizzleMergeFieldSource, drizzleRunningFieldUse } from "./drizzle-merge-fields";
@@ -102,7 +102,18 @@ export const suppressionListDeps = (stop: ContactStop): SuppressionListDeps => (
 /** Real mail is on and `APP_URL` is an address recipients cannot open. The demo `fake` provider sends nothing, so it passes. */
 export const unsubscribeUnreachable = (): boolean => env().MAILBOX_PROVIDER === "gmail" && isLocalOrigin(env().APP_URL);
 
-export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore, unreachableUnsubscribe: unsubscribeUnreachable() });
+/** Only real mail needs the address: the fake provider keeps mail in memory, and no other provider connects a mailbox. */
+export const postalAddressRequired = (): boolean => env().MAILBOX_PROVIDER === "gmail";
+
+export const campaignDeps = (): CampaignDeps => ({
+  campaigns: drizzleCampaignStore,
+  mailboxes: drizzleMailboxStore,
+  fields: drizzleMergeFieldSource,
+  audit: auditSink,
+  admin: drizzleEnrollmentAdminStore,
+  unreachableUnsubscribe: unsubscribeUnreachable(),
+  postalAddress: { required: postalAddressRequired(), read: readSenderPostalAddress },
+});
 
 function mailboxDomainPolicy(): MailboxDomainPolicy {
   return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS) };

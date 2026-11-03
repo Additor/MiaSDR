@@ -44,7 +44,7 @@ async function Mailboxes() {
       unsubscribeUnreachable={unsubscribeUnreachable()}
       zones={zones}
       defaultTimeZone={orgTimeZone}
-      rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours }} canEdit={canManage} />}
+      rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours, senderPostalAddress: rules.senderPostalAddress }} canEdit={canManage} />}
     />
   );
 }

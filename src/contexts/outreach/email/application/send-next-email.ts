@@ -61,6 +61,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
     variables: claim.person.variables,
     signatureHtml: claim.mailbox.signatureHtml,
     unsubscribeUrl,
+    postalAddress: claim.postalAddress,
     random: deps.random,
   });
   const threading = resolveThreading(rendered.subject, claim.priorSent);

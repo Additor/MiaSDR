@@ -124,6 +124,8 @@ export interface SendClaim {
   enrollmentId: string;
   campaignId: string;
   mailbox: { id: string; emailAddress: string; displayName: string | null; signatureHtml: string | null };
+  /** The organization's postal address for the footer. A start refuses without one on real mail. */
+  postalAddress: string | null;
   person: { id: string; email: string; variables: Record<string, string | null> };
   step: { subject: string; body: string; waitDays: number };
   /** The step after this one, if any, for scheduling the follow-up. */

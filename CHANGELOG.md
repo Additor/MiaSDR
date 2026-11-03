@@ -22,6 +22,7 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 
 ### Changed
 
+- Email settings gain a postal address, under Settings, Mailboxes, Sending rules. Campaign email carries it in the footer, and with `MAILBOX_PROVIDER=gmail` a campaign refuses to start without it.
 - A verified hard bounce now pauses an email campaign when 5% or more of at least 20 sends since it last started or resumed bounced. The campaign page and Actions state the numbers, the resume dialog repeats them, and only a person resumes it. The MCP reads carry `pausedReason`, and agents get `agent_resume_bounce_paused` and `agent_complete_bounce_paused`. The database gains `campaigns.sends_counted_from`, `campaigns.bounce_pause` and `sends.bounced_at`.
 - One install now serves one organization. First-run setup creates it, and the server refuses another. Creating and switching organizations are gone. `AUTH_SIGNUP` is removed, so accounts need an invitation. `MAILBOX_ALLOWED_DOMAINS` stays optional.
 - AI picks follow one fixed rule: a pick waits for a person only for a stop request, confidence under 85%, or a move out of Existing customer. Every other pick applies at once, and Change type or Undo corrects it. Reply types are fixed, and Settings > Reply handling lists them read-only. Looks right, Check before and after, the confidence floor setting and the MCP `confirm_pick` action are gone.

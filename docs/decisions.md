@@ -383,6 +383,10 @@ A failed check stores the message as an auto-reply, sets `possibleBounce: true` 
 - `List-Unsubscribe: <APP_URL/api/outreach/unsubscribe?token=...>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` go on campaign mail, test mail and replies. The POST route is public, accepts only the form body `List-Unsubscribe=One-Click` or the page's JSON `{token}`, and answers 400 for anything else.
 - `suppressEmail` writes `suppression_list` once per organization and address (a conflict does nothing), sets pending and active email enrollments of that address to `suppressed` (or `bounced`), and ends their runs in the same transaction. Suppression blocks email only.
 
+### Sender postal address
+
+`channel_settings.email.senderPostalAddress`, set under Settings, Mailboxes, Sending rules, goes into the footer of campaign email above the unsubscribe link. With `MAILBOX_PROVIDER=gmail`, a start or resume refuses without it, and the MCP launch preview lists the same problem. A saved address can change but cannot go back to blank, so a running campaign keeps it. The fake provider sends nothing, so a demo starts without an address and with no seeded value that could later reach real mail. Test sends and replies carry no address.
+
 ### Test send
 
 `POST /api/mailboxes/[id]/send-test` (owner or admin) writes a `sends` row with `kind = 'test'` and no enrollment.

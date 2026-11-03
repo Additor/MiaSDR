@@ -14,7 +14,7 @@ import {
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
-import { INTERRUPTED_BEFORE_PROVIDER, mailboxBlock } from "../../domain/send-policy";
+import { INTERRUPTED_BEFORE_PROVIDER, mailboxBlock, senderPostalAddress } from "../../domain/send-policy";
 import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
@@ -454,6 +454,7 @@ async function buildClaim(
       displayName: input.mailbox.displayName,
       signatureHtml: input.mailbox.signatureHtml,
     },
+    postalAddress: senderPostalAddress(await channelValues(tx, input.organizationId, "email")),
     person: { id: input.personId, email: row.email as string, variables },
     step: { subject: step.subject ?? "", body: step.body, waitDays: step.waitDays },
     nextStep: next ? { waitDays: next.waitDays } : null,

@@ -15,24 +15,25 @@ import { SettingsSection } from "../settings-section";
 interface Rules {
   sendGapMinutes: [number, number];
   takeoverAfterHours: number;
+  senderPostalAddress: string | null;
 }
 
-/** The pace between sends and the takeover delay. Every mailbox follows them, so they close the Mailboxes page. */
+/** The pace between sends, the takeover delay and the postal address. Every mailbox follows them, so they close the Mailboxes page. */
 export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: boolean }) {
   const router = useRouter();
-  const saved = { min: String(rules.sendGapMinutes[0]), max: String(rules.sendGapMinutes[1]), takeover: String(rules.takeoverAfterHours) };
+  const saved = { min: String(rules.sendGapMinutes[0]), max: String(rules.sendGapMinutes[1]), takeover: String(rules.takeoverAfterHours), address: rules.senderPostalAddress ?? "" };
   const { value: values, setValue: setValues, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = !settling && (Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours);
+  const dirty = !settling && (Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours || values.address.trim() !== (rules.senderPostalAddress ?? ""));
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const result = await run("save", async () => {
       setError(null);
-      return runApiAction(callApi("/api/settings/email-rules", "PATCH", { minGapMinutes: Number(values.min), maxGapMinutes: Number(values.max), takeoverAfterHours: Number(values.takeover) }), { refresh: () => router.refresh() });
+      return runApiAction(callApi("/api/settings/email-rules", "PATCH", { minGapMinutes: Number(values.min), maxGapMinutes: Number(values.max), takeoverAfterHours: Number(values.takeover), senderPostalAddress: values.address }), { refresh: () => router.refresh() });
     });
     if (!result) return;
     if (!result.ok) {
@@ -67,6 +68,11 @@ export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: bo
             <FieldDescription>
               Follow-ups stay on the mailbox that sent the first email. When that mailbox is disabled or failed for longer than this, another mailbox takes the follow-up over as a new thread. Whole hours, 1 to 168.
             </FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="postal-address">Postal address</FieldLabel>
+            <Input id="postal-address" value={values.address} onChange={(e) => setValues({ ...values, address: e.target.value })} maxLength={300} autoComplete="street-address" disabled={!canEdit} />
+            <FieldDescription>Campaign email carries this in its footer, because CAN-SPAM requires a physical address in commercial email. A street address or a registered post office box works.</FieldDescription>
           </Field>
           {canEdit && <SaveRow dirty={dirty} pending={pending} error={error} baseChanged={baseChanged} onDiscard={discard} />}
         </FieldGroup>
