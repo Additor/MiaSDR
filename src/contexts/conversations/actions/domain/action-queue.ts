@@ -5,11 +5,10 @@ import type { SystemRole } from "../../domain/reply-type";
 /**
  * The Actions queue lists conversations, not source rows. A conversation is in the queue when it is `action_required`
  * or `error`, or `waiting` with `next_action_at` due. Each one sits in exactly one group, picked in this
- * order: problem, reply, classification, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
- * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age. The `classification`
- * group is "AI picks" on screen; the key stays because URLs and the API carry it.
+ * order: problem, reply, ai_pick, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
+ * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age.
  */
-export const QUEUE_GROUPS = ["problem", "reply", "follow_up", "classification", "next_step"] as const;
+export const QUEUE_GROUPS = ["problem", "reply", "follow_up", "ai_pick", "next_step"] as const;
 export type QueueGroup = (typeof QUEUE_GROUPS)[number];
 
 export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUPS as readonly string[]).includes(value);
@@ -17,7 +16,7 @@ export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUP
 export const QUEUE_GROUP_LABELS: Record<QueueGroup, { title: string; description: string }> = {
   reply: { title: "Replies to approve", description: "Drafts waiting for your review before anyone sends them." },
   follow_up: { title: "Follow-ups due", description: "Leads you waited on who are due another touch." },
-  classification: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
+  ai_pick: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
   next_step: { title: "Needs a next step", description: "No draft or AI pick waits on this reply. Write a reply, change the type or add a task." },
   problem: { title: "Problems", description: "A draft or AI job failed, a send is unconfirmed, or reply handling hit an error." },
 };
@@ -76,11 +75,11 @@ export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
   return null;
 }
 
-/** The first match of problem, reply, classification, follow_up, next_step. */
+/** The first match of problem, reply, ai_pick, follow_up, next_step. */
 export function queueGroupOf(facts: QueueFacts): QueueGroup {
   if (facts.hasProblemDraft || facts.hasFailedJob) return "problem";
   if (facts.hasDraftToReview) return "reply";
-  if (facts.hasReplyTypePickToReview) return "classification";
+  if (facts.hasReplyTypePickToReview) return "ai_pick";
   if (facts.workflowState === "waiting") return "follow_up";
   return "next_step";
 }
@@ -97,7 +96,7 @@ export function isInQueue(facts: QueueFacts, now: Date): boolean {
 }
 
 /**
- * Why the clock of a queue item started. `inbound`: the last message from the other side (reply, classification, next_step).
+ * Why the clock of a queue item started. `inbound`: the last message from the other side (reply, ai_pick, next_step).
  * `failure`: when the failure was recorded (problem). `due`: when a follow-up came due (follow_up), shown as "overdue since".
  * Only `inbound` and `failure` say how long a person on the other side has waited or a send has been stuck.
  */

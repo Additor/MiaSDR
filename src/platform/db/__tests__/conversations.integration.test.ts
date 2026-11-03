@@ -54,7 +54,7 @@ describeDb("conversation invariants", () => {
     await sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
   });
 
-  it("requires category and source to be set together", async () => {
+  it("requires group and source to be set together", async () => {
     await expect(
       sql`insert into conversations (organization_id, person_id, reply_type_set_id, group_key)
           values (${org}, ${person}, ${otherReplyTypeSet}, 'other')`,
@@ -86,10 +86,10 @@ describeDb("conversation invariants", () => {
   it("requires a real user on human audit events", async () => {
     await expect(
       sql`insert into events (organization_id, person_id, event_type, actor_type)
-          values (${org}, ${person}, 'category_changed', 'human')`,
+          values (${org}, ${person}, 'reply_type_changed', 'human')`,
     ).rejects.toThrow(/check/i);
     await sql`insert into events (organization_id, person_id, event_type, actor_type, actor_user_id)
-              values (${org}, ${person}, 'category_changed', 'human', ${user})`;
+              values (${org}, ${person}, 'reply_type_changed', 'human', ${user})`;
   });
 
   it("keeps a message consistent with its conversation's channel and account", async () => {

@@ -75,11 +75,11 @@ export function summaryItems(result: AnalyticsResult): SummaryItem[] {
       ];
     }
     case "replies": {
-      const { total, byBucket, classifiedShare } = result.data;
+      const { total, byBucket, replyTypeShare } = result.data;
       const pending = byBucket.find((b) => b.bucket === "pending_review")?.replies ?? 0;
       return [
         { label: "Replies", value: formatCount(total), hint: "Inbound messages in this window from people who were contacted before the message arrived." },
-        { label: "With a reply type", value: classifiedShare === null ? "-" : percent(classifiedShare), hint: `Replies with an applied reply type, out of ${formatCount(total)} replies.` },
+        { label: "With a reply type", value: replyTypeShare === null ? "-" : percent(replyTypeShare), hint: `Replies with an applied reply type, out of ${formatCount(total)} replies.` },
         { label: "Pending review", value: formatCount(pending), hint: "Replies whose latest AI pick is held for a check." },
       ];
     }

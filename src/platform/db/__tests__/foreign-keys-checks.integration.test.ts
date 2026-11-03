@@ -280,7 +280,7 @@ describeDb("foreign keys and checks", () => {
   describe("a row that breaks a check is refused", () => {
     const fails = (name: string) => new RegExp(`violates check constraint "${name}"`);
 
-    it("classification confidence outside 0 to 1, context version below 0, unknown category key", async () => {
+    it("classification confidence outside 0 to 1, context version below 0, unknown group key", async () => {
       const w = await world();
       await expect(sql`update reply_type_picks set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
       await expect(sql`update reply_type_picks set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));

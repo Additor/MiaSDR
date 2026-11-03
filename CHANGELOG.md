@@ -37,6 +37,9 @@ The tables and code now use the words the screens use, so start from an empty da
 - Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
 - The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
 - Follow-up events are `follow_up.*`, which used to be `sequence.*`, and the skip conflict code is `follow_ups_changed`. A campaign's Sequence keeps its name.
+- The Leads filter param `category` is now `replyGroup`, and `/crm/pipeline` reads only `owner`, `q` and `showAll`.
+- `get_analytics` replies: the bucket `unclassified` is `no_type` and `classifiedShare` is `replyTypeShare`. The CSV column `Category` is `Reply group`.
+- `get_work_queue`: the group `classification` is `ai_pick`, on the Actions page too.
 
 ### Removed
 

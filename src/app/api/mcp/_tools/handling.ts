@@ -14,7 +14,7 @@ export const setReplyTypeTool = defineTool({
   name: "set_reply_type",
   title: "Set reply type",
   description: [
-    "Sets how a reply handling is classified, as a person does in the inbox. `change` sets the group and reply type (`conversationId`, `groupKey`, `replyTypeId` or null for the group alone, `expectedContextVersion` from get_conversation, optional `note`);",
+    "Sets a conversation's reply type, as a person does in the inbox. `change` sets the group and reply type (`conversationId`, `groupKey`, `replyTypeId` or null for the group alone, `expectedContextVersion` from get_conversation, optional `note`);",
     "a customer type stays locked unless `confirmUnlock`. `undo_pick` reverts an applied AI pick (`replyTypePickId`).",
     "For a pick that waits for a check, as get_work_queue lists it: `accept_pick` applies the AI's proposal and `override_pick` applies `replyTypeKey` instead (`threadId`, `expectedContextVersion`). Both queue a fresh draft when the type writes one.",
     "A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: sending stays refused until a person reviews it.",

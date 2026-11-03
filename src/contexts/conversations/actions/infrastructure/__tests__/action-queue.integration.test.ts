@@ -71,7 +71,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     return d.id as string;
   }
 
-  async function classification(f: Fx, l: { conversationId: string }, status = "auto_applied") {
+  async function insertPick(f: Fx, l: { conversationId: string }, status = "auto_applied") {
     const [target] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = 'demo_request'`;
     const r = await rec(l.conversationId);
     const [c] = await sql`
@@ -117,11 +117,11 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     await sql.end();
   });
 
-  it("lists an action_required record that has no draft, classification or task as next_step", async () => {
+  it("lists an action_required record that has no draft, AI pick or task as next_step", async () => {
     const f = await fixture();
     const l = await lead(f);
     const q = await queue(f);
-    expect(q.groups.next_step.items).toMatchObject([{ conversationId: l.conversationId, group: "next_step", workflowState: "action_required", draft: null, classification: null, problem: null }]);
+    expect(q.groups.next_step.items).toMatchObject([{ conversationId: l.conversationId, group: "next_step", workflowState: "action_required", draft: null, aiPick: null, problem: null }]);
     expect(q.total).toBe(1);
 
     // An open task already puts the conversation in front of a person, so it leaves next_step. A done task does not.
@@ -136,7 +136,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const reply = await lead(f);
     await draft(f, reply);
     const review = await lead(f);
-    await classification(f, review, "proposed");
+    await insertPick(f, review, "proposed");
     const both = await lead(f);
     await draft(f, both);
     await draft(f, both, "failed", "Body is empty");
@@ -153,7 +153,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
 
     const q = await queue(f);
     expect(ids(q.groups.reply)).toEqual([reply.conversationId]);
-    expect(q.groups.classification.items).toMatchObject([{ conversationId: review.conversationId, classification: { kind: "held", name: "Demo request" } }]);
+    expect(q.groups.ai_pick.items).toMatchObject([{ conversationId: review.conversationId, aiPick: { kind: "held", name: "Demo request" } }]);
     expect(ids(q.groups.follow_up)).toEqual([due.conversationId]);
     expect(ids(q.groups.problem).sort()).toEqual([both.conversationId, errored.conversationId].sort());
     expect(q.groups.problem.items.find((i) => i.conversationId === both.conversationId)?.problem).toMatchObject({ kind: "draft_failed", message: "Body is empty" });
@@ -165,7 +165,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   it("shows a failed draft job, an unconfirmed reply and a failed classification job as problems", async () => {
     const f = await fixture();
     const failedDraftJob = await lead(f);
-    const replyTypePickId = await classification(f, failedDraftJob);
+    const replyTypePickId = await insertPick(f, failedDraftJob);
     await sql`
       insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, attempts, failed_at, last_error)
       values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId}, 'failed', 3, now(), 'Model refused the request')`;
@@ -244,7 +244,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     await failedJob(f, broken);
 
     const all = (q: Awaited<ReturnType<typeof queue>>) => QUEUE_ORDER.flatMap((g) => ids(q.groups[g])).sort();
-    const QUEUE_ORDER: QueueGroup[] = ["reply", "follow_up", "classification", "next_step", "problem"];
+    const QUEUE_ORDER: QueueGroup[] = ["reply", "follow_up", "ai_pick", "next_step", "problem"];
 
     expect(all(await queue(f, { filter: { group: "interested" } }))).toEqual([demo.conversationId]);
     expect(all(await queue(f, { filter: { group: "no_type" } }))).toEqual([plain.conversationId, linkedin.conversationId, dueSoon.conversationId, dueEarlier.conversationId, broken.conversationId].sort());
@@ -344,7 +344,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const counts = await workQueue.getWorkQueueCounts(deps, f.actor);
     expect(page.total).toBe(4);
     expect(counts.total).toBe(page.total);
-    for (const g of ["reply", "follow_up", "classification", "next_step", "problem"] as const) {
+    for (const g of ["reply", "follow_up", "ai_pick", "next_step", "problem"] as const) {
       expect(counts.byGroup[g]).toBe(page.groups[g].total);
     }
     // A filter narrows the page but never the badge.
@@ -553,9 +553,9 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       { name: "draft to review and an open task", hasDraftToReview: true, hasOpenTask: true },
       { name: "failed draft", hasProblemDraft: true },
       { name: "failed draft and a draft to review", hasProblemDraft: true, hasDraftToReview: true },
-      { name: "held classification", hasReplyTypePickToReview: true },
-      { name: "held classification and a draft to review", hasReplyTypePickToReview: true, hasDraftToReview: true },
-      { name: "held classification and an open task", hasReplyTypePickToReview: true, hasOpenTask: true },
+      { name: "held AI pick", hasReplyTypePickToReview: true },
+      { name: "held AI pick and a draft to review", hasReplyTypePickToReview: true, hasDraftToReview: true },
+      { name: "held AI pick and an open task", hasReplyTypePickToReview: true, hasOpenTask: true },
       { name: "failed job", hasFailedJob: true },
       { name: "failed job and a draft to review", hasFailedJob: true, hasDraftToReview: true },
       { name: "waiting and due", workflowState: "waiting", nextActionAt: new Date(Date.now() - hour) },
@@ -585,7 +585,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       await sql`update conversations set workflow_state = ${facts.workflowState}, next_action_at = ${facts.nextActionAt?.toISOString() ?? null} where id = ${l.conversationId}`;
       if (facts.hasProblemDraft) await draft(f, l, "failed", "Body is empty");
       if (facts.hasDraftToReview) await draft(f, l);
-      if (facts.hasReplyTypePickToReview) await classification(f, l, "proposed");
+      if (facts.hasReplyTypePickToReview) await insertPick(f, l, "proposed");
       if (facts.hasFailedJob) {
         const r = await rec(l.conversationId);
         await sql`
@@ -701,11 +701,11 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
 
     const q = await queue(f, { limit: 200 });
     const items = new Map(Object.values(q.groups).flatMap((page) => page.items.map((item) => [item.conversationId, item] as const)));
-    const actual = built.map((b) => [b.name, items.get(b.conversationId)?.group ?? null, items.get(b.conversationId)?.classification?.kind ?? null]);
+    const actual = built.map((b) => [b.name, items.get(b.conversationId)?.group ?? null, items.get(b.conversationId)?.aiPick?.kind ?? null]);
     // Every conversation here is action_required, so one that nothing waits on is a next step.
     const expected = built.map((b) => {
       const kind = pickReviewOf(b.facts);
-      return [b.name, kind ? "classification" : "next_step", kind];
+      return [b.name, kind ? "ai_pick" : "next_step", kind];
     });
     expect(actual).toEqual(expected);
     // A stop request that refuses agents stays listed when the conversation waits on nobody.
@@ -713,7 +713,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     await aiPick(f, idle, { status: "auto_applied", stopRequested: true });
     await sql`update conversations set workflow_state = 'idle' where id = ${idle.conversationId}`;
     const listed = await queue(f, { limit: 200 });
-    expect(ids(listed.groups.classification)).toContain(idle.conversationId);
+    expect(ids(listed.groups.ai_pick)).toContain(idle.conversationId);
     // The cases the brief names, spelled out.
     expect(Object.fromEntries(expected.map(([name, , kind]) => [name, kind]))).toMatchObject({
       held: "held",
@@ -734,9 +734,9 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     await sql`update conversations set workflow_state = 'idle' where id in (${asked.conversationId}, ${quiet.conversationId})`;
 
     const listed = await queue(f, { limit: 200 });
-    const row = listed.groups.classification.items.find((i) => i.conversationId === asked.conversationId);
-    expect(row?.classification).toMatchObject({ kind: "stop_review", replyTypePickId: null });
-    expect(ids(listed.groups.classification)).not.toContain(quiet.conversationId);
+    const row = listed.groups.ai_pick.items.find((i) => i.conversationId === asked.conversationId);
+    expect(row?.aiPick).toMatchObject({ kind: "stop_review", replyTypePickId: null });
+    expect(ids(listed.groups.ai_pick)).not.toContain(quiet.conversationId);
 
     const details = (await import("../../../infrastructure/reply-handling-composition")).replyHandlingDeps();
     const { getConversationDetail } = await import("../../../application/reply-handling");
@@ -746,7 +746,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const [r] = await sql`select latest_inbound_message_id from conversations where id = ${asked.conversationId}`;
     await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) values (${f.org}, ${r.latest_inbound_message_id}, now())`;
     const reviewed = await queue(f, { limit: 200 });
-    expect(ids(reviewed.groups.classification)).not.toContain(asked.conversationId);
+    expect(ids(reviewed.groups.ai_pick)).not.toContain(asked.conversationId);
     expect((await getConversationDetail(details, f.actor, asked.conversationId)).conversation.stopReviewOpen).toBe(false);
   });
 });

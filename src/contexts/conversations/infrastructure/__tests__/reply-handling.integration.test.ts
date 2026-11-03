@@ -281,7 +281,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       // The Actions row reads the same pick: it is held, and it does not unlock a customer.
       const queue = await workQueue.getWorkQueue(queueDeps, f.actor);
       const row = Object.values(queue.groups).flatMap((g) => g.items).find((i) => i.conversationId === l.conversationId);
-      expect(row?.classification).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
+      expect(row?.aiPick).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
     });
 
     it("cancels a queued draft job for the undone classification", async () => {

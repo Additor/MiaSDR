@@ -188,6 +188,5 @@ test.describe("lead list filters, sort and lifecycle", () => {
     // The filter bar labels the reply type group "Reply group".
     await openFilters(page);
     await expect(page.getByRole("combobox", { name: "Reply group" })).toBeVisible();
-    await expect(page.getByText("CRM category")).toHaveCount(0);
   });
 });

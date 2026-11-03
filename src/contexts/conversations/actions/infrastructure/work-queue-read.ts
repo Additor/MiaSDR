@@ -35,7 +35,7 @@ const date = (value: unknown) => (value === null || value === undefined ? null :
 
 /**
  * One row per conversation that needs a person: `action_required`, or `waiting` with `next_action_at` due.
- * `grp` is the first match of problem, reply, classification, follow_up, next_step. A `next_step` conversation with an
+ * `grp` is the first match of problem, reply, ai_pick, follow_up, next_step. A `next_step` conversation with an
  * open task is left out, because the task already shows it. The list, the totals and the badges all read this. The snippet of
  * a row is not here: it reads message bodies, so it is read for the rows of one page only (`snippetsOf`).
  */
@@ -56,7 +56,7 @@ const queueRowsSql = (organizationId: string) => sql`
            case
              when pd.id is not null or fj.id is not null then 'problem'
              when rd.id is not null then 'reply'
-             when st.review or nk.kind is not null then 'classification'
+             when st.review or nk.kind is not null then 'ai_pick'
              when r.workflow_state = 'waiting' then 'follow_up'
              else 'next_step'
            end as grp,
@@ -143,7 +143,7 @@ function queueConditions(filter: QueueFilter, actorUserId: string) {
   return sql.join(parts, sql` and `);
 }
 
-const emptyCounts = (): Record<QueueGroup, number> => ({ reply: 0, follow_up: 0, classification: 0, next_step: 0, problem: 0 });
+const emptyCounts = (): Record<QueueGroup, number> => ({ reply: 0, follow_up: 0, ai_pick: 0, next_step: 0, problem: 0 });
 
 async function queueTotals(organizationId: string, actorUserId: string, filter: QueueFilter): Promise<Record<QueueGroup, number>> {
   const rows = rowsOf<{ grp: QueueGroup; n: number }>(
@@ -214,7 +214,7 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
         ? { draftId: (usesProblemDraft ? r.pd_id : r.rd_id) as string, status: usesProblemDraft ? (r.pd_status as string) : "awaiting_review", subject: (usesProblemDraft ? r.pd_subject : r.rd_subject) as string | null, updatedAt: new Date((usesProblemDraft ? r.pd_updated : r.rd_updated) as string), preview: null }
         : null
       : null,
-    classification: r.k_kind
+    aiPick: r.k_kind
       ? { replyTypePickId: r.k_id as string | null, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx ?? 0), unlocksCustomer: holdReasonOf(r.k_hold) === "protected_customer" }
       : null,
     problem: problemKind ? { kind: problemKind, message: problemMessage[problemKind] } : null,

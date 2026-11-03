@@ -40,7 +40,7 @@ export interface QueueItemView {
   snippet: string | null;
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
-  classification: { replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
+  aiPick: { replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
@@ -94,7 +94,7 @@ interface Settled {
 
 /** What a remnant says: "Accepted Not now for Eli Moss." */
 function settledText(item: QueueItemView, ambiguous: ReadonlySet<string>): string {
-  const c = item.classification;
+  const c = item.aiPick;
   const name = item.personName ?? "the sender";
   return `Accepted ${typeLabel(c?.name ?? null, c?.groupKey ?? null, ambiguous) ?? "the AI pick"} for ${name}.`;
 }
@@ -144,8 +144,8 @@ function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail
         detail: item.draft?.preview ? `Draft: ${item.draft.preview}` : (item.draft?.subject ?? "(no subject)"),
         action: "Review and send",
       };
-    case "classification": {
-      const c = item.classification;
+    case "ai_pick": {
+      const c = item.aiPick;
       if (c?.kind === "stop_review") {
         // The AI's uncertain reading, worded as on the thread: the amber icon and lead words, the sentence in the foreground.
         return {
@@ -265,7 +265,7 @@ export function QueueGroup({
    * Stop contacting.
    */
   async function settle(item: QueueItemView): Promise<boolean> {
-    const c = item.classification;
+    const c = item.aiPick;
     if (!c || !c.replyTypePickId || c.kind !== "held" || c.unlocksCustomer) return false;
     const result = item.threadId
       ? await callApi(`/api/inbox/${item.threadId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
@@ -365,7 +365,7 @@ export function QueueGroup({
           const { detail, action } = describe(item, ambiguous);
           const wait = waitingLabel(item.waitingSince, now);
           const type = typeLabel(item.replyTypeName, item.groupKey, ambiguous);
-          const kind = item.classification?.kind;
+          const kind = item.aiPick?.kind;
           const stop = kind === "stop_review" ? stopHref(item, query) : null;
           return (
             <li
@@ -410,7 +410,7 @@ export function QueueGroup({
                   >
                     {action}
                   </Link>
-                ) : kind === "held" && item.threadId && !item.classification?.unlocksCustomer ? (
+                ) : kind === "held" && item.threadId && !item.aiPick?.unlocksCustomer ? (
                   // Above the stretched link, so the click settles the row and does not open the thread.
                   <Button
                     variant="outline"

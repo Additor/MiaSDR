@@ -221,8 +221,8 @@ test.describe("deals pipeline", () => {
     await expect(cards).toHaveCount(26);
     await expect(column(page, "New").getByRole("button", { name: /more/ })).toHaveCount(0);
 
-    // Old reply-board params are ignored, and an unknown owner falls back to any owner.
-    await page.goto("/crm/pipeline?category=interested&channel=email&closed=1&owner=nobody&q=S35%20Bulk");
+    // An unknown owner falls back to any owner.
+    await page.goto("/crm/pipeline?owner=nobody&q=S35%20Bulk");
     await expect(cards).toHaveCount(25);
     // The owner filter narrows the board; the bulk deals have the admin as owner.
     await page.goto("/crm/pipeline?owner=none&q=S35%20Bulk");

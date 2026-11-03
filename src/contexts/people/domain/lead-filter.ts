@@ -31,8 +31,8 @@ export interface LeadFilter {
   /** Inclusive dates, YYYY-MM-DD, compared in UTC. */
   createdFrom?: string;
   createdTo?: string;
-  /** Reply category key of any of the lead's reply records. */
-  category?: string;
+  /** Group key of the reply type of any of the lead's conversations. */
+  replyGroup?: string;
   /** Explicit selection. Used by the export of ticked rows. */
   ids?: string[];
 }
@@ -83,7 +83,7 @@ export function matchingSelection(selectedCount: number, total: number): { canSe
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE = /^[\w.-]{1,60}(:[\w.-]{1,100})?$/;
-const CATEGORY = /^[a-z_]{1,40}$/;
+const REPLY_GROUP = /^[a-z_]{1,40}$/;
 
 type Read = (key: string) => string | null | undefined;
 
@@ -129,8 +129,8 @@ export function parseLeadFilter(read: Read): LeadFilter {
   if (from) filter.createdFrom = from;
   const to = validDate(read("to"));
   if (to) filter.createdTo = to;
-  const category = read("category");
-  if (category && CATEGORY.test(category)) filter.category = category;
+  const replyGroup = read("replyGroup");
+  if (replyGroup && REPLY_GROUP.test(replyGroup)) filter.replyGroup = replyGroup;
   const ids = (read("ids") ?? "")
     .split(",")
     .map((id) => id.trim())
@@ -159,7 +159,7 @@ export function isFilterActive(filter: LeadFilter): boolean {
     filter.source !== undefined ||
     filter.createdFrom !== undefined ||
     filter.createdTo !== undefined ||
-    filter.category !== undefined ||
+    filter.replyGroup !== undefined ||
     (filter.ids?.length ?? 0) > 0
   );
 }
@@ -183,7 +183,7 @@ export function leadFilterParams(filter: LeadFilter): URLSearchParams {
   if (filter.source) params.set("source", filter.source);
   if (filter.createdFrom) params.set("from", filter.createdFrom);
   if (filter.createdTo) params.set("to", filter.createdTo);
-  if (filter.category) params.set("category", filter.category);
+  if (filter.replyGroup) params.set("replyGroup", filter.replyGroup);
   if (filter.ids?.length) params.set("ids", filter.ids.join(","));
   return params;
 }

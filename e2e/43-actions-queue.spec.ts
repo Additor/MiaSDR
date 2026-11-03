@@ -94,7 +94,7 @@ test.describe("the Actions queue as a list to work through", () => {
     const suggested = page.getByTestId("queue-item").filter({ hasText: "Eli Moss" }).filter({ hasText: /AI picked/ });
     await expect(suggested).toHaveCount(1);
     await waitForHydrated(suggested);
-    const total = page.getByTestId("queue-total-classification");
+    const total = page.getByTestId("queue-total-ai_pick");
     const before = Number(await total.textContent());
     await suggested.getByTestId("settle").click();
     // The click settles the row where it stands: no thread opens, and the suggestion is not asked for again.

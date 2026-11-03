@@ -37,14 +37,14 @@ const facts = (partial: Partial<QueueFacts> = {}): QueueFacts => ({
 });
 
 describe("queue group and membership", () => {
-  it("picks the first match of problem, reply, classification, follow_up, next_step", () => {
+  it("picks the first match of problem, reply, ai_pick, follow_up, next_step", () => {
     expect(queueGroupOf(facts())).toBe("next_step");
     expect(queueGroupOf(facts({ workflowState: "waiting" }))).toBe("follow_up");
-    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("ai_pick");
     expect(queueGroupOf(facts({ hasReplyTypePickToReview: true, hasDraftToReview: true }))).toBe("reply");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasProblemDraft: true }))).toBe("problem");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasFailedJob: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("ai_pick");
   });
 
   it("admits action_required conversations, and waiting conversations whose time has come", () => {
@@ -116,8 +116,8 @@ describe("waiting since", () => {
     ...partial,
   });
 
-  it("starts the clock of a reply, a classification and a next step at the last inbound message", () => {
-    for (const group of ["reply", "classification", "next_step"] as const) {
+  it("starts the clock of a reply, an AI pick and a next step at the last inbound message", () => {
+    for (const group of ["reply", "ai_pick", "next_step"] as const) {
       expect(waitingSince(group, waiting())).toEqual({ at: at("2026-10-18T08:00:00Z"), basis: "inbound" });
     }
   });
@@ -166,9 +166,9 @@ describe("next queue item", () => {
   });
 
   it("searches the groups below the item, then the ones above, then its own", () => {
-    expect(groupsAfter("reply")).toEqual(["follow_up", "classification", "next_step", "problem", "reply"]);
-    expect(groupsAfter("classification")).toEqual(["next_step", "problem", "reply", "follow_up", "classification"]);
-    expect(groupsAfter("problem")).toEqual(["reply", "follow_up", "classification", "next_step", "problem"]);
+    expect(groupsAfter("reply")).toEqual(["follow_up", "ai_pick", "next_step", "problem", "reply"]);
+    expect(groupsAfter("ai_pick")).toEqual(["next_step", "problem", "reply", "follow_up", "ai_pick"]);
+    expect(groupsAfter("problem")).toEqual(["reply", "follow_up", "ai_pick", "next_step", "problem"]);
     for (const group of QUEUE_GROUPS) expect([...groupsAfter(group)].sort()).toEqual([...QUEUE_GROUPS].sort());
   });
 });

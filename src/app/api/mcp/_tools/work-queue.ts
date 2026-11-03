@@ -40,12 +40,12 @@ function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
     waitingSince: i.waitingSince.at.toISOString(),
     lastInbound: fencedExcerpt(ctx, i.channel, i.snippet),
     draft: i.draft && { draftId: i.draft.draftId, status: i.draft.status, subject: fencedField(ctx, i.draft.subject) },
-    aiPick: i.classification && {
-      replyTypePickId: i.classification.replyTypePickId,
-      kind: i.classification.kind,
-      name: i.classification.name,
-      confidence: i.classification.confidence,
-      contextVersion: i.classification.contextVersion,
+    aiPick: i.aiPick && {
+      replyTypePickId: i.aiPick.replyTypePickId,
+      kind: i.aiPick.kind,
+      name: i.aiPick.name,
+      confidence: i.aiPick.confidence,
+      contextVersion: i.aiPick.contextVersion,
     },
     problem: i.problem,
     appUrl: i.threadId ? links.thread(i.threadId) : links.person(i.personId, i.personLifecycle),
