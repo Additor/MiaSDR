@@ -17,5 +17,12 @@ export const automatedByPattern = (alias: string): SQL =>
  * An inbound message that never counts as unread: an auto-reply by header, or machine mail by pattern. A possible bounce
  * stays countable so someone looks at a notice the system could not verify, though it is filed with the auto-reply flag.
  */
-export const excludedFromUnread = (alias: string): SQL =>
+const excludedFromUnread = (alias: string): SQL =>
   sql`((${autoReplyFlag(alias)} or ${automatedByPattern(alias)}) and not ${flag(alias, "possibleBounce")})`;
+
+/**
+ * True for a message `alias` that counts as unread. The one reading: the Inbox badge, the Unread view, a list row's count
+ * and the marks on one thread all use it, so an auto-reply cannot read as unread in one of them and not another.
+ */
+export const unreadMessageSql = (alias: string): SQL =>
+  sql`(${sql.raw(alias)}.direction = 'inbound' and ${sql.raw(alias)}.opened_at is null and not ${excludedFromUnread(alias)})`;

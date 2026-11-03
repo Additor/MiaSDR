@@ -7,7 +7,7 @@ import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import type { AiJobQueueStore, AiJobStore, ClassifyContext, DraftContext, FailedAiJob, JobKind, RequeueAudit, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
-import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
+import { ANSWERING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { typeRulesOf } from "../../domain/reply-type";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { DUE_NOW, drizzleAiJobWorkerStore } from "./drizzle-ai-job-worker-store";
@@ -221,7 +221,7 @@ const queueStore: AiJobQueueStore = {
       const [open] = await db
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.threadId, ctx.threadId), eq(drafts.expectedContextVersion, ctx.contextVersion), inArray(drafts.status, [...PENDING_DRAFT_STATUSES, "sent"])))
+        .where(and(eq(drafts.threadId, ctx.threadId), eq(drafts.expectedContextVersion, ctx.contextVersion), inArray(drafts.status, [...ANSWERING_DRAFT_STATUSES])))
         .limit(1);
       if (open) return "has_draft";
       if (ctx.channel === "linkedin") {

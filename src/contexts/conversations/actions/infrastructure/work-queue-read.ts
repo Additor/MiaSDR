@@ -3,7 +3,8 @@ import { db } from "@/platform/db/client";
 import { identityExceptions } from "@/platform/db/schema";
 import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage, QueueItem, QueuePosition, WorkQueueStore } from "../application/work-queue-ports";
 import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
-import { rowsOf } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues } from "@/platform/db/sql-values";
+import { ANSWERING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { holdReasonOf } from "../../domain/reply-type";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 import { stopReviewOpenSql } from "@/platform/db/stop-review-sql";
@@ -88,7 +89,7 @@ const queueRowsSql = (organizationId: string) => sql`
             and exists (select 1 from reply_type_picks c where c.id = j.entity_id and c.conversation_id = r.id and c.message_id = r.latest_inbound_message_id
                           and c.expected_context_version = r.context_version and c.status not in ('stale', 'rejected')))
         )
-        and not exists (select 1 from drafts d where d.conversation_id = r.id and d.status in ('generating', 'awaiting_review', 'sending', 'sent') and d.created_at >= j.created_at)
+        and not exists (select 1 from drafts d where d.conversation_id = r.id and d.status in ${sqlValues(ANSWERING_DRAFT_STATUSES)} and d.created_at >= j.created_at)
       order by j.failed_at desc limit 1
     ) fj on true
     left join lateral (

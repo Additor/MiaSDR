@@ -29,22 +29,6 @@ export const AUTOMATED_SENDER_PATTERN = "(^|[^a-z0-9])(no[-_.]?reply|do[-_.]?not
 export const AUTOMATED_SUBJECT_PATTERN =
   "(^|[^a-z0-9])(dmarc|report domain|aggregate report|delivery status notification|undeliverable|mail delivery (failed|subsystem)|returned mail|failure notice|delivery failure)([^a-z0-9]|$)";
 
-const SENDER_RE = new RegExp(AUTOMATED_SENDER_PATTERN, "i");
-const SUBJECT_RE = new RegExp(AUTOMATED_SUBJECT_PATTERN, "i");
-
-export interface AutomatedProbe {
-  autoReply?: boolean;
-  possibleBounce?: boolean;
-  from?: string | null;
-  subject?: string | null;
-}
-
-/** Header flags win; the sender and subject patterns catch DMARC reports and no-reply mail that carry no flag. */
-export function isAutomatedMessage(probe: AutomatedProbe): boolean {
-  if (probe.autoReply || probe.possibleBounce) return true;
-  return SENDER_RE.test(probe.from ?? "") || SUBJECT_RE.test(probe.subject ?? "");
-}
-
 export interface DateRange {
   /** Inclusive. */
   start: Date | null;
