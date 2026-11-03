@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUnipilePayload } from "../unipile-webhook";
+import { parseUnipilePayload, unreadablePayloadEvent } from "../unipile-webhook";
 
 describe("parseUnipilePayload", () => {
   it("reads a new_relation as an acceptance", () => {
@@ -58,5 +58,18 @@ describe("parseUnipilePayload", () => {
     expect(parseUnipilePayload({ event: "new_relation", account_id: "a", account_type: "LINKEDIN" })).toBeNull();
     expect(parseUnipilePayload("nope")).toBeNull();
     expect(parseUnipilePayload(null)).toBeNull();
+  });
+});
+
+describe("unreadablePayloadEvent", () => {
+  it("names an event this app acts on that it cannot read", () => {
+    expect(unreadablePayloadEvent({ event: "new_relation", account_type: "LINKEDIN", account_id: "a" })).toBe("new_relation");
+    expect(unreadablePayloadEvent({ event: "message_received", account_type: "LINKEDIN" })).toBe("message_received");
+  });
+
+  it("stays quiet about other events, other account types and a payload it can read", () => {
+    expect(unreadablePayloadEvent({ event: "message_reaction", account_type: "LINKEDIN", account_id: "a" })).toBeNull();
+    expect(unreadablePayloadEvent({ event: "message_received", account_type: "WHATSAPP", account_id: "a" })).toBeNull();
+    expect(unreadablePayloadEvent({ event: "new_relation", account_type: "LINKEDIN", account_id: "a", user_provider_id: "m" })).toBeNull();
   });
 });

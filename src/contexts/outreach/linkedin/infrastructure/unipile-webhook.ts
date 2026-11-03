@@ -59,3 +59,15 @@ export function parseUnipilePayload(payload: unknown): LinkedInInboundEvent | nu
   }
   return null;
 }
+
+/** The events this app acts on. One of them that fails to parse is a changed payload, and the reply inside it would be lost. */
+const HANDLED_EVENTS = new Set(["message_received", "new_relation"]);
+
+/** Names the event when Unipile sent one this app acts on and `parseUnipilePayload` could not read it. */
+export function unreadablePayloadEvent(payload: unknown): string | null {
+  const body = obj(payload);
+  const event = str(body.event);
+  if (!event || !HANDLED_EVENTS.has(event)) return null;
+  if (body.account_type !== undefined && body.account_type !== "LINKEDIN") return null;
+  return parseUnipilePayload(payload) ? null : event;
+}

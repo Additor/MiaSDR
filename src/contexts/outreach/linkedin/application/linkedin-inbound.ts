@@ -17,9 +17,18 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
  */
 export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: { organizationId: string; payload: unknown }): Promise<WebhookResult> {
   const event = deps.parse(input.payload);
-  if (!event) return { status: "ignored" };
+  if (!event) {
+    // An event we act on that we cannot read: Unipile changed its shape, and a reply may be inside. It stays on Inbound events.
+    const unreadable = deps.unreadable?.(input.payload);
+    if (unreadable) await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: unreadable, payload: input.payload, now: deps.clock.now() });
+    return { status: "ignored" };
+  }
   const key = eventKey(event, input.organizationId);
-  if (!key) return { status: "ignored" };
+  // No id to key it on: the same changed shape, read one field further in.
+  if (!key) {
+    await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: event.type, payload: input.payload, now: deps.clock.now() });
+    return { status: "ignored" };
+  }
 
   const now = deps.clock.now();
   const row = await deps.store.begin({

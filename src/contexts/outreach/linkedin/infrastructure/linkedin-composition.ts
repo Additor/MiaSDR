@@ -31,7 +31,7 @@ import { drizzlePersonalThreadStore } from "./drizzle-personal-thread-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./unipile-gateway";
-import { parseUnipilePayload } from "./unipile-webhook";
+import { parseUnipilePayload, unreadablePayloadEvent } from "./unipile-webhook";
 
 /** Enrolls people in a LinkedIn campaign inside the caller's transaction (grid's campaign handoff). */
 export { enrollPeople } from "./drizzle-linkedin-campaign-store";
@@ -113,7 +113,7 @@ function engineDeps(): LinkedInEngineDeps {
 }
 
 function inboundDeps(inbox: InboxFiling): LinkedInInboundDeps {
-  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseUnipilePayload };
+  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent };
 }
 
 /** LinkedIn jobs. They idle until an organization connects Unipile, so they are always registered. */
