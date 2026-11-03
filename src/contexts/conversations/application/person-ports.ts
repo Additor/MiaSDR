@@ -1,9 +1,8 @@
-import type { DbHandle } from "@/platform/db/client";
 
 /**
  * What other contexts call on reply handling when a lead becomes a contact ("Leads and CRM" in docs/decisions.md). The functions are callee-owned: conversations owns the conversations, runs, drafts and events they touch, and the
- * caller passes its transaction so the whole conversion commits or rolls back together. The implementations live in
- * infrastructure/person-handling.ts.
+ * caller passes its transaction so the whole conversion commits or rolls back together. The implementations and their
+ * contracts live in infrastructure/person-handling.ts.
  */
 
 export type PersonChannel = "email" | "linkedin" | "whatsapp";
@@ -37,18 +36,4 @@ export interface PersonEventView {
   meta: unknown;
   fromData: unknown;
   toData: unknown;
-}
-
-export interface PersonReplyHandling {
-  /** Locks the person's conversations in id order, then the person's outreach advisory lock. Call it first in the transaction. */
-  lockPersonConversations(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  /** The conversations half of `lockPersonConversations`, for a caller that changes its lock timeout between the two. Returns the rows locked. */
-  lockPersonConversationRows(tx: DbHandle, organizationId: string, personId: string): Promise<number>;
-  /** What the conversion's stop would change now, per person. Writes nothing. Every requested id has an entry. */
-  previewPersonRunStop(organizationId: string, personIds: string[]): Promise<Map<string, PersonRunStop>>;
-  appendPersonEvent(tx: DbHandle, input: PersonEventInput): Promise<void>;
-  /** The conversation of the person's active channel, else the most recently updated one. Null when the person has none. */
-  activeThreadOfPerson(organizationId: string, personId: string): Promise<{ threadId: string; channel: PersonChannel } | null>;
-  /** Newest first. */
-  listPersonEvents(organizationId: string, personId: string, limit: number): Promise<PersonEventView[]>;
 }

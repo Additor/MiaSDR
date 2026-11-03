@@ -60,7 +60,7 @@ const WRITES: Record<Channel, ChannelWrites> = {
       const steps = sent && stepsToSave(linkedinStepSchema, sent);
       return { steps, update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps }, tx) };
     },
-    byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun, collectIds: true }, AGENT_ENROLL, tx)),
+    byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
     remove: (actor, id, enrollmentIds) => removeLinkedInLeads(linkedinCampaignDeps(), actor, id, enrollmentIds),
   },

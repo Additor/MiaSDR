@@ -24,9 +24,9 @@ const globalForGrid = globalThis as unknown as { __miasdrFakeGridProvider?: Fake
 const fakeMode = () => env().GRID_PROVIDER === "fake";
 
 /** Hosts a generic HTTP provider may call. Empty by default, so nothing user-configured can leave the server. */
-export function gridUrlPolicy(options: { allowLoopback?: boolean } = {}): UrlPolicy {
+export function gridUrlPolicy(): UrlPolicy {
   const allowedHosts = (env().GRID_HTTP_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
-  return { allowedHosts, allowLoopback: options.allowLoopback === true };
+  return { allowedHosts, allowLoopback: false };
 }
 
 export const gridCipher: CredentialCipher = credentialCipher;
@@ -53,8 +53,8 @@ export function fakeGridProvider(): FakeEnrichmentProvider {
   return (globalForGrid.__miasdrFakeGridProvider ??= new FakeEnrichmentProvider());
 }
 
-export function gridAdapters(options: { allowLoopback?: boolean; fake?: FakeEnrichmentProvider } = {}) {
-  return createAdapterRegistry({ policy: gridUrlPolicy(options), net: { allowLoopback: options.allowLoopback }, fake: options.fake ?? (fakeMode() ? fakeGridProvider() : undefined) });
+export function gridAdapters() {
+  return createAdapterRegistry({ policy: gridUrlPolicy(), fake: fakeMode() ? fakeGridProvider() : undefined });
 }
 
 export function gridProviderDeps(): ProviderDeps {

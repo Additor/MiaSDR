@@ -130,9 +130,9 @@ export function AsideSection({ title, action, testId, children }: { title: strin
  * A side panel section you open when you need it: history and lists a person reads now and then, with their count in
  * the title row. `open` starts it open, for a list that waits for a decision.
  */
-export function AsideDisclosure({ title, count, open = false, testId, children }: { title: string; count?: ReactNode; open?: boolean; testId?: string; children: ReactNode }) {
+export function AsideDisclosure({ title, count, testId, children }: { title: string; count?: ReactNode; testId?: string; children: ReactNode }) {
   return (
-    <details className="group p-inset" open={open} data-testid={testId}>
+    <details className="group p-inset" data-testid={testId}>
       <summary className="-m-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md p-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
         <h2 className="heading-subsection">{title}</h2>
@@ -147,9 +147,9 @@ export function AsideDisclosure({ title, count, open = false, testId, children }
  * A history in the work column that you open when you need it: a hairline above, the title with its count, then the
  * content. Several in a row read as one ruled list.
  */
-export function RecordDisclosure({ title, count, open = false, testId, children }: { title: string; count?: ReactNode; open?: boolean; testId?: string; children: ReactNode }) {
+export function RecordDisclosure({ title, count, testId, children }: { title: string; count?: ReactNode; testId?: string; children: ReactNode }) {
   return (
-    <details className="group border-t py-group" open={open} data-testid={testId}>
+    <details className="group border-t py-group" data-testid={testId}>
       <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
         <h3 className="heading-subsection">{title}</h3>

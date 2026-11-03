@@ -86,8 +86,6 @@ export interface WaterfallOptions {
   carriedSpentCents?: number;
   /** Credits earlier tries of this cell used, counted against `maxCredits`. */
   carriedSpentCredits?: number;
-  /** Stops early (cancel, deadline). */
-  shouldStop?: () => boolean;
   /**
    * True stops at a rate-limited step (the gate or the vendor's 429) and retries the cell later, so a later and maybe
    * pricier step is not asked while the preferred one only needs a moment.
@@ -111,10 +109,6 @@ export async function runWaterfall(
   let fallback: MissVerdict | undefined = options.carriedFallback;
 
   for (const step of steps) {
-    if (options.shouldStop?.()) {
-      transient = true;
-      break;
-    }
     const id = stepId(step);
     if (missed.has(id)) {
       answered = true;

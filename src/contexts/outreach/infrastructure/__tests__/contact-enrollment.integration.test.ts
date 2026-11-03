@@ -168,7 +168,7 @@ describeDb("contacts and campaign enrollment", () => {
       const dry = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100, dryRun: true });
       expect(dry).toMatchObject({ requested: 3, wouldAdd: 2, added: 0, skippedContact: 1 });
 
-      const result = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100, collectIds: true });
+      const result = await linkedinStore.drizzleLinkedInCampaignStore.enroll(f.org, c, { query: f.tag, limit: 100 });
       expect(result).toMatchObject({ requested: 3, added: 2, skippedContact: 1, skippedDoNotContact: 0, skippedNoProfile: 0 });
       expect([...(result.addedPersonIds ?? [])].sort()).toEqual([a, b].sort());
       expect(await enrolled(c)).toEqual([a, b].sort());

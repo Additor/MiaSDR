@@ -37,7 +37,7 @@ describe("reply AI on a language model", () => {
     expect(ai).toMatchObject({ name: "openrouter", model: "openai/gpt-6" });
     const request = seen[0];
     expect(request.task).toBe("reply.classify");
-    expect(request.system).toEqual([{ text: expect.stringContaining("You classify"), cacheable: true }]);
+    expect(request.system).toEqual([{ text: expect.stringContaining("You classify") }]);
     expect(request.messages[0].content).toContain("SECRET-BODY");
     expect(request.output.schema).toMatchObject({ properties: { replyTypeKey: { enum: ["demo_request", "other"] } }, additionalProperties: false });
   });

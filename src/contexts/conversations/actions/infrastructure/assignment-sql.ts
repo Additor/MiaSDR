@@ -12,7 +12,7 @@ import { rowsOf } from "@/platform/db/sql-values";
  *
  * Reads outreach tables (campaigns, enrollments) and the membership table, read only, like the other stores of this context.
  */
-export async function autoAssignTx(tx: Tx, input: { organizationId: string; conversationId: string; personId: string; now?: Date }): Promise<string | null> {
+export async function autoAssignTx(tx: Tx, input: { organizationId: string; conversationId: string; personId: string }): Promise<string | null> {
   const [held] = rowsOf<{ assigned_to: string | null; assigned_source: string | null }>(await tx.execute(sql`select assigned_to, assigned_source from conversations where id = ${input.conversationId} and organization_id = ${input.organizationId}`));
   // A conversation that has an assignee stays as it is, and so does one a person left on Nobody.
   if (!held || held.assigned_to !== null || held.assigned_source === "cleared") return null;
@@ -47,7 +47,6 @@ export async function autoAssignTx(tx: Tx, input: { organizationId: string; conv
     fromData: { assignedTo: null, assigneeName: null },
     toData: { assignedTo: assignee, assigneeName: named?.name ?? null },
     meta: { source: "auto" },
-    ...(input.now ? { createdAt: input.now } : {}),
   });
   return assignee;
 }

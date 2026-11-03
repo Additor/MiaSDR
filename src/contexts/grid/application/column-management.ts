@@ -135,7 +135,7 @@ export async function deleteColumn(deps: Deps, actor: Actor, tableId: string, co
     if (dependents.length > 0) throw new ValidationError(`Column is used by: ${dependents.map((c) => c.name).join(", ")}`);
 
     // Sources that still list a doomed column as one of their outputs lose that entry.
-    const configUpdates: Array<{ id: string; config: Record<string, unknown>; dependsOn?: string[] }> = [];
+    const configUpdates: Array<{ id: string; config: Record<string, unknown> }> = [];
     for (const parent of siblings) {
       if (doomedKeys.has(parent.key)) continue;
       if (parent.type === "ai") {

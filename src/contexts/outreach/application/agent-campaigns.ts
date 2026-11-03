@@ -39,7 +39,7 @@ export interface AgentSender {
 }
 
 export interface AgentCampaignStore {
-  transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
+  transaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T>;
   /** A read-only repeatable-read transaction, so a preview's checks and token come from one moment. */
   snapshot<T>(organizationId: string, campaignId: string, fn: (tx: DbHandle) => Promise<T>): Promise<T>;
   campaign(tx: DbHandle, organizationId: string, campaignId: string): Promise<AgentCampaignRow | null>;
