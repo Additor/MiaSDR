@@ -24,7 +24,6 @@ export type ReachChannel = "email" | "linkedin";
 const SUPPRESSION_BLOCKS: Record<SuppressionReason, readonly ReachChannel[]> = {
   unsubscribed: ["email", "linkedin"],
   manual: ["email", "linkedin"],
-  complaint: ["email", "linkedin"],
   bounced: ["email"],
 };
 
