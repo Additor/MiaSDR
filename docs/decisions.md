@@ -133,7 +133,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### First account and sign-up
 
-- `/setup` creates the first user, the first organization and the owner membership in one transaction under an advisory lock, and answers 409 once any user exists. Setup marks the email verified (a new instance may have no mail provider) and stores the time zone in `channel_settings` `general` unless it is UTC. Then the form sends the owner to `/onboarding`.
+- `/setup` creates the first user, the first organization and the owner membership in one transaction under an advisory lock, and answers 409 once any user or organization exists. An install with an organization and no users cannot run setup again, because that would add a second organization. Its operator restores a user from a backup or starts from an empty database. Setup marks the email verified (a new instance may have no mail provider) and stores the time zone in `channel_settings` `general` unless it is UTC. Then the form sends the owner to `/onboarding`.
 - While no user exists, `/sign-in` and `/sign-up` redirect to `/setup`, and the `user.create.before` hook refuses every Better Auth sign-up (email and Google).
 - After that, a sign-up needs an address with a pending, unexpired invitation. Rules: `identity/domain/signup-policy.ts`.
 - An invited person reaches the form through `/sign-up?invitation=<id>`; the hook still checks the invitation by email. The verification link of an invited sign-up returns to `/accept-invitation/<id>`.
@@ -183,7 +183,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 - `/setup` creates the one organization. Nothing in the app creates a second one or moves a session between organizations, so there is no switcher and no organization header on API calls.
 - Better Auth's organization plugin refuses creation with `allowUserToCreateOrganization: false` and a `beforeCreateOrganization` hook. The hook also covers a server call that names a user, which skips the option. Over HTTP, `/organization/create` and `/organization/set-active` are off the endpoint allow-list as well.
 - An invitation only ever points at the install's organization, so nobody belongs to a second one.
-- The database does not hold the limit. `organization_id` stays on every table and every query filters by it, and test fixtures insert several organizations to prove isolation. `src/architecture/single-organization.test.ts` fails if code outside the setup store inserts an organization.
+- The database does not hold the limit, so setup checks for an organization under its advisory lock. A singleton unique index would refuse the test fixtures, which insert several organizations to prove isolation. `organization_id` stays on every table and every query filters by it. `src/architecture/single-organization.test.ts` fails if code outside the setup store inserts an organization.
 - The slug comes from the name at setup and stays read-only because invitation links carry it.
 - A fresh session opens in the user's oldest membership (`session.create.before`).
 

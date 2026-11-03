@@ -5,7 +5,7 @@ import { ZodError } from "zod";
 import { SetupAlreadyDoneError, setupInstance } from "@/contexts/tenancy/application/setup-instance";
 import { setupDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
 
-/** First-run only: creates the admin and organization while no user exists. */
+/** First-run only: creates the admin and organization while the install holds neither a user nor an organization. */
 export async function POST(request: Request) {
   try {
     const result = await setupInstance({ ...setupDeps(), hashPassword }, await request.json());

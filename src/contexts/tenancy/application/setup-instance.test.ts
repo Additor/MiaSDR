@@ -5,7 +5,7 @@ import { setupInstance, type InstanceSetupStore, type NewInstance } from "./setu
 function fakeStore() {
   const created: NewInstance[] = [];
   const store: InstanceSetupStore = {
-    hasAnyUser: async () => false,
+    isSetUp: async () => false,
     createInitialAdmin: async (instance) => {
       created.push(instance);
       return { userId: "u", organizationId: "o" };

@@ -5,7 +5,7 @@ import { describeDb, dropOrgs, testSql, useTestEnv } from "@/test-support/db";
 vi.mock("server-only", () => ({}));
 
 /**
- * Needs TEST_DATABASE_URL pointing at a migrated, disposable Postgres: the first test empties `users`.
+ * Needs TEST_DATABASE_URL pointing at a migrated, disposable Postgres: the first tests empty `users` and `organizations`.
  * APP_URL has a trailing slash, as an operator might type it.
  */
 describeDb("sign-up guard", () => {
@@ -33,6 +33,23 @@ describeDb("sign-up guard", () => {
     await dropOrgs(sql, orgs);
     await sql`delete from users where email like '%@guard.test'`;
     await sql.end();
+  });
+
+  it("refuses setup while an organization exists with no user, so an install never gains a second one", async () => {
+    await sql`truncate organizations cascade`;
+    await sql`delete from users`;
+    const [{ id }] = await sql`insert into organizations (name, slug) values (${`Orphan ${tag}`}, ${`orphan-${tag}`}) returning id`;
+    const input = { name: "Owner", email: `orphan-${tag}@guard.test`, password: "owner-password-1", organizationName: `Second ${tag}` };
+
+    const { needsSetup, SetupAlreadyDoneError } = await import("@/contexts/tenancy/application/setup-instance");
+    expect(await needsSetup({ store: drizzleSetupStore })).toBe(false);
+    await expect(setupInstance({ store: drizzleSetupStore, hashPassword }, input)).rejects.toBeInstanceOf(SetupAlreadyDoneError);
+    // A setup that passed the first check before the organization appeared meets the same check under the lock.
+    await expect(drizzleSetupStore.createInitialAdmin({ name: "Owner", email: input.email, passwordHash: "x", organizationName: input.organizationName, organizationSlug: `second-${tag}` })).rejects.toBeInstanceOf(SetupAlreadyDoneError);
+
+    expect(await sql`select id from organizations`).toEqual([{ id }]);
+    expect(await sql`select id from users`).toEqual([]);
+    await sql`delete from organizations where id = ${id}`;
   });
 
   it("refuses a Better Auth sign-up while no user exists, then setup creates the owner who can sign in", async () => {

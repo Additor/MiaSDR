@@ -42,8 +42,9 @@ export interface NewInstance {
 
 /** Port: persists the first admin and organization atomically. */
 export interface InstanceSetupStore {
-  hasAnyUser(): Promise<boolean>;
-  /** Must throw SetupAlreadyDoneError if a user exists once the store holds its lock. */
+  /** A user or an organization exists. Either one means first-run setup already ran. */
+  isSetUp(): Promise<boolean>;
+  /** Must throw SetupAlreadyDoneError if a user or an organization exists once the store holds its lock. */
   createInitialAdmin(instance: NewInstance): Promise<{ userId: string; organizationId: string }>;
 }
 
@@ -53,13 +54,13 @@ export interface SetupDeps {
 }
 
 export async function needsSetup(deps: Pick<SetupDeps, "store">): Promise<boolean> {
-  return !(await deps.store.hasAnyUser());
+  return !(await deps.store.isSetUp());
 }
 
-/** First-run: no user exists, so create the admin and their organization in one step. */
+/** First-run: the install holds no user and no organization, so create the admin and their organization in one step. */
 export async function setupInstance(deps: SetupDeps, rawInput: unknown) {
   const input = setupInputSchema.parse(rawInput);
-  if (await deps.store.hasAnyUser()) throw new SetupAlreadyDoneError();
+  if (await deps.store.isSetUp()) throw new SetupAlreadyDoneError();
   return deps.store.createInitialAdmin({
     name: input.name,
     email: input.email,
