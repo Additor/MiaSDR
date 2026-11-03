@@ -1,22 +1,18 @@
 import { and, eq, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
-import { lockPersonOutreachTx } from "@/platform/db/person-locks";
-import { drafts, events, messages, people, conversations } from "@/platform/db/schema";
+import { drafts, people, conversations } from "@/platform/db/schema";
 import { sqlValues } from "@/platform/db/sql-values";
-import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
-import { ACTIVE_RUN_STATUSES, OPEN_STEP_STATUSES, RUN_FROM, runReasonOfHalt, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/follow-ups";
+import { ACTIVE_RUN_STATUSES, OPEN_STEP_STATUSES, RUN_FROM, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/follow-ups";
 import { followUpRuns, followUpStepRuns } from "./follow-ups-schema";
-import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
- * Ending a follow-up sequence run from inside another write's transaction. Every path that makes further contact
- * wrong (do not contact, unsubscribe, bounce, manual suppression, a terminal stage, a closed conversation, a reply)
- * calls one of these in the transaction that records the trigger, so the run stops and its unsent drafts retire
- * in the same commit. The 60 second sweep stays as a safety net. Conversations owns the runs, so outreach, a lower
- * layer, reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which src/composition wires to this module.
- * The conversations core reaches Follow-ups after a reply through this module and, to restart a run, `createRunOn` and
- * `loadStartOn` in drizzle-follow-up-store.ts. Every other file here depends on the core, not the other way.
+ * Ending a follow-up run from inside another write's transaction, so the run stops and its unsent drafts retire in the
+ * same commit as the trigger. `stopContactTx` (`stopping/infrastructure/stop-contact.ts`) calls the person and address
+ * forms for everything that stops contact. A terminal reply type and a closed conversation end one conversation's runs
+ * here. The 60 second sweep stays as a safety net. The conversations core reaches Follow-ups after a reply through this
+ * module and, to restart a run, `createRunOn` and `loadStartOn` in drizzle-follow-up-store.ts. Every other file here
+ * depends on the core, not the other way.
  *
  * The run files write `conversations` in raw SQL: those writes leave `conversations.updated_at` alone, which a Drizzle update stamps
  * through `$onUpdate`. Their own tables they write with the query builder.
@@ -119,15 +115,26 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
   return { draftsRetired: retired.length };
 }
 
-async function interruptRuns(tx: Tx, organizationId: string, runIds: string[], reason: string, now: Date): Promise<number> {
-  let ended = 0;
-  for (const runId of runIds) if (await endRunTx(tx, { organizationId, runId, final: "interrupted", reason, now })) ended += 1;
-  return ended;
+/** What a stop ended: the runs, and the unsent drafts the same statements retired. */
+export interface RunStop {
+  runs: number;
+  drafts: number;
+}
+
+async function interruptRuns(tx: Tx, organizationId: string, runIds: string[], reason: string, now: Date): Promise<RunStop> {
+  const stopped: RunStop = { runs: 0, drafts: 0 };
+  for (const runId of runIds) {
+    const ended = await endRunCountingTx(tx, { organizationId, runId, final: "interrupted", reason, now });
+    if (!ended) continue;
+    stopped.runs += 1;
+    stopped.drafts += ended.draftsRetired;
+  }
+  return stopped;
 }
 
 /**
  * Ends every active or paused run of one conversation. `exceptReplyTypeId` spares a run that started at that
- * subcategory, so a sequence assigned to a terminal subcategory is not cancelled by its own start.
+ * reply type, so a run started on a terminal reply type is not ended by its own start.
  */
 export async function interruptConversationRunsTx(tx: Tx, organizationId: string, conversationId: string, reason: string, now: Date, exceptReplyTypeId?: string): Promise<number> {
   const runs = await tx
@@ -142,7 +149,7 @@ export async function interruptConversationRunsTx(tx: Tx, organizationId: string
       ),
     )
     .orderBy(followUpRuns.id);
-  return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
+  return (await interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now)).runs;
 }
 
 /** The ids of the live runs whose conversation matches `where`, in id order. Every join stays inside the organization. */
@@ -156,81 +163,14 @@ const liveRunsOf = (tx: Tx, organizationId: string, where: SQL) =>
     .orderBy(followUpRuns.id);
 
 /** Ends the runs of every conversation of the given people. */
-export async function interruptPersonRunsTx(tx: Tx, organizationId: string, personIds: string[], reason: string, now: Date): Promise<number> {
-  if (personIds.length === 0) return 0;
-  const runs = await liveRunsOf(tx, organizationId, inArray(conversations.personId, personIds));
+export async function interruptPersonRunsTx(tx: Tx, organizationId: string, personIds: readonly string[], reason: string, now: Date): Promise<RunStop> {
+  if (personIds.length === 0) return { runs: 0, drafts: 0 };
+  const runs = await liveRunsOf(tx, organizationId, inArray(conversations.personId, [...personIds]));
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
 
 /** Ends the runs of every person in the organization with this address (case-insensitive). */
-export async function interruptEmailRunsTx(tx: Tx, organizationId: string, email: string, reason: string, now: Date): Promise<number> {
+export async function interruptEmailRunsTx(tx: Tx, organizationId: string, email: string, reason: string, now: Date): Promise<RunStop> {
   const runs = await liveRunsOf(tx, organizationId, sql`lower(${people.email}) = ${email.trim().toLowerCase()}`);
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
-}
-
-export interface ReplyStopResult {
-  /** Enrollments moved from pending or active to replied, across every channel and campaign. */
-  enrollmentsStopped: number;
-  runsEnded: number;
-}
-
-/**
- * A genuine reply (not an auto-reply, not an unverified bounce) ends all outreach to the person on every channel:
- * their pending and active campaign enrollments become `replied` and their active or paused sequence runs are
- * interrupted, in the transaction that stores the message. The person is the one the message was filed under, plus
- * anyone in the organization whose address equals `senderEmail` (mail without thread headers, or from a new thread).
- * Replaying the same message stops nothing more and writes no second event.
- */
-export async function stopPersonOutreachOnReplyTx(
-  tx: Tx,
-  input: { organizationId: string; personId: string; senderEmail?: string | null; channel: "email" | "linkedin"; now: Date },
-): Promise<ReplyStopResult> {
-  const sender = input.senderEmail?.trim().toLowerCase() || null;
-  const found = await tx
-    .select({ id: people.id })
-    .from(people)
-    .where(and(eq(people.organizationId, input.organizationId), or(eq(people.id, input.personId), sender ? sql`lower(${people.email}) = ${sender}` : undefined)))
-    .orderBy(people.id);
-  const personIds = found.map((p) => p.id);
-  if (personIds.length === 0) return { enrollmentsStopped: 0, runsEnded: 0 };
-  // Same lock as a restore of a removed lead (drizzle-enrollment-restore): one of the two commits first and the other sees it.
-  await lockPersonOutreachTx(tx, input.organizationId, personIds);
-
-  const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, personIds, "replied", input.now);
-  const runsEnded = await interruptPersonRunsTx(tx, input.organizationId, personIds, "reply", input.now);
-
-  for (const personId of new Set(stopped.map((e) => e.personId))) {
-    const own = stopped.filter((e) => e.personId === personId);
-    await tx.insert(events).values({
-      organizationId: input.organizationId,
-      personId,
-      eventType: "outreach.stopped_by_reply",
-      actorType: "system",
-      toData: { status: "replied" },
-      meta: { replyChannel: input.channel, enrollmentIds: own.map((e) => e.id), channels: [...new Set(own.map((e) => e.channel))] },
-    });
-  }
-  return { enrollmentsStopped: stopped.length, runsEnded };
-}
-
-/** Outreach's view of these runs: src/composition hands it to outreach's suppression store. */
-export const followUpStop: FollowUpStop = {
-  endEmailRunsTx: (tx, organizationId, email, halt, now) => interruptEmailRunsTx(tx, organizationId, email, runReasonOfHalt(halt), now),
-};
-
-/**
- * The email sync stops a person's outreach ahead of filing, so a message that fails to file still stops it. A batch that
- * replays reaches this again for a message it did file, and a person may have enrolled that lead again since, so a filed
- * message stops nothing.
- */
-export async function stopOutreachOnUnfiledEmailTx(
-  tx: Tx,
-  input: { organizationId: string; personId: string; senderEmail: string | null; accountRef: string; providerMessageId: string; channel: "email"; now: Date },
-): Promise<ReplyStopResult> {
-  const [filed] = await tx
-    .select({ id: messages.id })
-    .from(messages)
-    .where(and(eq(messages.organizationId, input.organizationId), eq(messages.channel, input.channel), eq(messages.accountRef, input.accountRef), eq(messages.providerMessageId, input.providerMessageId)))
-    .limit(1);
-  return filed ? { enrollmentsStopped: 0, runsEnded: 0 } : stopPersonOutreachOnReplyTx(tx, input);
 }

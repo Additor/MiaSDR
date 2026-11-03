@@ -3,7 +3,7 @@ import type { SystemRole, TypeRules } from "./reply-type";
 // Starter reply types for an organization's first reply type set.
 // The four groups are fixed by the schema. Reply types and their rules stay as seeded.
 
-export const DEFAULT_PIPELINE_NAME = "Default";
+export const DEFAULT_TYPE_SET_NAME = "Default";
 
 export interface DefaultReplyType {
   groupKey: "customer" | "interested" | "not_interested" | "other";

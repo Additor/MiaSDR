@@ -65,7 +65,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     await sql.end();
   });
 
-  it("creates a task for the record's person, assigned and due at the end of the local day", async () => {
+  it("creates a task for the conversation's person, assigned and due at the end of the local day", async () => {
     const w = await org();
     const { id } = await tasks.createTask(deps, w.ann, w.conversationId, { name: " Call Lena ", dueDay: "2026-10-20", timeZone: "Asia/Seoul", assigneeId: w.bob.userId });
     const [row] = await sql`select * from tasks where id = ${id}`;
@@ -75,7 +75,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     expect(row.person_id).toBe(conversation.person_id);
   });
 
-  it("rejects an assignee from another organization and a record from another organization", async () => {
+  it("rejects an assignee from another organization and a conversation from another organization", async () => {
     const a = await org();
     const b = await org();
     await expect(tasks.createTask(deps, a.ann, a.conversationId, { name: "x", assigneeId: b.ann.userId })).rejects.toBeInstanceOf(ValidationError);
@@ -183,10 +183,10 @@ describeDb("tasks, note ownership and the important flag", () => {
     expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => [t.id, t.conversationId, t.isCompleted])).toEqual([[id, null, true]]);
   });
 
-  it("lists by person every note and task, record-bound ones included, and edits a record-bound note through the person", async () => {
+  it("lists by person every note and task, record-bound ones included, and edits a conversation-bound note through the person", async () => {
     const w = await org();
     const [{ person_id: personId }] = await sql`select person_id from conversations where id = ${w.conversationId}`;
-    const onConversation = await replies.addConversationNote(replyHandlingDeps, w.ann, w.conversationId, { body: "on the record" });
+    const onConversation = await replies.addConversationNote(replyHandlingDeps, w.ann, w.conversationId, { body: "on the conversation" });
     const onPerson = await replies.addConversationNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
     expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id).sort()).toEqual([onConversation.id, onPerson.id].sort());
     // The conversation scope still finds only the conversation's own notes.

@@ -47,7 +47,7 @@ describeDb("conversion races", () => {
   const liveOf = async (personId: string) => kit.count("campaign_enrollments", (await kit.one("select organization_id from people where id = $1", [personId])).organization_id, `person_id = '${personId}' and status in ('pending', 'active')`);
   const inboundCount = async (f: DealsOrg, providerMessageId: string) => kit.count("messages", f.org, `provider_message_id = '${providerMessageId}' and direction = 'inbound'`);
 
-  it("(a) ingest for a person without a record holds the advisory lock while the conversion starts: both commit, no retry", async () => {
+  it("(a) ingest for a person without a conversation holds the advisory lock while the conversion starts: both commit, no retry", async () => {
     const f = await kit.organization();
     const email = `a-${f.tag}@acme.test`;
     const personId = await f.person({ email });
@@ -73,7 +73,7 @@ describeDb("conversion races", () => {
     expect(converted.value?.stopped.enrollments).toBe(0);
   }, 30_000);
 
-  it("(b) ingest holding the record goes on to the advisory lock while the conversion waits for the record: both commit, no retry", async () => {
+  it("(b) ingest holding the conversation goes on to the advisory lock while the conversion waits for the conversation: both commit, no retry", async () => {
     const f = await kit.organization();
     const first = await f.ingest();
     const enrollment = await f.enrollment(await f.campaign(), first.personId, "active");
@@ -81,7 +81,7 @@ describeDb("conversion races", () => {
       insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, status, request)
       values (${f.org}, ${first.conversationId}, ${first.threadId}, 0, 'email', 'awaiting_review', '{}'::jsonb) returning id`;
     const retries = lockRetryStats.retries;
-    // The gate holds an open draft, so the ingest stops at its stale-draft update, holding the record and not yet the advisory lock.
+    // The gate holds an open draft, so the ingest stops at its stale-draft update, holding the conversation and not yet the advisory lock.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from drafts where id = ${draftId} for update`);
     const input = f.mail({ from: first.input.from, providerThreadId: first.input.providerThreadId });
     const ingest = settle(threads.ingestInbound(input));
@@ -99,7 +99,7 @@ describeDb("conversion races", () => {
     expect((await kit.one("select status from campaign_enrollments where id = $1", [enrollment])).status).toBe("replied");
   }, 30_000);
 
-  it("(c) suppressEmail holding the enrollment waits for the record the conversion holds: the conversion gives way, retries once, and both commit", async () => {
+  it("(c) suppressEmail holding the enrollment waits for the conversation the conversion holds: the conversion gives way, retries once, and both commit", async () => {
     const f = await kit.organization();
     const lead = await f.ingest();
     await f.emailedBy(lead.personId);
@@ -115,18 +115,18 @@ describeDb("conversion races", () => {
     const resumed = new Promise<void>((resolve) => (resume = resolve));
     let calls = 0;
     const conversion = { ...composition.conversionDeps };
-    conversion.stopEnrollments = async (tx, input) => {
+    conversion.stopContact = async (tx, input) => {
       calls += 1;
       if (calls === 1) {
         paused();
         await resumed;
       }
-      return composition.conversionDeps.stopEnrollments(tx, input);
+      return composition.conversionDeps.stopContact(tx, input);
     };
     const deps = composition.dealsDeps({ convertLead: (tx, input) => leadsApp.convertToContact(conversion, tx, input) });
     const converting = convert(f, lead.personId, deps);
     await reachedStop;
-    // suppressEmail takes the live enrollment, then waits for the record to end the run.
+    // suppressEmail takes the live enrollment, then waits for the conversation to end the run.
     const suppressing = settle(suppression.suppressEmail({ organizationId: f.org, email: lead.input.from.email, reason: "unsubscribed" }));
     await waitForLockWaiters(kit.sql, 1);
     resume();
@@ -215,7 +215,7 @@ describeDb("conversion races", () => {
     const f = await kit.organization();
     const lead = await f.ingest();
     const retries = lockRetryStats.retries;
-    // The person's advisory lock, held elsewhere: the conversion holds the record and waits 300 ms, twice.
+    // The person's advisory lock, held elsewhere: the conversion holds the conversation and waits 300 ms, twice.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select pg_advisory_xact_lock(hashtextextended(${`person-outreach:${f.org}:${lead.personId}`}, 0))`);
     const outcome = await convert(f, lead.personId).finally(() => gate.release());
     expect((outcome.error as { details?: { code?: string } }).details?.code).toBe("try_again");

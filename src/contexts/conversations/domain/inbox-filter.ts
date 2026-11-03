@@ -142,8 +142,8 @@ export function parseInboxParams(raw: Raw): InboxParams {
     leadQuery: (lead.find((v) => !UUID.test(v)) ?? "").slice(0, 200),
     campaignIds: all(raw.campaign).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     mailboxIds: all(raw.mailbox).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
-    replyTypeKeys: all(raw.subcategory).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
-    groupKeys: all(raw.category).filter((v): v is (typeof INBOX_GROUPS)[number] => (INBOX_GROUPS as readonly string[]).includes(v)),
+    replyTypeKeys: all(raw.type).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
+    groupKeys: all(raw.group).filter((v): v is (typeof INBOX_GROUPS)[number] => (INBOX_GROUPS as readonly string[]).includes(v)),
     dateMode,
     dateFrom,
     dateTo,
@@ -160,8 +160,8 @@ export function inboxHref(params: Partial<InboxParams>, override: Partial<InboxP
   if (p.leadQuery) qs.append("lead", p.leadQuery);
   for (const id of p.campaignIds ?? []) qs.append("campaign", id);
   for (const id of p.mailboxIds ?? []) qs.append("mailbox", id);
-  for (const k of p.replyTypeKeys ?? []) qs.append("subcategory", k);
-  for (const k of p.groupKeys ?? []) qs.append("category", k);
+  for (const k of p.replyTypeKeys ?? []) qs.append("type", k);
+  for (const k of p.groupKeys ?? []) qs.append("group", k);
   if (p.dateMode && p.dateMode !== "all") {
     qs.set("range", p.dateMode);
     if (p.dateMode === "custom") {

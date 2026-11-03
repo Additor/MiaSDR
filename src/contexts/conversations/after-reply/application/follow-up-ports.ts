@@ -40,7 +40,7 @@ export interface FlowRunRow {
 /** What the card shows, as stored. The application derives the mode and the lock from it. */
 export interface FlowState {
   campaign: FlowCampaign;
-  /** The campaign-owned sequence, or null when the campaign never had one. */
+  /** The campaign-owned flow, or null when the campaign never had one. */
   flow: { id: string; status: FlowStatus } | null;
   /** Newest published version, or null. */
   published: { version: number } | null;
@@ -125,7 +125,7 @@ export interface StartFacts {
   contact: boolean;
   /** The campaign that most recently emailed the person, whatever its state. Null when none did. */
   owner: { id: string; name: string; channel: string; status: string; archived: boolean } | null;
-  /** The owner's Follow-ups after a reply sequence, whatever its state. Null when the owner has none. */
+  /** The owner's Follow-ups after a reply flow, whatever its state. Null when the owner has none. */
   flow: { status: FlowStatus; hasPublished: boolean } | null;
   /** The conversation asked for, or the one holding the latest inbound message. */
   thread: { id: string; conversationId: string; channel: string } | null;
@@ -225,9 +225,9 @@ export interface InterruptCandidate {
 export type LateOutcome = "stopped" | "lost";
 export type LinkOutcome = "linked" | LateOutcome;
 
-/** What the sequences job reads and writes each tick. */
+/** What the follow-ups job reads and writes each tick. */
 export interface FollowUpEngineStore {
-  /** Records whose newest, classified inbound message has no run yet and whose owning campaign has an active flow. */
+  /** Conversations whose newest, classified inbound message has no run yet and whose owning campaign has an active flow. */
   startCandidates(limit: number): Promise<Array<{ organizationId: string; conversationId: string }>>;
   /** Active and paused runs after `afterRunId`, with the facts that decide interruption. */
   interruptCandidates(afterRunId: string | null, limit: number): Promise<InterruptCandidate[]>;

@@ -12,6 +12,6 @@ export function hasMoreFilters(values: MoreFilterValues): boolean {
 }
 
 /** True when any queue filter narrows the list, so an empty queue can say "no match" instead of "nothing waiting". */
-export function hasAnyFilter(values: MoreFilterValues & { category: string; channel: string; group: string; errorsOnly: boolean }): boolean {
-  return hasMoreFilters(values) || values.category !== "" || values.channel !== "" || values.group !== "" || values.errorsOnly;
+export function hasAnyFilter(values: MoreFilterValues & { group: string; channel: string; list: string; errorsOnly: boolean }): boolean {
+  return hasMoreFilters(values) || values.group !== "" || values.channel !== "" || values.list !== "" || values.errorsOnly;
 }

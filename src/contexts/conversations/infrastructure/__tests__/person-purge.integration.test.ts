@@ -47,16 +47,16 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const member = await user("member");
     const other = await user("other");
     const admin = await user("admin");
-    const pipeline = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
-    // A person has one conversation per pipeline, so the private conversation of `contact` lives in a second pipeline.
-    const pipeline2 = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
-    const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
+    const typeSet = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
+    // A person has one conversation per reply type set, so the private conversation of `contact` lives in a second typeSet.
+    const typeSet2 = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
+    const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${typeSet}, 'interested', 'a', 'A') returning id`);
     const actors = {
       member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
       other: { userId: other, organizationId: org, role: "member" } satisfies Actor,
       admin: { userId: admin, organizationId: org, role: "admin" } satisfies Actor,
     };
-    return { org, tag, pipeline, pipeline2, sub, actors };
+    return { org, tag, typeSet, typeSet2, sub, actors };
   }
   type Org = Awaited<ReturnType<typeof organization>>;
 
@@ -70,7 +70,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const t = `${o.tag}-${label}`;
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${o.org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
-    const conversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
+    const conversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.typeSet}) returning id`);
     const mailbox = `me-${t}@x.test`;
     const thread = await one(sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${o.org}, ${conversation}, 'email', ${mailbox}) returning id`);
     const inbound = await one(sql`
@@ -105,7 +105,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
     await sql`insert into events (organization_id, person_id, conversation_id, event_type, actor_type) values (${o.org}, ${person}, ${conversation}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
-    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${conversation}, 'on the record')`;
+    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${conversation}, 'on the conversation')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
     await sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${o.org}, ${person}, ${conversation}, 'call')`;
     await sql`insert into contact_policies (organization_id, person_id, do_not_contact, reason, source, set_at) values (${o.org}, ${person}, true, 'asked', 'human', now())`;
@@ -116,7 +116,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     if (opts.secondConversation) {
       // A second conversation with its own thread, event, note and task.
       const account = `li-${t}`;
-      const secondConversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
+      const secondConversation = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.typeSet2}) returning id`);
       secondThread = await one(sql`
         insert into threads (organization_id, conversation_id, channel, account_ref) values (${o.org}, ${secondConversation}, 'linkedin', ${account}) returning id`);
       await sql`
@@ -266,7 +266,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     expect(await db.transaction((tx) => reach.lockDoNotContactTx(tx, elsewhere.org, marked.person))).toEqual({ doNotContact: false });
   });
 
-  it("holds the records, the conversations and the person lock until the delete commits, so no reply lands in between", async () => {
+  it("holds the conversations, the conversations and the person lock until the delete commits, so no reply lands in between", async () => {
     const o = await organization();
     const target = await contact(o, "locks");
     const other = postgres(TEST_DATABASE_URL ?? "", { max: 1, onnotice: () => undefined });

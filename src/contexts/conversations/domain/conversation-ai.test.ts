@@ -3,7 +3,7 @@ import { stopRequestedBy } from "./reply-type-pick-policy";
 import { decideReplyType, type ReplyType, type ReplyTypeFacts } from "./reply-type";
 import { normalizeSubject } from "./subject";
 import { replySubject } from "./reply-policy";
-import { detectsStopRequest, stripQuoted } from "./stop-request";
+import { detectsStopRequest, stripQuoted } from "../stopping/domain/stop-request";
 
 const DRAFTS: ReplyType["rules"] = { replyDraft: true, followUps: "continue" };
 
@@ -63,10 +63,10 @@ describe("reply type pick policy", () => {
   });
 
   it("reads a stop request from the sender's words or from the stop request type, never from the key", () => {
-    expect(stopRequestedBy("Please unsubscribe me.", { systemRole: null })).toBe(true);
-    expect(stopRequestedBy("Sounds good.", { systemRole: "stop_request" })).toBe(true);
-    expect(stopRequestedBy("Sounds good.", { systemRole: null })).toBe(false);
-    expect(stopRequestedBy("Sounds good.", { systemRole: "customer" })).toBe(false);
+    expect(stopRequestedBy(true, { systemRole: null })).toBe(true);
+    expect(stopRequestedBy(false, { systemRole: "stop_request" })).toBe(true);
+    expect(stopRequestedBy(false, { systemRole: null })).toBe(false);
+    expect(stopRequestedBy(false, { systemRole: "customer" })).toBe(false);
   });
 });
 

@@ -11,7 +11,7 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
  *   a deal insert for the contact, before and after the delete takes the people row;
  *   a reply that lands between the dialog and the delete, and a message insert that holds a conversation of the contact;
  *   Mark do not contact, with and without a `contact_policies` row;
- *   `suppressEmail` (its run stop meets the records) while the delete holds the records.
+ *   `suppressEmail` (its run stop meets the conversations) while the delete holds the conversations.
  * Where the delete must stop at a chosen statement, a port wrapper pauses it in process. No case may lose state.
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
@@ -52,7 +52,7 @@ describeDb("contact delete races", () => {
     sends: preview.counts.sends,
   });
 
-  /** A reply from an unknown sender, made a contact: a record, a thread and one inbound message. */
+  /** A reply from an unknown sender, made a contact: a conversation, a thread and one inbound message. */
   async function repliedContact(f: DealsOrg) {
     const lead = await f.ingest();
     await kit.sql`update people set lifecycle = 'contact', converted_at = now() where id = ${lead.personId}`;
@@ -199,7 +199,7 @@ describeDb("contact delete races", () => {
     expect(await kit.count("contact_policies", f.org, `person_id = '${contact}'`)).toBe(0);
   }, 30_000);
 
-  it("Mark do not contact holding the policy row while it waits for the records makes the delete give way; the retry sees the mark", async () => {
+  it("Mark do not contact holding the policy row while it waits for the conversations makes the delete give way; the retry sees the mark", async () => {
     const f = await kit.organization();
     const lead = await repliedContact(f);
     await kit.sql`insert into contact_policies (organization_id, person_id, do_not_contact, source) values (${f.org}, ${lead.personId}, false, null)`;
@@ -207,11 +207,11 @@ describeDb("contact delete races", () => {
     expect(preview.suppressionKept).toBe(false);
     const retries = lockRetryStats.retries;
 
-    // The delete stops after its first lock step, holding the records, their conversations and the advisory lock.
+    // The delete stops after its first lock step, holding the conversations, their conversations and the advisory lock.
     const gate = pauseAt("handling", "lockPersonForDelete");
     const deleting = settle(app.deleteContact(gate.deps, f.member, lead.personId, { expected: expectedOf(preview) }));
     await gate.paused;
-    // Do not contact takes its policy row, then waits for the records the delete holds.
+    // Do not contact takes its policy row, then waits for the conversations the delete holds.
     const marking = settle(crmStore.setDoNotContact({ organizationId: f.org, actorUserId: f.member.userId, personId: lead.personId, enabled: true, reason: "asked", now: new Date() }));
     await waitForLockWaiters(kit.sql, 1);
     gate.resume();
@@ -228,7 +228,7 @@ describeDb("contact delete races", () => {
     expect(await kit.count("suppression_list", f.org, `email = '${lead.input.from.email.toLowerCase()}' and note = 'Deleted while marked do not contact.'`)).toBe(1);
   }, 30_000);
 
-  it("suppressEmail racing a delete that holds the records: both commit, the person goes and the address stays suppressed", async () => {
+  it("suppressEmail racing a delete that holds the conversations: both commit, the person goes and the address stays suppressed", async () => {
     const f = await kit.organization();
     const lead = await f.ingest();
     await f.emailedBy(lead.personId);
@@ -245,7 +245,7 @@ describeDb("contact delete races", () => {
     const gate = pauseAt("handling", "lockPersonForDelete");
     const deleting = settle(app.deleteContact(gate.deps, f.owner, lead.personId, { expected: expectedOf(preview) }));
     await gate.paused;
-    // suppressEmail adds the address and goes for the active run of the record the delete holds.
+    // suppressEmail adds the address and goes for the active run of the conversation the delete holds.
     const suppressing = settle(suppression.suppressEmail({ organizationId: f.org, email: lead.input.from.email, reason: "unsubscribed" }));
     await waitForLockWaiters(kit.sql, 1);
     gate.resume();

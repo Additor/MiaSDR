@@ -95,11 +95,11 @@ describeDb("a context version bump retires the picks held for a check", () => {
       run: (f, l) => store.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: l.personId, enabled: true, reason: "asked", now: new Date() }).then(() => undefined),
     },
     {
-      path: "closing the record",
+      path: "closing the conversation",
       run: (f, l) => store.closeConversation({ organizationId: f.org, actorUserId: f.user, conversationId: l.conversationId, reason: "done", now: new Date() }),
     },
     {
-      path: "reopening the record",
+      path: "reopening the conversation",
       run: (f, l) => store.reopenConversation({ organizationId: f.org, actorUserId: f.user, conversationId: l.conversationId, now: new Date() }),
     },
     {
@@ -130,7 +130,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
   it.each(PATHS)("$path retires the pick, so nothing counts it as waiting", async ({ path, run }) => {
     const f = await fixture();
     const l = await lead(f);
-    if (path === "reopening the record") await store.closeConversation({ organizationId: f.org, actorUserId: f.user, conversationId: l.conversationId, reason: "done", now: new Date() });
+    if (path === "reopening the conversation") await store.closeConversation({ organizationId: f.org, actorUserId: f.user, conversationId: l.conversationId, reason: "done", now: new Date() });
     const before = await version(l.conversationId);
     const pick = await holdPick(f, l.conversationId);
     await run(f, { conversationId: l.conversationId, personId: l.personId as string, threadId: l.threadId as string, messageId: l.messageId as string });
@@ -153,7 +153,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
     /** The rule the agent send gate and Actions read. */
     const reviewOpen = async (conversationId: string, messageId?: string) => {
       const target = messageId ?? (await sql`select latest_inbound_message_id as id from conversations where id = ${conversationId}`)[0].id;
-      const { stopReviewOpen } = await import("../stop-requested-sql");
+      const { stopReviewOpen } = await import("../../stopping/infrastructure/stop-requested-sql");
       return stopReviewOpen((await import("@/platform/db/client")).db, target as string);
     };
 
@@ -188,7 +188,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
       const f = await fixture();
       const l = await lead(f);
       await stopPick(f, l.conversationId);
-      const { personReviewedStopsTx } = await import("../stop-review");
+      const { personReviewedStopsTx } = await import("../../stopping/infrastructure/stop-review");
       const review = { organizationId: f.org, conversationId: l.conversationId, actorUserId: f.user, now: new Date() };
       await inTx((tx) => personReviewedStopsTx(tx, { ...review, via: { kind: "agent", tokenId: "t", tokenName: "Bot", clientName: null } }));
       expect(await reviewOpen(l.conversationId)).toBe(true);
@@ -201,7 +201,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
       const l = await lead(f);
       await composition.ingestInbound(mail(f, { bodyText: "Please stop emailing me.", receivedAt: new Date("2026-10-14T12:00:00Z") }));
       expect(await reviewOpen(l.conversationId)).toBe(true);
-      const { personReviewedStopsTx } = await import("../stop-review");
+      const { personReviewedStopsTx } = await import("../../stopping/infrastructure/stop-review");
       await inTx((tx) => personReviewedStopsTx(tx, { organizationId: f.org, conversationId: l.conversationId, actorUserId: f.user, now: new Date() }));
       expect(await reviewOpen(l.conversationId)).toBe(false);
     });

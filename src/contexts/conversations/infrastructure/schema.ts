@@ -81,7 +81,7 @@ export const replyTypes = pgTable(
   (t) => [
     foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("restrict"),
     unique("reply_types_set_key_uq").on(t.replyTypeSetId, t.key),
-    // Target of the conversation's composite FK: a subcategory must belong to the conversation's pipeline and category.
+    // Target of the conversation's composite FK: a reply type must belong to the conversation's reply type set and group.
     unique("reply_types_id_set_group_uq").on(t.id, t.replyTypeSetId, t.groupKey),
     unique("reply_types_id_org_uq").on(t.id, t.organizationId),
     check("reply_types_group_ck", inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)),
@@ -127,7 +127,7 @@ export const replyHandlingSettings = pgTable(
 
 export const CHANNELS = ["email", "linkedin", "whatsapp"] as const;
 
-/** One person's standing in one pipeline. `context_version` is the optimistic lock for AI work. */
+/** One person's reply handling across email and LinkedIn, in one reply type set. `context_version` is the optimistic lock for AI work. */
 export const conversations = pgTable(
   "conversations",
   {
@@ -137,7 +137,7 @@ export const conversations = pgTable(
     replyTypeSetId: uuid("reply_type_set_id").notNull(),
     groupKey: text("group_key"),
     replyTypeId: uuid("reply_type_id"),
-    workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("unclassified"),
+    workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("no_type"),
     replyTypeSource: text("reply_type_source"),
     replyTypeLocked: boolean("reply_type_locked").notNull().default(false),
     activeChannel: text("active_channel"),
@@ -326,7 +326,7 @@ export const leadCcs = pgTable(
   ],
 );
 
-/** Append-only audit of what changed a record and who changed it. */
+/** Append-only audit of what changed a conversation and who changed it. */
 export const events = pgTable(
   "events",
   {

@@ -1,5 +1,6 @@
-import { appendPersonEvent, lockPersonForDelete, peopleWhoAskedToStop, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
+import { appendPersonEvent, lockPersonForDelete, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
+import { peopleWhoAskedToStop } from "@/contexts/conversations/stopping/infrastructure/stop-requested-sql";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
 import { conversionDeps, dealsDeps } from "@/composition/deals";

@@ -141,7 +141,7 @@ describeDb("foreign keys and checks", () => {
   });
 
   describe("delete behavior", () => {
-    it("deleting a subcategory nulls the classification pointers and keeps the row", async () => {
+    it("deleting a reply type nulls the classification pointers and keeps the row", async () => {
       const w = await world();
       await sql`delete from reply_types where id = ${w.subA}`;
       const [c] = await sql`select organization_id, previous_reply_type_id as p, proposed_reply_type_id as q, applied_reply_type_id as a from reply_type_picks where id = ${w.classification}`;
@@ -194,7 +194,7 @@ describeDb("foreign keys and checks", () => {
       expect(e).toEqual({ organization_id: w.org, status: "resolved", resolved_person_id: null });
     });
 
-    it("deleting a record nulls the note and task pointers", async () => {
+    it("deleting a conversation nulls the note and task pointers", async () => {
       const w = await world();
       const person2 = (await sql`insert into people (organization_id, email) values (${w.org}, ${"p2-" + w.tag + "@lead.test"}) returning id`)[0].id;
       const conversation2 = (await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${w.org}, ${person2}, ${w.pipeline}) returning id`)[0].id;
@@ -285,9 +285,9 @@ describeDb("foreign keys and checks", () => {
       await expect(sql`update reply_type_picks set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
       await expect(sql`update reply_type_picks set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
       await expect(sql`update reply_type_picks set expected_context_version = -1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_context_version_ck"));
-      // Detaching the subcategory first keeps the cross-row validator out of the way; the CHECK is under test here.
+      // Detaching the reply type first keeps the cross-row validator out of the way; the CHECK is under test here.
       await expect(sql`update reply_type_picks set applied_reply_type_id = null, applied_group_key = 'maybe' where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_group_keys_ck"));
-      // The subcategory of the fixture is in 'interested': a different key would trip reply_type_picks_reply_types_upd_trg.
+      // The reply type of the fixture is in 'interested': a different key would trip reply_type_picks_reply_types_upd_trg.
       await sql`update reply_type_picks set confidence = 1, applied_group_key = 'interested' where id = ${w.classification}`;
     });
 

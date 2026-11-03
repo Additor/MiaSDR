@@ -34,7 +34,7 @@ import { stopReviewOpenSql } from "@/platform/db/stop-review-sql";
 const date = (value: unknown) => (value === null || value === undefined ? null : new Date(value as string));
 
 /**
- * One row per record that needs a person: `action_required` or `error`, or `waiting` with `next_action_at` due.
+ * One row per conversation that needs a person: `action_required`, or `waiting` with `next_action_at` due.
  * `grp` is the first match of problem, reply, classification, follow_up, next_step. A `next_step` conversation with an
  * open task is left out, because the task already shows it. The list, the totals and the badges all read this. The snippet of
  * a row is not here: it reads message bodies, so it is read for the rows of one page only (`snippetsOf`).
@@ -54,7 +54,7 @@ const queueRowsSql = (organizationId: string) => sql`
            nk.id as k_id, case when st.review then 'stop_review' else nk.kind end as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub, nk.hold_reason as k_hold,
            cv.id as conv_id,
            case
-             when r.workflow_state = 'error' or pd.id is not null or fj.id is not null then 'problem'
+             when pd.id is not null or fj.id is not null then 'problem'
              when rd.id is not null then 'reply'
              when st.review or nk.kind is not null then 'classification'
              when r.workflow_state = 'waiting' then 'follow_up'
@@ -117,9 +117,9 @@ const queueRowsSql = (organizationId: string) => sql`
       select c.id from threads c where c.conversation_id = r.id order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
     ) cv on true
     where r.organization_id = ${organizationId}
-      -- A person checks an agent's unconfirmed send, and a stop request that keeps refusing agents, whatever state the record
+      -- A person checks an agent's unconfirmed send, and a stop request that keeps refusing agents, whatever state the conversation
       -- is in: no one else may have seen it.
-      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or st.review)
+      and (r.workflow_state = 'action_required' or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or st.review)
   ) q
   where not (q.grp = 'next_step' and q.has_task)`;
 
@@ -186,9 +186,8 @@ async function draftPreviewsOf(organizationId: string, draftIds: string[]): Prom
 function toQueueItem(r: Record<string, unknown>): QueueItem {
   const group = r.grp as QueueGroup;
   const problemKind: QueueProblemKind | null =
-    group !== "problem" ? null : r.pd_id ? (r.pd_status === "delivery_uncertain" ? "delivery_uncertain" : "draft_failed") : r.fj_id ? "job_failed" : "conversation_error";
+    group !== "problem" ? null : r.pd_id ? (r.pd_status === "delivery_uncertain" ? "delivery_uncertain" : "draft_failed") : "job_failed";
   const problemMessage: Record<QueueProblemKind, string> = {
-    conversation_error: "Reply handling is in an error state.",
     draft_failed: (r.pd_error as string | null) ?? "The draft cannot be sent as written.",
     delivery_uncertain: `${r.pd_agent ? `An agent sent this with ${r.pd_agent as string}. ` : ""}${(r.pd_error as string | null) ?? "The provider never confirmed delivery."}`,
     job_failed: (r.fj_error as string | null) ?? "The AI job failed.",

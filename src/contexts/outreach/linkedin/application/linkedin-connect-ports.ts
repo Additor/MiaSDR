@@ -26,7 +26,7 @@ export interface LinkedInConnectStore {
    */
   complete(id: string, input: { providerAccountId: string; now: Date }): Promise<boolean>;
   fail(id: string, error: string): Promise<boolean>;
-  /** Records a retryable problem (the sync failed) and leaves the link pending. */
+  /** Conversations a retryable problem (the sync failed) and leaves the link pending. */
   noteError(id: string, error: string): Promise<void>;
   /** Marks this organization's pending links past their expiry as expired. */
   expireDue(organizationId: string, now: Date): Promise<number>;

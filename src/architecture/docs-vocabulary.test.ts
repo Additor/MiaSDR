@@ -33,6 +33,16 @@ const REPLY_TYPE_TERMS = [
 /** Words the Terminology list no longer defines, because the screens no longer show them. */
 const RETIRED_TERMS = ["Reply category", "Subcategory", "After a reply", "Classification"];
 
+/** The words those terms left behind in `src/contexts/conversations`, comments and tests included, as code and prose would write them. */
+const RETIRED_IN_CONVERSATIONS: ReadonlyArray<{ name: string; pattern: RegExp }> = [
+  { name: "subcategory", pattern: /sub-?categor(y|ies)/i },
+  { name: "category", pattern: /\bcategor(y|ies)\b/i },
+  { name: "pipeline", pattern: /pipeline/i },
+  { name: "the record", pattern: /\b(the|a) record\b/i },
+  { name: "conversation's conversation", pattern: /conversation's conversation/i },
+  { name: "legacy standalone", pattern: /legacy standalone/i },
+];
+
 /** The Terminology section of PRODUCT.md, up to the next level-2 heading. */
 function terminology(): string {
   const text = read("PRODUCT.md");
@@ -51,6 +61,26 @@ describe("product vocabulary", () => {
 
   it.each(RETIRED_TERMS)("no longer defines %s", (term) => {
     expect(terminology()).not.toMatch(new RegExp(`^- \\*\\*${term}:\\*\\*`, "m"));
+  });
+});
+
+function conversationsFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) conversationsFiles(path, out);
+    else if (/\.tsx?$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
+describe("retired words in src/contexts/conversations", () => {
+  it("stay out", () => {
+    const hits = conversationsFiles("src/contexts/conversations").flatMap((file) =>
+      read(file)
+        .split("\n")
+        .flatMap((line, i) => RETIRED_IN_CONVERSATIONS.filter((w) => w.pattern.test(line)).map((w) => `${file}:${i + 1} [${w.name}] ${line.trim().slice(0, 120)}`)),
+    );
+    expect(hits).toEqual([]);
   });
 });
 

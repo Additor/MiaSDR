@@ -157,8 +157,12 @@ test.describe("the Actions queue as a list to work through", () => {
   test("a problem leads the page, and the top line names the oldest wait and jumps to each list", async ({ page }) => {
     await signInAdmin(page);
     const db = sql();
-    const [{ id: conversationId }] = await db`select r.id from conversations r join people p on p.id = r.person_id where p.email = 'eli@s43-group.test'`;
-    await db`update conversations set workflow_state = 'error' where id = ${conversationId}`;
+    const [conversation] = await db`
+      select r.id, r.organization_id, r.context_version, c.id as thread from conversations r join people p on p.id = r.person_id join threads c on c.conversation_id = r.id where p.email = 'eli@s43-group.test' limit 1`;
+    // A draft that failed is a problem, whatever the conversation's state.
+    const [{ id: failedDraft }] = await db`
+      insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject, ai_body_text, status, error)
+      values (${conversation.organization_id}, ${conversation.id}, ${conversation.thread}, ${conversation.context_version}, 'email', 'Re: hello', 'Sure.', 'failed', 'The provider refused it.') returning id`;
     try {
       await page.goto("/actions");
       const groups = page.locator('[data-slot="queue-group"]');
@@ -175,7 +179,7 @@ test.describe("the Actions queue as a list to work through", () => {
       await jump.click();
       await expect(page).toHaveURL(new RegExp(`${target}$`));
     } finally {
-      await db`update conversations set workflow_state = 'action_required' where id = ${conversationId}`;
+      await db`delete from drafts where id = ${failedDraft}`;
     }
   });
 

@@ -27,7 +27,7 @@ describeDb("person delete races", () => {
   let leadDeps: LeadDeleteDeps;
   let contactDeps: ContactDeleteDeps;
   let emailStore: typeof import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
-  let replyStop: typeof import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop").stopPersonOutreachOnReplyTx;
+  let stopContactTx: typeof import("@/contexts/conversations/stopping/infrastructure/stop-contact").stopContactTx;
   let db: typeof import("@/platform/db/client").db;
 
   beforeAll(async () => {
@@ -36,7 +36,7 @@ describeDb("person delete races", () => {
     contacts = await import("../../application/contact-delete");
     ({ leadDeleteDeps: leadDeps, contactDeleteDeps: contactDeps } = await import("@/composition/person-lifecycle"));
     emailStore = (await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store")).drizzleOutreachStore;
-    replyStop = (await import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop")).stopPersonOutreachOnReplyTx;
+    stopContactTx = (await import("@/contexts/conversations/stopping/infrastructure/stop-contact")).stopContactTx;
     db = (await import("@/platform/db/client")).db;
   }, 60_000);
 
@@ -253,7 +253,7 @@ describeDb("person delete races", () => {
   }
 
   const stopOnReply = (f: DealsOrg, personId: string) =>
-    db.transaction((tx) => replyStop(tx, { organizationId: f.org, personId, channel: "email", now: new Date() }));
+    db.transaction((tx) => stopContactTx(tx, { organizationId: f.org, personId }, { kind: "reply", channel: "email", now: new Date() }));
 
   const enrollmentStatus = async (id: string) => (await kit.sql`select status from campaign_enrollments where id = ${id}`)[0]?.status as string | undefined;
 
@@ -270,7 +270,7 @@ describeDb("person delete races", () => {
     expect(deleted.error).toBeNull();
     expect(stopped.error).toBeNull();
     expect(deleted.value).toMatchObject({ deleted: 20, blocked: [{ id: w.replier, reason: "in_active_campaign" }] });
-    expect(stopped.value).toMatchObject({ enrollmentsStopped: 1 });
+    expect(stopped.value).toMatchObject({ enrollments: 1 });
     expect(await enrollmentStatus(w.enrollmentId)).toBe("replied");
   }, 30_000);
 

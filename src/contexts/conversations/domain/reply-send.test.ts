@@ -22,7 +22,7 @@ describe("checkConversationOpen", () => {
   it("refuses closed reply handling and passes every other state", () => {
     expect(refusal(() => checkConversationOpen({ workflowState: "closed" }, "email"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
     expect(refusal(() => checkConversationOpen({ workflowState: "closed" }, "linkedin"))).toEqual({ error: "conflict", message: "Reply handling is marked done. Reopen it to reply." });
-    for (const workflowState of ["unclassified", "action_required", "waiting", "idle", "paused", "error"]) expect(refusal(() => checkConversationOpen({ workflowState }, "email"))).toBeNull();
+    for (const workflowState of ["no_type", "action_required", "waiting", "idle"]) expect(refusal(() => checkConversationOpen({ workflowState }, "email"))).toBeNull();
   });
 });
 

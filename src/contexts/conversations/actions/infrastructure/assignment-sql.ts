@@ -7,7 +7,7 @@ import { rowsOf } from "@/platform/db/sql-values";
 /**
  * Gives a conversation without an assignee to the creator of its person's newest regular-campaign enrollment that is not removed,
  * when that creator is still a member (`pickAssignee` skips one who left). Runs in the transaction that stores an inbound
- * message. It never replaces a person's choice: a record that has an assignee is left alone, and so is one a person set to
+ * message. It never replaces a person's choice: a conversation that has an assignee is left alone, and so is one a person set to
  * Nobody (`assigned_source = 'cleared'`). The update guards both again in case another transaction changed it first. Returns the assignee, or null when nobody was assigned.
  *
  * Reads outreach tables (campaigns, enrollments) and the membership table, read only, like the other stores of this context.

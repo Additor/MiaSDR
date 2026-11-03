@@ -70,7 +70,8 @@ describeDb("final status guard", () => {
     for (const [from, to] of allowedPairs(SEND_FROM)) {
       it(`allows ${from} -> ${to}`, async () => {
         const id = await insertSend(from);
-        await moveSend(id, to);
+        // The trigger lets a failed row back to sending only with the attempt counted, as the engines' re-claim does.
+        await (from === "failed" && to === "sending" ? reclaim(id) : moveSend(id, to));
         expect((await sql`select status from sends where id = ${id}`)[0].status).toBe(to);
       });
     }

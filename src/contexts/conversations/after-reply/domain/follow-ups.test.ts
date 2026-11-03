@@ -4,7 +4,6 @@ import {
   canStepTransition,
   RUN_FROM,
   STEP_FROM,
-  runReasonOfHalt,
   assertThreadBelongsToConversation,
   assertPublishable,
   assertStepsBelongToVersion,
@@ -99,7 +98,7 @@ describe("interruptReason", () => {
     expect(interruptReason(facts({ flowActive: false, doNotContact: true }))).toBe("do_not_contact");
     expect(interruptReason(facts({ flowActive: false, conversation: { latestInboundMessageId: "m2" } }))).toBe("reply");
   });
-  it("stops when the record closes", () => expect(interruptReason(facts({ conversation: { workflowState: "closed" } }))).toBe("conversation_closed"));
+  it("stops when the conversation closes", () => expect(interruptReason(facts({ conversation: { workflowState: "closed" } }))).toBe("conversation_closed"));
   it("stops on a move to a type set to stop follow-ups, not on a start there", () => {
     const moved = facts({ conversation: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "stop" } });
     expect(interruptReason(moved)).toBe("terminal_stage");
@@ -193,16 +192,6 @@ describe("drafting helpers", () => {
     expect(reply).toContain("answers the lead's latest message");
     expect(nudge).toContain("has not replied");
     expect(nudge).toContain("Hi Lena");
-  });
-});
-
-describe("run reason of an outreach halt", () => {
-  it("keeps the run vocabulary the timeline labels", () => {
-    expect(runReasonOfHalt("replied")).toBe("reply");
-    expect(runReasonOfHalt("bounced")).toBe("bounce");
-    expect(runReasonOfHalt("complaint")).toBe("unsubscribed");
-    expect(runReasonOfHalt("manual")).toBe("suppressed");
-    expect(runReasonOfHalt("do_not_contact")).toBe("do_not_contact");
   });
 });
 

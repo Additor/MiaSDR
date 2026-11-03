@@ -6,7 +6,7 @@ import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
-describeDb("knowledge tags, default subcategory guidance and the unknown-sender AI cap", () => {
+describeDb("knowledge tags, default reply type guidance and the unknown-sender AI cap", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");
@@ -160,8 +160,8 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     });
   });
 
-  describe("default subcategory guidance", () => {
-    it("seeds a description and guidance on all 17 subcategories of a new organization", async () => {
+  describe("default reply type guidance", () => {
+    it("seeds a description and guidance on all 17 reply types of a new organization", async () => {
       const f = await fixture();
       await receive(f);
       const rows = await sql`select key, description, classification_guidance from reply_types where organization_id = ${f.org}`;
@@ -249,7 +249,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
           join messages m on m.id = case when j.kind = 'classification' then j.entity_id else (select message_id from reply_type_picks where id = j.entity_id) end
           where j.organization_id = ${f.org} and j.kind = ${kind} and m.from_address = ${from}`)[0];
       expect(await statusOf("classification", c)).toMatchObject({ status: "skipped", payload: { skipReason: "daily_cap" } });
-      // A person corrects B's category: the new draft job carries the flag and runs although the cap is used up.
+      // A person corrects B's reply type: the new draft job carries the flag and runs although the cap is used up.
       const [conv] = await sql`select c.id, r.context_version from threads c join conversations r on r.id = c.conversation_id join messages m on m.thread_id = c.id where c.organization_id = ${f.org} and m.from_address = ${b}`;
       const replies = (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore;
       const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId });

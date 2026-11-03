@@ -195,7 +195,7 @@ export interface ReplyTypeChangeResult {
 /** What an undo retired, so the client can say it. */
 export interface UndoReplyTypePickResult {
   conversationId: string;
-  /** Open drafts of the record that turned stale. */
+  /** Open drafts of the conversation that turned stale. */
   draftsRetired: number;
   /** An active or paused follow-up run ended. */
   runEnded: boolean;
@@ -206,7 +206,7 @@ export interface UndoReplyTypePickResult {
 export interface DncResult {
   changed: boolean;
   doNotContact: boolean;
-  recordsUpdated: number;
+  conversationsUpdated: number;
   draftsRetired: number;
   enrollmentsStopped: number;
 }

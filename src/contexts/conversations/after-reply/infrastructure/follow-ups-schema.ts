@@ -7,17 +7,17 @@ import { inList } from "@/platform/db/sql-values";
 import { FOLLOW_UP_RUN_STATUSES, FLOW_STATUSES, STEP_RUN_STATUSES, type RunStatus, type FlowStatus, type StepRunStatus } from "../domain/follow-ups";
 
 /**
- * Follow-up flows. A sequence has versions; a run pins the version it
+ * Follow-up flows. A flow has versions; a run pins the version it
  * started on. Follow-up drafts still go through the normal draft, human
  * approval and send_attempts path. Nothing here sends.
  *
  * No `draft_version_id` / `latest_published_version_id`
- * pointers on the sequence (the "one draft" and "highest published" facts come
+ * pointers on the flow (the "one draft" and "highest published" facts come
  * from the versions table), so no circular foreign keys.
  *
- * A campaign owns at most one sequence: its "Follow-ups after a reply" flow (`campaign_id` set). Sequences without a
- * campaign are the legacy standalone ones, kept as archived rows. Deleting a campaign deletes its sequence
- * with the versions and steps; the RESTRICT keys from runs block that when any run exists.
+ * A campaign owns at most one flow: its "Follow-ups after a reply" flow (`campaign_id` set). No code path creates a
+ * flow without a campaign, though the column allows one. Deleting a campaign deletes its flow with the versions and
+ * steps; the RESTRICT keys from runs block that when any run exists.
  */
 
 
@@ -29,7 +29,7 @@ export const followUpFlows = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     status: text("status").$type<FlowStatus>().notNull().default("active"),
-    /** The campaign this sequence belongs to, or null for a legacy standalone sequence. */
+    /** The campaign this flow belongs to. */
     campaignId: uuid("campaign_id"),
     /** When the Follow-ups after a reply setting last turned on. Only the flow save writes it. The engine's "new reply" cutoff reads it. */
     afterReplyEnabledAt: tstz("after_reply_enabled_at"),

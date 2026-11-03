@@ -54,7 +54,8 @@ export interface ClassifyContext {
   taxonomy: Array<ReplyType & { id: string; systemRole: SystemRole | null; rules: TypeRules }>;
   person: AiPersonContext;
   thread: ThreadEntry[];
-  messageText: string;
+  /** Ingest read the reply's own words as asking to stop (`raw.stopAsked`). */
+  stopAsked: boolean;
 }
 
 export interface FinishClassification {

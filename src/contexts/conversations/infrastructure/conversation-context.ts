@@ -15,7 +15,7 @@ import { staleOpenDraftsTx } from "./stale-drafts-sql";
  * 2. An AI pick held for a check retires (`stale`): it can no longer be accepted, so the history, the reply counts and the
  *    draft prompt stop treating it as waiting. A stop request it read stays open whatever the pick's status: the flag stays on
  *    the row and only a person's review answers it (`stopReviewOpenSql`).
- * 3. With `drafts`, open drafts retire with that reason. With `runs`, the conversation's sequence run ends with that reason.
+ * 3. With `drafts`, open drafts retire with that reason. With `runs`, the conversation's run ends with that reason.
  *
  * The caller holds the conversation's lock when the path needs one, and writes its event with the returned version.
  */

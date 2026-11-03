@@ -1,5 +1,4 @@
 import type { HoldReason, ReplyType } from "./reply-type";
-import { detectsStopRequest } from "./stop-request";
 
 /**
  * Deterministic rules for an AI pick. The model never decides whether its pick applies: `decideReplyType` reads the
@@ -8,6 +7,5 @@ import { detectsStopRequest } from "./stop-request";
 
 export type { HoldReason };
 
-/** A reply asks us to stop when the sender's own words say so, or when the AI picked the stop request type. */
-export const stopRequestedBy = (messageText: string, proposal: Pick<ReplyType, "systemRole">): boolean =>
-  detectsStopRequest(messageText) || proposal.systemRole === "stop_request";
+/** A reply asks us to stop when ingest read the sender's own words so (`raw.stopAsked`), or when the AI picked the stop request type. */
+export const stopRequestedBy = (stopAsked: boolean, proposal: Pick<ReplyType, "systemRole">): boolean => stopAsked || proposal.systemRole === "stop_request";

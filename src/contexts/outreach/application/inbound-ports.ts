@@ -1,5 +1,4 @@
 import type { DbTx } from "@/platform/db/client";
-import type { OutreachHalt } from "../domain/enrollment-status";
 import type { InboundClass } from "../email/domain/inbound";
 import type { InboundEmail } from "../email/application/ports";
 
@@ -60,12 +59,21 @@ export interface InboxLinkedInMessage {
 }
 
 /**
- * Conversations' follow-up sequences, as outreach sees them. Suppressing an address ends that person's runs in the same
- * transaction. Conversations implements it and `src/composition/inbox-filing.ts` passes it in, so outreach never
- * imports conversations.
+ * Who a stop reaches: a person, with the address the message came from when it has one, or every person with an address.
  */
-export interface FollowUpStop {
-  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, halt: OutreachHalt, now: Date): Promise<number>;
+export type OutreachStopTarget = { organizationId: string; personId: string; senderEmail?: string | null } | { organizationId: string; email: string };
+
+/** The stops outreach raises. A reply arrives with the mailbox and message, so a replayed message that is already filed stops nothing. */
+export type OutreachStopTrigger =
+  | { kind: "reply"; channel: "email"; unlessFiled: { accountRef: string; providerMessageId: string }; now: Date }
+  | { kind: "bounce" | "unsubscribe" | "suppression"; note?: string; addedInSettings?: boolean; now: Date };
+
+/**
+ * Stopping contact with a person. Conversations owns it (`stopContactTx`) because it ends runs and drafts as well as
+ * enrollments, and `src/composition/inbox-filing.ts` passes it in, so outreach never imports conversations.
+ */
+export interface ContactStop {
+  stopContactTx(tx: DbTx, target: OutreachStopTarget, trigger: OutreachStopTrigger): Promise<{ enrollments: number; added: boolean }>;
 }
 
 /**
@@ -75,8 +83,6 @@ export interface FollowUpStop {
 export interface InboxFiling {
   email(input: InboxEmail): Promise<InboxFiled>;
   linkedin(input: InboxLinkedInMessage): Promise<InboxFiled>;
-  /** A person replied: ends all their outreach in `tx`, before filing runs, so a message that cannot be filed still stops it. */
-  stopOnReply(tx: DbTx, input: { organizationId: string; personId: string; senderEmail: string | null; accountRef: string; providerMessageId: string; channel: "email"; now: Date }): Promise<unknown>;
 }
 
 /** Failure history of one inbound message, kept in `inbound_events`. */

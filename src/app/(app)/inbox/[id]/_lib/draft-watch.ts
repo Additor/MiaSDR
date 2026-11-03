@@ -11,7 +11,7 @@ export const DRAFT_WATCH_MS = 45_000;
 /** A draft in one of these states is the answer the watch waited for. */
 const SETTLED_DRAFTS = new Set(["awaiting_review", "sending", "sent", "failed", "delivery_uncertain"]);
 /** No draft is coming for a conversation in these states. */
-const NO_DRAFT_STATES = new Set(["closed", "error"]);
+const NO_DRAFT_STATES = new Set(["closed"]);
 
 export interface WatchSnapshot {
   contextVersion: number;

@@ -30,7 +30,7 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 /** The counter for a link: the path's own name when it linked, else why the link came too late. */
 const linkCount = (outcome: LinkOutcome, linked: string) => (outcome === "linked" ? linked : outcome === "stopped" ? "stopped_while_drafting" : "claim_lost");
 
-/** Opens a run for every record that has a newly classified reply and a sequence to follow. */
+/** Opens a run for every conversation that has a newly classified reply and a flow to follow. */
 async function startRuns(deps: FollowUpJobDeps, deadline: number, count: (key: string) => void): Promise<number> {
   const candidates = await deps.engine.startCandidates(START_BATCH);
   let started = 0;
@@ -44,7 +44,7 @@ async function startRuns(deps: FollowUpJobDeps, deadline: number, count: (key: s
       }
     } catch (error) {
       count("start_failed");
-      console.error(`Sequence run could not start for record ${candidate.conversationId}: ${errorMessage(error)}`);
+      console.error(`Sequence run could not start for conversation ${candidate.conversationId}: ${errorMessage(error)}`);
     }
   }
   return started;
@@ -142,7 +142,7 @@ async function draftStep(deps: FollowUpJobDeps, claim: ClaimedStep, count: (key:
     threadId: ctx.threadId,
     replyForMessageId: ctx.replyForMessageId,
     expectedContextVersion: ctx.contextVersion,
-    // Without it the store defaults to email, which is wrong on a LinkedIn conversation.
+    // Without it the store defaults to email, which is wrong on a LinkedIn thread.
     channel: ctx.channel,
     subject,
     bodyText: result.output.bodyText,

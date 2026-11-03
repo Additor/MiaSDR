@@ -115,7 +115,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
 
       const b = await fixture();
       await receive(b);
-      await failOut(b, new AiError("The AI answered outside the allowed categories.", "transient", "shape"));
+      await failOut(b, new AiError("The AI answered outside the allowed reply types.", "transient", "shape"));
       const j = await job(b.org);
       expect(j).toMatchObject({ status: "failed", attempts: 3 });
       expect(j.payload).toMatchObject({ failureKind: "shape" });
@@ -319,7 +319,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(await row(id)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
     });
 
-    it("a stale worker's classification writes no pick and leaves the record alone", async () => {
+    it("a stale worker's classification writes no pick and leaves the conversation alone", async () => {
       const { f, id } = await classificationJob();
       const a = await claimAt(id, "classification", at(1), "worker-a");
       await claimAt(id, "classification", at(2), "worker-b");
@@ -344,7 +344,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect((await sql`select group_key, reply_type_id, workflow_state from conversations where id = ${ctx.conversationId}`)[0]).toEqual(before);
     });
 
-    it("a reclaimed job's failure takes the record before the job row, as a late worker's classification does", async () => {
+    it("a reclaimed job's failure takes the conversation before the job row, as a late worker's classification does", async () => {
       const { id } = await classificationJob();
       const a = await claimAt(id, "classification", at(1), "worker-a");
       const b = await claimAt(id, "classification", at(2), "worker-b");
@@ -564,7 +564,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       await failOut(a, new AiError("Anthropic rejected the API key.", "permanent"));
       const b = await fixture();
       await receive(b);
-      await failOut(b, new AiError("The AI answered outside the allowed categories.", "transient", "shape"));
+      await failOut(b, new AiError("The AI answered outside the allowed reply types.", "transient", "shape"));
       for (const f of [a, b]) {
         f.ai.failWith = null;
         f.advance(24 * HOUR);

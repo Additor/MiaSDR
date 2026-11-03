@@ -432,7 +432,7 @@ describeDb("lead list filters, sort and companies", () => {
       for (const personId of others) expect(statuses.get(personId)?.state ?? "new", personId).not.toBe("replied");
     });
 
-    it("filters by hasConversation: a record with a conversation counts, a record-only person does not", async () => {
+    it("filters by hasConversation: a conversation with a conversation counts, a conversation-only person does not", async () => {
       const o = await org();
       const pipeline = await replyTypeSetOf(o.id);
       const outbound = await person(o.id, { email: "a@x.test" });

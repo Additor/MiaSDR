@@ -3,9 +3,9 @@ import { findOrCreateLeadByLinkedInTx } from "@/contexts/people/infrastructure/i
 import { db } from "@/platform/db/client";
 import { threads, messages, people, conversations } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";
-import { detectsStopRequest } from "../domain/stop-request";
+import { detectsStopRequest } from "../stopping/domain/stop-request";
 import { defaultReplyTypeSetId, findOrCreateConversation, type Tx } from "./drizzle-thread-store";
-import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/follow-up-stop";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { recordInboundTx } from "./conversation-context";
 
@@ -116,10 +116,10 @@ export const drizzleLinkedInThreadStore: InboundLinkedInStore = {
       await recordInboundTx(tx, { organizationId: input.organizationId, conversationId: thread.conversationId, channel: "linkedin", messageId: message.id, at, now: new Date() });
       await autoAssignTx(tx, { organizationId: input.organizationId, conversationId: thread.conversationId, personId: owner.personId });
       // A reply ends all outreach to the person, on every channel and campaign, in the same transaction.
-      const stop = await stopPersonOutreachOnReplyTx(tx, { organizationId: input.organizationId, personId: owner.personId, channel: "linkedin", now: new Date() });
+      const stop = await stopContactTx(tx, { organizationId: input.organizationId, personId: owner.personId }, { kind: "reply", channel: "linkedin", now: new Date() });
       await tx.update(threads).set({ updatedAt: sql`now()` }).where(eq(threads.id, thread.id));
 
-      return { status: "created" as const, threadId: thread.id, messageId: message.id, personId: owner.personId, personCreated, outreachStopped: stop.enrollmentsStopped };
+      return { status: "created" as const, threadId: thread.id, messageId: message.id, personId: owner.personId, personCreated, outreachStopped: stop.enrollments };
     });
   },
 };

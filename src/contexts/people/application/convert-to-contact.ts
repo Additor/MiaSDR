@@ -25,7 +25,6 @@ export interface LeadLifecycleStore {
 export interface PersonStopInput {
   organizationId: string;
   personId: string;
-  reason: "converted";
   now: Date;
 }
 
@@ -41,13 +40,14 @@ export interface PersonEventInput {
 
 /** What the conversion writes through other contexts. All of them run in the caller's transaction. */
 export interface ConversionPorts {
-  /** Locks the person's records `FOR NO KEY UPDATE` in id order, then the person advisory lock (conversations `lockPersonConversations`). */
+  /** Locks the person's conversations `FOR NO KEY UPDATE` in id order, then the person advisory lock (conversations `lockPersonConversations`). */
   lockPerson(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  /** Cancels the person's pending and active enrollments with reason `converted` (outreach). */
-  stopEnrollments(tx: DbHandle, input: PersonStopInput): Promise<{ stopped: number }>;
-  /** Interrupts the person's active and paused follow-up runs and retires their unsent drafts (conversations). Counted in the transaction. */
-  interruptRuns(tx: DbHandle, input: PersonStopInput): Promise<{ runs: number; drafts: number }>;
-  /** Appends a row to the person's history (conversations `appendPersonEvent`; the record is null). */
+  /**
+   * The conversion's stop (conversations `stopContactTx`): cancels the person's pending and active enrollments with reason
+   * `converted`, interrupts their active and paused follow-up runs and retires the unsent drafts of those runs. Counted in the transaction.
+   */
+  stopContact(tx: DbHandle, input: PersonStopInput): Promise<{ enrollments: number; runs: number; drafts: number }>;
+  /** Appends a row to the person's history (conversations `appendPersonEvent`; the conversation is null). */
   appendEvent(tx: DbHandle, input: PersonEventInput): Promise<void>;
 }
 
@@ -73,7 +73,7 @@ const NOTHING_STOPPED = { enrollments: 0, runs: 0, drafts: 0 };
 
 /**
  * Converts one lead, in the order the lock rules need: person lock, lifecycle re-read, `markConverted`,
- * enrollments, runs, event. Lock order per person is records, advisory lock, people row, enrollments, runs, as the conversations paths take
+ * the stop (enrollments, then runs), event. Lock order per person is conversations, advisory lock, people row, enrollments, runs, as the conversations paths take
  * it. The caller runs it inside one transaction (with `lock_timeout` and one retry on 40P01 or 55P03), so any throw undoes
  * every step. Idempotent: a contact returns `changed: false`.
  */
@@ -85,9 +85,7 @@ export async function convertToContact(deps: ConvertDeps, tx: DbHandle, input: C
   if (lifecycle === null) throw new NotFoundError("Lead not found");
   if (lifecycle === "contact") return { changed: false, stopped: NOTHING_STOPPED };
   if (!(await deps.markConverted(tx, organizationId, personId, now))) return { changed: false, stopped: NOTHING_STOPPED };
-  const stop: PersonStopInput = { organizationId, personId, reason: "converted", now };
-  const { stopped: enrollments } = await deps.stopEnrollments(tx, stop);
-  const { runs, drafts } = await deps.interruptRuns(tx, stop);
+  const { enrollments, runs, drafts } = await deps.stopContact(tx, { organizationId, personId, now });
   await deps.appendEvent(tx, {
     organizationId,
     personId,

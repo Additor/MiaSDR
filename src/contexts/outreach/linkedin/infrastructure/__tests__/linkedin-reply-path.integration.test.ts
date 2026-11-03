@@ -5,7 +5,7 @@ import type { LinkedInInboundDeps } from "../../application/linkedin-ports";
 
 /**
  * A reply on a LinkedIn campaign takes one path, from the webhook to the shared screens: it lands in the Inbox and its
- * unread count, moves the record into Actions, queues the AI, and stops the person's outreach on every campaign and channel.
+ * unread count, moves the conversation into Actions, queues the AI, and stops the person's outreach on every campaign and channel.
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
 describeDb("a reply on a LinkedIn campaign", () => {
@@ -119,7 +119,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
     await sql.end();
   });
 
-  it("reaches the Inbox, its unread count, the record, Actions and the AI queue", async () => {
+  it("reaches the Inbox, its unread count, the conversation, Actions and the AI queue", async () => {
     const f = await fixture();
     const ada = await lead(f, await linkedinCampaign(f, "Spring"));
 

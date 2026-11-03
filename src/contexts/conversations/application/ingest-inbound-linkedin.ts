@@ -11,7 +11,7 @@ const EMPTY_BODY = "(no text content)";
 
 /**
  * Files one received LinkedIn message under its sender: the lead it belongs to (or a new person with
- * source `inbound`), their conversation in the default pipeline, the conversation for the chat and the
+ * source `inbound`), their conversation in the default reply type set, the thread for the chat and the
  * message. Running it twice for the same provider message stores it once. Messages the account owner
  * wrote are not inbound and must not reach this use case.
  *

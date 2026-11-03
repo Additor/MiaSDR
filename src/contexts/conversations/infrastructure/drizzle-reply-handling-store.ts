@@ -3,9 +3,9 @@ import { isAppliedPick, pickFlags, pickResponse } from "../domain/reply-type-pic
 import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { interruptPersonRunsTx } from "../after-reply/infrastructure/follow-up-stop";
-import { personReviewedStopsTx } from "./stop-review";
-import { stopReviewOpen } from "./stop-requested-sql";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
+import { personReviewedStopsTx } from "../stopping/infrastructure/stop-review";
+import { stopReviewOpen } from "../stopping/infrastructure/stop-requested-sql";
 import { personTypeDecisionTx, restartConversationWorkTx } from "./restart-conversation-work";
 import {
   aiJobs,
@@ -46,7 +46,6 @@ import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type"
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-thread-store";
 import { advanceConversationContextTx } from "./conversation-context";
-import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { isSuppressed, writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
 import { rowsOf } from "@/platform/db/sql-values";
 
@@ -299,7 +298,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           nextActionAt: null,
         })
         .where(eq(conversations.id, before.id));
-      // The old type's run and drafts end, the version goes up, and the new type's sequence starts, all in this commit.
+      // The old type's run and drafts end, the version goes up, and the new type's flow starts, all in this commit.
       const { contextVersion: version, draftsRetired, runsEnded, runStarted } = await restartConversationWorkTx(tx, {
         organizationId: input.organizationId,
         conversationId: before.id,
@@ -395,11 +394,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return personGoneAsNotFound(() => db.transaction(async (tx) => {
       const [person] = await tx.select({ id: people.id }).from(people).where(and(eq(people.id, input.personId), eq(people.organizationId, input.organizationId)));
       if (!person) throw new NotFoundError("Person not found");
-      // People writes the policy under the person's `dnc:` lock; the follow-through on conversations, drafts, runs and enrollments is ours.
+      if (input.enabled) {
+        const stop = await stopContactTx(tx, { organizationId: input.organizationId, personId: input.personId }, { kind: "do_not_contact", reason: input.reason, actorUserId: input.actorUserId, now: input.now });
+        return { changed: stop.changed, doNotContact: true, conversationsUpdated: stop.conversations, draftsRetired: stop.drafts, enrollmentsStopped: stop.enrollments };
+      }
+      // Clearing the flag stops nothing, and enrollments that were stopped stay stopped.
       const { changed, previous } = await writeDoNotContactTx(tx, input);
-      if (!changed) return { changed: false, doNotContact: input.enabled, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
-
-      if (!input.enabled) {
+      if (changed) {
         await tx.insert(events).values({
           organizationId: input.organizationId,
           personId: input.personId,
@@ -410,48 +411,8 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           toData: { doNotContact: false },
           meta: { reason: input.reason },
         });
-        return { changed: true, doNotContact: false, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
       }
-
-
-      const owned = await tx.select().from(conversations).where(and(eq(conversations.personId, input.personId), eq(conversations.organizationId, input.organizationId))).for("no key update");
-      const conversationIds = owned.map((r) => r.id);
-      let draftsRetired = 0;
-      for (const conversation of owned) {
-        const advanced = await advanceConversationContextTx(tx, {
-          organizationId: input.organizationId,
-          conversationId: conversation.id,
-          now: input.now,
-          set: { workflowState: afterPersonDecision(conversation.workflowState), nextActionAt: null },
-          drafts: { reason: "The person was marked do not contact." },
-        });
-        await personReviewedStopsTx(tx, { organizationId: input.organizationId, conversationId: conversation.id, actorUserId: input.actorUserId, now: input.now });
-        draftsRetired += advanced.draftsRetired;
-        await tx.insert(events).values({
-          organizationId: input.organizationId,
-          personId: input.personId,
-          conversationId: conversation.id,
-          eventType: "contact_policy.enforced",
-          actorType: "human",
-          actorUserId: input.actorUserId,
-          fromData: { workflowState: conversation.workflowState },
-          meta: { policy: "do_not_contact", reason: input.reason },
-          contextVersion: advanced.contextVersion,
-        });
-      }
-      await interruptPersonRunsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
-      const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
-      await tx.insert(events).values({
-        organizationId: input.organizationId,
-        personId: input.personId,
-        eventType: "contact_policy.dnc_set",
-        actorType: "human",
-        actorUserId: input.actorUserId,
-        fromData: previous ? { doNotContact: previous.doNotContact, reason: previous.reason } : null,
-        toData: { doNotContact: true, reason: input.reason },
-        meta: { enrollmentsStopped: stopped.length, draftsRetired, conversations: conversationIds.length },
-      });
-      return { changed: true, doNotContact: true, recordsUpdated: conversationIds.length, draftsRetired, enrollmentsStopped: stopped.length };
+      return { changed, doNotContact: false, conversationsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
     }));
   },
 
@@ -520,7 +481,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       if (!conversation) throw new NotFoundError("Reply handling not found");
       owner = { personId: conversation.personId, conversationId: conversation.id };
     } else {
-      // A note by person works without a reply conversation, so it is stored with a null conversation_id.
+      // A note by person works without a conversation, so it is stored with a null conversation_id.
       const [person] = await db.select({ id: people.id }).from(people).where(and(eq(people.id, scope.personId), eq(people.organizationId, input.organizationId)));
       if (!person) throw new NotFoundError("Person not found");
       owner = { personId: person.id, conversationId: null };

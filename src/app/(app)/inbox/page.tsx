@@ -140,10 +140,10 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
         <input key={id} type="hidden" name="mailbox" value={id} />
       ))}
       {params.replyTypeKeys.map((k) => (
-        <input key={k} type="hidden" name="subcategory" value={k} />
+        <input key={k} type="hidden" name="type" value={k} />
       ))}
       {params.groupKeys.map((k) => (
-        <input key={k} type="hidden" name="category" value={k} />
+        <input key={k} type="hidden" name="group" value={k} />
       ))}
       {params.dateMode !== "all" && <input type="hidden" name="range" value={params.dateMode} />}
       {params.dateMode === "custom" && params.dateFrom && <input type="hidden" name="from" value={params.dateFrom} />}

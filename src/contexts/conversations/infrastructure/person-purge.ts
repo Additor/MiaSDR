@@ -54,7 +54,7 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
   // the reply target get null.
   const messages = await deleted(tx, sql`delete from messages where organization_id = ${org} and thread_id in ${convs}`);
   const threads = await deleted(tx, sql`delete from threads where organization_id = ${org} and conversation_id in ${recs}`);
-  // Notes and tasks on these conversations get a null record and stay with the person, whose delete removes them.
+  // Notes and tasks on these conversations get a null conversation and stay with the person, whose delete removes them.
   const conversations = await deleted(tx, sql`delete from conversations where organization_id = ${org} and person_id = ${personId}::uuid`);
   await tx.execute(sql`select set_config('miasdr.allow_purge', 'off', true)`);
   return { conversations, threads, messages, events };

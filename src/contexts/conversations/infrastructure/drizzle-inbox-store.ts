@@ -183,7 +183,7 @@ export const drizzleInboxStore: InboxStore = {
       ...(filter.from ? [sql`${sql.raw(column)} >= ${filter.from.toISOString()}::timestamptz`] : []),
       ...(filter.to ? [sql`${sql.raw(column)} < ${filter.to.toISOString()}::timestamptz`] : []),
     ];
-    // Subcategory and category describe a conversation's conversation, not a campaign step, so they do not narrow this list.
+    // Reply type and group describe a conversation, not a campaign step, so they do not narrow this list.
     const campaignWhere = [
       sql`ce.organization_id = ${organizationId}`,
       sql`ce.status = 'active'`,
@@ -198,7 +198,7 @@ export const drizzleInboxStore: InboxStore = {
       sql`ssr.organization_id = ${organizationId}`,
       sql`ssr.status = 'scheduled'`,
       sql`sr.status = 'active'`,
-      // A paused campaign holds its follow-ups, so they are not scheduled to go out. A legacy sequence has no campaign and keeps running.
+      // A paused campaign holds its follow-ups, so they are not scheduled to go out. A flow with no campaign keeps running.
       sql`seq_camp.status is distinct from 'paused'`,
       ...person,
       ...(present(filter.campaignIds) ? [sql`seq.campaign_id in (${uuidList(filter.campaignIds)})`] : []),

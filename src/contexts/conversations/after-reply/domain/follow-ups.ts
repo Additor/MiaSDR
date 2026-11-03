@@ -1,6 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { FollowUpsRule } from "../../domain/reply-type";
-import type { OutreachHalt } from "@/contexts/outreach/domain/enrollment-status";
 
 /**
  * Pure rules for a campaign's Follow-ups after a reply flow. The flow has versions; a published version is immutable and a
@@ -120,19 +119,6 @@ export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "conversation_closed" | "converted" | typeof AFTER_REPLY_OFF;
 
-/** The run reason stored when outreach halts for a person or an address. A complaint reads as an unsubscribe, a hand-added address as suppressed. */
-const RUN_REASON_OF_HALT: Record<OutreachHalt, InterruptReason> = {
-  replied: "reply",
-  bounced: "bounce",
-  unsubscribed: "unsubscribed",
-  complaint: "unsubscribed",
-  manual: "suppressed",
-  do_not_contact: "do_not_contact",
-  converted: "converted",
-};
-
-export const runReasonOfHalt = (halt: OutreachHalt): InterruptReason => RUN_REASON_OF_HALT[halt];
-
 /**
  * Whether the conversation's reply type lets follow-ups run. The type's Follow-ups rule (`reply_types.follow_ups`) decides;
  * a conversation without a type, or a type the read could not find, starts nothing.
@@ -155,7 +141,7 @@ export interface InterruptFacts {
   suppression: "unsubscribed" | "bounced" | "manual" | "complaint" | null;
   /** The person is a contact (`people.lifecycle`). A contact starts no follow-up run, and a run that survives a conversion ends here. */
   contact: boolean;
-  /** The run's flow may keep running: a campaign-owned flow that is still active, or a legacy standalone flow. False once its campaign switches Follow-ups after a reply off. */
+  /** The run's flow may keep running: a campaign-owned flow that is still active, or a flow with no campaign. False once its campaign switches Follow-ups after a reply off. */
   flowActive: boolean;
 }
 
@@ -279,7 +265,7 @@ export function renderTemplate(template: string, vars: Record<string, string | n
   return template.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_, key: string) => lookup.get(key.toLowerCase()) ?? "");
 }
 
-/** Extra guidance appended to the pipeline's draft instructions for one step. */
+/** Extra guidance appended to the reply type set's draft instructions for one step. */
 export function stepGuidance(step: { position: number; name: string; aiInstructions: string; bodyTemplate: string | null }, vars: Record<string, string | null | undefined>): string {
   const lines = [
     `## Follow-up step ${step.position}: ${step.name}`,

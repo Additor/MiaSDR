@@ -55,6 +55,14 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
 
   const rec = async (conversationId: string) => (await sql`select * from conversations where id = ${conversationId}`)[0];
 
+  /** A classification job that failed for good on the conversation's latest reply: a problem in the queue. */
+  async function failedJob(f: Fx, l: { conversationId: string }) {
+    const [r] = await sql`select latest_inbound_message_id as message from conversations where id = ${l.conversationId}`;
+    await sql`
+      insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, attempts, failed_at, last_error)
+      values (${f.org}, 'classification', 'message', ${r.message}, ${"k-failed-" + r.message}, 'failed', 3, now(), 'Provider timeout')`;
+  }
+
   async function draft(f: Fx, l: { conversationId: string; threadId: string }, status = "awaiting_review", error: string | null = null) {
     const r = await rec(l.conversationId);
     const [d] = await sql`
@@ -141,7 +149,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const closed = await lead(f);
     await sql`update conversations set workflow_state = 'closed' where id = ${closed.conversationId}`;
     const errored = await lead(f);
-    await sql`update conversations set workflow_state = 'error' where id = ${errored.conversationId}`;
+    await failedJob(f, errored);
 
     const q = await queue(f);
     expect(ids(q.groups.reply)).toEqual([reply.conversationId]);
@@ -149,7 +157,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(ids(q.groups.follow_up)).toEqual([due.conversationId]);
     expect(ids(q.groups.problem).sort()).toEqual([both.conversationId, errored.conversationId].sort());
     expect(q.groups.problem.items.find((i) => i.conversationId === both.conversationId)?.problem).toMatchObject({ kind: "draft_failed", message: "Body is empty" });
-    expect(q.groups.problem.items.find((i) => i.conversationId === errored.conversationId)?.problem?.kind).toBe("conversation_error");
+    expect(q.groups.problem.items.find((i) => i.conversationId === errored.conversationId)?.problem?.kind).toBe("job_failed");
     expect(q.groups.next_step.total).toBe(0);
     expect(q.total).toBe(5);
   });
@@ -201,7 +209,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     let cursor = first.groups.reply.nextCursor;
     let pages = 1;
     while (cursor) {
-      const next = await queue(f, { filter: { group: "reply" }, cursor });
+      const next = await queue(f, { filter: { list: "reply" }, cursor });
       expect(next.groups.reply.total).toBe(120);
       seen.push(...ids(next.groups.reply));
       cursor = next.groups.reply.nextCursor;
@@ -214,12 +222,12 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
 
     const big = await queue(f, { limit: 500 });
     expect(big.groups.reply.items).toHaveLength(120);
-    const small = await queue(f, { limit: 7, filter: { group: "reply" } });
+    const small = await queue(f, { limit: 7, filter: { list: "reply" } });
     expect(small.groups.reply.items).toHaveLength(7);
     expect((await queue(f, { limit: 0 })).groups.reply.items).toHaveLength(50);
   });
 
-  it("filters by category, channel, action type, due window, subcategory, sequence and errors only", async () => {
+  it("filters by group, channel, list, due window, reply type, campaign and errors only", async () => {
     const f = await fixture();
     const demo = await lead(f);
     const [sub] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = 'demo_request'`;
@@ -233,17 +241,17 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const dueEarlier = await lead(f);
     await sql`update conversations set workflow_state = 'waiting', next_action_at = '2026-10-01T00:00:00Z' where id = ${dueEarlier.conversationId}`;
     const broken = await lead(f);
-    await sql`update conversations set workflow_state = 'error' where id = ${broken.conversationId}`;
+    await failedJob(f, broken);
 
     const all = (q: Awaited<ReturnType<typeof queue>>) => QUEUE_ORDER.flatMap((g) => ids(q.groups[g])).sort();
     const QUEUE_ORDER: QueueGroup[] = ["reply", "follow_up", "classification", "next_step", "problem"];
 
-    expect(all(await queue(f, { filter: { category: "interested" } }))).toEqual([demo.conversationId]);
-    expect(all(await queue(f, { filter: { category: "unclassified" } }))).toEqual([plain.conversationId, linkedin.conversationId, dueSoon.conversationId, dueEarlier.conversationId, broken.conversationId].sort());
+    expect(all(await queue(f, { filter: { group: "interested" } }))).toEqual([demo.conversationId]);
+    expect(all(await queue(f, { filter: { group: "no_type" } }))).toEqual([plain.conversationId, linkedin.conversationId, dueSoon.conversationId, dueEarlier.conversationId, broken.conversationId].sort());
     expect(all(await queue(f, { filter: { channel: "linkedin" } }))).toEqual([linkedin.conversationId]);
     expect(all(await queue(f, { filter: { replyTypeId: sub.id } }))).toEqual([demo.conversationId]);
 
-    const typed = await queue(f, { filter: { group: "follow_up" } });
+    const typed = await queue(f, { filter: { list: "follow_up" } });
     expect(ids(typed.groups.follow_up).sort()).toEqual([dueSoon.conversationId, dueEarlier.conversationId].sort());
     expect(typed.groups.reply.items).toEqual([]);
     expect(typed.groups.reply.total).toBe(1);
@@ -297,14 +305,14 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   it("rejects bad filters and cursors", async () => {
     const f = await fixture();
     await expect(queue(f, { filter: { channel: "fax" } })).rejects.toThrow(ValidationError);
-    await expect(queue(f, { filter: { group: "everything" } })).rejects.toThrow(ValidationError);
+    await expect(queue(f, { filter: { list: "everything" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { replyTypeId: "not-a-uuid" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { dueBefore: "soon" } })).rejects.toThrow(ValidationError);
-    await expect(queue(f, { filter: { group: "reply", errorsOnly: "1" } })).rejects.toThrow(ValidationError);
-    await expect(queue(f, { filter: { group: "reply" }, cursor: "garbage" })).rejects.toThrow(ValidationError);
+    await expect(queue(f, { filter: { list: "reply", errorsOnly: "1" } })).rejects.toThrow(ValidationError);
+    await expect(queue(f, { filter: { list: "reply" }, cursor: "garbage" })).rejects.toThrow(ValidationError);
     await expect(queue(f, { cursor: encodeQueueCursor({ sortKey: "2026-10-14 10:00:00+00", conversationId: "00000000-0000-4000-8000-000000000000" }) })).rejects.toThrow(/action type/);
     // A cursor from the newest-first order is refused instead of continued.
-    await expect(queue(f, { filter: { group: "reply" }, cursor: Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", "00000000-0000-4000-8000-000000000000"])).toString("base64url") })).rejects.toThrow(/Reload the queue/);
+    await expect(queue(f, { filter: { list: "reply" }, cursor: Buffer.from(JSON.stringify(["2026-10-14 10:00:00+00", "00000000-0000-4000-8000-000000000000"])).toString("base64url") })).rejects.toThrow(/Reload the queue/);
   });
 
   it("keeps organizations apart", async () => {
@@ -327,7 +335,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const l1 = await lead(f);
     await draft(f, l1);
     const l2 = await lead(f);
-    await sql`update conversations set workflow_state = 'error' where id = ${l2.conversationId}`;
+    await failedJob(f, l2);
     await lead(f);
     const due = await lead(f);
     await sql`update conversations set workflow_state = 'waiting', next_action_at = now() - interval '1 minute' where id = ${due.conversationId}`;
@@ -340,8 +348,8 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       expect(counts.byGroup[g]).toBe(page.groups[g].total);
     }
     // A filter narrows the page but never the badge.
-    expect((await queue(f, { filter: { group: "reply" } })).total).toBe(4);
-    expect((await queue(f, { filter: { category: "interested" } })).total).toBe(0);
+    expect((await queue(f, { filter: { list: "reply" } })).total).toBe(4);
+    expect((await queue(f, { filter: { group: "interested" } })).total).toBe(0);
     expect((await workQueue.getWorkQueueCounts(deps, f.actor)).total).toBe(4);
   });
 
@@ -412,10 +420,10 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const expected = made.sort((a, b) => a.at - b.at).map((m) => m.conversationId);
 
     const seen: string[] = [];
-    let page = await queue(f, { limit: 6, filter: { group: "reply" } });
+    let page = await queue(f, { limit: 6, filter: { list: "reply" } });
     seen.push(...ids(page.groups.reply));
     while (page.groups.reply.nextCursor) {
-      page = await queue(f, { limit: 6, filter: { group: "reply" }, cursor: page.groups.reply.nextCursor });
+      page = await queue(f, { limit: 6, filter: { list: "reply" }, cursor: page.groups.reply.nextCursor });
       seen.push(...ids(page.groups.reply));
     }
     expect(seen).toEqual(expected);
@@ -441,10 +449,10 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(await next(r3.conversationId)).toBe(due.conversationId);
     expect(await next(due.conversationId)).toBe(r1.conversationId);
     // The same filter the person came from narrows the answer.
-    expect(await next(r1.conversationId, { group: "reply" })).toBe(r2.conversationId);
-    expect(await next(r3.conversationId, { group: "reply" })).toBe(r1.conversationId);
+    expect(await next(r1.conversationId, { list: "reply" })).toBe(r2.conversationId);
+    expect(await next(r3.conversationId, { list: "reply" })).toBe(r1.conversationId);
 
-    // Approving a draft moves the record to waiting with no due time; it leaves the queue, and the first item left is next.
+    // Approving a draft moves the conversation to waiting with no due time; it leaves the queue, and the first item left is next.
     await sql`update drafts set status = 'sent' where conversation_id = ${r1.conversationId}`;
     await sql`update conversations set workflow_state = 'waiting', next_action_at = now() + interval '3 days' where id = ${r1.conversationId}`;
     expect(await next(r1.conversationId)).toBe(r2.conversationId);
@@ -550,9 +558,6 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       { name: "held classification and an open task", hasReplyTypePickToReview: true, hasOpenTask: true },
       { name: "failed job", hasFailedJob: true },
       { name: "failed job and a draft to review", hasFailedJob: true, hasDraftToReview: true },
-      { name: "error", workflowState: "error" },
-      { name: "error and a draft to review", workflowState: "error", hasDraftToReview: true },
-      { name: "error and an open task", workflowState: "error", hasOpenTask: true },
       { name: "waiting and due", workflowState: "waiting", nextActionAt: new Date(Date.now() - hour) },
       { name: "waiting and due, open task", workflowState: "waiting", nextActionAt: new Date(Date.now() - hour), hasOpenTask: true },
       { name: "waiting and due, draft to review", workflowState: "waiting", nextActionAt: new Date(Date.now() - hour), hasDraftToReview: true },
@@ -561,7 +566,6 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       { name: "idle with a draft to review", workflowState: "idle", hasDraftToReview: true },
       { name: "idle with a failed draft", workflowState: "idle", hasProblemDraft: true },
       { name: "closed", workflowState: "closed" },
-      { name: "paused", workflowState: "paused" },
     ];
 
     const built: Array<{ name: string; conversationId: string; facts: QueueFacts }> = [];

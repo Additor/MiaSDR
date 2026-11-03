@@ -14,7 +14,7 @@ describe("type change rules", () => {
     expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
   });
 
-  it("locks by the target group alone, whatever the record had before", () => {
+  it("locks by the target group alone, whatever the conversation had before", () => {
     expect(lockAfterPersonMove({ groupKey: "customer" })).toBe(true);
     expect(lockAfterPersonMove({ groupKey: "interested" })).toBe(false);
     expect(lockAfterPersonMove({ groupKey: "other" })).toBe(false);
@@ -51,7 +51,7 @@ describe("type change rules", () => {
   });
 });
 
-describe("pipeline settings and instructions", () => {
+describe("reply type settings and instructions", () => {
   it("validates blocks, duplicate ids and the total length", () => {
     expect(parseInstructionBlocks([{ id: "tone", title: " Tone ", content: " Be brief. " }], "Drafting instructions")).toEqual([{ id: "tone", title: "Tone", content: "Be brief." }]);
     expect(() => parseInstructionBlocks([{ id: "a", title: "A", content: "x" }, { id: "a", title: "B", content: "y" }], "Drafting instructions")).toThrow(/repeats/);

@@ -181,7 +181,7 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
           return { done: { result: applied > 0 ? ("done" as const) : ("skipped" as const), note: applied > 0 ? "Echo treated as acceptance." : "Echo of our own message." } };
         }
 
-        // The reply ends the person's outreach in the transaction that stores the message (stopPersonOutreachOnReplyTx).
+        // The reply ends the person's outreach in the transaction that stores the message (`stopContactTx`).
         // Finished enrollments keep their status; only pending and active ones stop.
         const ofMember = tx.select({ id: linkedinEnrollmentDetails.enrollmentId }).from(linkedinEnrollmentDetails).where(eq(linkedinEnrollmentDetails.providerId, event.counterparty));
 

@@ -127,7 +127,7 @@ describe("parseInboxParams and inboxHref", () => {
   });
 
   it("drops unknown or malformed values", () => {
-    const p = parseInboxParams({ view: "nope", page: "-3", campaign: ["x", ID], mailbox: "zzz", subcategory: ["Bad Key", "demo_request"], category: ["interested", "weird"], range: "forever" });
+    const p = parseInboxParams({ view: "nope", page: "-3", campaign: ["x", ID], mailbox: "zzz", type: ["Bad Key", "demo_request"], group: ["interested", "weird"], range: "forever" });
     expect(p).toMatchObject({ view: "all", page: 1, campaignIds: [ID], mailboxIds: [], replyTypeKeys: ["demo_request"], groupKeys: ["interested"], dateMode: "all" });
   });
 
@@ -143,7 +143,7 @@ describe("parseInboxParams and inboxHref", () => {
   });
 
   it("round-trips through the link builder", () => {
-    const p = parseInboxParams({ q: "pricing", view: "sent", lead: ID, campaign: ID, subcategory: "demo_request", category: "interested", range: "custom", from: "2026-10-01", to: "2026-10-03", page: "2" });
+    const p = parseInboxParams({ q: "pricing", view: "sent", lead: ID, campaign: ID, type: "demo_request", group: "interested", range: "custom", from: "2026-10-01", to: "2026-10-03", page: "2" });
     expect(parseInboxParams(Object.fromEntries(new URL(inboxHref(p), "http://x").searchParams.entries()))).toEqual(p);
     expect(activeFilterCount(p)).toBe(5);
   });

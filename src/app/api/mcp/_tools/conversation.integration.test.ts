@@ -58,7 +58,7 @@ describeDb("get_conversation", () => {
     }
   });
 
-  it("gives the thread with both sides' text fenced and excerpted, and the record state", async () => {
+  it("gives the thread with both sides' text fenced and excerpted, and the conversation state", async () => {
     const result = await caller.tool("get_conversation", { threadId: mine.threadId });
     expect(result.isError, result.text).toBe(false);
     expect(result.structured).toMatchObject({ threadId: mine.threadId, conversationId: mine.conversationId, channel: "email", messagesOmitted: 0, draft: null });
@@ -72,7 +72,7 @@ describeDb("get_conversation", () => {
     expect(result.structured.notes).toEqual([expect.objectContaining({ text: "Call on Tuesday" })]);
   });
 
-  it("opens the newest thread of a record, lists the others, and fences a subject that repeats the lead's", async () => {
+  it("opens the newest thread of a conversation, lists the others, and fences a subject that repeats the lead's", async () => {
     const org = orgs[0];
     const newer = await inbound(org, 3, "A second thread");
     await sql`update threads set conversation_id = ${mine.conversationId}, updated_at = now() + interval '1 minute' where id = ${newer.threadId}`;

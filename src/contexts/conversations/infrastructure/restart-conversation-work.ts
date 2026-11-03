@@ -6,14 +6,14 @@ import { aiJobs } from "@/platform/db/schema";
 import { decideReplyType, type ReplyTypeDecision, type ReplyType, type FollowUpsOutcome } from "../domain/reply-type";
 import { advanceConversationContextTx } from "./conversation-context";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
-import { replyAskedToStop } from "./stop-requested-sql";
+import { replyAskedToStop } from "../stopping/infrastructure/stop-requested-sql";
 
 /**
  * A person changed what the conversation is: a type change off the thread, or their own pick for the latest reply. Work that
  * was prepared for the old type ends in the same transaction, and the owning campaign's flow starts from the new one.
  *
  * 1. `advanceConversationContextTx` bumps the version, retires open drafts and any AI pick held for a check, and ends the active
- *    or paused sequence run as `interrupted` with `reason`.
+ *    or paused run as `interrupted` with `reason`.
  * 2. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
  *    and the campaign that most recently emailed the person has Follow-ups after a reply on; otherwise no run starts.
  *

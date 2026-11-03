@@ -380,7 +380,7 @@ describeDb("restore of removed enrollments", () => {
       const p = await f.person("Replier");
       const ex = await f.enroll(x, p);
       const { db } = await import("@/platform/db/client");
-      const { stopPersonOutreachOnReplyTx } = await import("@/contexts/conversations/after-reply/infrastructure/follow-up-stop");
+      const { stopContactTx } = await import("@/contexts/conversations/stopping/infrastructure/stop-contact");
       let proceed!: () => void;
       const gate = new Promise<void>((resolve) => (proceed = resolve));
       let stopped!: () => void;
@@ -392,7 +392,7 @@ describeDb("restore of removed enrollments", () => {
         const [{ id: thread }] = (await tx.execute(drizzleSql`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${f.org}, ${record}, 'linkedin', 'acct', 'chat') returning id`)) as unknown as Array<{ id: string }>;
         await tx.execute(drizzleSql`insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, from_address, to_address, body_text, sent_at)
                              values (${f.org}, ${thread}, 'linkedin', 'acct', 'inbound', 'k-reply', 'p', 'me', 'Hello', now())`);
-        await stopPersonOutreachOnReplyTx(tx, { organizationId: f.org, personId: p, channel: "linkedin", now: NOW });
+        await stopContactTx(tx, { organizationId: f.org, personId: p }, { kind: "reply", channel: "linkedin", now: NOW });
         stopped();
         await gate;
       });

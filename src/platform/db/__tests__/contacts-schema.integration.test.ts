@@ -587,7 +587,7 @@ describeDb("contacts, deals, companies and assignees schema", () => {
       expect(await assignee(id)).toEqual({ assigned_to: null, assigned_source: "human" });
     });
 
-    it("unassigns the records of a member who leaves, keeps their organization, and leaves other members alone", async () => {
+    it("unassigns the conversations of a member who leaves, keeps their organization, and leaves other members alone", async () => {
       const leaving = await user("Leaving");
       await sql`insert into members (organization_id, user_id, role) values (${orgA}, ${leaving}, 'member')`;
       const mine = await record();
@@ -603,7 +603,7 @@ describeDb("contacts, deals, companies and assignees schema", () => {
       expect((await assignee(theirs)).assigned_to).toBe(ann);
     });
 
-    it("unassigns the records of a user who is deleted", async () => {
+    it("unassigns the conversations of a user who is deleted", async () => {
       const kept = await record();
       await sql`update conversations set assigned_to = ${ann}, assigned_source = 'human' where id = ${kept}`;
       const [{ id: temp }] = await sql<{ id: string }[]>`insert into users (name, email) values ('Temp', ${email()}) returning id`;

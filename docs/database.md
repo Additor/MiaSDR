@@ -55,10 +55,10 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 A row lock that serializes writers on `conversations` or `threads` takes `FOR NO KEY UPDATE`. It conflicts with itself, so the writers still queue, but it lets through the `FOR KEY SHARE` that a foreign key check takes when a draft or a message is inserted. Two orders meet on these rows: a reply send locks the conversation and its draft insert takes a key share on the conversation, while an AI draft write, a typed draft, the sequence engine, a reclassification and ingest lock the record and their inserts take a key share on the conversation. With `FOR UPDATE` on both sides the two waited on each other (40P01); `linkedin-reply.integration.test.ts` holds the case.
 
 `FOR UPDATE` stays where a row goes away or must hold back key shares:
-- A contact delete locks the person's records and conversations `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
+- A contact delete locks the person's conversations and threads `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
 - A reply send locks its conversation `FOR UPDATE` on both channels. It holds back an ingest's message insert, whose transaction would go on to retire drafts and update the conversation, a cycle with the send's draft lock.
 
-One order for the conflicting locks: the conversation before its conversations. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
+One order for the conflicting locks: the conversation before its threads. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its threads, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
 The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
 

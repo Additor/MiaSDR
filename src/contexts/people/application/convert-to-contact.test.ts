@@ -25,7 +25,7 @@ interface World {
   events: Array<Record<string, unknown>>;
 }
 
-type Step = "lockPerson" | "lifecycleOf" | "markConverted" | "stopEnrollments" | "interruptRuns" | "appendEvent";
+type Step = "lockPerson" | "lifecycleOf" | "markConverted" | "stopContact" | "appendEvent";
 
 /** An in-memory stand-in for Postgres: the ports write to `world`, and `transaction` undoes every write when the callback throws. */
 function fakeWorld() {
@@ -74,19 +74,15 @@ function fakeWorld() {
       person.convertedAt = at;
       return true;
     },
-    async stopEnrollments(_tx, input) {
-      enter("stopEnrollments", input);
-      let stopped = 0;
+    async stopContact(_tx, input) {
+      enter("stopContact", input);
+      let enrollments = 0;
       for (const e of world.enrollments) {
         if (e.organizationId === input.organizationId && e.personId === input.personId && (e.status === "pending" || e.status === "active")) {
           e.status = "cancelled";
-          stopped += 1;
+          enrollments += 1;
         }
       }
-      return { stopped };
-    },
-    async interruptRuns(_tx, input) {
-      enter("interruptRuns", input);
       let runs = 0;
       let drafts = 0;
       for (const r of world.runs) {
@@ -97,7 +93,7 @@ function fakeWorld() {
           r.draftsLeft = 0;
         }
       }
-      return { runs, drafts };
+      return { enrollments, runs, drafts };
     },
     async appendEvent(_tx, input) {
       enter("appendEvent", input);
@@ -191,7 +187,7 @@ describe("convertToContact", () => {
     }
   });
 
-  it.each(["markConverted", "stopEnrollments", "interruptRuns", "appendEvent"] as const)("rolls every step back when %s throws", async (step) => {
+  it.each(["markConverted", "stopContact", "appendEvent"] as const)("rolls every step back when %s throws", async (step) => {
     const t = fakeWorld();
     const before = structuredClone({ people: [...t.world.people], enrollments: t.world.enrollments, runs: t.world.runs, events: t.world.events });
     t.failAt(step);
@@ -204,10 +200,9 @@ describe("convertToContact", () => {
   it("passes the organization and the person to every port and stops only that person's rows", async () => {
     const t = fakeWorld();
     await t.transaction((tx) => convertToContact(t.deps, tx, input("ada")));
-    const stop = { organizationId: ORG, personId: "ada", reason: "converted", now: NOW };
+    const stop = { organizationId: ORG, personId: "ada", now: NOW };
     expect(t.calls.find((c) => c.step === "lockPerson")?.input).toEqual({ organizationId: ORG, personId: "ada" });
-    expect(t.calls.find((c) => c.step === "stopEnrollments")?.input).toEqual(stop);
-    expect(t.calls.find((c) => c.step === "interruptRuns")?.input).toEqual(stop);
+    expect(t.calls.find((c) => c.step === "stopContact")?.input).toEqual(stop);
     // The person's replied enrollment stays; the other person and the other organization keep every row.
     expect(t.world.enrollments.map((e) => `${e.id}:${e.status}`)).toEqual(["e1:cancelled", "e2:cancelled", "e3:replied", "e4:active", "e5:active"]);
     expect(t.world.runs.map((r) => `${r.id}:${r.status}:${r.draftsLeft}`)).toEqual(["r1:interrupted:0", "r2:active:2"]);

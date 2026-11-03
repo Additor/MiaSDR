@@ -316,7 +316,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       expect(await count("send_attempts", f.org)).toBe(0);
     });
 
-    it("marks a draft stale when the record moved on before the stale sweep ran", async () => {
+    it("marks a draft stale when the conversation moved on before the stale sweep ran", async () => {
       const f = await drafted();
       const p = await panel(f);
       await sql`update conversations set context_version = context_version + 1 where organization_id = ${f.org}`;
@@ -408,7 +408,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.threadId, { subject: "x", bodyText: "y" })).rejects.toBeInstanceOf(ConflictError);
     });
 
-    it("a typed email draft leaves an open LinkedIn draft of the same record alone, and supersedes an open email draft", async () => {
+    it("a typed email draft leaves an open LinkedIn draft of the same conversation alone, and supersedes an open email draft", async () => {
       const f = await fixture();
       await f.run();
       const address = (await one("select email_address from mailboxes where organization_id = $1", [f.org])).email_address as string;

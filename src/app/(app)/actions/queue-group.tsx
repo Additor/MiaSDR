@@ -41,7 +41,7 @@ export interface QueueItemView {
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
   classification: { replyTypePickId: string | null; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
-  problem: { kind: "conversation_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
+  problem: { kind: "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
 interface GroupResponse {
@@ -309,7 +309,7 @@ export function QueueGroup({
     setBusy(true);
     setError(null);
     const params = new URLSearchParams(query);
-    params.set("group", group);
+    params.set("list", group);
     params.set("cursor", cursor);
     const result = await callApi<GroupResponse>(`/api/actions?${params.toString()}`, "GET");
     setBusy(false);

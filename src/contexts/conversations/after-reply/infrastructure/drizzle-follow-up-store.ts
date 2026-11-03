@@ -14,8 +14,7 @@ import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
-import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
-import { detectsStopRequest } from "../../domain/stop-request";
+import { replyAskedToStopSql } from "../../stopping/infrastructure/stop-requested-sql";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 
@@ -219,7 +218,7 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
   },
 };
 
-/** The campaign that owns a sequence of the organization, or null for a legacy standalone sequence or an unknown id. */
+/** The campaign that owns a flow of the organization, or null for a flow with no campaign or an unknown id. */
 export async function campaignIdOfFlow(organizationId: string, flowId: string): Promise<string | null> {
   const [row] = await db.select({ campaignId: followUpFlows.campaignId }).from(followUpFlows).where(and(eq(followUpFlows.id, flowId), eq(followUpFlows.organizationId, organizationId)));
   return row?.campaignId ?? null;
@@ -260,7 +259,6 @@ export async function loadStartOn(
     workflow_state: string;
     has_email: boolean;
     stop_requested: boolean;
-    latest_body: string | null;
     dnc: boolean;
     suppressed: boolean;
     contact: boolean;
@@ -272,9 +270,7 @@ export async function loadStartOn(
       select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, ${startFollowUpsSql("r", "s")} as follow_ups, ${startReplyDraftSql("r", "s")} as reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.conversation_id as thread_conversation_id, conv.channel as conv_channel,
              p.email is not null as has_email,
-             ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
-             (select m.body_text from messages m
-               where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id) as latest_body,
+             ${replyAskedToStopSql(sql`r.latest_inbound_message_id`)} as stop_requested,
              p.lifecycle = 'contact' as contact,
              ${doNotContactSql("p")} as dnc,
              ${suppressedSql("p")} as suppressed
@@ -346,8 +342,7 @@ export async function loadStartOn(
       contextVersion: r.context_version,
       workflowState: r.workflow_state,
       hasEmail: r.has_email,
-      // A pick's flag, or the reply's own words for a reply no AI pick read (`replyAskedToStop` reads the same two facts).
-      stopRequested: r.stop_requested || detectsStopRequest(r.latest_body ?? ""),
+      stopRequested: r.stop_requested,
     },
     doNotContact: r.dnc,
     suppressed: r.suppressed,

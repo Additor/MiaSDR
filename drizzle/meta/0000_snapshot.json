@@ -8576,7 +8576,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'unclassified'"
+          "default": "'no_type'"
         },
         "reply_type_source": {
           "name": "reply_type_source",
@@ -8843,7 +8843,7 @@
         },
         "conversations_workflow_ck": {
           "name": "conversations_workflow_ck",
-          "value": "\"conversations\".\"workflow_state\" in ('unclassified', 'classifying', 'action_required', 'waiting', 'idle', 'paused', 'closed', 'error')"
+          "value": "\"conversations\".\"workflow_state\" in ('no_type', 'action_required', 'waiting', 'idle', 'closed')"
         },
         "conversations_closed_reason_ck": {
           "name": "conversations_closed_reason_ck",

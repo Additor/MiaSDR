@@ -19,6 +19,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   let seqApp: typeof import("../../after-reply/application/follow-ups");
   let seqJobsApp: typeof import("../../after-reply/application/follow-up-jobs");
   let handling: typeof import("../person-handling");
+  let runStops: typeof import("../../after-reply/infrastructure/follow-up-stop");
   let appDb: typeof import("@/platform/db/client").db;
   let stores: {
     jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
@@ -83,7 +84,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   const one = async (query: string, params: unknown[]) => (await sql.unsafe(query, params as never[]))[0];
   const count = async (table: string, org: string, where = "true") => Number((await sql.unsafe(`select count(*)::int as n from ${table} where organization_id = $1 and ${where}`, [org]))[0].n);
 
-  /** A person's first email: the unknown sender becomes a lead with a record and a conversation. Returns the ids. */
+  /** A person's first email: the unknown sender becomes a lead with a conversation and a conversation. Returns the ids. */
   async function ingest(f: Fx, partial: Partial<InboundEmailInput> = {}) {
     const input = mail(f, partial);
     await composition.ingestInbound(input);
@@ -126,6 +127,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     seqApp = await import("../../after-reply/application/follow-ups");
     seqJobsApp = await import("../../after-reply/application/follow-up-jobs");
     handling = await import("../person-handling");
+    runStops = await import("../../after-reply/infrastructure/follow-up-stop");
     appDb = (await import("@/platform/db/client")).db;
     const seqStore = await import("../../after-reply/infrastructure/drizzle-follow-up-store");
     stores = {
@@ -172,7 +174,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await count("follow_up_runs", f.org)).toBe(0);
     });
 
-    it("a run start that waits for the record lock sees the conversion that holds it", async () => {
+    it("a run start that waits for the conversation lock sees the conversion that holds it", async () => {
       const { f, personId, conversationId } = await readyToStart();
       const conversion = await convertAndHold(personId);
       // The conversion has not committed, so the facts still read a lead and the start waits at the conversation lock.
@@ -198,7 +200,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     });
   });
 
-  describe("interruptPersonRuns", () => {
+  describe("interruptPersonRunsTx", () => {
     const draft = async (f: Fx, run: { id: string; conversation_id: string; thread_id: string }, status: string, linkedToRun: boolean) =>
       (
         await one(
@@ -241,7 +243,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       const now = new Date();
       const stopped = await appDb.transaction(async (tx) => {
         await handling.lockPersonConversations(tx, f.org, a.personId);
-        return handling.interruptPersonRuns(tx, { organizationId: f.org, personId: a.personId, reason: "converted", now });
+        return runStops.interruptPersonRunsTx(tx, f.org, [a.personId], "converted", now);
       });
       expect(stopped).toEqual({ runs: 1, drafts: 3 });
       expect(stopped.drafts).toBe(await count("drafts", f.org, "status = 'stale' and error = 'The follow-up sequence ended.'"));
@@ -255,7 +257,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       // The other person's run and draft are untouched, and a second call finds nothing.
       expect(await one("select status from follow_up_runs where id = $1", [runB.id])).toMatchObject({ status: "active" });
       expect(await count("drafts", f.org, `conversation_id = '${b.conversationId}' and status = 'awaiting_review'`)).toBe(1);
-      expect(await appDb.transaction((tx) => handling.interruptPersonRuns(tx, { organizationId: f.org, personId: a.personId, reason: "converted", now }))).toEqual({ runs: 0, drafts: 0 });
+      expect(await appDb.transaction((tx) => runStops.interruptPersonRunsTx(tx, f.org, [a.personId], "converted", now))).toEqual({ runs: 0, drafts: 0 });
       expect((await handling.previewPersonRunStop(f.org, [a.personId])).get(a.personId)).toEqual({ runs: 0, drafts: 0 });
     });
 
@@ -265,7 +267,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect((await handling.previewPersonRunStop(f.org, [b.personId])).get(b.personId)).toEqual({ runs: 1, drafts: 1 });
       const other = await fixture();
       expect((await handling.previewPersonRunStop(other.org, [b.personId])).get(b.personId)).toEqual({ runs: 0, drafts: 0 });
-      const stopped = await appDb.transaction((tx) => handling.interruptPersonRuns(tx, { organizationId: other.org, personId: b.personId, reason: "converted", now: new Date() }));
+      const stopped = await appDb.transaction((tx) => runStops.interruptPersonRunsTx(tx, other.org, [b.personId], "converted", new Date()));
       expect(stopped).toEqual({ runs: 0, drafts: 0 });
       expect(await one("select status from follow_up_runs where id = $1", [runB.id])).toMatchObject({ status: "paused" });
     });
@@ -275,7 +277,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       await expect(
         appDb.transaction(async (tx) => {
           await handling.lockPersonConversations(tx, f.org, a.personId);
-          expect(await handling.interruptPersonRuns(tx, { organizationId: f.org, personId: a.personId, reason: "converted", now: new Date() })).toEqual({ runs: 1, drafts: 1 });
+          expect(await runStops.interruptPersonRunsTx(tx, f.org, [a.personId], "converted", new Date())).toEqual({ runs: 1, drafts: 1 });
           throw new Error("a later conversion step failed");
         }),
       ).rejects.toThrow("a later conversion step failed");
@@ -316,7 +318,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(after).toBe(true);
     });
 
-    it("takes no record lock for a person without a record", async () => {
+    it("takes no record lock for a person without a conversation", async () => {
       const f = await fixture();
       const personId = await person(f);
       await expect(appDb.transaction((tx) => handling.lockPersonConversations(tx, f.org, personId))).resolves.toBeUndefined();
@@ -324,7 +326,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   });
 
   describe("appendPersonEvent and listPersonEvents", () => {
-    it("writes an event with and without a record, and lists newest first", async () => {
+    it("writes an event with and without a conversation, and lists newest first", async () => {
       const f = await fixture();
       const { personId, conversationId } = await ingest(f);
       await appDb.transaction(async (tx) => {
@@ -376,7 +378,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await handling.activeThreadOfPerson(f.org, personId)).toEqual({ threadId: thread.id, channel: "email" });
     });
 
-    it("prefers the active channel of the record, then the latest update", async () => {
+    it("prefers the active channel of the conversation, then the latest update", async () => {
       const f = await fixture();
       const { personId, conversationId } = await ingest(f);
       const email = (await one("select id from threads where conversation_id = $1", [conversationId])).id as string;
@@ -397,7 +399,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await pick()).toBe(newerEmail);
     });
 
-    it("returns nothing for a person without a record and another organization", async () => {
+    it("returns nothing for a person without a conversation and another organization", async () => {
       const f = await fixture();
       const { personId } = await ingest(f);
       expect(await handling.activeThreadOfPerson(f.org, await person(f))).toBeNull();

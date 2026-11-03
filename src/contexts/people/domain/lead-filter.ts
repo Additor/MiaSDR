@@ -19,7 +19,7 @@ export interface LeadFilter {
    * inbound message of the person.
    */
   replied?: boolean;
-  /** True: the person has a record with a conversation (inbound or outbound). False: it has none. */
+  /** True: the person has a conversation with a conversation (inbound or outbound). False: it has none. */
   hasConversation?: boolean;
   /** Who the list shows. Absent means `lead` (`DEFAULT_LIFECYCLE`); `all` is the only way to list both. */
   lifecycle?: LifecycleFilter;

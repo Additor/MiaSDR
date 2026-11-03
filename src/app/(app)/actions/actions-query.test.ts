@@ -3,14 +3,14 @@ import { actionsHref, actionsViewFrom, threadQueryFromActions } from "./actions-
 
 describe("the view a row hands to its thread", () => {
   it("keeps the scope and the filters, drops empty values and keys it does not know", () => {
-    const view = actionsViewFrom({ scope: "others", category: ["interested", "x"], channel: "", from: "actions", cursor: "abc", errorsOnly: "1", q: "acme" });
-    expect(view).toEqual({ scope: "others", category: "interested", errorsOnly: "1" });
+    const view = actionsViewFrom({ scope: "others", group: ["interested", "x"], channel: "", from: "actions", cursor: "abc", errorsOnly: "1", q: "acme" });
+    expect(view).toEqual({ scope: "others", group: "interested", errorsOnly: "1" });
   });
 
   it("builds the Actions link and the thread query from it", () => {
     expect(actionsHref({})).toBe("/actions");
-    expect(actionsHref({ scope: "mine", group: "reply" })).toBe("/actions?scope=mine&group=reply");
-    expect(threadQueryFromActions({ scope: "mine", group: "reply" })).toBe("scope=mine&group=reply&from=actions");
+    expect(actionsHref({ scope: "mine", list: "reply" })).toBe("/actions?scope=mine&list=reply");
+    expect(threadQueryFromActions({ scope: "mine", list: "reply" })).toBe("scope=mine&list=reply&from=actions");
     expect(new URLSearchParams(threadQueryFromActions({})).get("from")).toBe("actions");
   });
 

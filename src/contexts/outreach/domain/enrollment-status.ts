@@ -29,8 +29,6 @@ export const ENROLLMENT_FROM: Record<EnrollmentStatus, readonly EnrollmentStatus
   removed: LIVE,
 };
 
-export const canMoveEnrollment = (from: EnrollmentStatus, to: EnrollmentStatus): boolean => ENROLLMENT_FROM[to].includes(from);
-
 /** The statuses an enrollment ends in. */
 export type EnrollmentOutcomeStatus = Exclude<EnrollmentStatus, (typeof LIVE_ENROLLMENT_STATUSES)[number]>;
 

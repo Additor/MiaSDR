@@ -248,7 +248,7 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect((await send(thread.threadId, draft)).structured.status).toBe("sent");
   });
 
-  it("shows an agent's unconfirmed send to a person even when the record waits on no one", async () => {
+  it("shows an agent's unconfirmed send to a person even when the conversation waits on no one", async () => {
     const thread = await seedThread({ campaign: true });
     const draft = await draftOn(thread.threadId);
     await sql`update drafts set status = 'delivery_uncertain', error = 'timeout' where id = ${draft.draftId}`;

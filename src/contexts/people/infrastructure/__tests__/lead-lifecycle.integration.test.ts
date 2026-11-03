@@ -94,8 +94,7 @@ describeDb("lead lifecycle store and people directory", () => {
         lockPerson: async () => void calls.push("lock"),
         lifecycleOf: lifecycle.drizzleLeadLifecycle.lifecycleOf,
         markConverted: lifecycle.markConverted,
-        stopEnrollments: async () => ({ stopped: 0 }),
-        interruptRuns: async () => ({ runs: 0, drafts: 0 }),
+        stopContact: async () => ({ enrollments: 0, runs: 0, drafts: 0 }),
         appendEvent: async () => void calls.push("event"),
       };
       const run = () => dbClient.db.transaction((tx) => convert.convertToContact(deps, tx, { organizationId: o.id, personId: p, reason: "test", actorUserId: null }));

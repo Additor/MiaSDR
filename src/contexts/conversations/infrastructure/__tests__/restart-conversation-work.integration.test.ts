@@ -213,7 +213,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select status from reply_type_picks where id = $1", [held.id])).toMatchObject({ status: "stale" });
     });
 
-    it("starts no run for a contact, and still moves the category", async () => {
+    it("starts no run for a contact, and still moves the reply type", async () => {
       const { f, conversationId, version } = await withRun();
       const personId = (await one("select person_id from conversations where id = $1", [conversationId])).person_id as string;
       await sql`update people set lifecycle = 'contact', converted_at = now() where id = ${personId}`;
@@ -236,7 +236,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await count("follow_up_runs", f.org)).toBe(0);
     });
 
-    it("ends the run and starts nothing when the new subcategory is terminal", async () => {
+    it("ends the run and starts nothing when the new reply type is terminal", async () => {
       const { f, conversationId, version } = await withRun();
       await move(f, conversationId, "not_required_right_now", version);
       expect(await count("follow_up_runs", f.org, "status = 'active'")).toBe(0);
@@ -416,7 +416,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect({ runs: await count("follow_up_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") }).toEqual(before);
     });
 
-    it("bumps the version, retires the draft, swaps the run and writes a fresh draft for the corrected category", async () => {
+    it("bumps the version, retires the draft, swaps the run and writes a fresh draft for the corrected reply type", async () => {
       const { f, r, conversationId, version, flowId } = await withRun();
       const stale = await one("select id from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
       const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.threadId, { replyTypeKey: "meeting_done", expectedContextVersion: version });

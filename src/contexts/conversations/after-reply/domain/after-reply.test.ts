@@ -142,7 +142,7 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(ok())).toBeNull();
   });
 
-  it("names the campaign state before the record state", () => {
+  it("names the campaign state before the conversation state", () => {
     const f = ok();
     f.owner = { name: "Autumn", channel: "email", status: "paused", archived: false };
     f.doNotContact = true;

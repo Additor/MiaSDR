@@ -89,7 +89,7 @@ describeDb("LinkedIn conversation replies", () => {
     expect(f.fake.messages).toHaveLength(1);
   });
 
-  it("claims before the call, sends once, stores the message and moves the record to waiting", async () => {
+  it("claims before the call, sends once, stores the message and moves the conversation to waiting", async () => {
     const f = await fixture();
     let seenDuringCall: unknown = null;
     const inner = f.deps.sender;
@@ -283,9 +283,9 @@ describeDb("LinkedIn conversation replies", () => {
     expect(panel?.doNotContact).toBe(true);
   });
 
-  it("sends a typed reply while an AI draft write holds the record, without a deadlock", async () => {
+  it("sends a typed reply while an AI draft write holds the conversation, without a deadlock", async () => {
     // The send holds the conversation and inserts its draft, whose foreign key takes a key share on the conversation. The AI
-    // writer holds the record and inserts its draft, whose foreign key takes a key share on the conversation. Writer
+    // writer holds the conversation and inserts its draft, whose foreign key takes a key share on the conversation. Writer
     // locks in NO KEY UPDATE let both key shares through (docs/database.md, "Lock modes").
     const f = await fixture();
     const [{ conversation_id: conversationId, version }] = await sql`

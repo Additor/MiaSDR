@@ -40,7 +40,7 @@ describeDb("conversation invariants", () => {
     await sql.end();
   });
 
-  it("rejects a subcategory from a different pipeline than the record's", async () => {
+  it("rejects a reply type from a different pipeline than the conversation's", async () => {
     const [{ id: other }] = await sql`
       insert into conversations (organization_id, person_id, reply_type_set_id)
       select ${org}, id, ${otherReplyTypeSet} from people where id = ${person} returning id`;
@@ -50,7 +50,7 @@ describeDb("conversation invariants", () => {
     await sql`delete from conversations where id = ${other}`;
   });
 
-  it("accepts the same subcategory on a record in its own pipeline", async () => {
+  it("accepts the same reply type on a conversation in its own pipeline", async () => {
     await sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
   });
 

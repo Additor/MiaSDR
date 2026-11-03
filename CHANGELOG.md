@@ -27,6 +27,16 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - Every LinkedIn reply now lands in the Inbox and Actions and reaches the AI. Personal campaigns are gone, along with the MCP fields `personal`, `hiddenSends` and the campaign list's `type`, and the refusal `agent_sender_not_owned`.
 - Tables keep enrichment columns, AI columns and the handoff to a campaign. Formula columns, LOOKUP, Recalculate and the AI formula helper are gone.
 
+### Database and code names
+
+The tables and code now use the words the screens use, so start from an empty database. `records` became `conversations`, the old `conversations` became `threads`, and the follow-up tables became `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs` and `follow_up_step_runs`.
+
+- MCP fields changed with them: a thread's id is `threadId` and a conversation's id is `conversationId`, which used to be `recordId`.
+- `/api/records` moved to `/api/conversations`.
+- Inbox URLs use `group` and `type`. Actions URLs use `group` and `list`.
+- Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
+- The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
+
 ### Removed
 
 Nothing used these, and the database baseline drops them, so start from an empty database.

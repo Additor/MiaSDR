@@ -151,7 +151,7 @@ const PROMPT_FILES = [/^src\/contexts\/[^/]+\/ai\/domain\//, /^src\/contexts\/ai
 const RETIRED_REPLY_WORDS =
   /\breply (sub)?categor(y|ies)\b|\bsub-?categor(y|ies)\b|\bchange category\b|\bclassifications?\b|\bmark reviewed\b|\bfollow up later\b|\balways stops on\b|\bAI (\w+ )?suggests?\b|\bunclassified\b/i;
 
-/** A lowercase token such as `classification` or `unclassified`: an identifier or a stored value, never a sentence. */
+/** A lowercase token such as `classification` or `no_type`: an identifier or a stored value, never a sentence. */
 const CODE_TOKEN = /^[a-z0-9_.:-]+$/;
 
 interface Rule {
@@ -600,7 +600,7 @@ describe("stored values have labels", () => {
     const { literals, typeofNames } = unionMembers("src/contexts/conversations/after-reply/domain/follow-ups.ts", "InterruptReason");
     expect(literals).toContain("converted");
     expect(typeofNames).toEqual(["AFTER_REPLY_OFF"]);
-    const reasons = [...literals, afterReply.AFTER_REPLY_OFF, ...reasonParameter("src/contexts/conversations/application/person-ports.ts", "interruptPersonRuns")];
+    const reasons = [...literals, afterReply.AFTER_REPLY_OFF];
     expect(reasons.filter((reason) => !Object.hasOwn(afterReply.INTERRUPT_REASON_LABELS, reason))).toEqual([]);
   });
 

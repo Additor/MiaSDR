@@ -1,11 +1,11 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { threads, leadCcs, mailboxes, messages, people, replyTypeSets, replyHandlingSettings, conversations, replyTypes } from "@/platform/db/schema";
-import { DEFAULT_PIPELINE_NAME, DEFAULT_REPLY_TYPES } from "../domain/default-reply-types";
-import { detectsStopRequest } from "../domain/stop-request";
+import { DEFAULT_TYPE_SET_NAME, DEFAULT_REPLY_TYPES } from "../domain/default-reply-types";
+import { detectsStopRequest } from "../stopping/domain/stop-request";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundThreadStore, InboundEmailInput } from "../application/ports";
-import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/follow-up-stop";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { recordInboundTx } from "./conversation-context";
 import { findOrCreateLeadByEmailTx } from "@/contexts/people/infrastructure/inbound-leads";
@@ -22,13 +22,13 @@ export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Pro
   // A concurrent first message loses the insert race and reads the winner's row.
   const [created] = await tx
     .insert(replyTypeSets)
-    .values({ organizationId, name: DEFAULT_PIPELINE_NAME, isDefault: true })
+    .values({ organizationId, name: DEFAULT_TYPE_SET_NAME, isDefault: true })
     .onConflictDoNothing()
     .returning({ id: replyTypeSets.id });
   if (!created) {
     const winner = await find();
     if (winner) return winner;
-    throw new Error(`Could not create the default pipeline: another pipeline is already named "${DEFAULT_PIPELINE_NAME}".`);
+    throw new Error(`Could not create the default reply type set: another set is already named "${DEFAULT_TYPE_SET_NAME}".`);
   }
   await tx.insert(replyHandlingSettings).values({ replyTypeSetId: created.id, organizationId });
   await tx.insert(replyTypes).values(
@@ -176,8 +176,8 @@ export const drizzleThreadStore: InboundThreadStore = {
         await recordInboundTx(tx, { organizationId: input.organizationId, conversationId: thread.conversationId, channel: "email", messageId: message.id, at, now: new Date() });
         // A genuine reply ends all outreach to the person, on every channel and campaign, in the same transaction. The
         // sender's address is matched too, so mail without thread headers from a lead still stops their enrollments.
-        const stop = await stopPersonOutreachOnReplyTx(tx, { organizationId: input.organizationId, personId: conversation.personId, senderEmail: input.from.email, channel: "email", now: new Date() });
-        outreachStopped = stop.enrollmentsStopped;
+        const stop = await stopContactTx(tx, { organizationId: input.organizationId, personId: conversation.personId, senderEmail: input.from.email }, { kind: "reply", channel: "email", now: new Date() });
+        outreachStopped = stop.enrollments;
         // A reply that finds the conversation unassigned goes to the person who ran the campaign. A person's choice is never replaced.
         await autoAssignTx(tx, { organizationId: input.organizationId, conversationId: thread.conversationId, personId: conversation.personId });
       }

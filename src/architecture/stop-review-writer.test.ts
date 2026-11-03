@@ -8,7 +8,7 @@ import { sourceFiles } from "./context-layers";
  * (`personReviewedStopsTx`). A second writer could take an agent's call for a review, as a pick's status once did.
  */
 const ROOT = path.resolve(__dirname, "../..");
-const WRITER = "src/contexts/conversations/infrastructure/stop-review.ts";
+const WRITER = "src/contexts/conversations/stopping/infrastructure/stop-review.ts";
 
 describe("stop_reviews", () => {
   it("has one writer", () => {

@@ -135,7 +135,7 @@ describeDb("deals context", () => {
   });
 
   describe("a failure in any step rolls back all steps", () => {
-    const steps = ["lockPerson", "stopEnrollments", "interruptRuns", "appendEvent", "latestRepliedEnrollment", "insert", "dealEvent"] as const;
+    const steps = ["lockPerson", "stopContact", "appendEvent", "latestRepliedEnrollment", "insert", "dealEvent"] as const;
     for (const step of steps) {
       it(`a failing ${step} leaves the lead, its enrollments, run, drafts and events as they were`, async () => {
         const f = await kit.organization();
@@ -145,7 +145,7 @@ describeDb("deals context", () => {
           throw new Error(`${step} failed`);
         };
         const conversion = { ...composition.conversionDeps };
-        if (step === "lockPerson" || step === "stopEnrollments" || step === "interruptRuns" || step === "appendEvent") {
+        if (step === "lockPerson" || step === "stopContact" || step === "appendEvent") {
           const original = conversion[step] as (...args: unknown[]) => Promise<unknown>;
           // The failing port runs its real write first, so the rollback has something to undo.
           (conversion as Record<string, unknown>)[step] = async (...args: unknown[]) => {

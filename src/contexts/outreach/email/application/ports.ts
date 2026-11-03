@@ -165,7 +165,7 @@ export interface OutreachStore {
   claimNext(options: ClaimOptions): Promise<SendClaim | null>;
   /** Re-checks the enrollment status, the campaign, the suppression list and do-not-contact right before the provider call. */
   checkBlockers(claim: SendClaim): Promise<BlockReason | null>;
-  /** Records the blocker, ends the enrollment and releases the claim without a retry. */
+  /** Conversations the blocker, ends the enrollment and releases the claim without a retry. */
   abandon(claim: SendClaim, reason: BlockReason, now: Date): Promise<void>;
   /** Stores the rendered message on the claim so a crash after this point can be reconciled. */
   recordRendered(claim: SendClaim, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<void>;

@@ -14,8 +14,7 @@ describe("workflow state", () => {
 
   it("moves resting handling to work for a type change that wants a draft, and lets work rest for one that does not", () => {
     expect(afterTypeChange("idle", { wantsDraft: true })).toBe("action_required");
-    expect(afterTypeChange("error", { wantsDraft: true })).toBe("action_required");
-    expect(afterTypeChange("unclassified", { wantsDraft: true })).toBe("action_required");
+    expect(afterTypeChange("no_type", { wantsDraft: true })).toBe("action_required");
     expect(afterTypeChange("waiting", { wantsDraft: true })).toBe("waiting");
     expect(afterTypeChange("action_required", { wantsDraft: false })).toBe("idle");
     expect(afterTypeChange("waiting", { wantsDraft: false })).toBe("waiting");

@@ -107,7 +107,7 @@ describeDb("Follow-ups after a reply flows", () => {
 
   const STEPS = FLOW_STEPS;
 
-  /** Ingests the first email so the pipeline exists. The AI does not run yet. */
+  /** Ingests the first email so the reply type set exists. The AI does not run yet. */
   async function ingest(f: Fx, partial: Partial<InboundEmailInput> = {}) {
     const input = mail(f, partial);
     const result = await composition.ingestInbound(input);
@@ -474,7 +474,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
     });
 
-    it("a run of a legacy standalone sequence (no campaign) survives the sweep even though the sequence is archived", async () => {
+    it("a run of a flow with no campaign survives the sweep even though the sequence is archived", async () => {
       const { f, run, flowId } = await withRun();
       // Turn the flow into a legacy one: archived, owned by no campaign.
       await sql`update follow_up_flows set campaign_id = null, status = 'archived', name = ${"Legacy " + f.tag} where id = ${flowId}`;
@@ -606,7 +606,7 @@ describeDb("Follow-ups after a reply flows", () => {
     });
   });
 
-  describe("the record page read", () => {
+  describe("the conversation page read", () => {
     it("reads the start facts in at most four queries and answers like the explicit-conversation read", async () => {
       const f = await fixture();
       await ingest(f);
@@ -924,7 +924,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, conversation)).rejects.toThrow("No campaign has emailed this person, so no follow-ups apply.");
     });
 
-    it("a record without an email reply", async () => {
+    it("a conversation without an email reply", async () => {
       const f = await fixture();
       await ingest(f);
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
@@ -1256,7 +1256,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await expectStoppedNow(f, run.id, "unsubscribed");
     });
 
-    it("a person's move to a terminal subcategory", async () => {
+    it("a person's move to a terminal reply type", async () => {
       const { f, run } = await withRun();
       const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
       const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
@@ -1275,18 +1275,18 @@ describeDb("Follow-ups after a reply flows", () => {
       await expectStoppedNow(f, run.id, "type_changed");
     });
 
-    it("a person's classification into a terminal subcategory", async () => {
+    it("a person's classification into a terminal reply type", async () => {
       const { f, run } = await withRun();
       const thread = await one("select c.id, r.context_version from threads c join conversations r on r.id = c.conversation_id where c.organization_id = $1", [f.org]);
       await stores.replies.applyHumanReplyTypePick({ organizationId: f.org, threadId: thread.id, replyTypeKey: "not_required_right_now", expectedContextVersion: thread.context_version, actorUserId: f.user });
       await expectStoppedNow(f, run.id, "type_corrected");
     });
 
-    it("a move to a non-terminal subcategory ends the run too (restart rules live in restart-conversation-work.integration.test.ts)", async () => {
+    it("a move to a non-terminal reply type ends the run too (restart rules live in restart-conversation-work.integration.test.ts)", async () => {
       const { f, run } = await withRun();
       const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
       const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
-      // The run started on demo_request. Information requested is another non-terminal subcategory of the default pipeline.
+      // The run started on demo_request. Information requested is another non-terminal reply type of the default set.
       const other = await one("select id, group_key from reply_types where organization_id = $1 and key = 'information_requested'", [f.org]);
       expect(other).toBeDefined();
       expect(await one("select s.key from follow_up_runs r join reply_types s on s.id = r.reply_type_id where r.id = $1", [run.id])).toMatchObject({ key: "demo_request" });
@@ -1305,7 +1305,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
     });
 
-    it("interruptOnTerminalStageTx reads the record's current type when the caller passes no decision", async () => {
+    it("interruptOnTerminalStageTx reads the conversation's current type when the caller passes no decision", async () => {
       const { interruptOnTerminalStageTx } = await import("../follow-up-run-tx");
       const { db } = await import("@/platform/db/client");
       const { f, run } = await withRun();
@@ -1901,7 +1901,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await count("drafts", f.org, "status = 'discarded'")).toBe(0);
     });
 
-    it("reads the record's campaign and run with labels", async () => {
+    it("reads the conversation's campaign and run with labels", async () => {
       const { f, run, campaignId } = await withRun();
       const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, run.conversation_id);
       expect(state.campaign).toMatchObject({ id: campaignId, mode: "ai_drafts" });
@@ -1912,7 +1912,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(ended.run).toMatchObject({ status: "cancelled", endedReason: "manual", endedReasonLabel: "A person cancelled the follow-ups" });
     });
 
-    it("names the owning campaign for a record that never had a run", async () => {
+    it("names the owning campaign for a conversation that never had a run", async () => {
       const f = await fixture();
       await ingest(f);
       const campaignId = await emailedBy(f, { steps: null });

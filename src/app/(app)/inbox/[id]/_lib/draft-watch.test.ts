@@ -39,10 +39,9 @@ describe("draft watch", () => {
     expect(isWatching(state, { ...base, contextVersion: 4, draftStatus: "generating" }, 3_000)).toBe(true);
   });
 
-  it("stops when the record closed or errored, since no draft will come", () => {
+  it("stops when the conversation closed, since no draft will come", () => {
     const state = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 0);
     expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "closed", drafting: true }, 3_000)).toBe(false);
-    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "error", drafting: true }, 3_000)).toBe(false);
   });
 
   it("polls every 3 s and gives up at 45 s", () => {

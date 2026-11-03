@@ -6,8 +6,8 @@ import { pickAsksToStopSql, wordsAskToStopSql } from "@/platform/db/stop-review-
 /**
  * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a conversation or a
  * reply answers the stop requests it covers: a type change, a pick, undo, do not contact. An agent's call
- * conversations nothing, so no sequence of tool calls opens the agent send gate. With `messageId` it covers that reply, otherwise
- * every reply of the record a pick reads as a stop request and the latest reply whose own words ask.
+ * records nothing, so no run of tool calls opens the agent send gate. With `messageId` it covers that reply, otherwise
+ * every reply of the conversation a pick reads as a stop request and the latest reply whose own words ask.
  */
 export async function personReviewedStopsTx(
   tx: DbTx,

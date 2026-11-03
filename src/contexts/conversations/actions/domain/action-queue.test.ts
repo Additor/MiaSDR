@@ -44,26 +44,23 @@ describe("queue group and membership", () => {
     expect(queueGroupOf(facts({ hasReplyTypePickToReview: true, hasDraftToReview: true }))).toBe("reply");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasProblemDraft: true }))).toBe("problem");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasFailedJob: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "error", hasDraftToReview: true }))).toBe("problem");
     expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("classification");
   });
 
-  it("admits action_required and error records, and waiting records whose time has come", () => {
+  it("admits action_required conversations, and waiting conversations whose time has come", () => {
     expect(isInQueue(facts(), NOW)).toBe(true);
-    expect(isInQueue(facts({ workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: new Date("2026-10-20T09:00:00Z") }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: new Date("2026-10-20T09:00:01Z") }), NOW)).toBe(false);
     expect(isInQueue(facts({ workflowState: "waiting", nextActionAt: null }), NOW)).toBe(false);
-    for (const workflowState of ["unclassified", "classifying", "idle", "paused", "closed"]) {
+    for (const workflowState of ["no_type", "idle", "closed"]) {
       expect(isInQueue(facts({ workflowState, hasDraftToReview: true, hasProblemDraft: true }), NOW)).toBe(false);
     }
   });
 
-  it("leaves a next_step record out while it has an open task, and keeps every other group", () => {
+  it("leaves a next_step conversation out while it has an open task, and keeps every other group", () => {
     expect(isInQueue(facts({ hasOpenTask: true }), NOW)).toBe(false);
     expect(isInQueue(facts({ hasOpenTask: true, hasDraftToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, hasReplyTypePickToReview: true }), NOW)).toBe(true);
-    expect(isInQueue(facts({ hasOpenTask: true, workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "waiting", nextActionAt: new Date("2026-10-19T09:00:00Z") }), NOW)).toBe(true);
   });
 });
@@ -99,12 +96,12 @@ describe("action queue domain", () => {
 
   it("parses filters and reads a bare due-before date as the end of that day", () => {
     expect(parseQueueFilter({})).toEqual({});
-    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
+    const f = parseQueueFilter({ group: "interested", channel: "email", list: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
     expect(f).toMatchObject({ groupKey: "interested", channel: "email", group: "reply", replyTypeId: ID });
     expect(f.dueBefore?.toISOString()).toBe("2026-10-15T23:59:59.999Z");
     expect(f.dueAfter?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(parseQueueFilter({ errorsOnly: "1" }).errorsOnly).toBe(true);
-    expect(() => parseQueueFilter({ errorsOnly: "1", group: "reply" })).toThrow(ValidationError);
+    expect(() => parseQueueFilter({ errorsOnly: "1", list: "reply" })).toThrow(ValidationError);
   });
 });
 
@@ -209,7 +206,7 @@ describe("what an AI pick waits for", () => {
   });
   const applied = (partial: Partial<PickReviewFacts> = {}) => pick({ status: "auto_applied", ...partial });
 
-  it("asks to accept a current held pick, and nothing once the record version moved on", () => {
+  it("asks to accept a current held pick, and nothing once the conversation version moved on", () => {
     expect(pickReviewOf(pick())).toBe("held");
     expect(pickReviewOf(pick({ current: false }))).toBeNull();
     expect(pickReviewOf(pick({ hasProposedType: false }))).toBeNull();
@@ -233,7 +230,7 @@ describe("what an AI pick waits for", () => {
     expect(pickReviewOf(applied())).toBeNull();
   });
 
-  it("keeps a record with an open stop request in the queue whatever its state", () => {
+  it("keeps a conversation with an open stop request in the queue whatever its state", () => {
     expect(isInQueue(facts({ workflowState: "idle", hasStopToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ workflowState: "idle" }), NOW)).toBe(false);
   });

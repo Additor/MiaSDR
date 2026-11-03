@@ -17,7 +17,7 @@ export interface PersonRunStop {
 export interface PersonEventInput {
   organizationId: string;
   personId: string;
-  /** Null or absent for an event about the person that no reply conversation owns. */
+  /** Null or absent for an event about the person that no conversation owns. */
   conversationId?: string | null;
   eventType: string;
   actorType: "ai" | "human" | "system" | "integration";
@@ -44,9 +44,7 @@ export interface PersonReplyHandling {
   lockPersonConversations(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
   /** The conversations half of `lockPersonConversations`, for a caller that changes its lock timeout between the two. Returns the rows locked. */
   lockPersonConversationRows(tx: DbHandle, organizationId: string, personId: string): Promise<number>;
-  /** Ends the person's active and paused runs. `drafts` counts the unsent drafts the same statements retired. */
-  interruptPersonRuns(tx: DbHandle, input: { organizationId: string; personId: string; reason: "converted"; now: Date }): Promise<PersonRunStop>;
-  /** What `interruptPersonRuns` would change now, per person. Writes nothing. Every requested id has an entry. */
+  /** What the conversion's stop would change now, per person. Writes nothing. Every requested id has an entry. */
   previewPersonRunStop(organizationId: string, personIds: string[]): Promise<Map<string, PersonRunStop>>;
   appendPersonEvent(tx: DbHandle, input: PersonEventInput): Promise<void>;
   /** The conversation of the person's active channel, else the most recently updated one. Null when the person has none. */

@@ -24,7 +24,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       // `seen.id` is the stored id. The request may spell the uuid in uppercase, so the comparisons below use this one.
       const [seen] = await tx.select({ id: drafts.id, threadId: drafts.threadId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
       if (!seen) throw new NotFoundError("Draft not found");
-      // Refused before the lock, so the email path never locks a LinkedIn conversation.
+      // Refused before the lock, so the email path never locks a LinkedIn thread.
       if (seen.channel !== "email") throw replyRefusal("wrong_channel", "email");
       // FOR UPDATE, the one writer lock on a conversation that is not no key update: it also holds back an ingest's message
       // insert, a key share, which would go on to retire drafts and update this row, a cycle with this send's draft lock

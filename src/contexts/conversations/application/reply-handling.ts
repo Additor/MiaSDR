@@ -12,7 +12,7 @@ import { resolveUncertainSend, type ReplyDeps } from "./reply-management";
 import { noteScope, type NoteTarget } from "../actions/application/tasks";
 
 /**
- * Reply handling: the reply conversation behind each Inbox thread, identity exceptions and settings. Any member
+ * Reply handling: the conversation behind each Inbox thread, identity exceptions and settings. Any member
  * of the organization may use them (decisions.md, "AI replies"). Every store call carries the actor's organization, so
  * another organization's ids answer 404.
  *
@@ -42,7 +42,7 @@ export interface TimelineMessage extends ThreadMessage {
 }
 
 /**
- * Everything the Inbox thread shows about its reply conversation in the side column: category, history, drafts, events,
+ * Everything the Inbox thread shows about its conversation in the side column: reply type, history, drafts, events,
  * notes, enrollments and the person's other conversations.
  */
 export async function getConversationDetail(deps: ReplyHandlingDeps, actor: Actor, conversationId: string): Promise<ConversationDetail> {
@@ -52,7 +52,7 @@ export async function getConversationDetail(deps: ReplyHandlingDeps, actor: Acto
   return detail;
 }
 
-/** The conversation with one timeline across its email and LinkedIn conversations, oldest first. */
+/** The conversation with one timeline across its email and LinkedIn threads, oldest first. */
 export async function getConversation(deps: ReplyHandlingDeps, actor: Actor, conversationId: string) {
   const detail = await getConversationDetail(deps, actor, conversationId);
   const threads = await Promise.all(detail.threads.map((c) => deps.inbox.thread(actor.organizationId, c.id)));
@@ -102,7 +102,7 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, con
   if (note && note.length > 4000) throw new ValidationError("The note is longer than 4000 characters.");
   const now = deps.now();
   const occurredAt = input.occurredAt ?? now;
-  if (occurredAt.getTime() > now.getTime() + 60_000) throw new ConflictError("A category change cannot be dated in the future.");
+  if (occurredAt.getTime() > now.getTime() + 60_000) throw new ConflictError("A type change cannot be dated in the future.");
 
   return deps.store.changeReplyType({
     organizationId: actor.organizationId,

@@ -1,19 +1,18 @@
 import { pickMayBecome } from "./reply-store-shared";
 import { PICK_FROM } from "../domain/reply-type-pick";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
-import { followUpStop } from "../after-reply/infrastructure/follow-up-stop";
+import { stopContactTx } from "../stopping/infrastructure/stop-contact";
 import { db } from "@/platform/db/client";
 import { personTypeDecisionTx, queuePickDraftTx, restartConversationWorkTx } from "./restart-conversation-work";
-import { personReviewedStopsTx } from "./stop-review";
-import { replyTypePicks, threads, drafts, events, people, conversations, replyTypes } from "@/platform/db/schema";
+import { personReviewedStopsTx } from "../stopping/infrastructure/stop-review";
+import { replyTypePicks, threads, events, people, conversations, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
 import { typeRulesOf } from "../domain/reply-type";
 import { lockAfterPersonMove } from "../domain/reply-handling";
 
-/** What a person decides about a reply: a classification of their own, or suppressing the sender. */
+/** What a person decides about a reply: a pick of their own, or suppressing the sender. */
 export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | "suppressSender"> = {
   async applyHumanReplyTypePick(input) {
     return db.transaction(async (tx) => {
@@ -38,7 +37,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the type again.");
       if (head.state === "closed") throw new ConflictError("Reply handling is marked done. Reopen it before you change the type.");
 
-      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the conversation
+      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the history
       // of what went wrong, and the person's pick goes in as a row of its own.
       const [existing] = await tx
         .select()
@@ -105,7 +104,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
         .where(eq(conversations.id, head.conversationId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
-      // sequence of the corrected subcategory starts. The pick follows to the new version so the fresh draft job accepts it.
+      // flow of the corrected reply type starts. The pick follows to the new version so the fresh draft job accepts it.
       const now = new Date();
       const restart = await restartConversationWorkTx(tx, {
         organizationId: input.organizationId,
@@ -173,18 +172,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.email) throw new ConflictError("This person has no email address to suppress.");
       const email = head.email.toLowerCase();
-      await createSuppressionStore(followUpStop).suppressEmailTx(tx, { organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
-      // A reply that is waiting for review would be refused at send time anyway; retire it now.
-      await tx.update(drafts).set({ status: "stale", error: "The sender was suppressed." }).where(and(eq(drafts.conversationId, head.conversationId), eq(drafts.status, "awaiting_review")));
-      await tx.insert(events).values({
-        organizationId: input.organizationId,
-        personId: head.personId,
-        conversationId: head.conversationId,
-        eventType: "contact.suppressed",
-        actorType: "human",
-        actorUserId: input.actorUserId,
-        meta: { threadId: input.threadId },
-      });
+      await stopContactTx(tx, { organizationId: input.organizationId, email }, { kind: "sender_suppressed", conversationId: head.conversationId, personId: head.personId, threadId: input.threadId, actorUserId: input.actorUserId, note: "Asked to stop in a reply.", now: new Date() });
       return { email };
     });
   },

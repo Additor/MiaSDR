@@ -48,14 +48,14 @@ export interface ActionQueue {
 
 /** The unfiltered queue size, from the same query as the list. Feeds the badges. */
 export interface ActionQueueCounts {
-  /** Records in the queue, all scopes. */
+  /** Conversations in the queue, all scopes. */
   total: number;
   byGroup: Record<QueueGroup, number>;
-  /** Records by scope. The three add up to `total`. */
+  /** Conversations by scope. The three add up to `total`. */
   byScope: Record<QueueScope, number>;
-  /** Open tasks by scope: assigned to me, to nobody, to someone else. A task on a record that is not shown is left out. */
+  /** Open tasks by scope: assigned to me, to nobody, to someone else. A task on a conversation that is not shown is left out. */
   tasks: Record<QueueScope, number>;
-  /** Records and tasks together. A `next_step` conversation with an open task is in the queue's task count only, so nothing counts twice. `work.mine` is the sidebar number. */
+  /** Conversations and tasks together. A `next_step` conversation with an open task is in the queue's task count only, so nothing counts twice. `work.mine` is the sidebar number. */
   work: Record<QueueScope, number>;
   /** Per scope, the earliest waiting time over replies, AI picks, next steps and problems. Follow-ups are left out. Null when none waits. */
   oldestWaiting: Record<QueueScope, Date | null>;

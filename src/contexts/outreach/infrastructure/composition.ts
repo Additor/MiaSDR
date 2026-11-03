@@ -10,7 +10,7 @@ import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
-import type { FollowUpStop, InboxFiling } from "../application/inbound-ports";
+import type { ContactStop, InboxFiling } from "../application/inbound-ports";
 import { createInboxJobs } from "../email/application/inbox-jobs";
 import type { MailboxProvider } from "../email/application/ports";
 import type { EngineDeps } from "../email/application/send-next-email";
@@ -93,11 +93,11 @@ export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: dri
 
 export const runningFieldUse = (): RunningFieldUse => drizzleRunningFieldUse;
 
-/** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' follow-up stop. */
-export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(followUps), secret: env().UNSUBSCRIBE_SECRET });
+/** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' contact stop. */
+export const unsubscribeDeps = (stop: ContactStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(stop), secret: env().UNSUBSCRIBE_SECRET });
 
-/** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-ups. */
-export const suppressionListDeps = (followUps: FollowUpStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(followUps) });
+/** Settings, Suppression list: reads the list, and adds through the same stop that ends follow-ups. */
+export const suppressionListDeps = (stop: ContactStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(stop) });
 
 /** Real mail is on and `APP_URL` is an address recipients cannot open. The demo `fake` provider sends nothing, so it passes. */
 export const unsubscribeUnreachable = (): boolean => env().MAILBOX_PROVIDER === "gmail" && isLocalOrigin(env().APP_URL);
@@ -134,13 +134,13 @@ function engineDeps(): EngineDeps {
 }
 
 /** Email jobs run only when an adapter is selected: Gmail, or the demo `fake` provider. */
-export function emailJobs(inbox: InboxFiling, followUps: FollowUpStop) {
+export function emailJobs(inbox: InboxFiling, stop: ContactStop) {
   const provider = env().MAILBOX_PROVIDER;
   if (provider !== "fake" && provider !== "gmail") return [];
   try {
     // Inbox sync first, so a reply stops its sequence before the send job looks for due follow-ups.
     return [
-      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, followUps), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
+      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, stop), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",

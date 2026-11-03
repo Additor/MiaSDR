@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REPLY_TYPES } from "./default-reply-types";
 
-describe("default subcategories", () => {
+describe("default reply types", () => {
   it("has 17 entries, each with a description (max 500) and guidance (max 2000)", () => {
     expect(DEFAULT_REPLY_TYPES).toHaveLength(17);
     for (const s of DEFAULT_REPLY_TYPES) {
@@ -12,7 +12,7 @@ describe("default subcategories", () => {
     }
   });
 
-  it("includes the wrong_contact and already_using_a_tool subcategories", () => {
+  it("includes the wrong_contact and already_using_a_tool reply types", () => {
     const keys = DEFAULT_REPLY_TYPES.map((s) => s.key);
     expect(keys).toContain("wrong_contact");
     expect(keys).toContain("already_using_a_tool");

@@ -88,7 +88,7 @@ export interface InboxFilter {
 }
 
 export interface ScheduledRow {
-  /** `campaign`: a campaign step. `sequence`: an Follow-ups after a reply follow-up step. */
+  /** `campaign`: a campaign step. `sequence`: a follow-up step of Follow-ups after a reply. */
   kind: "campaign" | "sequence";
   id: string;
   personId: string;
@@ -112,7 +112,7 @@ export interface InboxFilterOptions {
 
 export interface InboxRow {
   threadId: string;
-  /** The record the conversation belongs to: the tools that note, assign or close take it. */
+  /** The conversation the conversation belongs to: the tools that note, assign or close take it. */
   conversationId: string;
   /** The member the conversation is assigned to, or null. */
   assignedTo: string | null;

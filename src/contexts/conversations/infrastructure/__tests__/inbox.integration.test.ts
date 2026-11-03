@@ -52,15 +52,15 @@ describeDb("master inbox", () => {
     await sql.end();
   });
 
-  it("creates the default pipeline, person, record, conversation and message once", async () => {
+  it("creates the default reply type set, person, conversation, thread and message once", async () => {
     const f = await fixture();
     const result = await composition.ingestInbound(mail(f, { from: { email: "Jane.Doe@Acme.test", name: "Jane Doe" } }));
     expect(result).toMatchObject({ status: "created", personCreated: true });
 
     const [person] = await sql`select * from people where organization_id = ${f.org}`;
     expect(person).toMatchObject({ email: "jane.doe@acme.test", source: "inbound", full_name: "Jane Doe", first_name: "Jane", last_name: "Doe", lifecycle: "lead", converted_at: null });
-    const [pipeline] = await sql`select * from reply_type_sets where organization_id = ${f.org}`;
-    expect(pipeline.is_default).toBe(true);
+    const [typeSet] = await sql`select * from reply_type_sets where organization_id = ${f.org}`;
+    expect(typeSet.is_default).toBe(true);
     expect(await count("reply_handling_settings", f.org)).toBe(1);
     expect(await count("reply_types", f.org)).toBeGreaterThan(10);
     const [conversation] = await sql`select * from conversations where organization_id = ${f.org}`;
@@ -86,7 +86,7 @@ describeDb("master inbox", () => {
     expect(conversation.context_version).toBe(1);
   });
 
-  it("concurrent first messages create one default pipeline and one person", async () => {
+  it("concurrent first messages create one default reply type set and one person", async () => {
     const f = await fixture();
     const sender = { email: "same@acme.test", name: null };
     await Promise.all([1, 2, 3, 4].map(() => composition.ingestInbound(mail(f, { from: sender }))));
@@ -117,7 +117,7 @@ describeDb("master inbox", () => {
     expect(await count("messages", f.org)).toBe(1);
   });
 
-  it("groups messages by thread and gives a new thread its own conversation under the same record", async () => {
+  it("groups messages by thread and gives a new thread its own conversation under the same conversation", async () => {
     const f = await fixture();
     const from = { email: "thread@acme.test", name: null };
     const a = await composition.ingestInbound(mail(f, { from, providerThreadId: "T1", receivedAt: new Date("2026-10-14T10:00:00Z") }));
@@ -142,11 +142,11 @@ describeDb("master inbox", () => {
     expect(conversation.last_inbound_at).toEqual(new Date("2026-10-14T12:00:00Z"));
   });
 
-  it("stores an auto-reply flagged and leaves the record state alone", async () => {
+  it("stores an auto-reply flagged and leaves the conversation state alone", async () => {
     const f = await fixture();
     const result = await composition.ingestInbound(mail(f, { autoReply: true, subject: "Automatic reply: Hi" }));
     const [conversation] = await sql`select workflow_state, context_version, last_inbound_at, latest_inbound_message_id from conversations where organization_id = ${f.org}`;
-    expect(conversation).toMatchObject({ workflow_state: "unclassified", context_version: 0, last_inbound_at: null, latest_inbound_message_id: null });
+    expect(conversation).toMatchObject({ workflow_state: "no_type", context_version: 0, last_inbound_at: null, latest_inbound_message_id: null });
     // Machine mail leaves the All view (bundled into Automated) and does not count as unread.
     expect((await inbox.listInbox(composition.inboxDeps(), f.actor, {})).total).toBe(0);
     const list = await inbox.listInbox(composition.inboxDeps(), f.actor, { view: "automated" });

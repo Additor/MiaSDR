@@ -412,7 +412,7 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
 /**
  * Accept the AI's held pick (replyTypeKey null) or choose another reply type. Recorded as a person's pick, with the
  * rules of the type it applied. The person sends the context version they looked at; a mismatch is a 409. A correction
- * retires open drafts and ends the sequence run; the type's rules decide whether a fresh draft is queued and a new run
+ * retires open drafts and ends the run; the type's rules decide whether a fresh draft is queued and a new run
  * starts. Accepting a held stop request is refused with 409 `code: "stop_review"`: the person reviews it through Stop
  * contacting. No pick marks the person do not contact.
  */
@@ -434,7 +434,7 @@ export async function setReplyType(
   });
 }
 
-/** One click: puts the sender's address on the suppression list and stops their sequences. Never done by the AI. */
+/** One click: puts the sender's address on the suppression list and stops their follow-ups. Never done by the AI. */
 export async function suppressSender(deps: ReplyDeps, actor: Actor, threadId: string): Promise<{ email: string }> {
   assertId(threadId, "Conversation");
   return deps.store.suppressSender({ organizationId: actor.organizationId, threadId, actorUserId: actor.userId });

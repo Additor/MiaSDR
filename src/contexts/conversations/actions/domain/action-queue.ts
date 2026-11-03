@@ -78,7 +78,7 @@ export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
 
 /** The first match of problem, reply, classification, follow_up, next_step. */
 export function queueGroupOf(facts: QueueFacts): QueueGroup {
-  if (facts.workflowState === "error" || facts.hasProblemDraft || facts.hasFailedJob) return "problem";
+  if (facts.hasProblemDraft || facts.hasFailedJob) return "problem";
   if (facts.hasDraftToReview) return "reply";
   if (facts.hasReplyTypePickToReview) return "classification";
   if (facts.workflowState === "waiting") return "follow_up";
@@ -86,13 +86,13 @@ export function queueGroupOf(facts: QueueFacts): QueueGroup {
 }
 
 /**
- * A conversation is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due, or a stop request
+ * A conversation is in the queue when it is `action_required`, or `waiting` with `next_action_at` due, or a stop request
  * waits on it. A `next_step` conversation with an open task is left out, because the task already puts it in front of a person.
  */
 export function isInQueue(facts: QueueFacts, now: Date): boolean {
   if (facts.hasStopToReview) return true;
   const due = facts.workflowState === "waiting" && facts.nextActionAt !== null && facts.nextActionAt.getTime() <= now.getTime();
-  if (facts.workflowState !== "action_required" && facts.workflowState !== "error" && !due) return false;
+  if (facts.workflowState !== "action_required" && !due) return false;
   return !(queueGroupOf(facts) === "next_step" && facts.hasOpenTask);
 }
 
@@ -127,7 +127,7 @@ export function waitingSince(group: QueueGroup, facts: WaitingFacts): WaitingSin
 
 /** Everything the Actions page can show as work. Each number counts items that wait on a person. */
 export interface WorkTotals {
-  /** Records in the queue, all groups. */
+  /** Conversations in the queue, all groups. */
   queue: number;
   /** Open tasks, assigned or not. */
   tasks: number;
@@ -145,7 +145,7 @@ export function isWorkClear(totals: WorkTotals): boolean {
 /**
  * The item to open after `currentConversationId`, given candidates in the order they should win. The first one that is not the
  * current conversation wins. The open item never qualifies. `getNextQueueItem` builds the candidates: the next item of the same
- * group, then the first items of the other groups (`groupsAfter`), and for a record that left the queue the top of the queue.
+ * group, then the first items of the other groups (`groupsAfter`), and for a conversation that left the queue the top of the queue.
  */
 export function pickNextQueueItem<T extends { conversationId: string }>(candidates: readonly T[], currentConversationId: string): T | null {
   return candidates.find((item) => item.conversationId !== currentConversationId) ?? null;
@@ -177,10 +177,10 @@ export function scopeOf(assignedTo: string | null, actorUserId: string): QueueSc
   return assignedTo === actorUserId ? "mine" : "others";
 }
 
-export type QueueProblemKind = "conversation_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
+export type QueueProblemKind = "draft_failed" | "delivery_uncertain" | "job_failed";
 
-/** The group filter value for a conversation with no reply type yet. URLs keep it as `category=unclassified`. */
-export const NO_TYPE_FILTER = "unclassified";
+/** The group filter value for a conversation with no reply type yet. */
+export const NO_TYPE_FILTER = "no_type";
 
 export interface QueueFilter {
   /** A group key, or `NO_TYPE_FILTER` for a conversation with no reply type yet. */
@@ -190,7 +190,7 @@ export interface QueueFilter {
   /** Whose items to show. Without it the whole queue shows. */
   scope?: QueueScope;
   replyTypeId?: string;
-  /** Records of people currently enrolled in this campaign (email or LinkedIn, any status but removed). It does not mean the campaign that owns the conversation. */
+  /** Conversations of people currently enrolled in this campaign (email or LinkedIn, any status but removed). It does not mean the campaign that owns the conversation. */
   campaignId?: string;
   dueBefore?: Date;
   dueAfter?: Date;
@@ -273,14 +273,14 @@ const text = (value: unknown) => (typeof value === "string" && value.trim() !== 
  */
 export function parseQueueFilter(raw: Record<string, unknown>, timeZone = "UTC"): QueueFilter {
   const filter: QueueFilter = {};
-  const category = text(raw.category);
-  if (category) filter.groupKey = category;
+  const groupKey = text(raw.group);
+  if (groupKey) filter.groupKey = groupKey;
   const channel = text(raw.channel);
   if (channel) {
     if (channel !== "email" && channel !== "linkedin") throw new ValidationError("Channel must be email or linkedin.");
     filter.channel = channel;
   }
-  const group = text(raw.group);
+  const group = text(raw.list);
   if (group) {
     if (!isQueueGroup(group)) throw new ValidationError(`Action type must be one of ${QUEUE_GROUPS.join(", ")}.`);
     filter.group = group;

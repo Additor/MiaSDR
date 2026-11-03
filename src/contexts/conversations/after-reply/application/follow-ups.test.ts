@@ -236,7 +236,7 @@ describe("getConversationFollowUp", () => {
     expect(state.run).toMatchObject({ statusLabel: "Stopped", startedByLabel: "Restarted by a person", endedReasonLabel: "Follow-ups turned off for this campaign" });
   });
 
-  it("leaves the ended reason empty while the run goes on, and handles a record without a run", async () => {
+  it("leaves the ended reason empty while the run goes on, and handles a conversation without a run", async () => {
     const running = { loadStart: async () => facts(), conversationState: async () => ({ conversationId: "rec1", campaign: null, run: run("active", null, "ai_assignment") }) } satisfies Pick<RunStore, "conversationState" | "loadStart">;
     expect((await getConversationFollowUp({ runs: running, now: () => NOW }, actor, "rec1")).run).toMatchObject({ statusLabel: "Running", startedByLabel: "Automatic", endedReasonLabel: null });
     const none = { loadStart: async () => facts(), conversationState: async () => ({ conversationId: "rec1", campaign: null, run: null }) } satisfies Pick<RunStore, "conversationState" | "loadStart">;
@@ -251,7 +251,7 @@ describe("getConversationFollowUp", () => {
     expect(await getConversationFollowUp({ runs: paused, now: () => NOW }, actor, "rec1")).toMatchObject({ canRestart: false, restartBlockedReason: "The campaign Autumn is paused. Resume it to restart follow-ups." });
   });
 
-  it("reads the record state and the start facts together", async () => {
+  it("reads the conversation state and the start facts together", async () => {
     const log: string[] = [];
     const state = { conversationId: "rec1", campaign: null, run: null };
     const runs = {
@@ -262,7 +262,7 @@ describe("getConversationFollowUp", () => {
     expect(log.slice(0, 2)).toEqual(["enter conversationState", "enter loadStart"]);
   });
 
-  it("answers 404 for a record the organization does not have", async () => {
+  it("answers 404 for a conversation the organization does not have", async () => {
     const runs = { conversationState: async () => null, loadStart: async () => null } satisfies Pick<RunStore, "conversationState" | "loadStart">;
     await expect(getConversationFollowUp({ runs, now: () => NOW }, actor, "rec9")).rejects.toBeInstanceOf(NotFoundError);
   });

@@ -73,7 +73,8 @@ export const getWorkQueueTool = defineTool({
   output,
   async run({ actor, out }, input) {
     const deps = workQueueDeps();
-    const { cursor, limit, ...filter } = input;
+    const { cursor, limit, group: list, ...rest } = input;
+    const filter = { ...rest, list };
     const [queue, counts] = await Promise.all([getWorkQueue(deps, actor, { filter, cursor, limit: listLimit(limit, input.group ? DEFAULT_LIST_LIMIT : OVERVIEW_LIMIT) }), getWorkQueueCounts(deps, actor)]);
     const groups = QUEUE_GROUPS.filter((g) => !input.group || g === input.group).map((group) => {
       const page = queue.groups[group];

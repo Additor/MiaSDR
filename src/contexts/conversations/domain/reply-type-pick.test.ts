@@ -18,7 +18,7 @@ describe("pickFlags", () => {
     expect(pickFlags({ ...pick, appliedGroupKey: null }, conversation).canUndo).toBe(false);
   });
 
-  it("a version behind the record, or a stale status, is not current", () => {
+  it("a version behind the conversation, or a stale status, is not current", () => {
     expect(pickFlags({ ...pick, expectedContextVersion: 2 }, conversation).current).toBe(false);
     expect(pickFlags({ ...pick, status: "stale" }, conversation).current).toBe(false);
   });

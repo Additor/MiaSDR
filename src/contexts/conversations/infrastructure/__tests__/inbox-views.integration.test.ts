@@ -157,7 +157,7 @@ describeDb("inbox filters, views and search", () => {
       expect(ids((await list(f, { mailboxIds: [secondId] })).rows)).toEqual([b.threadId]);
     });
 
-    it("filters by subcategory and by category, and fills the category chip", async () => {
+    it("filters by reply type and by group, and fills the group chip", async () => {
       const f = await fixture();
       const a = await inboundThread(f);
       const b = await inboundThread(f);
@@ -422,9 +422,9 @@ describeDb("inbox filters, views and search", () => {
       expect((await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { dateMode: "custom", dateFrom: "2020-01-01", dateTo: "2020-01-02" })).total).toBe(0);
     });
 
-    it("keeps the steps of a legacy standalone sequence (no campaign) listed while its run is active", async () => {
+    it("keeps the steps of a flow with no campaign listed while its run is active", async () => {
       const f = await fixture();
-      // A legacy sequence is archived. Its runs in flight keep going, so their steps stay scheduled.
+      // A flow with no campaign is archived. Its runs in flight keep going, so their steps stay scheduled.
       const [seq] = await sql`insert into follow_up_flows (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
       const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
       const [step] = await sql`

@@ -57,7 +57,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   const sub = async (f: Fx, key: string) => {
     const taxonomy = await replies.getReplyTypeCatalog(deps, f.actor);
     const found = taxonomy.replyTypes.find((s) => s.key === key);
-    if (!found) throw new Error(`no subcategory ${key}`);
+    if (!found) throw new Error(`no reply type ${key}`);
     return found;
   };
   const rec = async (conversationId: string) => (await sql`select * from conversations where id = ${conversationId}`)[0];
@@ -101,7 +101,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   });
 
   describe("stage moves", () => {
-    it("moves a record, logs it, bumps the version and retires open drafts", async () => {
+    it("moves a conversation, logs it, bumps the version and retires open drafts", async () => {
       const f = await fixture();
       const l = await lead(f);
       const draftId = await openDraft(f, l);
@@ -118,7 +118,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(event).toMatchObject({ actor_type: "human", actor_user_id: f.actor.userId, to_data: expect.objectContaining({ replyTypeId: meetingDone.id }), meta: expect.objectContaining({ note: "Met on Tuesday" }) });
     });
 
-    it("rejects a stale version, a no-op, a mismatched category and an archived subcategory", async () => {
+    it("rejects a stale version, a no-op, a mismatched group and an archived reply type", async () => {
       const f = await fixture();
       const l = await lead(f);
       const v = (await rec(l.conversationId)).context_version as number;
@@ -164,7 +164,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(await rec(l.conversationId)).toMatchObject({ group_key: "customer", reply_type_id: null, reply_type_locked: true });
     });
 
-    it("never marks do not contact when the record moves to the stop request type: only the type changes", async () => {
+    it("never marks do not contact when the conversation moves to the stop request type: only the type changes", async () => {
       const f = await fixture();
       const l = await lead(f);
       const [campaign] = await sql`insert into campaigns (organization_id, channel, name, status) values (${f.org}, 'email', 'C', 'active') returning id`;
@@ -238,7 +238,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   });
 
   describe("classification undo", () => {
-    it("restores the previous category and rejects the classification", async () => {
+    it("restores the previous group and rejects the pick", async () => {
       const f = await fixture();
       const l = await lead(f);
       const draftId = await openDraft(f, l);
@@ -397,7 +397,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const before = await rec(l.conversationId);
 
       const result = await replies.setPersonDoNotContact(deps, f.actor, l.personId, { enabled: true, reason: "Asked on a call" });
-      expect(result).toMatchObject({ changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 1, enrollmentsStopped: 2 });
+      expect(result).toMatchObject({ changed: true, doNotContact: true, conversationsUpdated: 1, draftsRetired: 1, enrollmentsStopped: 2 });
 
       const status = async (id: string) => (await sql`select status, stop_reason, next_send_at from campaign_enrollments where id = ${id}`)[0];
       expect(await status(active)).toMatchObject({ status: "suppressed", stop_reason: "do_not_contact", next_send_at: null });
@@ -472,7 +472,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("closes a record with a reason and refuses a stage move while it is closed", async () => {
+    it("closes a conversation with a reason and refuses a stage move while it is closed", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       expect(await rec(l.conversationId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
@@ -488,7 +488,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.reopenConversation(deps, f.actor, l.conversationId)).rejects.toThrow(ConflictError);
     });
 
-    it("forgets why a record closed when a new reply reopens it", async () => {
+    it("forgets why a conversation closed when a new reply reopens it", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       const [conv] = await sql`select provider_thread_id from threads where id = ${l.threadId}`;

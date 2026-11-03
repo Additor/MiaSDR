@@ -25,7 +25,7 @@ export function createReplyAi(model: LanguageModel): ReplyAi {
         system: [{ text: prompt.system, cacheable: true }],
         messages: [{ role: "user", content: prompt.user }],
         schema: { name: "classification", json: classificationJsonSchema(keys), parse: classificationSchema(keys) },
-        shapeError: "The model answered outside the allowed categories.",
+        shapeError: "The model answered outside the allowed reply types.",
       });
       return { output, usage: usageRecord(usage) };
     },

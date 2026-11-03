@@ -118,7 +118,7 @@ describeDb("contact delete", () => {
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
     await sql`insert into events (organization_id, person_id, conversation_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
-    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
+    await sql`insert into notes (organization_id, person_id, conversation_id, body) values (${o.org}, ${person}, ${record}, 'on the conversation')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
     await sql`insert into tasks (organization_id, person_id, conversation_id, name) values (${o.org}, ${person}, ${record}, 'call')`;
     await sql`insert into contact_policies (organization_id, person_id, do_not_contact, reason, source, set_at) values (${o.org}, ${person}, true, 'asked', 'human', now())`;

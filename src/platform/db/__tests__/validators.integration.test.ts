@@ -58,7 +58,7 @@ describeDb("cross-row validators", () => {
       await expect(classify(w, x.otherMessage, 6)).rejects.toThrow(MESSAGE);
     });
 
-    it("reply_type_picks_message_ins_trg: accepts an inbound message of the record, in any of its conversations", async () => {
+    it("reply_type_picks_message_ins_trg: accepts an inbound message of the conversation, in any of its conversations", async () => {
       const w = await world();
       const x = await extras(w);
       await classify(w, w.message, 7);
@@ -80,7 +80,7 @@ describeDb("cross-row validators", () => {
       return s.id as string;
     }
 
-    it("reply_type_picks_reply_types_ins_trg: refuses a subcategory of another pipeline in each of the three columns", async () => {
+    it("reply_type_picks_reply_types_ins_trg: refuses a reply type of another pipeline in each of the three columns", async () => {
       const w = await world();
       const foreign = await otherSetReplyType(w);
       for (const [i, col] of ["previous", "proposed", "applied"].entries()) {
@@ -88,7 +88,7 @@ describeDb("cross-row validators", () => {
       }
     });
 
-    it("reply_type_picks_reply_types_ins_trg: refuses a subcategory whose category differs from the stated key", async () => {
+    it("reply_type_picks_reply_types_ins_trg: refuses a reply type whose category differs from the stated key", async () => {
       const w = await world();
       await expect(classify(w, w.message, 20, `applied_reply_type_id, applied_group_key|'${w.subA}', 'customer'`)).rejects.toThrow(REPLY_TYPE);
       await classify(w, w.message, 21, `applied_reply_type_id, applied_group_key|'${w.subA}', 'interested'`);
@@ -99,7 +99,7 @@ describeDb("cross-row validators", () => {
       await classify(w, w.message, 22, `previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id|'${w.subA}', '${w.subB}', '${w.subA}'`);
     });
 
-    it("reply_type_picks_reply_types_upd_trg: refuses an update to a foreign subcategory or a mismatched key", async () => {
+    it("reply_type_picks_reply_types_upd_trg: refuses an update to a foreign reply type or a mismatched key", async () => {
       const w = await world();
       const foreign = await otherSetReplyType(w);
       await expect(sql`update reply_type_picks set applied_reply_type_id = ${foreign} where id = ${w.classification}`).rejects.toThrow(REPLY_TYPE);
@@ -169,7 +169,7 @@ describeDb("cross-row validators", () => {
       ).rejects.toThrow(REPLY_CONVERSATION);
     });
 
-    it("drafts_reply_target_ins_trg: accepts an inbound message of another conversation of the record, and no target", async () => {
+    it("drafts_reply_target_ins_trg: accepts an inbound message of another conversation of the conversation, and no target", async () => {
       const w = await world();
       const x = await extras(w);
       // thread-context.ts sets the target to the conversation's latest inbound message, wherever it lives.

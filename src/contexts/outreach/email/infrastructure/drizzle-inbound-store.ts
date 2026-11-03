@@ -1,7 +1,7 @@
 import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, inboundEvents, mailboxes, people, sends } from "@/platform/db/schema";
-import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
+import type { ContactStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
 import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
@@ -103,8 +103,8 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
 const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.id}:${providerMessageId}`;
 
 /** The email inbound store. `inbox` files each message that is not a verified bounce or our own. */
-export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowUpStop): InboundStore {
-  const suppression = createSuppressionStore(followUps);
+export function createDrizzleInboundStore(inbox: InboxFiling, stop: ContactStop): InboundStore {
+  const suppression = createSuppressionStore(stop);
   return {
     async listDueMailboxIds(dueBefore) {
       const rows = await db
@@ -157,7 +157,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
             if (!enrollmentId) return false;
             const [matchedEnrollment] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)));
             // The person-wide stop, ahead of filing: a message that fails to file must not leave their other campaigns running.
-            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId, channel: "email", now });
+            if (matchedEnrollment) await stop.stopContactTx(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email }, { kind: "reply", channel: "email", unlessFiled: { accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId }, now });
             return true;
           });
           // After the sequence stopped. A replayed batch repeats both steps: the stop skips a filed message, and filing dedupes.

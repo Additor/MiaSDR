@@ -8,7 +8,7 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { replyRefusal, type AgentReplyRefusal, type ReplyChannel } from "../domain/reply-send";
 import { utcDayStart } from "@/shared/utc-day";
-import { stopReviewOpen } from "./stop-requested-sql";
+import { stopReviewOpen } from "../stopping/infrastructure/stop-requested-sql";
 
 /** How long an agent waits between two replies in one reply handling, on either channel. */
 export const AGENT_REPLY_GAP_MS = 24 * 60 * 60 * 1000;

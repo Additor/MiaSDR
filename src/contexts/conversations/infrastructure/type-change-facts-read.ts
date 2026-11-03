@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { conversations, replyTypes } from "@/platform/db/schema";
-import { replyAskedToStop } from "./stop-requested-sql";
+import { replyAskedToStop } from "../stopping/infrastructure/stop-requested-sql";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
 import { byGroupThenOrder, type ReplyTypeGroup } from "../domain/reply-handling";
 import { typeRulesOf } from "../domain/reply-type";

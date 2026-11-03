@@ -16,7 +16,7 @@ import { followUpRuns, followUpFlows, followUpSteps, followUpStepRuns } from "./
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { knowledgeFor } from "../../infrastructure/thread-context";
 import { insertDraftTx } from "../../infrastructure/reply-store-drafts";
-import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
+import { stopRequestedSql } from "../../stopping/infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
@@ -136,7 +136,7 @@ export async function takeDueStep(now: Date, expired: Date, organizationId?: str
           and ${flowRunnableSql("fl")}
           and (${camp.id} is null or ${camp.status} <> 'paused')
           and ${st.position} = ${r.currentStepPosition}
-          and ${rec.workflowState} not in ('paused', 'closed')
+          and ${rec.workflowState} <> 'closed'
           -- A step drafting past its lease with every attempt used is never taken over: the sweep in claimDue fails it.
           and ((${sr.status} = 'scheduled' and ${sr.dueAt} <= ${ts(now)})
                or (${sr.status} = 'drafting' and ${sr.updatedAt} < ${ts(expired)} and ${sr.attemptCount} < ${MAX_DRAFT_ATTEMPTS}))
@@ -178,7 +178,7 @@ export const drizzleFollowUpEngine: FollowUpEngineStore = {
         where r.latest_inbound_message_id is not null
           and ${startableCampaignSql({ channel: sql`own.channel`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
-          and r.workflow_state not in ('closed', 'paused')
+          and r.workflow_state <> 'closed'
           and ${startFollowUpsSql("r", "s")} = 'continue'
           and not ${stopRequestedSql(sql`r.latest_inbound_message_id`)}
           and p.email is not null

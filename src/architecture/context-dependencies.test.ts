@@ -203,9 +203,9 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
   "people/infrastructure/inbound-leads",
   "people/infrastructure/linkedin-profile",
-  // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
+  // The enrollment outcome writers, which conversations' contact stop runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
-  "outreach/infrastructure/suppression-store",
+  "outreach/infrastructure/drizzle-conversion-outreach",
 ]);
 
 /** Context files that import another context's private infrastructure. Keep it empty. A composition is published, so a context may wire from another's. */

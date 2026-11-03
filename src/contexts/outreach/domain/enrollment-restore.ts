@@ -45,7 +45,7 @@ const DAY_MS = 86_400_000;
 /**
  * The progress a removed lead really has. `current_step` stops moving while a lead is removed, but a send in flight at removal
  * still completes and an acceptance still arrives. The sends rows (`sent` or `unknown`, never retried) and the connection state
- * are the record of what happened, so the larger of the three wins.
+ * are the conversation of what happened, so the larger of the three wins.
  */
 export function restoredProgress(input: { channel: Channel; currentStep: number; lastSentStep: number; connectionState: "none" | "request_sent" | "connected" | null }): number {
   const fromConnection = input.channel === "linkedin" && input.connectionState !== null && input.connectionState !== "none" ? 1 : 0;

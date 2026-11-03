@@ -82,7 +82,7 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
       .set({ status: "discarded" })
       .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), draftCanBecome("discarded")));
   }
-  // One reviewable draft per record and channel: older open ones are superseded.
+  // One reviewable draft per conversation and channel: older open ones are superseded.
   await tx
     .update(drafts)
     .set({ status: "stale" })

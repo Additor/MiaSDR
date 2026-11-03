@@ -118,7 +118,7 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     expect((await conversationOf(skipped.personId)).assigned_to).toBe(f.ann);
   });
 
-  it("leaves a record unassigned when nothing identifies a member", async () => {
+  it("leaves a conversation unassigned when nothing identifies a member", async () => {
     const f = await fixture();
     // An unknown sender has no enrollment at all.
     const stranger = await composition.ingestInbound(mail(f, `stranger-${f.tag}@nowhere.test`));
@@ -401,11 +401,11 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       expect(items.find((i) => i.conversationId === nobody.conversationId)?.assignee).toBeNull();
     });
 
-    it("counts open tasks by assignee and never counts a record and its task twice", async () => {
+    it("counts open tasks by assignee and never counts a conversation and its task twice", async () => {
       const f = await fixture();
       const ann = actorOf(f, f.ann);
       const handled = await waiting(f, f.ann);
-      // Ann holds the record and also has a task on it: the conversation leaves the queue and Ann's work stays one item.
+      // Ann holds the conversation and also has a task on it: the conversation leaves the queue and Ann's work stays one item.
       await task(f, handled.personId, handled.conversationId, f.ann);
       const other = await waiting(f, f.bob);
       await task(f, other.personId, null, f.ann);

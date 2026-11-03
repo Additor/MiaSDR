@@ -1,3 +1,4 @@
+import { wordsAskToStopSql } from "@/platform/db/stop-review-sql";
 import { isAppliedPick } from "../../domain/reply-type-pick";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
@@ -73,7 +74,7 @@ const queueStore: AiJobQueueStore = {
       select r.organization_id, 'classification', 'message', r.latest_inbound_message_id, 'classification:message:' || r.latest_inbound_message_id, ${DUE_NOW}
       from conversations r
       where r.latest_inbound_message_id is not null
-        and r.workflow_state not in ('paused', 'closed')
+        and r.workflow_state <> 'closed'
         and not exists (select 1 from ai_jobs j where j.kind = 'classification' and j.entity_type = 'message' and j.entity_id = r.latest_inbound_message_id)
         and not exists (select 1 from reply_type_picks c where c.message_id = r.latest_inbound_message_id and c.expected_context_version = r.context_version)
       on conflict do nothing
@@ -150,7 +151,7 @@ const queueStore: AiJobQueueStore = {
     const [row] = await db
       .select({
         threadId: threads.id,
-        body: messages.bodyText,
+        stopAsked: sql<boolean>`${wordsAskToStopSql("messages")}`,
         conversationId: conversations.id,
         replyTypeSetId: conversations.replyTypeSetId,
         contextVersion: conversations.contextVersion,
@@ -190,7 +191,7 @@ const queueStore: AiJobQueueStore = {
       })),
       person: thread.person,
       thread: thread.entries,
-      messageText: row.body,
+      stopAsked: row.stopAsked,
     };
     return ctx;
   },

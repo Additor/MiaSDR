@@ -6,8 +6,8 @@ import { DELETED_WHILE_MARKED_NOTE, reachability, suppressionKey, type Reachabil
 
 /*
  * Reachability. The people context owns `contact_policies` and `suppression_list` and is their one writer. The contexts
- * above call these functions inside their own transactions and run their own follow-through: outreach ends the
- * enrollments of a suppressed address, conversations ends runs and retires drafts for do not contact.
+ * above call these functions inside their own transactions. `stopContactTx` in conversations calls the two marks and
+ * runs the follow-through: enrollments, runs and drafts.
  */
 
 const ALIAS = /^[a-z_][a-z0-9_]*$/;

@@ -3,8 +3,8 @@ import { MAX_LINKEDIN_REPLY } from "../../domain/linkedin-reply";
 
 /**
  * What the AI may return and what it may be shown. The classification output is a closed set:
- * one active subcategory key (the category follows from it), a confidence and a short reason.
- * Nothing in a model answer can name a category outside the pipeline, trigger a send or add a field.
+ * one active reply type key (the group follows from it), a confidence and a short reason.
+ * Nothing in a model answer can name a reply type outside the set, trigger a send or add a field.
  */
 
 export const MAX_REASON_LENGTH = 500;
@@ -109,7 +109,7 @@ export interface ClassifyInput {
   businessContext: string;
 }
 
-/** A person moved the record to another stage after the last inbound message, because something happened off the thread. */
+/** A person changed the reply type after the last inbound message, because something happened off the thread. */
 export interface ReplyTypeChange {
   /** Name of the stage the conversation moved to. */
   stage: string;

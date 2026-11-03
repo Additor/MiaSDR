@@ -108,7 +108,7 @@ describeDb("Email reply send refusals", () => {
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
-  it("answers 409 and marks the draft stale when the record moved on after the draft was written", async () => {
+  it("answers 409 and marks the draft stale when the conversation moved on after the draft was written", async () => {
     const f = await fixture();
     const { draft, conversationId } = await withDraft(f);
     // A write that bumps the version without retiring the draft, so the send's own version check catches it.
@@ -188,7 +188,7 @@ describeDb("Email reply send refusals", () => {
       expect(await count("drafts", f.org)).toBe(0);
     });
 
-    it("refuses a typed reply and the send of a draft written after the close, says so on the panel, and the record stays closed", async () => {
+    it("refuses a typed reply and the send of a draft written after the close, says so on the panel, and the conversation stays closed", async () => {
       const f = await fixture();
       const { r, conversationId } = await withDraft(f);
       await handling.closeConversation(handlingDeps, f.actor, conversationId, { reason: "Went with a competitor" });
@@ -392,7 +392,7 @@ describeDb("LinkedIn reply send refusals", () => {
       expect(await count("send_attempts", f.org)).toBe(0);
     });
 
-    it("answers 409 and marks the draft stale when the record moved on after the draft was written", async () => {
+    it("answers 409 and marks the draft stale when the conversation moved on after the draft was written", async () => {
       const f = await fixture();
       const draft = await draftFor(f);
       await sql`update conversations set context_version = context_version + 1 where id = ${f.conversationId}`;
@@ -444,7 +444,7 @@ describeDb("LinkedIn reply send refusals", () => {
       expect(await refusal(send(f, { text: "And one more." }))).toEqual(CLOSED);
     });
 
-    it("refuses typed text with no draft, says so on the panel, and the record stays closed", async () => {
+    it("refuses typed text with no draft, says so on the panel, and the conversation stays closed", async () => {
       const f = await fixture();
       await handling.closeConversation(handlingDeps, f.actor, f.conversationId, { reason: "Not a fit" });
       expect(await refusal(send(f, { text: "One last note." }))).toEqual(CLOSED);

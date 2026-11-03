@@ -187,12 +187,12 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   };
 
   // Groups with work show in their usual order. The empty ones collapse into one line below them.
-  const visibleGroups = QUEUE_GROUPS.filter((g) => (raw.errorsOnly !== "" ? g === "problem" : !raw.group || raw.group === g));
+  const visibleGroups = QUEUE_GROUPS.filter((g) => (raw.errorsOnly !== "" ? g === "problem" : !raw.list || raw.list === g));
   const groups = queue ? visibleGroups.filter((g) => queue.groups[g].total > 0) : [];
   const queueEmpty = queue !== null && groups.length === 0;
   const nowIso = new Date(now).toISOString();
   const oldestWaiting = counts.oldestWaiting[scope];
-  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
+  const filterValues = { group: raw.group, channel: raw.channel, list: raw.list, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
   const filtered = hasAnyFilter(filterValues);
   // "Nothing waits" holds only when tasks, unconfirmed sends, unmatched senders and dead letters are empty too.
   const clear = isWorkClear({

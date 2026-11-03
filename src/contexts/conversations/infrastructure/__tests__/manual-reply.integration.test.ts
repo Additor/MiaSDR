@@ -322,7 +322,7 @@ describeDb("manual email replies (no AI)", () => {
     await expect(compose(f)).rejects.toThrow("This conversation is closed.");
   });
 
-  it("checks for a reply in flight on the conversation, not on the record's other conversations", async () => {
+  it("checks for a reply in flight on the conversation, not on the conversation's other conversations", async () => {
     const f = await fixture();
     // A LinkedIn reply of the same person, sending in its own chat (docs/decisions.md, "Reply send rules").
     const [chat] = await sql`

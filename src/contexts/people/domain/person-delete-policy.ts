@@ -4,7 +4,7 @@
  *
  * Lead mode (bulk and single lead delete) refuses a lead with any history and removes only what never reached the person:
  * a counted send (`sending`, `sent` or `unknown`), a live enrollment in an active or paused campaign, a reply-handling
- * record or an event, or `lifecycle = 'contact'`. A send in flight is a counted send, and an AI job needs a record, so two of
+ * record or an event, or `lifecycle = 'contact'`. A send in flight is a counted send, and an AI job needs a conversation, so two of
  * the safety rules fall inside the history rule here. A lead whose sends all failed goes, with those sends.
  *
  * Contact mode purges the history and stops only at the safety rules, open deals and the recent-send windows. Outreach owns

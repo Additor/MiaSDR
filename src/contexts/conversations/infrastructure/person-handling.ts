@@ -1,10 +1,8 @@
-import { detectsStopRequest } from "../domain/stop-request";
-import { stopRequestedSql } from "./stop-requested-sql";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { HELD_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
-import { endRunCountingTx, OPEN_STEPS, RETIRABLE_DRAFTS, type Tx } from "../after-reply/infrastructure/follow-up-stop";
+import { OPEN_STEPS, RETIRABLE_DRAFTS, type Tx } from "../after-reply/infrastructure/follow-up-stop";
 import { threads, events, conversations } from "@/platform/db/schema";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
@@ -18,8 +16,7 @@ import { rowsOf, uuidList } from "@/platform/db/sql-values";
 const MAX_EVENTS = 500;
 
 /**
- * The person's conversations `FOR NO KEY UPDATE` in id order, then the person's outreach advisory lock. Single-person reply ingest and
- * do-not-contact take the same locks in the same order. A caller passes an open transaction: the locks last until it ends.
+ * The person's conversations `FOR NO KEY UPDATE` in id order, then the person's outreach advisory lock. A caller passes an open transaction: the locks last until it ends.
  */
 export async function lockPersonConversations(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
   await lockPersonConversationRows(tx, organizationId, personId);
@@ -36,30 +33,7 @@ export async function lockPersonConversationRows(tx: DbHandle, organizationId: s
   return rows.length;
 }
 
-/**
- * Ends the person's active and paused runs with `reason`. Each run ends through the one statement every stop uses, which
- * returns the drafts it retired, so `drafts` is exact and counted in the caller's transaction. The caller has taken
- * `lockPersonConversations`, so no run starts or draft links in between.
- */
-export async function interruptPersonRuns(tx: DbHandle, input: { organizationId: string; personId: string; reason: "converted"; now: Date }): Promise<PersonRunStop> {
-  const handle = tx as Tx;
-  const runs = rowsOf<{ id: string }>(
-    await handle.execute(sql`
-      select r.id from follow_up_runs r join conversations rec on rec.id = r.conversation_id and rec.organization_id = r.organization_id
-      where r.organization_id = ${input.organizationId} and rec.person_id = ${input.personId}::uuid and r.status in ('active', 'paused')
-      order by r.id`),
-  );
-  const stopped: PersonRunStop = { runs: 0, drafts: 0 };
-  for (const run of runs) {
-    const ended = await endRunCountingTx(handle, { organizationId: input.organizationId, runId: run.id, final: "interrupted", reason: input.reason, now: input.now });
-    if (!ended) continue;
-    stopped.runs += 1;
-    stopped.drafts += ended.draftsRetired;
-  }
-  return stopped;
-}
-
-/** What `interruptPersonRuns` would change for each person, from the same predicates `endRunCountingTx` uses. */
+/** What the conversion's stop would change for each person, from the same predicates `endRunCountingTx` uses. */
 export async function previewPersonRunStop(organizationId: string, personIds: string[]): Promise<Map<string, PersonRunStop>> {
   const result = new Map<string, PersonRunStop>(personIds.map((id) => [id, { runs: 0, drafts: 0 }]));
   if (personIds.length === 0) return result;
@@ -81,7 +55,7 @@ export async function previewPersonRunStop(organizationId: string, personIds: st
   return result;
 }
 
-/** Writes one event about a person. `conversationId` may be null: the conversion event belongs to the person, not to a reply conversation. */
+/** Writes one event about a person. `conversationId` may be null: the conversion event belongs to the person, not to a conversation. */
 export async function appendPersonEvent(tx: DbHandle, input: PersonEventInput): Promise<void> {
   await tx.insert(events).values({
     organizationId: input.organizationId,
@@ -183,7 +157,7 @@ const personConversations = (organizationId: string, personId: string) =>
 
 /**
  * What a contact delete removes in this context. The sets match `purgePersonHandling`: events of the person or of their
- * conversations, notes and tasks of the person, the conversations of their records and their messages.
+ * conversations, notes and tasks of the person, the threads of their conversations and their messages.
  */
 export async function personHandlingCounts(tx: DbHandle, org: string, personId: string): Promise<PersonHandlingCounts> {
   const recs = personConversations(org, personId);
@@ -250,26 +224,4 @@ export async function peopleWithHistory(tx: DbHandle, organizationId: string, pe
   return new Set(rows.map((row) => row.person_id));
 }
 
-/** Replies per call that the check of a stop request reads, newest first. */
-const STOP_CHECK_REPLIES = 500;
-
-/**
- * The people among `personIds` with a reply that asked to stop: a pick stored the flag, or its own words ask. It reads
- * every conversation of the person.
- */
-export async function peopleWhoAskedToStop(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<string[]> {
-  if (personIds.length === 0) return [];
-  const rows = rowsOf<{ person_id: string; asked: boolean; body: string | null }>(
-    await tx.execute(sql`
-      select r.person_id, ${stopRequestedSql(sql`m.id`)} as asked, m.body_text as body
-      from messages m
-      join threads c on c.id = m.thread_id
-      join conversations r on r.id = c.conversation_id
-      where r.organization_id = ${organizationId} and r.person_id in ${uuidList(personIds)} and m.direction = 'inbound'
-      order by m.sent_at desc nulls last
-      limit ${STOP_CHECK_REPLIES}`),
-  );
-  return [...new Set(rows.filter((row) => row.asked || detectsStopRequest(row.body ?? "")).map((row) => row.person_id))];
-}
-
-export const personReplyHandling: PersonReplyHandling ={ lockPersonConversations, lockPersonConversationRows, interruptPersonRuns, previewPersonRunStop, appendPersonEvent, activeThreadOfPerson, listPersonEvents };
+export const personReplyHandling: PersonReplyHandling ={ lockPersonConversations, lockPersonConversationRows, previewPersonRunStop, appendPersonEvent, activeThreadOfPerson, listPersonEvents };

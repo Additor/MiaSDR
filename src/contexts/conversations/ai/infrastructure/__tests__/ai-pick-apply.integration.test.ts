@@ -24,7 +24,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
   const conversationRow = (f: ReplyFixture) => one("select workflow_state, group_key, reply_type_id from conversations where organization_id = $1", [f.org]);
 
   describe("a pick at or above the floor applies at once", () => {
-    it("with a draft: the pick applies, snapshots the rules, and the draft keeps the record open", async () => {
+    it("with a draft: the pick applies, snapshots the rules, and the draft keeps the conversation open", async () => {
       const f = await fixture();
       await pickOn(f);
       expect(await pickRow(f)).toMatchObject({ status: "auto_applied", rules: { replyDraft: true, followUps: "continue" } });
@@ -32,7 +32,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
 
-    it("with no draft: the pick applies and the record settles to idle", async () => {
+    it("with no draft: the pick applies and the conversation settles to idle", async () => {
       const f = await fixture();
       answer(f, "not_required_right_now");
       await pickOn(f, "Not right now, thanks.");
@@ -132,7 +132,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
     });
   });
 
-  describe("one decision under the record lock", () => {
+  describe("one decision under the conversation lock", () => {
     it("a lock set after the job read its context holds the pick, with no draft and no settle", async () => {
       const f = await fixture();
       answer(f, "demo_request", 0.9);
@@ -224,7 +224,7 @@ describeDb("AI pick apply path: the fixed rule decides the hold, the type's rule
       expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
     });
 
-    it("undo restores the lock the record had before the pick, on any type of the customer group", async () => {
+    it("undo restores the lock the conversation had before the pick, on any type of the customer group", async () => {
       const f = await fixture();
       answer(f, "customer", 0.99);
       await modules.composition.ingestInbound(mail(f));
