@@ -9,8 +9,8 @@ import { listMemberChoices } from "@/contexts/tenancy/application/member-directo
 import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 
 /**
- * Loads the tasks and the organization's members. With `conversationId`, one reply record's tasks; with `personId`, every task of
- * the person, and new tasks get no record. Wrap it in Suspense.
+ * Loads the tasks and the organization's members. With `conversationId`, one conversation's tasks; with `personId`, every task of
+ * the person, and new tasks get no conversation. Wrap it in Suspense.
  */
 export async function TasksSection({ actor, compact, ...target }: TaskTarget & { actor: Actor; compact?: boolean }) {
   await connection();

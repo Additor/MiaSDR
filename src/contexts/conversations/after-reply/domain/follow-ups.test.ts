@@ -171,7 +171,7 @@ describe("scheduling in the organization time zone", () => {
 });
 
 describe("invariants SQL cannot express", () => {
-  it("refuses a conversation of another record", () => {
+  it("refuses a thread of another conversation", () => {
     expect(() => assertThreadBelongsToConversation({ conversationId: "r1" }, "r1")).not.toThrow();
     expect(() => assertThreadBelongsToConversation({ conversationId: "r2" }, "r1")).toThrow(/not part of this reply handling/);
     expect(() => assertThreadBelongsToConversation(null, "r1")).toThrow();

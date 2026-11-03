@@ -146,8 +146,8 @@ test.describe("the Actions queue as a list to work through", () => {
     const email = "ola@s43-sure.test";
     const [seeded] = await sql()`select 1 from people where email = ${email}`;
     if (!seeded) await seedReply(page.request, { key: "S43C", mailbox: "sdrs43c@e2e-corp.test", lead: { email, firstName: "Ola", lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: "No thanks, not interested." } });
-    const [record] = await sql()`select r.workflow_state, t.name from conversations r join people p on p.id = r.person_id join reply_types t on t.id = r.reply_type_id where p.email = ${email}`;
-    expect(record).toMatchObject({ workflow_state: "idle", name: "Not now" });
+    const [conversation] = await sql()`select r.workflow_state, t.name from conversations r join people p on p.id = r.person_id join reply_types t on t.id = r.reply_type_id where p.email = ${email}`;
+    expect(conversation).toMatchObject({ workflow_state: "idle", name: "Not now" });
     await page.goto("/actions");
     await expect(page.getByTestId("queue-item").first()).toBeVisible();
     await expect(page.getByTestId("queue-item").filter({ hasText: "Ola Sure" })).toHaveCount(0);

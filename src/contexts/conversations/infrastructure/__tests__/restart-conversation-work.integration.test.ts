@@ -227,7 +227,7 @@ describeDb("restart conversation work: type change, correction, stale drafts", (
       expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'type_changed'")).toBe(1);
     });
 
-    it("starts no run for a contact whose record never had one", async () => {
+    it("starts no run for a contact whose conversation never had one", async () => {
       const { f, conversationId, version } = await withRun({ flow: false });
       const personId = (await one("select person_id from conversations where id = $1", [conversationId])).person_id as string;
       await sql`update people set lifecycle = 'contact', converted_at = now() where id = ${personId}`;

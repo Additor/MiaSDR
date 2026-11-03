@@ -126,7 +126,7 @@ export function QueueNotice() {
 
 /**
  * The mark of a problem row. A send that may or may not have gone out is uncertain, so it takes the amber icon and nothing else
- * (DESIGN.md: never a fill, never red). A draft, a job or a record that failed is an error a person has to fix, so its icon is red.
+ * (DESIGN.md: never a fill, never red). A draft, a job or a conversation that failed is an error a person has to fix, so its icon is red.
  */
 function ProblemMark({ kind }: { kind: NonNullable<QueueItemView["problem"]>["kind"] }) {
   if (kind === "delivery_uncertain") return <CircleHelpIcon aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-warning" />;

@@ -22,8 +22,8 @@ async function addThread(
 ) {
   const { db, org, pipeline } = seed;
   const [person] = await db`insert into people (organization_id, email, full_name, first_name, source) values (${org}, ${input.email}, ${input.name}, ${input.name.split(" ")[0]}, 'inbound') returning id`;
-  const [record] = await db`insert into conversations (organization_id, person_id, reply_type_set_id, workflow_state) values (${org}, ${person.id}, ${pipeline}, 'idle') returning id`;
-  const [conv] = await db`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${org}, ${record.id}, 'email', ${mailbox}, ${"e25-" + input.email}) returning id`;
+  const [conversation] = await db`insert into conversations (organization_id, person_id, reply_type_set_id, workflow_state) values (${org}, ${person.id}, ${pipeline}, 'idle') returning id`;
+  const [conv] = await db`insert into threads (organization_id, conversation_id, channel, account_ref, provider_thread_id) values (${org}, ${conversation.id}, 'email', ${mailbox}, ${"e25-" + input.email}) returning id`;
   let n = 0;
   for (const m of input.messages) {
     await db`

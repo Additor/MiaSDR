@@ -58,16 +58,16 @@ describeDb("analytics read model", () => {
 
     const reply = async (personId: string, channel: "email" | "linkedin", at: string, pick?: { status: string; group?: string; replyType?: string }) => {
       const ref = channel === "email" ? "a@sender.test" : account;
-      const [{ id: record }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
-      const [conv] = await sql`select id from threads where conversation_id = ${record} and channel = ${channel}`;
-      const thread = conv?.id ?? (await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`)[0].id;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
+      const [conv] = await sql`select id from threads where conversation_id = ${conversationId} and channel = ${channel}`;
+      const thread = conv?.id ?? (await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, ${channel}, ${ref}) returning id`)[0].id;
       const [{ id: message }] = await sql`
         insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${org}, ${thread}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at}) returning id`;
       if (pick) {
         await sql`
           insert into reply_type_picks (organization_id, conversation_id, message_id, expected_context_version, status, confidence, proposed_group_key, applied_group_key, applied_reply_type_id)
-          values (${org}, ${record}, ${message}, 0, ${pick.status}, 0.9, ${pick.group ?? null}, ${pick.status === "proposed" ? null : (pick.group ?? null)}, ${pick.replyType ?? null})`;
+          values (${org}, ${conversationId}, ${message}, 0, ${pick.status}, 0.9, ${pick.group ?? null}, ${pick.status === "proposed" ? null : (pick.group ?? null)}, ${pick.replyType ?? null})`;
       }
     };
 
@@ -153,8 +153,8 @@ describeDb("analytics read model", () => {
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
     const reply = async (personId: string, channel: "email" | "linkedin", at: string) => {
       const ref = channel === "email" ? "a@sender.test" : w.account;
-      const [{ id: record }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) returning id`;
-      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) returning id`;
+      const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, ${channel}, ${ref}) returning id`;
       await sql`
         insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${org}, ${thread}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at})`;
@@ -212,8 +212,8 @@ describeDb("analytics read model", () => {
     const org = other.actor.organizationId;
     const [enrollment] = await sql`select e.person_id from campaign_enrollments e where e.organization_id = ${org} limit 1`;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
-    const [{ id: record }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
-    const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${record}, 'email', 'a@sender.test') returning id`;
+    const [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
+    const [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, 'email', 'a@sender.test') returning id`;
     await sql`
       insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
       values (${org}, ${thread}, 'email', 'a@sender.test', 'inbound', ${uniq()}, 'I am away', '2026-03-11T19:00:00Z', ${sql.json({ autoReply: true })})`;

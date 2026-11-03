@@ -48,28 +48,28 @@ describeDb("contact delete: purge size check", () => {
     const pipeline = await one(sql`select id from reply_type_sets where organization_id = ${org} and is_default`);
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
-    const record = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
+    const conversationId = await one(sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
     await sql`
       insert into threads (organization_id, conversation_id, channel, account_ref)
-      select ${org}, ${record}, 'email', ${`me-${t}-`} || g from generate_series(1, ${size.threads}) g`;
+      select ${org}, ${conversationId}, 'email', ${`me-${t}-`} || g from generate_series(1, ${size.threads}) g`;
     await sql`
       insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
       select ${org}, c.id, 'email', c.account_ref, case when g % 2 = 0 then 'inbound' else 'outbound' end,
              c.id::text || '-' || g, 'Message ' || g || ' about the proposal and the next call.', now() - make_interval(mins => g)
       from threads c cross join generate_series(1, ${size.perThread}) g
-      where c.organization_id = ${org} and c.conversation_id = ${record}`;
+      where c.organization_id = ${org} and c.conversation_id = ${conversationId}`;
     // The latest inbound message of the conversation, which the message delete sets to null through its foreign key.
     await sql`
       update conversations set latest_inbound_message_id = (
         select m.id from messages m join threads c on c.id = m.thread_id
-        where c.conversation_id = ${record} and m.direction = 'inbound' order by m.sent_at desc limit 1)
-      where id = ${record}`;
+        where c.conversation_id = ${conversationId} and m.direction = 'inbound' order by m.sent_at desc limit 1)
+      where id = ${conversationId}`;
     await sql`
       insert into events (organization_id, person_id, conversation_id, event_type, actor_type)
-      select ${org}, ${person}, case when g % 2 = 0 then ${record}::uuid end, 'reply_type.changed', 'system' from generate_series(1, ${size.events}) g`;
+      select ${org}, ${person}, case when g % 2 = 0 then ${conversationId}::uuid end, 'reply_type.changed', 'system' from generate_series(1, ${size.events}) g`;
     await sql`
       insert into notes (organization_id, person_id, conversation_id, body)
-      select ${org}, ${person}, ${record}, 'Note ' || g from generate_series(1, 20) g`;
+      select ${org}, ${person}, ${conversationId}, 'Note ' || g from generate_series(1, 20) g`;
     await sql`
       insert into tasks (organization_id, person_id, name)
       select ${org}, ${person}, 'Task ' || g from generate_series(1, 20) g`;
@@ -86,7 +86,7 @@ describeDb("contact delete: purge size check", () => {
       select ${org}, 'campaign', e.id, g, 'email', 'sent', ${mailbox}, 'Hello', 'A campaign email body.', now() - interval '30 days', now() - interval '30 days'
       from campaign_enrollments e cross join generate_series(1, ${size.steps}) g
       where e.organization_id = ${org} and e.person_id = ${person}`;
-    return { person, record };
+    return { person, conversationId };
   }
 
   async function countsOf(org: string, person: string) {

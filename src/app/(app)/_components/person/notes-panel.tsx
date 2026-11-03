@@ -22,7 +22,7 @@ export interface Note {
   createdBy: string | null;
 }
 
-/** Where the panel writes: a reply record's notes, or a person's notes (every note of the person; new ones have no record). */
+/** Where the panel writes: a conversation's notes, or a person's notes (every note of the person; new ones have no conversation). */
 export type NoteTarget = { conversationId: string; personId?: never } | { personId: string; conversationId?: never };
 
 export type NotesPanelProps = NoteTarget & {

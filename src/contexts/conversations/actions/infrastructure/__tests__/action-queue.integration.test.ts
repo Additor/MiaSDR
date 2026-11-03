@@ -117,7 +117,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     await sql.end();
   });
 
-  it("lists an action_required record that has no draft, AI pick or task as next_step", async () => {
+  it("lists an action_required conversation that has no draft, AI pick or task as next_step", async () => {
     const f = await fixture();
     const l = await lead(f);
     const q = await queue(f);
@@ -131,7 +131,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect((await queue(f)).groups.next_step.total).toBe(1);
   });
 
-  it("puts each record in one group, problem first, and leaves idle and not-yet-due records out", async () => {
+  it("puts each conversation in one group, problem first, and leaves idle and not-yet-due conversations out", async () => {
     const f = await fixture();
     const reply = await lead(f);
     await draft(f, reply);
@@ -467,7 +467,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   it("finds the next item of a group deeper than the page maximum", async () => {
     const f = await fixture();
     const made: string[] = [];
-    // 205 records that need a next step, created in order, waiting one minute apart: more than one page of the maximum size.
+    // 205 conversations that need a next step, created in order, waiting one minute apart: more than one page of the maximum size.
     for (let i = 0; i < 205; i += 1) made.push((await lead(f)).conversationId);
     await sql`
       update conversations r set last_inbound_at = '2026-10-01T00:00:00Z'::timestamptz + (o.n * interval '1 minute')
@@ -543,7 +543,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(counts.oldestWaiting).toEqual({ mine: null, unassigned: null, others: null });
   });
 
-  it("puts every record in the group, or out of the queue, that the domain rule says", async () => {
+  it("puts every conversation in the group, or out of the queue, that the domain rule says", async () => {
     const f = await fixture();
     const hour = 60 * 60 * 1000;
     const scenarios: Array<{ name: string } & Partial<QueueFacts>> = [
@@ -646,7 +646,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const scenarios: Array<{ name: string; facts: PickReviewFacts; setup: (l: L) => Promise<unknown> }> = [
       { name: "held", facts: base, setup: (l) => aiPick(f, l, { status: "proposed" }) },
       {
-        name: "held, record version moved on",
+        name: "held, context version moved on",
         facts: { ...base, current: false },
         setup: async (l) => {
           await aiPick(f, l, { status: "proposed" });
@@ -655,7 +655,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       },
       { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request", stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact" }) },
       {
-        name: "held stop request, record version moved on",
+        name: "held stop request, context version moved on",
         facts: { ...base, current: false, proposedSystemRole: "stop_request", stopReviewOpen: true },
         setup: async (l) => {
           await aiPick(f, l, { status: "proposed", key: "do_not_contact" });
@@ -717,9 +717,9 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     // The cases the brief names, spelled out.
     expect(Object.fromEntries(expected.map(([name, , kind]) => [name, kind]))).toMatchObject({
       held: "held",
-      "held, record version moved on": null,
+      "held, context version moved on": null,
       "held stop request": "stop_review",
-      "held stop request, record version moved on": "stop_review",
+      "held stop request, context version moved on": "stop_review",
       "held stop request, person do not contact": null,
       "held stop request, address suppressed": null,
       applied: null,

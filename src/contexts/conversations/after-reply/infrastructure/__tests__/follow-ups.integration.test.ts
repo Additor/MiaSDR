@@ -626,7 +626,7 @@ describeDb("Follow-ups after a reply flows", () => {
         },
       });
       const facts = await loadStartOn(counting, f.org, conversation, {});
-      expect(queries, "record and conversation, owner with flow and version, steps, zone").toBeLessThanOrEqual(4);
+      expect(queries, "conversation and thread, owner with flow and version, steps, zone").toBeLessThanOrEqual(4);
       expect(await loadStartOn(db, f.org, conversation, { threadId: thread })).toEqual(facts);
       expect(facts).toMatchObject({ thread: { id: thread, channel: "email" }, flow: { status: "active", hasPublished: true }, selection: { campaignId: expect.any(String) } });
       expect(facts?.steps).toHaveLength(3);
@@ -955,7 +955,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(r.message).toMatch(/suppression list/);
     });
 
-    it("a closed record", async () => {
+    it("a closed conversation", async () => {
       const r = await blocked(async ({ run }) => void (await sql`update conversations set workflow_state = 'closed' where id = ${run.conversation_id}`));
       expect(r.message).toMatch(/Reply handling is closed/);
     });
@@ -1075,7 +1075,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(step2.due_at.getTime() - sent.getTime()).toBeGreaterThanOrEqual(2 * DAY - DAY / 24);
     });
 
-    it("refuses a conversation of another record when a person restarts the follow-ups", async () => {
+    it("refuses a thread of another conversation when a person restarts the follow-ups", async () => {
       const f = await fixture();
       const a = await ingest(f);
       const b = await ingest(f);
@@ -1788,7 +1788,7 @@ describeDb("Follow-ups after a reply flows", () => {
     });
   });
 
-  describe("per-record controls", () => {
+  describe("per-conversation controls", () => {
     it("pauses, resumes, skips and cancels", async () => {
       const { f, run } = await withRun();
       const conversationId = run.conversation_id;

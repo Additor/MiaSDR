@@ -276,7 +276,7 @@ describeDb("lead list filters, sort and companies", () => {
       const matching = await uc.countLeads(deps, s.actor, filter);
       expect(matching).toBe(2);
       const result = await uc.deleteLeads(deps, s.actor, { filter, confirmCount: matching });
-      // Bob has a CRM record, so he stays and comes back as blocked.
+      // Bob has a conversation, so he stays and comes back as blocked.
       expect(result.deleted).toBe(1);
       expect(result.blocked.map((b) => b.id)).toEqual([s.bob]);
       expect(await ids(s.id, {})).toEqual(sorted(s.alice, s.bob, s.carol, s.eve, s.frank));
@@ -329,7 +329,7 @@ describeDb("lead list filters, sort and companies", () => {
       return id as string;
     };
     let msg = 0;
-    /** A record, a conversation and one message for a person. */
+    /** A conversation, a thread and one message for a person. */
     const thread = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound") => {
       msg += 1;
       const [existing] = await sql`select id from conversations where organization_id = ${orgId} and person_id = ${personId}`;
@@ -454,7 +454,7 @@ describeDb("lead list filters, sort and companies", () => {
       const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
       return id as string;
     };
-    /** One outbound or inbound message on the person's record, in the conversation of that channel. */
+    /** One outbound or inbound message in the person's conversation, in the thread of that channel. */
     const message = async (orgId: string, pipeline: string, personId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string) => {
       msg += 1;
       const [existing] = await sql`select id from conversations where organization_id = ${orgId} and person_id = ${personId}`;
@@ -531,7 +531,7 @@ describeDb("lead list filters, sort and companies", () => {
       const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
       return id as string;
     };
-    /** One message on the person's record, in a thread of its own. */
+    /** One message in the person's conversation, in a thread of its own. */
     const message = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", sentAt: string) => {
       n += 1;
       const [existing] = await sql`select id from conversations where organization_id = ${orgId} and person_id = ${personId}`;

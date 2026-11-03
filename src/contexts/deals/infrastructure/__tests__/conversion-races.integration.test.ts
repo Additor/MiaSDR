@@ -154,12 +154,12 @@ describeDb("conversion races", () => {
     expect(await kit.count("follow_up_runs", f.org, `status = 'active' and conversation_id = '${b.conversationId}'`)).toBe(1);
     const bLive = await f.enrollment(await f.campaign(), b.personId, "active");
     const retries = lockRetryStats.retries;
-    // The gate holds B's live enrollment: the ingest stops at the reply stop, holding A's record and both advisory locks.
+    // The gate holds B's live enrollment: the ingest stops at the reply stop, holding A's conversation and both advisory locks.
     const gate = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from campaign_enrollments where id = ${bLive} for update`);
     const input = f.mail({ providerThreadId: a.input.providerThreadId, from: b.input.from });
     const ingest = settle(threads.ingestInbound(input));
     await waitForLockWaiters(kit.sql, 1);
-    // The conversion of B locks B's record and waits for B's advisory lock.
+    // The conversion of B locks B's conversation and waits for B's advisory lock.
     const conversion = convert(f, b.personId);
     await waitForLockWaiters(kit.sql, 2);
     // The ingest goes on to end B's run and asks for B's conversation: a cycle that the conversion breaks by giving way.

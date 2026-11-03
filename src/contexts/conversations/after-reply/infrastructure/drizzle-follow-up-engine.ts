@@ -419,7 +419,7 @@ export const drizzleFollowUpEngine: FollowUpEngineStore = {
         .select({ id: drafts.id })
         .from(drafts)
         .where(and(eq(drafts.id, draftId), eq(drafts.organizationId, organizationId), eq(drafts.conversationId, sr.conversationId)));
-      if (!draft) throw new Error("The draft does not belong to the run's record.");
+      if (!draft) throw new Error("The draft does not belong to the run's conversation.");
       await tx
         .update(followUpStepRuns)
         .set({ status: "awaiting_review", draftId, lastError: null, claimToken: null, updatedAt: now })

@@ -293,7 +293,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   }
 
   describe("lockPersonConversations", () => {
-    it("holds the person's records and the person's outreach lock until the transaction ends", async () => {
+    it("holds the person's conversations and the person's outreach lock until the transaction ends", async () => {
       const f = await fixture();
       const { personId, conversationId } = await ingest(f);
       let release!: () => void;
@@ -318,7 +318,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(after).toBe(true);
     });
 
-    it("takes no record lock for a person without a conversation", async () => {
+    it("takes no conversation lock for a person without a conversation", async () => {
       const f = await fixture();
       const personId = await person(f);
       await expect(appDb.transaction((tx) => handling.lockPersonConversations(tx, f.org, personId))).resolves.toBeUndefined();

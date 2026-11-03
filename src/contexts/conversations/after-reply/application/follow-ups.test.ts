@@ -72,7 +72,7 @@ describe("startRun invariants", () => {
     expect(s.created).toHaveLength(0);
   });
 
-  it("refuses a conversation that belongs to another record", async () => {
+  it("refuses a thread that belongs to another conversation", async () => {
     const s = store(facts({ thread: { id: "c9", conversationId: "other", channel: "email" } }));
     await expect(startRun(s.deps, { organizationId: "org", conversationId: "rec1", threadId: "c9", source: "human_override" })).rejects.toBeInstanceOf(ConflictError);
     expect(s.created).toHaveLength(0);

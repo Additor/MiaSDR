@@ -114,7 +114,7 @@ export async function bootDealsKit(url: string) {
           values (${org}, ${campaignId}, ${personId}, ${channel}, ${status}, ${status === "active" ? new Date() : null}) returning id`;
         return id as string;
       },
-      /** An unknown sender writes in: a lead with a reply record and a conversation. */
+      /** An unknown sender writes in: a lead with a conversation and a thread. */
       async ingest(partial: Partial<InboundEmailInput> = {}) {
         const input = mail(partial);
         const result = await threads.ingestInbound(input);

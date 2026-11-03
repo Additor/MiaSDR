@@ -20,7 +20,7 @@ import type { SuppressionReason } from "../domain/reachability";
 
 /**
  * One `people` row per human across all channels. Importing creates or
- * updates people only; a CRM record starts when a lead replies.
+ * updates people only; a conversation starts when a lead replies.
  */
 
 export const companies = pgTable(

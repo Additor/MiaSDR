@@ -81,7 +81,7 @@ describe("labels", () => {
 });
 
 describe("FIXED_STOP_RULES", () => {
-  it("lists the lead and record facts, in the order interruptReason checks them", () => {
+  it("lists the lead and conversation facts, in the order interruptReason checks them", () => {
     expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "conversation_closed", "converted"]);
     expect(new Set(FIXED_STOP_RULES.map((r) => r.id)).size).toBe(FIXED_STOP_RULES.length);
     for (const rule of FIXED_STOP_RULES) expect(rule.label.length).toBeGreaterThan(0);
@@ -91,7 +91,7 @@ describe("FIXED_STOP_RULES", () => {
     for (const rule of FIXED_STOP_RULES) expect(ALL_INTERRUPT_REASONS).toContain(rule.reason);
   });
 
-  it("matches what interruptReason returns for each lead or record fact", () => {
+  it("matches what interruptReason returns for each lead or conversation fact", () => {
     const base: InterruptFacts = {
       run: { triggerMessageId: "m1", replyTypeId: "s1" },
       conversation: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", followUps: "continue", workflowState: "open" },

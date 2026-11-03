@@ -11,7 +11,7 @@ describeDb("conversation invariants", () => {
   let pipeline = "";
   let otherReplyTypeSet = "";
   let sub = "";
-  let record = "";
+  let conversationId = "";
   let thread = "";
   let draft = "";
 
@@ -25,14 +25,14 @@ describeDb("conversation invariants", () => {
     [{ id: sub }] = await sql`
       insert into reply_types (organization_id, reply_type_set_id, group_key, key, name)
       values (${org}, ${pipeline}, 'interested', 'wants_demo', 'Wants demo') returning id`;
-    [{ id: record }] = await sql`
+    [{ id: conversationId }] = await sql`
       insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
     [{ id: thread }] = await sql`
       insert into threads (organization_id, conversation_id, channel, account_ref)
-      values (${org}, ${record}, 'email', 'me@corp.test') returning id`;
+      values (${org}, ${conversationId}, 'email', 'me@corp.test') returning id`;
     [{ id: draft }] = await sql`
       insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject)
-      values (${org}, ${record}, ${thread}, 0, 'email', 'Re: hi') returning id`;
+      values (${org}, ${conversationId}, ${thread}, 0, 'email', 'Re: hi') returning id`;
   });
 
   afterAll(async () => {
@@ -51,7 +51,7 @@ describeDb("conversation invariants", () => {
   });
 
   it("accepts the same reply type on a conversation in its own pipeline", async () => {
-    await sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
+    await sql`update conversations set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${conversationId}`;
   });
 
   it("requires group and source to be set together", async () => {

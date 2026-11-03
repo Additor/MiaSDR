@@ -22,7 +22,7 @@ describeDb("final status guard", () => {
   let org = "";
   let user = "";
   let mailbox = "";
-  let record = "";
+  let conversationId = "";
   let thread = "";
   const tag = uniqueKey();
   let counter = 0;
@@ -33,8 +33,8 @@ describeDb("final status guard", () => {
     [{ id: mailbox }] = await sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb-" + tag + "@fs.test"}, 'connected') returning id`;
     const [{ id: person }] = await sql`insert into people (organization_id, email) values (${org}, ${tag + "@lead.test"}) returning id`;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
-    [{ id: record }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
-    [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${record}, 'email', 'me@fs.test') returning id`;
+    [{ id: conversationId }] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
+    [{ id: thread }] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversationId}, 'email', 'me@fs.test') returning id`;
   });
 
   afterAll(async () => {
@@ -53,7 +53,7 @@ describeDb("final status guard", () => {
     counter += 1;
     const [{ id: draft }] = await sql`
       insert into drafts (organization_id, conversation_id, thread_id, expected_context_version, channel, subject)
-      values (${org}, ${record}, ${thread}, 0, 'email', 'Re: hi') returning id`;
+      values (${org}, ${conversationId}, ${thread}, 0, 'email', 'Re: hi') returning id`;
     const [{ id }] = await sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, status, actor_user_id, reconciliation_note)
       values (${org}, ${draft}, ${`fs-${tag}-${counter}`}, ${status}, ${user}, ${status === "reconciled" ? "found" : null}) returning id`;

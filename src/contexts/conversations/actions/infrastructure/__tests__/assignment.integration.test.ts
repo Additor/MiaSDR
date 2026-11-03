@@ -321,7 +321,7 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       expect(await assignedEvents(r.conversationId)).toHaveLength(1);
     });
 
-    it("answers 404 for another organization's record and an id that is no UUID", async () => {
+    it("answers 404 for another organization's conversation and an id that is no UUID", async () => {
       const f = await fixture();
       const other = await fixture();
       const theirs = await unassigned(other);

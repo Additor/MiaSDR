@@ -123,7 +123,7 @@ describeDb("inbox filters, views and search", () => {
       expect((await list(f, { leadIds: ["00000000-0000-4000-8000-000000000000"] })).total).toBe(0);
     });
 
-    it("names each row's record and its assignee", async () => {
+    it("names each row's conversation and its assignee", async () => {
       const f = await fixture();
       const t = await inboundThread(f);
       const [rec] = await sql<{ id: string }[]>`select conversation_id as id from threads where id = ${t.threadId}`;

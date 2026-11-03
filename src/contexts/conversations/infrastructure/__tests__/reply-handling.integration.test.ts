@@ -47,7 +47,7 @@ describeDb("Reply handling: type changes, undo, do not contact, tenancy, setting
     };
   };
 
-  /** A reply from a new lead: person, record and conversation exist afterwards. */
+  /** A reply from a new lead: person, conversation and thread exist afterwards. */
   async function lead(f: Fx, partial: Partial<InboundEmailInput> = {}) {
     const result = await composition.ingestInbound(mail(f, partial));
     const [conversation] = await sql`select * from conversations where person_id = ${result.personId}`;
@@ -440,7 +440,7 @@ describeDb("Reply handling: type changes, undo, do not contact, tenancy, setting
   });
 
   describe("tenant isolation", () => {
-    it("never shows, reads or changes another organization's records", async () => {
+    it("never shows, reads or changes another organization's conversations", async () => {
       const a = await fixture();
       const b = await fixture();
       const la = await lead(a);
@@ -480,7 +480,7 @@ describeDb("Reply handling: type changes, undo, do not contact, tenancy, setting
       await expect(replies.changeReplyType(deps, f.actor, l.conversationId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.conversationId)).context_version })).rejects.toThrow(/marked done/);
     });
 
-    it("reopens a closed record once", async () => {
+    it("reopens a closed conversation once", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       await replies.reopenConversation(deps, f.actor, l.conversationId);

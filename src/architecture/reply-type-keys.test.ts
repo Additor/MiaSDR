@@ -151,7 +151,7 @@ describe("reply type behavior reads rules and roles, not keys", () => {
 
   it("catches each rule on a sample", () => {
     const rules = (text: string) => scan(path.join(ROOT, "sample.ts"), text).map((f) => f.rule);
-    expect(rules(`if (record.groupKey === "not_interested") stop();`)).toEqual(["key comparison"]);
+    expect(rules(`if (conversation.groupKey === "not_interested") stop();`)).toEqual(["key comparison"]);
     expect(rules(`if ("customer" !== row.group_key) stop();`)).toEqual(["key comparison"]);
     expect(rules(`switch (t.groupKey) { case "other": break; }`)).toEqual(["key comparison"]);
     expect(rules(`if (typeof raw.groupKey === "string") read();`)).toEqual([]);
