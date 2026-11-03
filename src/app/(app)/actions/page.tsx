@@ -1,4 +1,4 @@
-import { CircleHelpIcon, CircleXIcon } from "lucide-react";
+import { CircleHelpIcon, CircleXIcon, TriangleAlertIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -16,6 +16,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
 import { listCampaigns } from "@/contexts/outreach/application/campaign-management";
+import { bouncePauseReason } from "@/contexts/outreach/domain/bounce-pause";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
@@ -143,6 +144,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   ]);
   // Archived campaigns are hidden by default. The list holds both channels, because the queue does too.
   const campaigns = [...emailCampaigns, ...linkedinCampaigns].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const bouncePaused = emailCampaigns.flatMap((c) => (c.bouncePause ? [{ id: c.id, name: c.name, pause: c.bouncePause }] : []));
   const openTasks = await listTasks(taskDeps(), actor, { state: "open" });
   const now = taskDeps().now().getTime();
   // The tasks of the scope in view. A task has an assignee or none, like a conversation.
@@ -201,6 +203,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     uncertainCampaignSends: extras.uncertainCampaignSends.length,
     unmatchedSenders: extras.openIdentityExceptions,
     deadLetters: dead?.total ?? 0,
+    bouncePausedCampaigns: bouncePaused.length,
   });
 
   // The oldest wait has a name when it is the first item of one of the lists in view, which it is unless a filter hides it.
@@ -223,6 +226,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   const lists = [
     ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0, error: false })),
     { href: "#section-tasks", label: "Tasks", count: scopedTasks.length, error: false },
+    ...(bouncePaused.length > 0 ? [{ href: "#section-bounces", label: "Paused for bounces", count: bouncePaused.length, error: false }] : []),
     ...(extras.uncertainCampaignSends.length > 0 ? [{ href: "#section-sends", label: "Unconfirmed sends", count: extras.uncertainCampaignSends.length, error: false }] : []),
     ...(dead && dead.total > 0 ? [{ href: "#section-dead", label: "Dead letters", count: dead.total, error: true }] : []),
     ...(extras.openIdentityExceptions > 0 ? [{ href: "#section-unmatched", label: "Unmatched senders", count: extras.openIdentityExceptions, error: false }] : []),
@@ -336,6 +340,26 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
 
       <ListSection id="section-tasks" title={TASK_SECTIONS[scope]} count={scopedTasks.length}>
         {scopedTasks.map(taskRow)}
+      </ListSection>
+
+      <ListSection
+        id="section-bounces"
+        icon={<TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-warning" />}
+        title="Campaigns paused for bounces"
+        description="MiaSDR stopped these campaigns because too many emails bounced. A person decides whether to resume each one."
+        count={bouncePaused.length}
+      >
+        {bouncePaused.map((c) => (
+          <Row
+            key={c.id}
+            id={`bounce-pause-${c.id}`}
+            icon={<TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-warning" />}
+            href={`/campaigns/${c.id}`}
+            action="Open campaign"
+            title={c.name}
+            detail={bouncePauseReason(c.pause)}
+          />
+        ))}
       </ListSection>
 
       <ListSection

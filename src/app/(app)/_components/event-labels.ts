@@ -35,6 +35,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "sequence.override_set": "Chose follow-ups for this person",
   "sequence.override_cleared": "Cleared the follow-ups choice for this person",
   "enrollment.restored": "Restored to a campaign",
+  "campaign.paused_for_bounces": "Paused a campaign for too many bounces",
   "outreach.stopped_by_reply": "Stopped outreach after a reply",
   "lifecycle.converted": "Became a contact",
   "contact.added": "Added as a contact",

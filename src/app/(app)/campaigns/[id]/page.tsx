@@ -16,6 +16,7 @@ import { getCampaignDetail, getCampaignSenders } from "@/contexts/outreach/appli
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { enrollmentSelectionKey } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignLeadStatus } from "@/contexts/outreach/domain/campaign-lead-status";
+import { bouncePauseReason, bounceResumeLine } from "@/contexts/outreach/domain/bounce-pause";
 import { stepsEditable, stepsWithPlaceholders, validateSteps } from "@/contexts/outreach/domain/campaign";
 import { campaignSummary, leadsInProgress, parseCampaignTab, parseLeadsQuery, sendingRulesLine, startBlockers, startSummaryLines } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
@@ -125,9 +126,28 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
               blockers={blockers.map((b) => b.message)}
               startLines={startLines}
               inProgress={leadsInProgress(enrollments.counts)}
+              resumeNote={campaign.bouncePause ? bounceResumeLine(campaign.bouncePause) : undefined}
             />
           }
         />
+
+        {campaign.bouncePause && (
+          <CampaignSection
+            testId="bounce-pause"
+            role="status"
+            icon={<TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-warning" />}
+            title="Paused for bounces"
+            description={
+              <>
+                {bouncePauseReason(campaign.bouncePause)} Check the leads and your{" "}
+                <Link href="/settings/mailboxes" className="text-foreground underline underline-offset-4 focus-ring">
+                  sender setup
+                </Link>{" "}
+                before you resume.
+              </>
+            }
+          />
+        )}
 
         {(unconfirmed.total > 0 || waitingOnUnavailable > 0) && (
           <div>

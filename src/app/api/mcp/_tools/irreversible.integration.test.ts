@@ -325,6 +325,9 @@ describeDb("MCP actions that cannot be undone", () => {
     expect(seen.structured.refusals).toEqual([expect.objectContaining({ code: "agent_complete_person_paused" })]);
     expect((await sql`select status from campaigns where id = ${paused}`)[0].status).toBe("paused");
 
+    await sql`update campaigns set bounce_pause = ${sql.json({ at: new Date().toISOString(), sent: 40, bounced: 3 })} where id = ${paused}`;
+    expect((await preview({ kind: "complete_campaign", channel: "email", campaignId: paused })).structured.refusals).toEqual([expect.objectContaining({ code: "agent_complete_bounce_paused" })]);
+
     const draft = await campaign("draft");
     expect((await preview({ kind: "complete_campaign", channel: "email", campaignId: draft })).structured.refusals).toEqual([expect.objectContaining({ code: "campaign_not_started" })]);
 

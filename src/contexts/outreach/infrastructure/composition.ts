@@ -10,7 +10,7 @@ import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
-import type { ContactStop, InboxFiling } from "../application/inbound-ports";
+import type { ContactStop, InboxFiling, PersonTimeline } from "../application/inbound-ports";
 import { createInboxJobs } from "../email/application/inbox-jobs";
 import type { MailboxProvider } from "../email/application/ports";
 import type { EngineDeps } from "../email/application/send-next-email";
@@ -134,13 +134,13 @@ function engineDeps(): EngineDeps {
 }
 
 /** Email jobs run only when an adapter is selected: Gmail, or the demo `fake` provider. */
-export function emailJobs(inbox: InboxFiling, stop: ContactStop) {
+export function emailJobs(inbox: InboxFiling, stop: ContactStop, timeline: PersonTimeline) {
   const provider = env().MAILBOX_PROVIDER;
   if (provider !== "fake" && provider !== "gmail") return [];
   try {
     // Inbox sync first, so a reply stops its sequence before the send job looks for due follow-ups.
     return [
-      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, stop), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
+      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, stop, timeline), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",

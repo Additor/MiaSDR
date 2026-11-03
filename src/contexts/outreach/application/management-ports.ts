@@ -1,5 +1,6 @@
 import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import type { DbHandle } from "@/platform/db/client";
+import type { BouncePause } from "../domain/bounce-pause";
 import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
 import type { WorkingHours } from "../domain/working-hours";
@@ -21,6 +22,8 @@ export interface CampaignSummary {
   unconfirmed: number;
   archivedAt: Date | null;
   createdAt: Date;
+  /** The count behind a pause the bounce breaker made, or null. */
+  bouncePause: BouncePause | null;
 }
 
 /** A send in status `unknown`: the mail may or may not have gone out. */
@@ -43,6 +46,8 @@ export interface CampaignRecord {
   steps: StepInput[];
   archivedAt: Date | null;
   createdAt: Date;
+  /** The count behind a pause the bounce breaker made, or null. */
+  bouncePause: BouncePause | null;
 }
 
 export interface EnrollmentRow {

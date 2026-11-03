@@ -344,6 +344,16 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     const seen = await preview(campaignId, "resume");
     expect(seen.structured.problems).toContainEqual(expect.stringContaining("agent_resume_person_paused"));
     expect(codeOf(await launch(campaignId, seen.structured.launchToken as string, "resume"))).toBe("agent_resume_person_paused");
+
+    // MiaSDR paused it for bounces: the same hold, with its own reason and numbers.
+    await sql`update campaigns set bounce_pause = ${sql.json({ at: new Date().toISOString(), sent: 40, bounced: 3 })} where id = ${campaignId}`;
+    const bounced = await preview(campaignId, "resume");
+    expect(bounced.structured.problems).toContainEqual(expect.stringContaining("agent_resume_bounce_paused"));
+    expect(codeOf(await launch(campaignId, bounced.structured.launchToken as string, "resume"))).toBe("agent_resume_bounce_paused");
+    const read = await agent.tool("get_campaign", { channel: "email", campaignId });
+    expect(read.structured.pausedReason).toContain("3 of 40 emails bounced (7.5%)");
+    await sql`update campaigns set bounce_pause = null where id = ${campaignId}`;
+
     await sql`update campaigns set person_paused = false where id = ${campaignId}`;
     expect((await agent.tool("pause_sending", { target: "campaign", channel: "email", campaignId })).structured.outcome).toBe("already_paused");
     const resumed = await launch(campaignId, (await preview(campaignId, "resume")).structured.launchToken as string, "resume");

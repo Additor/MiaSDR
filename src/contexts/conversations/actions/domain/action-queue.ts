@@ -135,11 +135,13 @@ export interface WorkTotals {
   unmatchedSenders: number;
   /** Dead inbound events. Zero for a member who cannot see them. */
   deadLetters: number;
+  /** Email campaigns the bounce breaker paused. */
+  bouncePausedCampaigns: number;
 }
 
 /** True only when no source holds work. A page says "nothing waits" on this and on nothing less. */
 export function isWorkClear(totals: WorkTotals): boolean {
-  return totals.queue + totals.tasks + totals.uncertainCampaignSends + totals.unmatchedSenders + totals.deadLetters === 0;
+  return totals.queue + totals.tasks + totals.uncertainCampaignSends + totals.unmatchedSenders + totals.deadLetters + totals.bouncePausedCampaigns === 0;
 }
 
 /**
