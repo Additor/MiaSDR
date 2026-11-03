@@ -207,7 +207,6 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // The enrollment outcome writers, which conversations' contact stop runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
   // Enrollment's gate on a stop request, which the table handoff to a campaign applies too.
-  "outreach/infrastructure/stop-review-gate",
 ]);
 
 /** Context files that import another context's private infrastructure. Keep it empty. A composition is published, so a context may wire from another's. */
