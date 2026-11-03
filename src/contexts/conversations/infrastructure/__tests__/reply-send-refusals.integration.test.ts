@@ -307,14 +307,13 @@ describeDb("LinkedIn reply send refusals", () => {
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
-  it("answers 409 for a key another conversation already used", async () => {
+  it("lets another organization use the same key: the caller chooses it", async () => {
     const a = await fixture();
     const b = await fixture();
     const k = key();
     expect(await send(a, { idempotencyKey: k })).toMatchObject({ status: "sent" });
-    // Organization B's own chat, with A's key: the key lookup is global.
-    expect(await refusal(send(b, { idempotencyKey: k }))).toEqual({ status: 409, error: "This idempotency key belongs to another conversation." });
-    expect(await count("send_attempts", b.org)).toBe(0);
+    expect(await send(b, { idempotencyKey: k })).toMatchObject({ status: "sent" });
+    expect(await count("send_attempts", b.org)).toBe(1);
   });
 
   it("answers 409 for a conversation on another channel", async () => {

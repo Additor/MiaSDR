@@ -101,7 +101,8 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
   });
 }
 
-const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.emailAddress}:${providerMessageId}`;
+/** By the mailbox row: an address can leave one organization and join another, and Gmail keeps its message ids. */
+const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.id}:${providerMessageId}`;
 
 /** The email inbound store. `inbox` files each message that is not a verified bounce or our own. */
 export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowUpStop): InboundStore {

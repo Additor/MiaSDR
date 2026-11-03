@@ -92,7 +92,7 @@ export const drizzleConversationStore: InboundConversationStore = {
   async ingestEmail(input: InboundEmailInput) {
     return db.transaction(async (tx) => {
       const idempotencyKey = `gmail:${input.accountRef}:${input.providerMessageId}`;
-      const messageScope = and(eq(messages.channel, "email"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
+      const messageScope = and(eq(messages.organizationId, input.organizationId), eq(messages.channel, "email"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
 
       const [stored] = await tx
         .select({ id: messages.id, conversationId: messages.conversationId, personId: records.personId })
@@ -105,12 +105,13 @@ export const drizzleConversationStore: InboundConversationStore = {
       }
 
       const threadScope = and(
+        eq(conversations.organizationId, input.organizationId),
         eq(conversations.channel, "email"),
         eq(conversations.accountRef, input.accountRef),
         eq(conversations.providerThreadId, input.providerThreadId),
       );
       const findConversation = async () =>
-        (await tx.select({ id: conversations.id, recordId: conversations.recordId, organizationId: conversations.organizationId }).from(conversations).where(threadScope))[0];
+        (await tx.select({ id: conversations.id, recordId: conversations.recordId }).from(conversations).where(threadScope))[0];
 
       // A reply in a known thread joins that conversation, whoever sent it.
       let conversation = await findConversation();
@@ -128,9 +129,6 @@ export const drizzleConversationStore: InboundConversationStore = {
           .values({ organizationId: input.organizationId, recordId, channel: "email", accountRef: input.accountRef, providerThreadId: input.providerThreadId })
           .onConflictDoNothing();
         conversation = await findConversation();
-      }
-      if (conversation.organizationId !== input.organizationId) {
-        throw new Error(`Thread ${input.providerThreadId} on ${input.accountRef} belongs to another organization.`);
       }
 
       const [message] = await tx
