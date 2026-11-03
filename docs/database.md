@@ -179,6 +179,6 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `ai_jobs`, `notes`, `tasks`
 - conversations, sequences (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
 - deals: `deal_stages`, `deals`
-- grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`, `grid_provider_credentials`
+- grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`
 - integrations: `integration_accounts`, `integration_credentials`
 - shared jobs (`src/platform/jobs/schema.ts`): `job_runs`

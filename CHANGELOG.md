@@ -36,6 +36,7 @@ The tables and code now use the words the screens use, so start from an empty da
 - Inbox URLs use `group` and `type`. Actions URLs use `group` and `list`.
 - Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
 - The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
+- Every saved credential now lives in `integration_credentials`. `grid_provider_credentials` is gone, and `grid_providers.account_id` names the account that holds a provider's key. The rotation script reports one table.
 
 ### Removed
 

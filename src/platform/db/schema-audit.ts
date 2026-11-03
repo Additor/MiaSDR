@@ -49,7 +49,6 @@ export const INDEX_DEBT: Record<string, string> = Object.fromEntries(
     "events",
     "follow_up_step_runs",
     "grid_columns",
-    "grid_provider_credentials",
     "grid_user_views",
     "linkedin_connections",
     "linkedin_enrollment_details",

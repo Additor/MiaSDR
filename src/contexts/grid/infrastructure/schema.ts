@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
+import { integrationAccounts } from "@/contexts/integrations/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { inList } from "@/platform/db/sql-values";
 
@@ -25,8 +26,8 @@ import { inList } from "@/platform/db/sql-values";
  * state in `cell_meta`. Every table carries organization_id, including the
  * children a worker reads without their parent.
  *
- * Provider secrets live only in `grid_provider_credentials`, encrypted with the
- * integrations AES-256-GCM envelope.
+ * A provider's secret lives only in `integration_credentials`, under the account
+ * that `grid_providers.account_id` names, encrypted with the integrations envelope.
  */
 
 export const GRID_COLUMN_TYPES = [
@@ -250,10 +251,13 @@ export const gridProviders = pgTable(
     rateLimitPerMin: integer("rate_limit_per_min"),
     config: jsonb("config").$type<Record<string, unknown>>().default({}).notNull(),
     enabled: boolean("enabled").notNull().default(true),
+    /** Set exactly when the provider has a saved key. */
+    accountId: uuid("account_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    foreignKey({ columns: [t.accountId, t.organizationId], foreignColumns: [integrationAccounts.id, integrationAccounts.organizationId] }),
     unique("grid_providers_org_key_uq").on(t.organizationId, t.key),
     unique("grid_providers_id_org_uq").on(t.id, t.organizationId),
     check("grid_providers_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_-]*$' and length(btrim(${t.name})) > 0`),
@@ -261,19 +265,3 @@ export const gridProviders = pgTable(
   ],
 );
 
-/** One AES-256-GCM envelope (`v2:<keyId>:<iv>:<tag>:<ciphertext>`) per provider. Never plaintext. */
-export const gridProviderCredentials = pgTable(
-  "grid_provider_credentials",
-  {
-    providerId: uuid("provider_id").primaryKey(),
-    organizationId: orgId(),
-    encryptedPayload: text("encrypted_payload").notNull(),
-    encryptionVersion: text("encryption_version").notNull().default("v2"),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    foreignKey({ columns: [t.providerId, t.organizationId], foreignColumns: [gridProviders.id, gridProviders.organizationId] }).onDelete("cascade"),
-    check("grid_provider_credentials_envelope_ck", sql`${t.encryptedPayload} like ${t.encryptionVersion} || ':%'`),
-  ],
-);

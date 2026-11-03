@@ -6,7 +6,7 @@
  *   pnpm credentials:rotate --apply    writes
  *
  * Reads DATABASE_URL, DATABASE_SSL, INTEGRATION_CREDENTIALS_KEY and INTEGRATION_CREDENTIALS_LEGACY_KEYS
- * (comma separated). Scans integration_credentials and grid_provider_credentials, decrypts each row with
+ * (comma separated). Scans integration_credentials, decrypts each row with
  * any known key, and re-encrypts it with the current key in one transaction per row. Rows already on the
  * current key are opened to prove they decrypt, then skipped. Rows no known key can decrypt are listed and left untouched. Output carries
  * counts, key ids (first 8 hex characters of SHA-256) and row ids, never key material or plaintext.
@@ -21,11 +21,6 @@ import { pathToFileURL } from "node:url";
 
 const CURRENT_VERSION = "v2";
 const INFO = "miasdr:integration-credentials:v1";
-
-export const TABLES = [
-  { table: "integration_credentials", pk: "account_id" },
-  { table: "grid_provider_credentials", pk: "provider_id" },
-];
 
 function deriveKey(secret) {
   if (secret.length < 32) throw new Error("A credential key must be at least 32 characters.");
@@ -84,46 +79,38 @@ function classify(envelope, currentKey, keys) {
 }
 
 /**
- * `sql` is a postgres.js client. Returns a report per table:
- * `{ total, current, rotated, undecryptable: [{ id, reason }], bySourceKey: { <keyId>: count } }`.
- * `rotated` counts rows written with `apply`, or rows that would be written without it.
+ * `sql` is a postgres.js client. `rotated` counts rows written with `apply`, or rows that would be written without it.
  *
- * @typedef {{ total: number, current: number, rotated: number, undecryptable: { id: string, reason: string }[], bySourceKey: Record<string, number> }} TableReport
- * @typedef {{ apply: boolean, currentKeyId: string, legacyKeyIds: string[], tables: Record<string, TableReport> }} RotationReport
+ * @typedef {{ apply: boolean, currentKeyId: string, legacyKeyIds: string[], total: number, current: number, rotated: number, undecryptable: { id: string, reason: string }[], bySourceKey: Record<string, number> }} RotationReport
  * @param {{ sql: any, currentKey: string, legacyKeys?: string[], apply?: boolean }} options
  * @returns {Promise<RotationReport>}
  */
 export async function rotateCredentials({ sql, currentKey, legacyKeys = [], apply = false }) {
   const keys = [currentKey, ...legacyKeys];
   /** @type {RotationReport} */
-  const report = { apply, currentKeyId: credentialKeyId(currentKey), legacyKeyIds: legacyKeys.map(credentialKeyId), tables: {} };
-  for (const { table, pk } of TABLES) {
-    /** @type {TableReport} */
-    const t = { total: 0, current: 0, rotated: 0, undecryptable: [], bySourceKey: {} };
-    report.tables[table] = t;
-    const rows = await sql.unsafe(`select ${pk} as id from ${table} order by ${pk}`);
-    for (const { id } of rows) {
-      t.total += 1;
-      const outcome = await sql.begin(async (tx) => {
-        const [row] = await tx.unsafe(`select encrypted_payload as payload from ${table} where ${pk} = $1 ${apply ? "for update" : ""}`, [id]);
-        if (!row) return { status: "gone" };
-        const result = classify(row.payload, currentKey, keys);
-        if (result.status !== "rotate" || !apply) return result;
-        const next = encryptCredential(result.plaintext, currentKey);
-        if (decryptWithKeys(next, [currentKey]).plaintext !== result.plaintext) throw new Error("re-encryption check failed");
-        await tx.unsafe(`update ${table} set encrypted_payload = $1, encryption_version = $2, updated_at = now() where ${pk} = $3`, [next, CURRENT_VERSION, id]);
-        return result;
-      });
-      if (outcome.status === "gone") {
-        t.total -= 1;
-      } else if (outcome.status === "current") {
-        t.current += 1;
-      } else if (outcome.status === "rotate") {
-        t.rotated += 1;
-        t.bySourceKey[outcome.keyId] = (t.bySourceKey[outcome.keyId] ?? 0) + 1;
-      } else {
-        t.undecryptable.push({ id, reason: outcome.reason });
-      }
+  const report = { apply, currentKeyId: credentialKeyId(currentKey), legacyKeyIds: legacyKeys.map(credentialKeyId), total: 0, current: 0, rotated: 0, undecryptable: [], bySourceKey: {} };
+  const rows = await sql`select account_id as id from integration_credentials order by account_id`;
+  for (const { id } of rows) {
+    report.total += 1;
+    const outcome = await sql.begin(async (tx) => {
+      const [row] = await tx.unsafe(`select encrypted_payload as payload from integration_credentials where account_id = $1 ${apply ? "for update" : ""}`, [id]);
+      if (!row) return { status: "gone" };
+      const result = classify(row.payload, currentKey, keys);
+      if (result.status !== "rotate" || !apply) return result;
+      const next = encryptCredential(result.plaintext, currentKey);
+      if (decryptWithKeys(next, [currentKey]).plaintext !== result.plaintext) throw new Error("re-encryption check failed");
+      await tx`update integration_credentials set encrypted_payload = ${next}, encryption_version = ${CURRENT_VERSION}, updated_at = now() where account_id = ${id}`;
+      return result;
+    });
+    if (outcome.status === "gone") {
+      report.total -= 1;
+    } else if (outcome.status === "current") {
+      report.current += 1;
+    } else if (outcome.status === "rotate") {
+      report.rotated += 1;
+      report.bySourceKey[outcome.keyId] = (report.bySourceKey[outcome.keyId] ?? 0) + 1;
+    } else {
+      report.undecryptable.push({ id, reason: outcome.reason });
     }
   }
   return report;
@@ -132,12 +119,10 @@ export async function rotateCredentials({ sql, currentKey, legacyKeys = [], appl
 function formatReport(report) {
   const lines = [report.apply ? "Applied." : "Dry run. Nothing was written. Run with --apply to write.", `Current key id: ${report.currentKeyId}`];
   lines.push(`Legacy key ids: ${report.legacyKeyIds.length ? report.legacyKeyIds.join(", ") : "none"}`);
-  for (const [table, t] of Object.entries(report.tables)) {
-    const verb = report.apply ? "rotated" : "to rotate";
-    const sources = Object.entries(t.bySourceKey).map(([id, n]) => `${id}:${n}`).join(", ");
-    lines.push(`${table}: ${t.total} rows, ${t.current} already on the current key, ${t.rotated} ${verb}${sources ? ` (from key id ${sources})` : ""}, ${t.undecryptable.length} undecryptable`);
-    for (const { id, reason } of t.undecryptable) lines.push(`  undecryptable ${id}: ${reason}`);
-  }
+  const verb = report.apply ? "rotated" : "to rotate";
+  const sources = Object.entries(report.bySourceKey).map(([id, n]) => `${id}:${n}`).join(", ");
+  lines.push(`integration_credentials: ${report.total} rows, ${report.current} already on the current key, ${report.rotated} ${verb}${sources ? ` (from key id ${sources})` : ""}, ${report.undecryptable.length} undecryptable`);
+  for (const { id, reason } of report.undecryptable) lines.push(`  undecryptable ${id}: ${reason}`);
   return lines.join("\n");
 }
 
@@ -158,7 +143,7 @@ async function main(argv, env) {
   try {
     const report = await rotateCredentials({ sql, currentKey, legacyKeys, apply });
     console.log(formatReport(report));
-    return Object.values(report.tables).some((t) => t.undecryptable.length) ? 2 : 0;
+    return report.undecryptable.length ? 2 : 0;
   } finally {
     await sql.end();
   }

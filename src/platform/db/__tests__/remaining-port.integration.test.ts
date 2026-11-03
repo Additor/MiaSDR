@@ -59,12 +59,12 @@ describeDb("sequence and grid invariants", () => {
   });
 
   it("requires an encryption envelope for provider credentials", async () => {
-    const [{ id: provider }] = await sql`
-      insert into grid_providers (organization_id, key, name) values (${orgA}, 'apollo', 'Apollo') returning id`;
+    const [{ id: account }] = await sql`
+      insert into integration_accounts (organization_id, kind, key, name) values (${orgA}, 'enrichment', 'enrichment:apollo', 'apollo') returning id`;
     await expect(
-      sql`insert into grid_provider_credentials (provider_id, organization_id, encrypted_payload) values (${provider}, ${orgA}, 'sk-plaintext')`,
+      sql`insert into integration_credentials (account_id, encrypted_payload) values (${account}, 'sk-plaintext')`,
     ).rejects.toThrow(/check/i);
-    await sql`insert into grid_provider_credentials (provider_id, organization_id, encrypted_payload) values (${provider}, ${orgA}, 'v2:k:a:b:c')`;
+    await sql`insert into integration_credentials (account_id, encrypted_payload) values (${account}, 'v2:k:a:b:c')`;
   });
 
   it("keeps one draft version per sequence and checks step semantics", async () => {

@@ -39,7 +39,7 @@ export interface ProviderStore {
   list(organizationId: string): Promise<ProviderRecord[]>;
   get(organizationId: string, id: string): Promise<ProviderRecord | null>;
   getByKey(organizationId: string, key: string): Promise<ProviderRecord | null>;
-  /** Throws ConflictError when the key is taken. The envelope is stored in `grid_provider_credentials`. */
+  /** Throws ConflictError when the key is taken. The envelope is stored in `integration_credentials`. */
   create(organizationId: string, provider: NewProvider, encryptedCredential: string | null): Promise<ProviderRecord>;
   /** `encryptedCredential` replaces the stored envelope when given. */
   update(organizationId: string, id: string, patch: ProviderPatch, encryptedCredential?: string): Promise<ProviderRecord | null>;

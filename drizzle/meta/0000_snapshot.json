@@ -3597,6 +3597,14 @@
             "organization_id",
             "key"
           ]
+        },
+        "integration_accounts_id_org_uq": {
+          "name": "integration_accounts_id_org_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "organization_id"
+          ]
         }
       },
       "policies": {},
@@ -3658,7 +3666,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "integration_credentials_envelope_ck": {
+          "name": "integration_credentials_envelope_ck",
+          "value": "\"integration_credentials\".\"encrypted_payload\" like \"integration_credentials\".\"encryption_version\" || ':%'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.campaign_enrollments": {
@@ -12072,92 +12085,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.grid_provider_credentials": {
-      "name": "grid_provider_credentials",
-      "schema": "",
-      "columns": {
-        "provider_id": {
-          "name": "provider_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "encrypted_payload": {
-          "name": "encrypted_payload",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "encryption_version": {
-          "name": "encryption_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'v2'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "grid_provider_credentials_organization_id_organizations_id_fk": {
-          "name": "grid_provider_credentials_organization_id_organizations_id_fk",
-          "tableFrom": "grid_provider_credentials",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "grid_provider_credentials_provider_id_organization_id_grid_providers_id_organization_id_fk": {
-          "name": "grid_provider_credentials_provider_id_organization_id_grid_providers_id_organization_id_fk",
-          "tableFrom": "grid_provider_credentials",
-          "tableTo": "grid_providers",
-          "columnsFrom": [
-            "provider_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "grid_provider_credentials_envelope_ck": {
-          "name": "grid_provider_credentials_envelope_ck",
-          "value": "\"grid_provider_credentials\".\"encrypted_payload\" like \"grid_provider_credentials\".\"encryption_version\" || ':%'"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.grid_providers": {
       "name": "grid_providers",
       "schema": "",
@@ -12220,6 +12147,12 @@
           "notNull": true,
           "default": true
         },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -12248,6 +12181,21 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "grid_providers_account_id_organization_id_integration_accounts_id_organization_id_fk": {
+          "name": "grid_providers_account_id_organization_id_integration_accounts_id_organization_id_fk",
+          "tableFrom": "grid_providers",
+          "tableTo": "integration_accounts",
+          "columnsFrom": [
+            "account_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id",
+            "organization_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

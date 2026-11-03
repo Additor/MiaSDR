@@ -4,9 +4,9 @@ import { integrationAccounts, integrationCredentials } from "@/platform/db/schem
 import { envelopeVersion } from "./credential-cipher";
 
 /*
- * The one writer of a provider account and its encrypted credential. Settings, Integrations saves keys through it, and
- * outreach saves the Unipile connection of the LinkedIn page through it, so both get the same upsert, envelope version
- * and config merge.
+ * The one writer of a provider account and its encrypted credential. Settings, Integrations saves keys through it,
+ * outreach saves the Unipile connection of the LinkedIn page through it, and grid saves enrichment provider keys through
+ * it, so all three get the same upsert, envelope version and config merge.
  */
 
 /**

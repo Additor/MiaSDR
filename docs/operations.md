@@ -98,7 +98,7 @@ Rotate when the key leaked or on your own schedule. Nothing needs re-entering an
 1. Make the new key: `openssl rand -hex 32`. Keep a copy outside the server.
 2. In `.env`, move the current value into `INTEGRATION_CREDENTIALS_LEGACY_KEYS` (comma separated when you keep several) and put the new key in `INTEGRATION_CREDENTIALS_KEY`. Each key needs 32 characters or more.
 3. Deploy: `docker compose up -d`. New saves use the new key. Rows still on the old key keep working because the old key is on the legacy list.
-4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints, per table (`integration_credentials`, `grid_provider_credentials`), how many rows are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
+4. Dry run: `docker compose exec app node scripts/rotate-credentials.mjs`. It writes nothing. It prints how many rows of `integration_credentials` are on the current key, how many it would rotate and from which key id, and which rows no known key can decrypt.
 5. Apply: `docker compose exec app node scripts/rotate-credentials.mjs --apply`. Each row is decrypted with whichever known key fits, re-encrypted with the current key, checked, and written in its own transaction. Rows already on the current key are skipped, so you can run it again. Outside Docker the same run is `pnpm credentials:rotate` and `pnpm credentials:rotate --apply`.
 6. Run the dry run again. Every row should show as already on the current key and 0 undecryptable.
 7. Remove the old key from `INTEGRATION_CREDENTIALS_LEGACY_KEYS` and deploy again.
