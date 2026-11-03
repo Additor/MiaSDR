@@ -1,3 +1,5 @@
+import { UNCONFIRMED_AFTER_MINUTES } from "../../application/campaign-management";
+import type { UnconfirmedSend } from "../../application/management-ports";
 import type { EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
@@ -116,6 +118,8 @@ export interface LinkedInCampaignStore {
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
   /** Deletes a draft. Returns false when no draft matched. */
+  /** Sends in status `unknown` claimed before `olderThan`: the total and the oldest `limit`. */
+  unconfirmedSends(organizationId: string, id: string, olderThan: Date, limit: number): Promise<{ total: number; rows: UnconfirmedSend[] }>;
   /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
   delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
@@ -217,9 +221,10 @@ export async function previewLinkedInStep(deps: LinkedInCampaignDeps, actor: Act
 export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, actor: Actor, id: string, query: EnrollmentListQuery) {
   const campaign = await load(deps, actor, id);
   const now = (deps.now ?? (() => new Date()))();
-  const [enrollments, accounts] = await Promise.all([
+  const [enrollments, accounts, unconfirmed] = await Promise.all([
     deps.campaigns.listEnrollments(actor.organizationId, id, { ...query, campaignStatus: campaign.status }),
     deps.campaigns.accountLimits(actor.organizationId, now),
+    deps.campaigns.unconfirmedSends(actor.organizationId, id, new Date(now.getTime() - UNCONFIRMED_AFTER_MINUTES * 60_000), 50),
   ]);
   const invitation = campaign.steps[0]?.kind === "invitation" ? campaign.steps[0] : null;
   const rows: LinkedInEnrollmentView[] = enrollments.rows.map(({ variables, ...row }) => {
@@ -227,7 +232,7 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
     const noteLength = pending && invitation.body.trim() !== "" ? inviteNoteLength(invitation.body, variables) : null;
     return { ...row, noteLength, noteOverLimit: noteLength !== null && noteLength > INVITE_NOTE_MAX };
   });
-  return { campaign, enrollments: { total: enrollments.total, counts: enrollments.counts, sent: enrollments.sent, rows }, accounts, connectedAccounts: accounts.filter((a) => a.status === "connected").length };
+  return { campaign, enrollments: { total: enrollments.total, counts: enrollments.counts, sent: enrollments.sent, rows }, accounts, unconfirmed, connectedAccounts: accounts.filter((a) => a.status === "connected").length };
 }
 
 export async function enrollPickedLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, personIds: string[], options: EnrollOptions = {}, tx?: DbHandle): Promise<PickedEnrollCounts & LinkedInEnrollResult> {

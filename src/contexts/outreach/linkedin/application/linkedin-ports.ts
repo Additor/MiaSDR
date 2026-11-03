@@ -229,7 +229,8 @@ export interface LinkedInOutreachStore {
   markResolved(claim: LinkedInResolveClaim, profile: ResolvedProfile, now: Date): Promise<ResolveWriteResult>;
   markResolveFailed(claim: LinkedInResolveClaim, error: string, now: Date, fatal: boolean): Promise<void>;
 
-  listUncertain(olderThan: Date, limit: number): Promise<UncertainLinkedInSend[]>;
+  deferUncertain(sendId: string, until: Date): Promise<void>;
+  listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainLinkedInSend[]>;
   resolveUncertainAsSent(send: UncertainLinkedInSend, sent: { providerMessageId: string | null; accepted: boolean }, now: Date): Promise<void>;
   resolveUncertainAsNotSent(send: UncertainLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
   /** Invitations nobody accepted after the expiry: end the sequence. Returns how many. */

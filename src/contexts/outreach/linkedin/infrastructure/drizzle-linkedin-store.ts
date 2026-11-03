@@ -1,3 +1,4 @@
+import type { SendResolutionStore } from "../../application/send-resolution";
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
@@ -42,7 +43,7 @@ import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
-import { giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
+import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
@@ -457,7 +458,11 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     });
   },
 
-  async listUncertain(olderThan, limit): Promise<UncertainLinkedInSend[]> {
+  async deferUncertain(sendId, until) {
+    await deferUncertainCheck(db, sendId, until);
+  },
+
+  async listUncertain(olderThan, limit, now): Promise<UncertainLinkedInSend[]> {
     const rows = await db
       .select({
         sendId: sends.id,
@@ -483,8 +488,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         linkedinConnections,
         and(eq(linkedinConnections.linkedinAccountId, sends.linkedinAccountId), eq(linkedinConnections.providerId, linkedinEnrollmentDetails.providerId)),
       )
-      .where(and(eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan)))
-      .orderBy(asc(sends.claimedAt))
+      .where(and(eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan), uncertainDue(now)))
+      .orderBy(uncertainOrder)
       .limit(limit);
     return rows.map((r) => ({
       sendId: r.sendId,
@@ -622,3 +627,46 @@ async function buildSendClaim(
     nextStep: next ? { waitDays: next.waitDays } : null,
   };
 }
+
+/**
+ * A person's call on a LinkedIn send nobody could settle. The same writes as the reconciler's, guarded on the attempt it read,
+ * so a reconciler that settled it first keeps its result.
+ */
+export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
+  async resolve(input) {
+    const [row] = await db
+      .select({
+        status: sends.status,
+        enrollmentId: sends.enrollmentId,
+        stepNumber: sends.stepNumber,
+        attempt: sends.attempt,
+        claimedAt: sends.claimedAt,
+        accountId: sends.linkedinAccountId,
+        steps: campaigns.steps,
+      })
+      .from(sends)
+      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
+      .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
+      .where(and(eq(sends.id, input.sendId), eq(sends.organizationId, input.organizationId), eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), eq(campaignEnrollments.campaignId, input.campaignId)));
+    if (!row) return "not_found";
+    if (row.status !== "unknown") return "not_unknown";
+    const stepNumber = row.stepNumber as number;
+    const send: UncertainLinkedInSend = {
+      sendId: input.sendId,
+      organizationId: input.organizationId,
+      enrollmentId: row.enrollmentId as string,
+      stepNumber,
+      attempt: row.attempt,
+      claimedAt: row.claimedAt,
+      rendered: true,
+      body: null,
+      chatId: null,
+      account: { id: row.accountId as string, providerAccountId: "" },
+      providerId: null,
+      nextStepWaitDays: (row.steps as Array<{ waitDays?: number }>)[stepNumber]?.waitDays ?? null,
+    };
+    if (input.outcome === "delivered") await drizzleLinkedInStore.resolveUncertainAsSent(send, { providerMessageId: null, accepted: false }, input.now);
+    else await drizzleLinkedInStore.resolveUncertainAsNotSent(send, input.now, input.retryDelayMinutes(row.attempt), input.maxAttempts, "not_found");
+    return "resolved";
+  },
+};

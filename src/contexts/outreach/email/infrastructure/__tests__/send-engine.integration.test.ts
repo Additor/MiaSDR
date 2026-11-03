@@ -297,6 +297,26 @@ describeDb("email send engine", () => {
     });
   });
 
+  it("moves a send it cannot settle behind the rest, so 25 stuck sends hold up nobody", async () => {
+    const stuck = await fixture({ people: 26 });
+    const provider = new FakeMailboxProvider();
+    provider.behavior = () => "timeout-lost";
+    const d = deps(provider);
+    // Every send is unknown and the mailbox cannot answer: the first look defers them all.
+    for (const id of stuck.enrollmentIds) {
+      await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, rfc_message_id, claimed_at)
+        values (${stuck.org}, ${id}, 1, 'email', 'unknown', ${stuck.mailboxIds[0]}, ${`<${id}@x.test>`}, ${new Date(current.getTime() - 3 * 60 * 60_000)})`;
+    }
+    provider.findFails = true;
+    expect((await send.reconcileUncertainSends(d, 25)).stillWaiting).toBe(25);
+    expect((await send.reconcileUncertainSends(d, 25)).stillWaiting).toBe(1);
+    expect((await send.reconcileUncertainSends(d, 25)).checked).toBe(0);
+    advance(31);
+    expect((await send.reconcileUncertainSends(d, 25)).checked).toBe(25);
+    // The reconciler reads every organization, so these leave for the tests after this one.
+    await sql`update sends set status = 'sent' where organization_id = ${stuck.org}`;
+  });
+
   it("retries a refused send with backoff and gives up after three attempts", async () => {
     const f = await fixture();
     const provider = new FakeMailboxProvider();
@@ -396,7 +416,7 @@ describeDb("email send engine", () => {
 
       // A reconciler reads attempt 2 and stalls. A person marks it not delivered meanwhile.
       advance(11);
-      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      const stale = (await store.listUncertain(current, 500, current)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
       expect(stale).toMatchObject({ attempt: 2 });
       const resolved = await resolveUnknownEmailSend({
         organizationId: f.org, campaignId: f.campaign, sendId: stale.sendId, outcome: "not_delivered",
@@ -497,6 +517,8 @@ describeDb("email send engine", () => {
     advance(30);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ stillWaiting: 1 }); // an outage is not proof
     provider.findFails = false;
+    expect((await send.reconcileUncertainSends(d)).checked).toBe(0); // it looks again later, behind the others
+    advance(31);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1 });
 
     provider.behavior = () => "ok";
@@ -526,6 +548,7 @@ describeDb("email send engine", () => {
     expect(provider.delivered).toHaveLength(0);
 
     provider.findInconclusive = null;
+    advance(31);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1, inconclusive: 0 });
   });
 

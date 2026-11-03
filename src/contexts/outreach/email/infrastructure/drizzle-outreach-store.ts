@@ -21,7 +21,7 @@ import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
-import { giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
+import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
@@ -288,7 +288,11 @@ export const drizzleOutreachStore: OutreachStore = {
     await db.update(sends).set({ status: "unknown", error }).where(ownClaim(claim));
   },
 
-  async listUncertain(olderThan, limit): Promise<UncertainSend[]> {
+  async deferUncertain(sendId, until) {
+    await deferUncertainCheck(db, sendId, until);
+  },
+
+  async listUncertain(olderThan, limit, now): Promise<UncertainSend[]> {
     const rows = await db
       .select({
         sendId: sends.id,
@@ -308,8 +312,8 @@ export const drizzleOutreachStore: OutreachStore = {
       .innerJoin(people, eq(people.id, campaignEnrollments.personId))
       .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
       // Test sends (kind 'test') have no enrollment and are never reconciled here; the inner join already drops them.
-      .where(and(eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan)))
-      .orderBy(asc(sends.claimedAt))
+      .where(and(eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan), uncertainDue(now)))
+      .orderBy(uncertainOrder)
       .limit(limit);
     return rows.map(({ steps, enrollmentId, stepNumber, ...row }) => ({
       ...row,

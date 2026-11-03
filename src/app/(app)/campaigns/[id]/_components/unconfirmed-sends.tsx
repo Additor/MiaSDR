@@ -30,7 +30,7 @@ export interface UnconfirmedRow {
  * Sends that may or may not have gone out. The state is uncertain, so the heading carries the warning color on its icon
  * and label; the rest stays neutral, and only the resend confirmation is red.
  */
-export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { campaignId: string; total: number; rows: UnconfirmedRow[]; canResolve: boolean }) {
+export function UnconfirmedSends({ campaignId, total, rows, canResolve, channel = "email" }: { channel?: "email" | "linkedin"; campaignId: string; total: number; rows: UnconfirmedRow[]; canResolve: boolean }) {
   const router = useRouter();
   // Both answers of one send share its key; the tag says which runs. Other sends run on their own.
   const { isBusy, busyTag, run } = useApiAction();
@@ -49,7 +49,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
       sendId,
       async () => {
         const body = { outcome, ...(outcome === "not_delivered" ? { checkedSentFolder: checked.has(sendId) } : {}) };
-        const result = await runApiAction(callApi(`/api/campaigns/${campaignId}/sends/${sendId}/resolve`, "POST", body));
+        const result = await runApiAction(callApi(`${channel === "linkedin" ? "/api/linkedin" : "/api"}/campaigns/${campaignId}/sends/${sendId}/resolve`, "POST", body));
         // Someone else may have answered for this send, so the list reloads either way.
         router.refresh();
         if (!result.ok) return void toast.error(result.error);
@@ -71,7 +71,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
       }
       description={
         <>
-          {total === 1 ? "This email" : "These emails"} may or may not have gone out. Check the mailbox&apos;s Sent folder and tell MiaSDR what happened.
+          {channel === "linkedin" ? `${total === 1 ? "This LinkedIn step" : "These LinkedIn steps"} may or may not have gone out. Check the conversation on LinkedIn and tell MiaSDR what happened.` : <>{total === 1 ? "This email" : "These emails"} may or may not have gone out. Check the mailbox&apos;s Sent folder and tell MiaSDR what happened.</>}
           {!canResolve && " Only an owner or admin can answer."}
         </>
       }
@@ -122,11 +122,11 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                       </div>
                       {confirming.has(row.sendId) && (
                         <div className="grid gap-2 text-xs">
-                          <p>MiaSDR will send this step again. If the email is in the Sent folder, the lead gets a duplicate.</p>
+                          <p>MiaSDR will send this step again. {channel === "linkedin" ? "If it is in the conversation, the lead gets it twice." : "If the email is in the Sent folder, the lead gets a duplicate."}</p>
                           <Field orientation="horizontal">
                             <Checkbox id={`sent-folder-${row.sendId}`} checked={checked.has(row.sendId)} onCheckedChange={(c) => setChecked((cur) => toggle(cur, row.sendId, c === true))} />
                             <FieldLabel htmlFor={`sent-folder-${row.sendId}`} className="text-xs font-normal">
-                              I looked in the Sent folder
+                              {channel === "linkedin" ? "I looked in the LinkedIn conversation" : "I looked in the Sent folder"}
                             </FieldLabel>
                           </Field>
                           <Button size="sm" variant="destructive" disabled={!checked.has(row.sendId) || isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "not_delivered")}>

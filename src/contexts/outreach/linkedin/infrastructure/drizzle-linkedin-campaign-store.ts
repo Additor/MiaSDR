@@ -1,3 +1,4 @@
+import { unconfirmedSendsOf } from "../../infrastructure/drizzle-management-stores";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
@@ -75,6 +76,8 @@ async function insertEnrollments(tx: DbHandle, organizationId: string, campaignI
 }
 
 export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
+  unconfirmedSends: (organizationId, id, olderThan, limit) => unconfirmedSendsOf("linkedin", organizationId, id, olderThan, limit),
+
   transaction: (fn, within) => inTransaction(within, fn),
 
   async list(organizationId, archived = "hide") {

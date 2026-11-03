@@ -181,7 +181,9 @@ export interface OutreachStore {
   recordMailboxCheck(mailboxId: string, error: string | null, now: Date): Promise<void>;
   markUnknown(claim: SendClaim, error: string): Promise<void>;
   /** Sends that are uncertain, or were claimed and never finished. */
-  listUncertain(olderThan: Date, limit: number): Promise<UncertainSend[]>;
+  listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainSend[]>;
+  /** A reconciler could not settle this send: it looks again at `until`, behind the sends nobody has looked at. */
+  deferUncertain(sendId: string, until: Date): Promise<void>;
   resolveUncertainAsSent(send: UncertainSend, sent: SentEmail, now: Date): Promise<void>;
   /** Not in the mailbox after the grace period: make the step retryable. */
   resolveUncertainAsNotSent(send: UncertainSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;

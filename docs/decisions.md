@@ -338,6 +338,8 @@ Code: `src/contexts/outreach`, the email engine under `email/`. `outreach/domain
 | Refused, the provider is down or limiting us (scope `provider`) | `failed`, attempt given back | The mailbox waits 30 minutes (`PROVIDER_HOLD_MINUTES`). Its status stays |
 | Anything else (`unknown`) | `unknown` | Never retried on a guess |
 
+- A reconciler that cannot settle a send moves it behind the rest (`sends.next_check_at`, 30 minutes on, or the end of the grace period), so stuck sends never hold up newer ones. A person settles either channel under Unconfirmed sends on the campaign page.
+- A failed lead comes back with Retry, through the restore rules. The attempt cap still ends the next failure.
 - We set our own `Message-ID` and an `X-MiaSDR-Send-Id` header before sending. Gmail replaces `Message-ID`, so `findSent` scans sent mail since the claim and matches the custom header.
 - `findSent(mailbox, rfcMessageId, since, hint?)` returns `found`, `absent` or `inconclusive`. The query is `in:sent [to:<address>] after:<claim minus 1 hour>` with `includeSpamTrash=true`. `absent` needs a complete listing, no page cap hit, and a claim at least 10 minutes old (`FIND_SENT_INDEX_LAG_MS`). A claim older than 30 days (`FIND_SENT_HORIZON_MS`) is `inconclusive`.
 - `reconcileUncertainSends` looks up `unknown` sends older than 10 minutes. Found: `sent` and the sequence advances. Absent after 30 minutes: retryable. `inconclusive` and API errors leave the send `unknown` (job detail `reconcile_inconclusive`).

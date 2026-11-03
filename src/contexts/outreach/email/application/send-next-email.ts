@@ -1,7 +1,7 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { randomUUID } from "node:crypto";
 import { renderEmail } from "../../domain/render";
-import { FAILED_MAILBOX_CHECK_MINUTES, MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, PROVIDER_HOLD_MINUTES, UNCERTAIN_AFTER_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
+import { FAILED_MAILBOX_CHECK_MINUTES, MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, PROVIDER_HOLD_MINUTES, UNCERTAIN_AFTER_MINUTES, UNCERTAIN_RECHECK_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
 import { resolveThreading } from "../domain/threading";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import { defaultWorkingHours } from "../../domain/working-hours";
@@ -147,7 +147,8 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
   const report: ReconcileReport = { checked: 0, foundSent: 0, retryable: 0, stillWaiting: 0, inconclusive: 0 };
   const olderThan = new Date(now.getTime() - UNCERTAIN_AFTER_MINUTES * 60_000);
 
-  for (const send of await deps.store.listUncertain(olderThan, limit)) {
+  const later = new Date(now.getTime() + UNCERTAIN_RECHECK_MINUTES * 60_000);
+  for (const send of await deps.store.listUncertain(olderThan, limit, now)) {
     report.checked += 1;
     if (!send.rfcMessageId) {
       // Crashed before the message was rendered: nothing can have been sent.
@@ -159,6 +160,7 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
     try {
       found = await deps.provider.findSent({ emailAddress: send.mailboxEmail }, send.rfcMessageId, send.claimedAt, send.recipientEmail ? { to: send.recipientEmail } : undefined);
     } catch {
+      await deps.store.deferUncertain(send.sendId, later);
       report.stillWaiting += 1;
       continue;
     }
@@ -168,11 +170,14 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
     } else if (found.status === "inconclusive") {
       // No proof either way. Leave the send `unknown` so it is never retried on a guess.
       console.warn(`email reconcile: send ${send.sendId} stays unknown: ${found.reason}`);
+      await deps.store.deferUncertain(send.sendId, later);
       report.inconclusive += 1;
     } else if (now.getTime() - send.claimedAt.getTime() >= NOT_FOUND_GRACE_MINUTES * 60_000) {
       await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS, "not_found");
       report.retryable += 1;
     } else {
+      // Looks again when the grace period ends, the moment this answer can change.
+      await deps.store.deferUncertain(send.sendId, new Date(send.claimedAt.getTime() + NOT_FOUND_GRACE_MINUTES * 60_000));
       report.stillWaiting += 1;
     }
   }

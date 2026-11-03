@@ -26,6 +26,43 @@ import { SEND_COUNTED } from "../domain/send-status";
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
   filter === "hide" ? isNull(campaigns.archivedAt) : filter === "only" ? isNotNull(campaigns.archivedAt) : undefined;
 
+/** Sends in status `unknown` of one campaign, on either channel: the total and the oldest `limit`. A person settles them. */
+export async function unconfirmedSendsOf(channel: "email" | "linkedin", organizationId: string, id: string, olderThan: Date, limit: number) {
+  const where = and(
+    eq(sends.organizationId, organizationId),
+    eq(sends.channel, channel),
+    eq(sends.kind, "campaign"),
+    eq(sends.status, "unknown"),
+    lt(sends.claimedAt, olderThan),
+    eq(campaignEnrollments.campaignId, id),
+  );
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(sends)
+    .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
+    .where(where);
+  const rows = await db
+    .select({
+      sendId: sends.id,
+      enrollmentId: sends.enrollmentId,
+      personName: people.fullName,
+      email: people.email,
+      stepNumber: sends.stepNumber,
+      mailboxEmail: mailboxes.emailAddress,
+      claimedAt: sends.claimedAt,
+      note: sends.error,
+    })
+    .from(sends)
+    .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
+    .innerJoin(people, eq(people.id, campaignEnrollments.personId))
+    .leftJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
+    .where(where)
+    .orderBy(asc(sends.claimedAt), asc(sends.id))
+    .limit(limit);
+  // The enrollment join and kind='campaign' above leave only sends that have an enrollment and a step.
+  return { total, rows: rows.map((r) => ({ ...r, enrollmentId: r.enrollmentId as string, stepNumber: r.stepNumber as number })) };
+}
+
 /** Every outcome but completion: the campaign row counts these as stopped, replies included. */
 const STOPPED: readonly EnrollmentStatus[] = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
 
@@ -121,41 +158,7 @@ export const drizzleCampaignStore: CampaignStore = {
     return rows.map((r) => ({ ...r, status: r.status as CampaignStatus, sent: sentBy.get(r.id) ?? 0, unconfirmed: unconfirmedBy.get(r.id) ?? 0 }));
   },
 
-  async unconfirmedSends(organizationId, id, olderThan, limit) {
-    const where = and(
-      eq(sends.organizationId, organizationId),
-      eq(sends.channel, "email"),
-      eq(sends.kind, "campaign"),
-      eq(sends.status, "unknown"),
-      lt(sends.claimedAt, olderThan),
-      eq(campaignEnrollments.campaignId, id),
-    );
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(sends)
-      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-      .where(where);
-    const rows = await db
-      .select({
-        sendId: sends.id,
-        enrollmentId: sends.enrollmentId,
-        personName: people.fullName,
-        email: people.email,
-        stepNumber: sends.stepNumber,
-        mailboxEmail: mailboxes.emailAddress,
-        claimedAt: sends.claimedAt,
-        note: sends.error,
-      })
-      .from(sends)
-      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-      .innerJoin(people, eq(people.id, campaignEnrollments.personId))
-      .leftJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
-      .where(where)
-      .orderBy(asc(sends.claimedAt), asc(sends.id))
-      .limit(limit);
-    // The enrollment join and kind='campaign' above leave only sends that have an enrollment and a step.
-    return { total, rows: rows.map((r) => ({ ...r, enrollmentId: r.enrollmentId as string, stepNumber: r.stepNumber as number })) };
-  },
+  unconfirmedSends: (organizationId, id, olderThan, limit) => unconfirmedSendsOf("email", organizationId, id, olderThan, limit),
 
   async get(organizationId, id, tx) {
     const [row] = await (tx ?? db)

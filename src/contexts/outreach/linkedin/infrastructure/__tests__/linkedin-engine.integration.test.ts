@@ -543,10 +543,11 @@ describeDb("linkedin engine", () => {
     gateway.readOutage = true;
     expect((await engine.reconcileLinkedInSends(deps(gateway))).stillWaiting).toBe(1);
     gateway.readOutage = false;
-    expect((await engine.reconcileLinkedInSends(deps(gateway))).stillWaiting).toBe(1);
+    // It looks again later, behind the others.
+    expect((await engine.reconcileLinkedInSends(deps(gateway))).checked).toBe(0);
     expect((await sendRows(f.enrollmentIds[0]))[0].status).toBe("unknown");
 
-    advance(20);
+    advance(31);
     expect((await engine.reconcileLinkedInSends(deps(gateway))).retryable).toBe(1);
     expect((await sendRows(f.enrollmentIds[0]))[0].status).toBe("failed");
 
@@ -681,7 +682,7 @@ describeDb("linkedin engine", () => {
 
       // Two reconciler passes read attempt 2. The first settles it as not sent; the second stalls.
       advance(11);
-      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      const stale = (await store.listUncertain(current, 500, current)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
       expect(stale).toMatchObject({ attempt: 2 });
       await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS, "not_found");
 

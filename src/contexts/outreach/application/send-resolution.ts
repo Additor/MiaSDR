@@ -3,8 +3,8 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { MAX_SEND_ATTEMPTS, retryDelayMinutes } from "../domain/send-policy";
 
 /**
- * A person's call on an email send the provider never confirmed (status `unknown`), after checking the
- * mailbox's Sent folder. The reconciler leaves a send `unknown` when the mailbox cannot prove it sent or
+ * A person's call on a campaign send the provider never confirmed (status `unknown`), after checking the
+ * mailbox's Sent folder or the LinkedIn conversation. The reconciler leaves a send `unknown` when the mailbox cannot prove it sent or
  * unsent, because retrying on a guess can email a lead twice. Mirrors the reply flow's
  * `resolveUncertainSend` (conversations/application/reply-management.ts).
  */
@@ -13,7 +13,7 @@ export type ResolveOutcome = "resolved" | "not_found" | "not_unknown";
 
 export interface SendResolutionStore {
   /**
-   * One transaction, guarded on the send still being `unknown` and belonging to this email campaign
+   * One transaction, guarded on the send still being `unknown` and belonging to this campaign on this channel
    * of this organization. `delivered` marks it sent and advances the enrollment exactly as a normal
    * send does. `not_delivered` marks it failed and schedules the retry the reconciler would have.
    */
