@@ -68,6 +68,7 @@ export function conversationJobs(): Job[] {
   if (env().MAILBOX_PROVIDER) {
     jobs.push({
       name: "conversations.reply-reconcile",
+      failureKeys: [],
       async run() {
         const report = await reconcileReplies(replyDeps());
         return { processed: report.found, more: report.checked >= 25, detail: { checked: report.checked, uncertain: report.uncertain, waiting: report.waiting } };
@@ -77,6 +78,7 @@ export function conversationJobs(): Job[] {
   // Looks in LinkedIn chats for replies with no recorded outcome. It never sends. Idle without a LinkedIn connection.
   jobs.push({
     name: "conversations.linkedin-reply-reconcile",
+    failureKeys: [],
     async run() {
       const report = await reconcileLinkedInReplies(linkedinReplyDeps());
       return { processed: report.found, more: report.checked >= 25, detail: { checked: report.checked, uncertain: report.uncertain, waiting: report.waiting } };

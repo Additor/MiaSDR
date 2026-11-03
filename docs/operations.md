@@ -52,6 +52,8 @@ Pausing a single campaign or disabling a single mailbox stays available for a na
 
 - A job that threw, or reported failed items in `detail` (any key containing `fail` or `error` with a count above zero), writes one line `[jobs] {"event":"job.failed",...}` to stderr. The same fault repeating logs once, then at most every ten minutes with `repeatedSinceLastLine`. A job that runs clean afterwards logs `job.recovered`.
 - A tick that takes 30 seconds or more writes one `tick.slow` line (stderr) with the slowest jobs, at most every ten minutes.
+- A job states which of its counts mean failure (`Job.failureKeys`), so a run that returns normally can still show as failing. Its rows clear on the next clean run.
+- `/settings/jobs` tells the operator when the scheduler stopped or a tick hung (`platform.heartbeat`, stale after 10 minutes) and when migrations were not applied. `/api/health` stays a liveness check of the app and its database.
 - Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures, to owners and admins of the oldest organization: the operator on an install with several organizations. It stores the database's reason, never the failed statement or its values. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
 
 | Field | Meaning |

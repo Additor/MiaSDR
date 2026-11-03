@@ -4,6 +4,7 @@ import type { Job } from "./types";
 
 const ok = (name: string, processed = 1): Job => ({
   name,
+  failureKeys: [],
   run: async () => ({ processed, more: false }),
 });
 
@@ -17,13 +18,19 @@ describe("runTick", () => {
   });
 
   it("keeps the database's reason and drops the statement and its values", async () => {
-    const bad: Job = { name: "bad", run: async () => { throw new Error("Failed query: select 1\nparams: secret@acme.test", { cause: new Error('column "x" does not exist') }); } };
+    const bad: Job = { name: "bad", failureKeys: [], run: async () => { throw new Error("Failed query: select 1\nparams: secret@acme.test", { cause: new Error('column "x" does not exist') }); } };
     const report = await runTick([bad]);
     expect(report.jobs[0].error).toBe('column "x" does not exist');
   });
 
+  it("reports the failures a job declared, and only while they happened", async () => {
+    const counted = (failed: number): Job => ({ name: "send", failureKeys: ["failed"], run: async () => ({ processed: 0, more: false, detail: { failed, waiting: 3 } }) });
+    expect((await runTick([counted(2)])).jobs[0].failures).toEqual({ failed: 2 });
+    expect((await runTick([counted(0)])).jobs[0].failures).toBeUndefined();
+  });
+
   it("isolates a failing job", async () => {
-    const bad: Job = { name: "bad", run: async () => { throw new Error("boom"); } };
+    const bad: Job = { name: "bad", failureKeys: [], run: async () => { throw new Error("boom"); } };
     const report = await runTick([bad, ok("good")]);
     expect(report.jobs[0]).toMatchObject({ name: "bad", error: "boom", more: true });
     expect(report.jobs[1]).toMatchObject({ name: "good", processed: 1 });

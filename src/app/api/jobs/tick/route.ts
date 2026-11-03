@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
 import { tickObserver } from "@/platform/jobs/observe";
 import { registeredJobs } from "@/composition/job-registry";
+import { withHeartbeat } from "@/platform/jobs/heartbeat";
 import { runTick } from "@/platform/jobs/tick";
 
 export const maxDuration = 60;
@@ -21,7 +22,7 @@ async function tick(request: Request) {
   if (!authorized(request)) {
     return apiError(401, "The cron secret is missing or wrong.");
   }
-  const report = await runTick(registeredJobs());
+  const report = await withHeartbeat(() => runTick(registeredJobs()));
   // The same log lines and failure records as the embedded scheduler. Observing never fails the response.
   await tickObserver.observe(report).catch(() => undefined);
   return NextResponse.json(report);

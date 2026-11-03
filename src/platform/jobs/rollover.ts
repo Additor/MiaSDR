@@ -43,6 +43,7 @@ export async function organizationDays(zones: OrganizationZones, now: Date): Pro
 export function createDailyRolloverJob(steps: readonly RolloverStep[], zones: OrganizationZones): Job {
   return {
     name: "platform.daily-rollover",
+    failureKeys: ["failed"],
     async run(ctx): Promise<JobResult> {
       if (steps.length === 0) return { processed: 0, more: false };
       const now = ctx.now();

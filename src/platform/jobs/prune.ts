@@ -113,6 +113,7 @@ export const pruneSlotKey = (now: Date) => now.toISOString().slice(0, 10);
 export function createHistoryPruneJob(retention: () => RetentionDays = retentionFromEnv): Job {
   return {
     name: "platform.history-prune",
+    failureKeys: [],
     async run(ctx): Promise<JobResult> {
       const now = ctx.now();
       const claim = await claimSlot("history-prune", pruneSlotKey(now), { now, leaseMs: 10 * 60_000 });

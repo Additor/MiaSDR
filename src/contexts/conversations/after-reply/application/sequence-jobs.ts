@@ -170,6 +170,7 @@ export function createSequenceJobs(deps: SequenceJobDeps): Job[] {
   return [
     {
       name: "conversations.sequences",
+      failureKeys: ["start_failed", "failed"],
       async run(ctx) {
         const detail: Record<string, number> = {};
         const count = (key: string) => (detail[key] = (detail[key] ?? 0) + 1);

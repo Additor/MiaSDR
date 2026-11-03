@@ -1,5 +1,6 @@
 import { errorText } from "@/platform/db/error-text";
 import { tickObserver } from "./observe";
+import { withHeartbeat } from "./heartbeat";
 import { setKickRunner } from "./kick";
 import { runTick } from "./tick";
 import type { Job, TickReport } from "./types";
@@ -26,7 +27,7 @@ export function startEmbeddedScheduler(
     if (running) return;
     running = true;
     try {
-      const report = await runTick(jobs, budgetMs);
+      const report = await withHeartbeat(() => runTick(jobs, budgetMs));
       await observe(report);
     } catch (error) {
       console.error(`[jobs] ${JSON.stringify({ event: "tick.crashed", error: errorText(error) })}`);

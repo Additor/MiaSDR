@@ -27,7 +27,8 @@ export async function runTick(
     const jobStarted = Date.now();
     try {
       const result = await job.run({ deadline, now: () => new Date() });
-      report.jobs.push({ name: job.name, ...result, durationMs: Date.now() - jobStarted });
+      const failures = Object.fromEntries(job.failureKeys.flatMap((key) => ((result.detail?.[key] ?? 0) > 0 ? [[key, result.detail?.[key] as number]] : [])));
+      report.jobs.push({ name: job.name, ...result, ...(Object.keys(failures).length > 0 ? { failures } : {}), durationMs: Date.now() - jobStarted });
     } catch (error) {
       report.jobs.push({
         name: job.name,

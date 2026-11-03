@@ -140,6 +140,7 @@ export function emailJobs(inbox: InboxFiling, followUps: FollowUpStop) {
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",
+        failureKeys: [],
         async run() {
           const report = await reconcileTestSends(testSendDeps());
           return { processed: report.foundSent + report.notSent, more: report.checked >= 25, detail: { checked: report.checked, found_sent: report.foundSent, not_sent: report.notSent, waiting: report.waiting } };

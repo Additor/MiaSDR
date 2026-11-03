@@ -141,6 +141,7 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
   return [
     {
       name: "conversations.ai",
+      failureKeys: ["sweep_error", "failed"],
       async run(ctx) {
         const detail: Record<string, number> = {};
         const count = (key: string) => (detail[key] = (detail[key] ?? 0) + 1);

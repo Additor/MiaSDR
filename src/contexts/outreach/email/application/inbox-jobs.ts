@@ -6,6 +6,7 @@ export function createInboxJobs(deps: InboxDeps): Job[] {
   return [
     {
       name: "email.inbox-sync",
+      failureKeys: ["mailboxes_failed"],
       async run(ctx) {
         const dueBefore = new Date(ctx.now().getTime() - deps.minIntervalSeconds * 1000);
         const detail: Record<string, number> = {};
