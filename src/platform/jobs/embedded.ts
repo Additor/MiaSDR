@@ -1,4 +1,4 @@
-import { errorText } from "@/platform/db/error-text";
+import { errorText } from "@/shared/error-text";
 import { tickObserver } from "./observe";
 import { withHeartbeat } from "./heartbeat";
 import { setKickRunner } from "./kick";

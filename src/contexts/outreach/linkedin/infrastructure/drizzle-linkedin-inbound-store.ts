@@ -104,7 +104,7 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
         attempts: MAX_EVENT_ATTEMPTS,
         nextAttemptAt: now,
         processedAt: now,
-        log: [{ at: now.toISOString(), level: "error", message: "MiaSDR could not read this delivery, so it filed nothing. Unipile may have changed its format." }],
+        log: [{ ts: now.toISOString(), level: "error", message: "MiaSDR could not read this delivery, so it filed nothing. Unipile may have changed its format." }],
       });
     },
 

@@ -1,4 +1,4 @@
-import { errorText } from "@/platform/db/error-text";
+import { errorText } from "@/shared/error-text";
 import type { Job } from "@/platform/jobs/types";
 import { classificationSchema, draftSchema, linkedinDraftSchema } from "../domain/ai-contract";
 import { stopRequestedBy } from "../../domain/reply-type-pick-policy";

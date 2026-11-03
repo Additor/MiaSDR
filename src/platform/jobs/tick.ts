@@ -1,4 +1,4 @@
-import { errorText } from "@/platform/db/error-text";
+import { errorText } from "@/shared/error-text";
 import type { Job, TickReport } from "./types";
 
 const DEFAULT_BUDGET_MS = 50_000;

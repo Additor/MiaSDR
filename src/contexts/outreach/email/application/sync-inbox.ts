@@ -1,4 +1,4 @@
-import { errorText } from "@/platform/db/error-text";
+import { errorText } from "@/shared/error-text";
 import { classifyInbound } from "../domain/inbound";
 import type { InboundOutcome, InboundStore } from "../../application/inbound-ports";
 import type { Clock, MailboxProvider } from "./ports";

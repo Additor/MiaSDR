@@ -1,5 +1,5 @@
 import type { SendResolutionStore } from "../../application/send-resolution";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,

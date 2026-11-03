@@ -1,4 +1,4 @@
-import { errorText } from "@/platform/db/error-text";
+import { errorText } from "@/shared/error-text";
 import { clearTickFailures, recordTickFailure, type TickFailure } from "./failure-log";
 import type { TickReport } from "./types";
 

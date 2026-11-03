@@ -1,4 +1,4 @@
-import { rootCause } from "./error-text";
+import { rootCause } from "@/shared/error-text";
 
 /**
  * Drizzle wraps a failed migration statement in an error whose message is "Failed query: <the whole statement>" and keeps
