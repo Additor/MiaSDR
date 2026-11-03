@@ -14,7 +14,7 @@ describeDb("linkedin sales navigator identity", () => {
   let engine: typeof import("../../application/send-next-linkedin");
   let store: typeof import("../drizzle-linkedin-store").drizzleLinkedInStore;
   let campaignStore: typeof import("../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
-  let enrollPeople: typeof import("../drizzle-linkedin-campaign-store").enrollPeople;
+  let enrollFoundPeople: typeof import("../drizzle-linkedin-campaign-store").enrollFoundPeople;
   let importLeads: typeof import("@/contexts/people/application/import-leads").importLeads;
   let leadStore: typeof import("@/contexts/people/infrastructure/drizzle-lead-store").drizzleLeadStore;
   let importFoundPeople: typeof import("@/contexts/people/application/found-people").importFoundPeople;
@@ -57,7 +57,7 @@ describeDb("linkedin sales navigator identity", () => {
   beforeAll(async () => {
     engine = await import("../../application/send-next-linkedin");
     ({ drizzleLinkedInStore: store } = await import("../drizzle-linkedin-store"));
-    ({ drizzleLinkedInCampaignStore: campaignStore, enrollPeople } = await import("../drizzle-linkedin-campaign-store"));
+    ({ drizzleLinkedInCampaignStore: campaignStore, enrollFoundPeople } = await import("../drizzle-linkedin-campaign-store"));
     ({ importLeads } = await import("@/contexts/people/application/import-leads"));
     ({ drizzleLeadStore: leadStore } = await import("@/contexts/people/infrastructure/drizzle-lead-store"));
     ({ importFoundPeople } = await import("@/contexts/people/application/found-people"));
@@ -97,7 +97,7 @@ describeDb("linkedin sales navigator identity", () => {
 
     // The personIds form (search sink) uses the same rule.
     const [other] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'linkedin', 'c2', 'active', ${sql.json(STEPS as never)}) returning id`;
-    expect(await enrollPeople(f.org, other.id, [sn, rec, bare, classic, ...junk])).toBe(4);
+    expect((await enrollFoundPeople(f.org, other.id, [sn, rec, bare, classic, ...junk])).added).toBe(4);
     expect((await enrollmentOf(other.id, sn)).profile_url).toBe(SN("ACwAAAbCdEfGhIj"));
     expect((await enrollmentOf(other.id, bare)).profile_url).toBe("ACwAAAmemberOnly1");
   });

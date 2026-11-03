@@ -290,10 +290,14 @@ describeDb("inbox filters, views and search", () => {
 
     it("unread counts leave out machine mail but keep an unverified bounce notice", async () => {
       const f = await fixture();
-      await inboundThread(f, { email: "human@acme.test" });
-      await inboundThread(f, { autoReply: true });
-      await inboundThread(f, { email: "no-reply@service.test", subject: "Receipt" });
-      await inboundThread(f, { email: "mailer-daemon@mail.test", subject: "Undelivered", possibleBounce: true });
+      const human = await inboundThread(f, { email: "human@acme.test" });
+      const flagged = await inboundThread(f, { autoReply: true });
+      const receipt = await inboundThread(f, { email: "no-reply@service.test", subject: "Receipt" });
+      const notice = await inboundThread(f, { email: "mailer-daemon@mail.test", subject: "Undelivered", possibleBounce: true });
+      // One thread's marks read as the list does, the sender and subject patterns included.
+      const { drizzleInboxStore } = await import("../drizzle-inbox-store");
+      const unreadOf = async (t: { threadId: string }) => (await drizzleInboxStore.thread(f.org, t.threadId))?.unreadCount;
+      expect([await unreadOf(human), await unreadOf(flagged), await unreadOf(receipt), await unreadOf(notice)]).toEqual([1, 0, 0, 1]);
       const nav = await unreadStore.drizzleUnreadStore.counts(f.org);
       // The human message and the unverified bounce count; the auto-reply and the no-reply receipt do not.
       expect(nav.total).toBe(2);

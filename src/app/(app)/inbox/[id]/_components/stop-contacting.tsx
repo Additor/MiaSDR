@@ -26,7 +26,7 @@ export interface StopTarget {
 type Scope = "everywhere" | "address";
 
 const EVERYWHERE = "Email and LinkedIn stop, campaign enrollments end and open drafts retire. You can clear it later, but stopped campaigns do not restart.";
-const ADDRESS = "No campaign or reply can email this address again, and the suppression list keeps it. LinkedIn stays open.";
+const ADDRESS = "No campaign or reply can email this address again, and the suppression list keeps it. No LinkedIn campaign can reach its owners either.";
 
 /**
  * How far a stop reaches and why, shared by Stop contacting and by Change type to the stop request type, so both ask the

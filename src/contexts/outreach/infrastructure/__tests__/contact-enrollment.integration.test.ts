@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { DbHandle } from "@/platform/db/client";
 import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTestEnv } from "@/test-support/db";
 
 /**
@@ -67,6 +68,12 @@ describeDb("contacts and campaign enrollment", () => {
     return { org, tag, userId, campaign, person, enrollment };
   }
   type F = Awaited<ReturnType<typeof fixture>>;
+
+  /** The picked enroll of email, in the shape the search sink answers for LinkedIn. */
+  const enrollEmail = async (org: string, campaignId: string, ids: string[], tx?: DbHandle) => {
+    const { added, skippedContact } = await admin.enrollPicked(org, campaignId, "email", ids, { viaTokenId: null }, tx);
+    return { added, skippedContact };
+  };
 
   const enrolled = async (campaignId: string) => (await sql`select person_id from campaign_enrollments where campaign_id = ${campaignId} order by person_id`).map((r) => r.person_id as string);
   const rowOf = async (id: string) => (await sql`select status, stop_reason, next_send_at from campaign_enrollments where id = ${id}`)[0];
@@ -191,18 +198,18 @@ describeDb("contacts and campaign enrollment", () => {
       await sql`insert into contact_policies (organization_id, person_id, do_not_contact, source, set_at) values (${f.org}, ${dnc}, true, 'human', now())`;
       const retries = guard.contactGuardStats.retries;
 
-      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc], null);
+      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc], { viaTokenId: null });
       expect(out).toEqual({
         requested: 6,
         added: 1,
         skippedMissingIdentity: 1,
         skippedDuplicate: 1,
         skippedRemoved: 0,
-        skippedSuppressed: channel === "email" ? 1 : 0,
-        // LinkedIn has no suppression list, so the suppressed contact falls through to the contact bucket there.
+        // An unsubscribed address blocks both channels, and suppressed reads before contact.
+        skippedSuppressed: 1,
         skippedDoNotContact: 1,
         skippedStopRequest: 0,
-        skippedContact: channel === "email" ? 1 : 2,
+        skippedContact: 1,
         skippedNotFound: 0,
       });
       expect((await enrolled(c)).sort()).toEqual([lead, duplicate].sort());
@@ -226,16 +233,16 @@ describeDb("contacts and campaign enrollment", () => {
       expect(dry).toMatchObject({ requested: 6, wouldAdd: 1, skippedNoEmail: 1, skippedDuplicate: 1, skippedSuppressed: 1, skippedDoNotContact: 1, skippedContact: 1 });
     });
 
-    it("enrollEmailPeople and enrollPeople enroll the leads and report the contact", async () => {
+    it("the picked enroll and the search sink enroll the leads and report the contact", async () => {
       const f = await fixture();
       const [mail, li] = [await f.campaign("email"), await f.campaign("linkedin")];
       const [a, b] = [await f.person("ada"), await f.person("bob")];
       const c = await f.person("cora", { contact: true });
       const retries = guard.contactGuardStats.retries;
 
-      expect(await stores.enrollEmailPeopleCounted(f.org, mail, [a, b, c, a])).toEqual({ added: 2, skippedContact: 1 });
-      expect(await linkedinStore.enrollPeopleCounted(f.org, li, [a, b, c])).toEqual({ added: 2, skippedContact: 1 });
-      expect(await stores.enrollEmailPeople(f.org, mail, [a, b, c])).toBe(0);
+      expect(await enrollEmail(f.org, mail, [a, b, c, a])).toEqual({ added: 2, skippedContact: 1 });
+      expect(await linkedinStore.enrollFoundPeople(f.org, li, [a, b, c])).toEqual({ added: 2, skippedContact: 1 });
+      expect((await enrollEmail(f.org, mail, [a, b, c])).added).toBe(0);
       expect(await enrolled(mail)).toEqual([a, b].sort());
       expect(await enrolled(li)).toEqual([a, b].sort());
       expect(guard.contactGuardStats.retries).toBe(retries);
@@ -270,27 +277,27 @@ describeDb("contacts and campaign enrollment", () => {
       const f = await fixture();
       const c = await f.campaign(channel);
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer], null));
+      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer], { viaTokenId: null }));
       expect(retries).toBeGreaterThan(0);
       expect(result).toMatchObject({ requested: 3, added: 2, skippedContact: 1, skippedDuplicate: 0 });
       expect(await enrolled(c)).toEqual([a, b].sort());
       if (channel === "linkedin") expect((await sql`select count(*)::int as n from linkedin_enrollment_details where organization_id = ${f.org}`)[0].n).toBe(2);
     });
 
-    it("enrollEmailPeople", async () => {
+    it("email enroll inside a caller's transaction", async () => {
       const f = await fixture();
       const c = await f.campaign("email");
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result } = await raceConversion(racer, () => appDb.transaction((tx) => stores.enrollEmailPeopleCounted(f.org, c, [a, b, racer], tx)));
+      const { result } = await raceConversion(racer, () => appDb.transaction((tx) => enrollEmail(f.org, c, [a, b, racer], tx)));
       expect(result).toEqual({ added: 2, skippedContact: 1 });
       expect(await enrolled(c)).toEqual([a, b].sort());
     });
 
-    it("enrollPeople (the Grid handoff and the search sink)", async () => {
+    it("the LinkedIn search sink", async () => {
       const f = await fixture();
       const c = await f.campaign("linkedin");
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result, retries } = await raceConversion(racer, () => linkedinStore.enrollPeopleCounted(f.org, c, [a, b, racer]));
+      const { result, retries } = await raceConversion(racer, () => linkedinStore.enrollFoundPeople(f.org, c, [a, b, racer]));
       expect(retries).toBeGreaterThan(0);
       expect(result).toEqual({ added: 2, skippedContact: 1 });
       expect(await enrolled(c)).toEqual([a, b].sort());
@@ -302,8 +309,8 @@ describeDb("contacts and campaign enrollment", () => {
       const [a, racer] = [await f.person("ada"), await f.person("race")];
       const { result } = await raceConversion(racer, () =>
         appDb.transaction(async (tx) => {
-          const one = await stores.enrollEmailPeopleCounted(f.org, first, [a], tx);
-          const two = await stores.enrollEmailPeopleCounted(f.org, second, [a, racer], tx);
+          const one = await enrollEmail(f.org, first, [a], tx);
+          const two = await enrollEmail(f.org, second, [a, racer], tx);
           return { one, two };
         }),
       );

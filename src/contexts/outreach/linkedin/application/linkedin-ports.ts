@@ -160,7 +160,7 @@ export interface LinkedInResolveClaim {
 export type LinkedInClaim = LinkedInSendClaim | LinkedInResolveClaim;
 
 /** `enrollment_stopped`: the enrollment is no longer pending or active (replied, suppressed, removed). */
-export type LinkedInBlockReason = "campaign_inactive" | "do_not_contact" | "enrollment_stopped";
+export type LinkedInBlockReason = "campaign_inactive" | "suppressed" | "do_not_contact" | "enrollment_stopped";
 
 export interface LinkedInClaimOptions {
   accountId: string;

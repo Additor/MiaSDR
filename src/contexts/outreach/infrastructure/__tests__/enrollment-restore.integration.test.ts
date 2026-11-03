@@ -196,7 +196,7 @@ describeDb("restore of removed enrollments", () => {
       }
     });
 
-    it("a suppressed address on an email campaign, and not on LinkedIn", async () => {
+    it("a suppressed address on an email campaign, and on LinkedIn unless it bounced", async () => {
       const mail = await fixture("email");
       const mc = await mail.campaign("Mail");
       const p = await mail.person("Unsubscribed Person", "gone@unsub.test");
@@ -209,7 +209,12 @@ describeDb("restore of removed enrollments", () => {
       const q = await li.person("Linked Person", "gone2@unsub.test");
       const le = await li.enroll(lc, q);
       await sql`insert into suppression_list (organization_id, email, reason) values (${li.org}, 'gone2@unsub.test', 'unsubscribed')`;
-      expect(await restore(li, lc, [le])).toMatchObject({ restored: 1 });
+      await refuses(li, lc, le, "suppressed");
+
+      const r = await li.person("Bounced Person", "gone3@unsub.test");
+      const be = await li.enroll(lc, r);
+      await sql`insert into suppression_list (organization_id, email, reason) values (${li.org}, 'gone3@unsub.test', 'bounced')`;
+      expect(await restore(li, lc, [be])).toMatchObject({ restored: 1 });
     });
 
     it("a person who is pending or active in another campaign on the channel, named in the answer", async () => {

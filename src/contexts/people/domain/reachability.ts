@@ -2,8 +2,9 @@ import { humanizeToken } from "@/shared/humanize";
 
 /*
  * Reachability: which channels can reach a person, lead or contact. It is its own state and never part of the lead
- * status. Do not contact (`contact_policies`) blocks every channel. A suppressed address (`suppression_list`) blocks
- * email only: LinkedIn stays open, as the send guards already decide. A channel the person has no value for is missing.
+ * status. Do not contact (`contact_policies`) blocks every channel. A suppressed address (`suppression_list`) always
+ * blocks email, and blocks LinkedIn when the reason says the person asked to be left alone (`SUPPRESSION_BLOCKS`). A
+ * bounce says only that the address is dead, so LinkedIn stays open. A channel the person has no value for is missing.
  * The people context owns both tables and writes them in `infrastructure/reachability.ts`; the contexts above decide
  * when (a stop request, a bounce, an unsubscribe) and run their own follow-through (outreach ends enrollments,
  * conversations ends runs and retires drafts). The read model there fills a page of person ids, and every list and
@@ -13,6 +14,24 @@ import { humanizeToken } from "@/shared/humanize";
 /** Why an address sits on the suppression list. Mirrors `suppression_reason_ck`. */
 export const SUPPRESSION_REASONS = ["unsubscribed", "bounced", "manual"] as const;
 export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
+
+export type ReachChannel = "email" | "linkedin";
+
+/**
+ * The channels each suppression reason blocks. Enrollment, the send checks and the reach UI all read this table. A
+ * complaint asks to stop harder than an unsubscribe does, so it blocks what an unsubscribe blocks.
+ */
+const SUPPRESSION_BLOCKS: Record<SuppressionReason, readonly ReachChannel[]> = {
+  unsubscribed: ["email", "linkedin"],
+  manual: ["email", "linkedin"],
+  complaint: ["email", "linkedin"],
+  bounced: ["email"],
+};
+
+export const suppressionBlocks = (reason: string, channel: ReachChannel): boolean => (SUPPRESSION_BLOCKS[reason as SuppressionReason] ?? ["email", "linkedin"]).includes(channel);
+
+/** The reasons that block a channel, for a SQL filter. */
+export const suppressionReasonsBlocking = (channel: ReachChannel): SuppressionReason[] => SUPPRESSION_REASONS.filter((reason) => suppressionBlocks(reason, channel));
 
 /** The form an address takes on the suppression list, and the form every lookup compares with. */
 export const suppressionKey = (email: string): string => email.trim().toLowerCase();
@@ -24,7 +43,8 @@ export interface Reachability {
   /** Null when the person is not marked do not contact. */
   doNotContact: { reason: string | null; since: Date | null } | null;
   email: { state: "open" | "suppressed" | "missing"; suppressionReason: string | null; since: Date | null };
-  linkedin: { state: "open" | "missing" };
+  /** `blocked`: the person has a profile, and their address's suppression reason also closes LinkedIn. */
+  linkedin: { state: "open" | "blocked" | "missing"; suppressionReason: string | null; since: Date | null };
 }
 
 /** The facts one person's reachability comes from. */
@@ -40,7 +60,7 @@ export interface ReachFacts {
 export const NO_REACH: Reachability = {
   doNotContact: null,
   email: { state: "missing", suppressionReason: null, since: null },
-  linkedin: { state: "missing" },
+  linkedin: { state: "missing", suppressionReason: null, since: null },
 };
 
 /**
@@ -58,7 +78,11 @@ export function reachability(facts: ReachFacts): Reachability {
       : facts.suppression
         ? { state: "suppressed", suppressionReason: facts.suppression.reason, since: facts.suppression.since }
         : { state: "open", suppressionReason: null, since: null },
-    linkedin: { state: facts.hasLinkedin ? "open" : "missing" },
+    linkedin: !facts.hasLinkedin
+      ? { state: "missing", suppressionReason: null, since: null }
+      : hasEmail && facts.suppression && suppressionBlocks(facts.suppression.reason, "linkedin")
+        ? { state: "blocked", suppressionReason: facts.suppression.reason, since: facts.suppression.since }
+        : { state: "open", suppressionReason: null, since: null },
   };
 }
 

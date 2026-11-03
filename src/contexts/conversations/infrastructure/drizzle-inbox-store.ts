@@ -1,9 +1,9 @@
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { campaignEnrollments, companies, threads, linkedinAccounts, mailboxes, messages, people, conversations, sends } from "@/platform/db/schema";
 import { OUT_OF_OFFICE_KEY } from "../domain/inbox-filter";
 import type { InboxFilter, InboxFilterOptions, InboxRow, InboxStore, ScheduledRow, ThreadMessage } from "../application/ports";
-import { automatedByPattern, autoReplyFlag, excludedFromUnread, likePattern } from "./inbox-sql";
+import { automatedByPattern, autoReplyFlag, likePattern, unreadMessageSql } from "./inbox-sql";
 
 /** CC addresses stored in a message's raw jsonb (inbound headers, or the list a reply went out with). */
 function ccOf(raw: unknown): string[] {
@@ -100,7 +100,7 @@ function threadSource(organizationId: string, f: InboxFilter): SQL {
            lm.subject, lm.body_text, lm.sent_at, lm.direction, lm.auto_reply, lm.possible_bounce,
            (lm.direction = 'inbound' and (lm.auto_reply or lm.possible_bounce or lm.by_pattern)) as automated,
            (select count(*)::int from messages m
-             where m.thread_id = c.id and m.direction = 'inbound' and m.opened_at is null and not ${excludedFromUnread("m")}) as unread,
+             where m.thread_id = c.id and ${unreadMessageSql("m")}) as unread,
            exists (select 1 from messages m where m.thread_id = c.id and m.important) as has_important
     from threads c
     join conversations r on r.id = c.conversation_id
@@ -291,7 +291,7 @@ export const drizzleInboxStore: InboxStore = {
     if (!head) return null;
 
     const stored = await db
-      .select()
+      .select({ ...getTableColumns(messages), unread: sql<boolean>`${unreadMessageSql("messages")}` })
       .from(messages)
       .where(and(eq(messages.organizationId, organizationId), eq(messages.threadId, threadId)));
 
@@ -354,7 +354,7 @@ export const drizzleInboxStore: InboxStore = {
           at: m.sentAt,
           autoReply,
           possibleBounce,
-          unread: m.direction === "inbound" && m.openedAt === null && (!autoReply || possibleBounce),
+          unread: m.unread,
           important: m.important,
           ...(typeof sentVia === "string" ? { sentVia } : {}),
         };

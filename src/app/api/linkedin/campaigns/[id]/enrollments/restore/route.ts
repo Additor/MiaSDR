@@ -5,8 +5,8 @@ import { enrollmentRestore } from "@/composition/inbox-filing";
 import { withActor } from "@/app/_lib/api";
 
 /**
- * Puts removed leads back: `pending` when nothing was sent, `active` when the lead has progress. Leads that replied, are on do not contact,
- * are active in another LinkedIn campaign, or sit in a closed campaign stay removed; `refused` says why for each.
+ * Puts removed leads back: `pending` when nothing was sent, `active` when the lead has progress. Leads that replied, are on do not contact, whose address's
+ * suppression reason closes LinkedIn, are active in another LinkedIn campaign, or sit in a closed campaign stay removed; `refused` says why for each.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]/enrollments/restore">) {
   const { id } = await ctx.params;

@@ -195,7 +195,7 @@ export const importRuns = pgTable(
 );
 
 // Reachability: whether the organization may contact a person (do not contact, every channel) or an address
-// (suppression, email only). The read model and the writers live in `infrastructure/reachability.ts`.
+// (suppression, email and for some reasons LinkedIn; `SUPPRESSION_BLOCKS`). The read model and the writers live in `infrastructure/reachability.ts`.
 
 /** Do-not-contact applies to every channel. Three legal shapes: never set, set, cleared. */
 export const contactPolicies = pgTable(

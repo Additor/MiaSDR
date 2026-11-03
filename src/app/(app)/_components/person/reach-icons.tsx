@@ -27,7 +27,7 @@ export function DoNotContactTip({ dnc }: { dnc: NonNullable<Reachability["doNotC
   );
 }
 
-/** "Email suppressed: Bounced, since 2026-10-01". Suppression blocks email only. */
+/** "Email suppressed: Bounced, since 2026-10-01". */
 export function SuppressedTip({ email }: { email: Reachability["email"] }) {
   return (
     <>
@@ -41,14 +41,28 @@ export function SuppressedTip({ email }: { email: Reachability["email"] }) {
   );
 }
 
+/** "LinkedIn blocked: Unsubscribed, since 2026-10-01". The address's suppression reason closes LinkedIn too. */
+export function LinkedInBlockedTip({ linkedin }: { linkedin: Reachability["linkedin"] }) {
+  return (
+    <>
+      {`LinkedIn blocked${linkedin.suppressionReason ? `: ${suppressionReasonLabel(linkedin.suppressionReason)}` : ""}`}
+      {linkedin.since && (
+        <>
+          , since <Time value={linkedin.since} dateOnly />
+        </>
+      )}
+    </>
+  );
+}
+
 const iconClasses = "inline-flex size-7 items-center justify-center rounded-md border [&_svg]:size-4";
 const liveClasses = "relative z-10 bg-background hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
 
 /**
  * A person's reach in a list row: a do-not-contact mark when it applies, then Email and LinkedIn as icon buttons. An open
  * channel is a link that sits above the row's stretched link (`relative z-10`): `mailto:` for the address, the profile in
- * a new tab. A suppressed address shows a crossed mail icon with the reason on hover and focus. A missing value is a
- * dashed, crossed-out mark that is not interactive. Each state carries its name for screen readers, so none rests on color.
+ * a new tab. A suppressed address shows a crossed mail icon with the reason on hover and focus, and a suppression that
+ * closes LinkedIn does the same for the profile. A missing value is a dashed, crossed-out mark that is not interactive. Each state carries its name for screen readers, so none rests on color.
  */
 export function ReachIcons({ reach, contact, person }: { reach: Reachability; contact: LeadContactPoints; person: string }) {
   const blocked = reach.doNotContact !== null;
@@ -82,7 +96,15 @@ export function ReachIcons({ reach, contact, person }: { reach: Reachability; co
           <MailXIcon aria-hidden />
         </MissingMark>
       )}
-      {linkedin ? (
+      {linkedin && reach.linkedin.state === "blocked" ? (
+        <StateTip
+          trigger={<a href={linkedin.href} target="_blank" rel="noopener noreferrer" className={cn(iconClasses, liveClasses, "text-muted-foreground")} data-testid="reach-linkedin-blocked" />}
+          tip={<LinkedInBlockedTip linkedin={reach.linkedin} />}
+        >
+          <LinkedInMark crossed />
+          <span className="sr-only">{`LinkedIn profile of ${person}`}</span>
+        </StateTip>
+      ) : linkedin ? (
         <LinkTip
           tip={`Open LinkedIn profile of ${person}`}
           link={<a href={linkedin.href} target="_blank" rel="noopener noreferrer" aria-label={`Open LinkedIn profile of ${person}`} className={cn(iconClasses, liveClasses, tone)} />}

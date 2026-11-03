@@ -1,77 +1,24 @@
 import { unconfirmedSendsOf } from "../../infrastructure/drizzle-management-stores";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, linkedinAccounts, linkedinEnrollmentDetails, people, sends } from "@/platform/db/schema";
 import type { LinkedInCampaignStore, LinkedInEnrollResult } from "../application/linkedin-campaigns";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
-import { insertSkippingContacts, notContactSql } from "../../infrastructure/contact-guard";
+import { enrollByQueryTx, enrollPickedTx } from "../../infrastructure/enrollment-eligibility";
 import { archiveCondition, checkedStatusChange, statusMarks, stepsStillEditable } from "../../infrastructure/drizzle-management-stores";
 import type { CampaignStatus } from "../../domain/campaign";
+import { REMOVED_STATUS } from "../../domain/enrollment-status";
 import { retriesUsed } from "../../domain/enrollment-list";
 import { filteredScope, sentCount, tabCounts } from "../../infrastructure/enrollment-list-sql";
 import { inboxThreadsOfPeople } from "../../infrastructure/inbox-thread-lookup";
 import { dailyInviteLimit, linkedinRules, profileUrlFor, type LinkedInStep } from "../domain/linkedin";
-import { parseMemberUrl } from "../domain/linkedin-identity";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "../../infrastructure/stop-review-gate";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 const DAY_MS = 86_400_000;
-
-/** Sales Navigator and Recruiter member URLs, same shapes as `parseMemberUrl`: a known path prefix and an id of 10 or more safe characters. */
-const MEMBER_URL_SQL =
-  "^(https?://)?([a-z0-9-]+\\.)*linkedin\\.com/(sales/(lead|people)/|talent/(profile/|hire/[^/]+/profile/))[A-Za-z0-9_-]{10,}([,?/#]|%2c|$)";
-
-/**
- * A person a LinkedIn campaign can enroll: a public slug, a Sales Navigator or Recruiter URL, or a stored member id.
- * One fragment for the query form, the personIds form and the counts, so they cannot disagree.
- */
-const hasProfile = sql`(${people.linkedinSlug} is not null or coalesce(${people.linkedinUrl} ~* ${MEMBER_URL_SQL}, false) or ${people.raw}->>'linkedin_member_id' is not null)`;
-
-type EnrollCandidate = { id: string; slug: string | null; url: string | null; memberId: string | null };
-
-/** The identifier a resolve starts from: the profile URL of the slug, else the stored member URL as typed, else the bare member id. */
-function enrollmentProfileUrl(p: EnrollCandidate): string | null {
-  if (p.slug) return profileUrlFor(p.slug);
-  if (p.url && parseMemberUrl(p.url)) return p.url;
-  return p.memberId;
-}
-
-async function insertEnrollments(tx: DbHandle, organizationId: string, campaignId: string, eligible: EnrollCandidate[], viaTokenId: string | null = null): Promise<{ addedPersonIds: string[]; skippedContact: number }> {
-  const urlOf = new Map(
-    eligible.flatMap((p) => {
-      const profileUrl = enrollmentProfileUrl(p);
-      return profileUrl ? [[p.id, profileUrl] as const] : [];
-    }),
-  );
-  const ids = [...urlOf.keys()].sort();
-  const addedPersonIds: string[] = [];
-  let skippedContact = 0;
-  for (let i = 0; i < ids.length; i += 500) {
-    const result = await insertSkippingContacts(tx, organizationId, ids.slice(i, i + 500), (sp, keep) =>
-      sp
-        .insert(campaignEnrollments)
-        .values(keep.map((personId) => ({ organizationId, campaignId, personId, channel: "linkedin", enrolledViaTokenId: viaTokenId })))
-        .onConflictDoNothing()
-        .returning({ id: campaignEnrollments.id, personId: campaignEnrollments.personId }),
-    );
-    const { inserted } = result;
-    if (inserted.length > 0) {
-      await tx
-        .insert(linkedinEnrollmentDetails)
-        .values(inserted.map((e) => ({ enrollmentId: e.id, organizationId, profileUrl: urlOf.get(e.personId) as string })))
-        .onConflictDoNothing();
-    }
-    addedPersonIds.push(...inserted.map((e) => e.personId));
-    skippedContact += result.skippedContact;
-  }
-  return { addedPersonIds, skippedContact };
-}
 
 export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
   unconfirmedSends: (organizationId, id, olderThan, limit) => unconfirmedSendsOf("linkedin", organizationId, id, olderThan, limit),
@@ -88,7 +35,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
         archivedAt: campaigns.archivedAt,
         createdAt: campaigns.createdAt,
         createdBy: campaigns.createdBy,
-        enrolled: sql<number>`count(${campaignEnrollments.id})::int`,
+        enrolled: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} <> ${REMOVED_STATUS}))::int`,
         invited: sql<number>`(count(${linkedinEnrollmentDetails.enrollmentId}) filter (where ${linkedinEnrollmentDetails.connectionState} <> 'none'))::int`,
         connected: sql<number>`(count(${linkedinEnrollmentDetails.enrollmentId}) filter (where ${linkedinEnrollmentDetails.connectionState} = 'connected'))::int`,
         replied: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} = 'replied'))::int`,
@@ -160,71 +107,10 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     return rows.length > 0;
   },
 
-  async enroll(organizationId, id, filter, handle): Promise<LinkedInEnrollResult> {
-    const matching = and(eq(people.organizationId, organizationId), leadSearchCondition(filter.query));
+  enroll(organizationId, id, filter, handle): Promise<LinkedInEnrollResult> {
     return inTransaction(handle, async (tx) => {
-      const dnc = doNotContactSql("people");
-      const stopOpen = personStopReviewOpenSql("people");
-      const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
-
-      const [skipped] = await tx
-        .select({
-          matched: sql<number>`count(*)::int`,
-          noProfile: sql<number>`(count(*) filter (where not ${hasProfile}))::int`,
-          dnc: sql<number>`(count(*) filter (where ${hasProfile} and ${dnc}))::int`,
-          stopOpen: sql<number>`(count(*) filter (where ${hasProfile} and not ${dnc} and ${stopOpen}))::int`,
-          already: sql<number>`(count(*) filter (where ${hasProfile} and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${hasProfile} and not ${already} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
-        })
-        .from(people)
-        .leftJoin(companies, eq(companies.id, people.companyId))
-        .where(matching);
-
-      const eligibleWhere = and(matching, hasProfile, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
-      if (filter.dryRun) {
-        const [{ n }] = await tx
-          .select({ n: sql<number>`count(*)::int` })
-          .from(people)
-          .leftJoin(companies, eq(companies.id, people.companyId))
-          .where(eligibleWhere);
-        return {
-          requested: skipped.matched,
-          skippedMissingIdentity: skipped.noProfile,
-          skippedDuplicate: skipped.already,
-          skippedSuppressed: 0,
-          added: 0,
-          alreadyEnrolled: skipped.already,
-          skippedNoProfile: skipped.noProfile,
-          skippedDoNotContact: skipped.dnc,
-          skippedStopRequest: skipped.stopOpen,
-          skippedContact: skipped.contact,
-          wouldAdd: Math.min(n, filter.limit),
-        };
-      }
-
-      const eligible = await tx
-        .select({ id: people.id, slug: people.linkedinSlug, url: people.linkedinUrl, memberId: sql<string | null>`${people.raw}->>'linkedin_member_id'` })
-        .from(people)
-        .leftJoin(companies, eq(companies.id, people.companyId))
-        .where(eligibleWhere)
-        .orderBy(asc(people.createdAt), asc(people.id))
-        .limit(filter.limit);
-
-      const { addedPersonIds, skippedContact } = await insertEnrollments(tx, organizationId, id, eligible, filter.viaTokenId ?? null);
-      const added = addedPersonIds.length;
-      return {
-        addedPersonIds,
-        requested: skipped.matched,
-        skippedMissingIdentity: skipped.noProfile,
-        skippedDuplicate: skipped.already,
-        skippedSuppressed: 0,
-        added,
-        alreadyEnrolled: skipped.already,
-        skippedNoProfile: skipped.noProfile,
-        skippedDoNotContact: skipped.dnc,
-        skippedStopRequest: skipped.stopOpen,
-        skippedContact: skipped.contact + skippedContact,
-      };
+      const { addedPersonIds, counts } = await enrollByQueryTx(tx, organizationId, id, "linkedin", filter);
+      return { ...(filter.dryRun ? {} : { addedPersonIds }), ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoProfile: counts.skippedMissingIdentity };
     });
   },
 
@@ -410,10 +296,10 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
 };
 
 /**
- * Enrolls specific people (found by a search) into a LinkedIn campaign. Skips people without a profile slug, member URL or member id, with
- * do-not-contact, an open stop request, contacts, or already enrolled, and does nothing for a completed or foreign campaign. Safe to repeat.
+ * Enrolls the people a search found into its LinkedIn campaign, under the rule of every enroll path. Does nothing for a
+ * completed or foreign campaign. Safe to repeat.
  */
-export async function enrollPeopleCounted(organizationId: string, campaignId: string, personIds: string[], handle?: DbHandle): Promise<{ added: number; skippedContact: number }> {
+export async function enrollFoundPeople(organizationId: string, campaignId: string, personIds: string[], handle?: DbHandle): Promise<{ added: number; skippedContact: number }> {
   if (personIds.length === 0) return { added: 0, skippedContact: 0 };
   return inTransaction(handle, async (tx) => {
     const [campaign] = await tx
@@ -421,24 +307,7 @@ export async function enrollPeopleCounted(organizationId: string, campaignId: st
       .from(campaigns)
       .where(and(eq(campaigns.id, campaignId), eq(campaigns.organizationId, organizationId), eq(campaigns.channel, "linkedin")));
     if (!campaign || campaign.status === "completed") return { added: 0, skippedContact: 0 };
-
-    const dnc = doNotContactSql("people");
-    const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`, sql`not ${personStopReviewOpenSql("people")}`);
-    const eligible = await tx
-      .select({ id: people.id, slug: people.linkedinSlug, url: people.linkedinUrl, memberId: sql<string | null>`${people.raw}->>'linkedin_member_id'` })
-      .from(people)
-      .where(and(picked, notContactSql));
-
-    const { addedPersonIds } = await insertEnrollments(tx, organizationId, campaignId, eligible);
-    // Counted after the insert, so a person who became a contact meanwhile (dropped by the savepoint) is in the count too.
-    const [{ contacts }] = await tx
-      .select({ contacts: sql<number>`count(*)::int` })
-      .from(people)
-      .where(and(picked, sql`not ${notContactSql}`));
-    return { added: addedPersonIds.length, skippedContact: contacts };
+    const { added, skippedContact } = await enrollPickedTx(tx, organizationId, campaignId, "linkedin", personIds, { viaTokenId: null });
+    return { added, skippedContact };
   });
-}
-
-export async function enrollPeople(organizationId: string, campaignId: string, personIds: string[], handle?: DbHandle): Promise<number> {
-  return (await enrollPeopleCounted(organizationId, campaignId, personIds, handle)).added;
 }

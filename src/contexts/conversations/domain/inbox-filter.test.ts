@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTOMATED_SENDER_PATTERN,
+  AUTOMATED_SUBJECT_PATTERN,
   activeFilterCount,
   dayGroupOf,
   groupByDay,
   inboxHref,
-  isAutomatedMessage,
   parseInboxParams,
   resolveDateRange,
 } from "./inbox-filter";
@@ -77,20 +78,18 @@ describe("resolveDateRange in a time zone", () => {
   });
 });
 
-describe("isAutomatedMessage", () => {
-  it("trusts the header flags", () => {
-    expect(isAutomatedMessage({ autoReply: true })).toBe(true);
-    expect(isAutomatedMessage({ possibleBounce: true })).toBe(true);
-  });
+describe("the patterns of machine mail", () => {
+  const sender = new RegExp(AUTOMATED_SENDER_PATTERN, "i");
+  const subject = new RegExp(AUTOMATED_SUBJECT_PATTERN, "i");
 
   it.each(["noreply@x.test", "no-reply@x.test", "No_Reply@x.test", "do-not-reply@x.test", "donotreply@x.test", "mailer-daemon@x.test", "postmaster@x.test", "dmarc-reports@x.test", "bounces@x.test", "Service <notifications.noreply@x.test>"])(
-    "flags the sender %s",
-    (from) => expect(isAutomatedMessage({ from })).toBe(true),
+    "flag the sender %s",
+    (from) => expect(sender.test(from)).toBe(true),
   );
 
   it.each(["Report domain: acme.test Submitter: google.com", "DMARC Aggregate Report", "Delivery Status Notification (Failure)", "Undeliverable: hello", "Mail delivery failed: returning message", "Returned mail: see transcript"])(
-    "flags the subject %s",
-    (subject) => expect(isAutomatedMessage({ subject })).toBe(true),
+    "flag the subject %s",
+    (text) => expect(subject.test(text)).toBe(true),
   );
 
   it.each([
@@ -98,8 +97,10 @@ describe("isAutomatedMessage", () => {
     { from: "noreplyton@acme.test", subject: "Reply about the report" },
     { from: "anna.bouncer@acme.test", subject: "Let's talk" },
     { from: "reply@acme.test", subject: "Delivery schedule for Q4" },
-    { from: null, subject: null },
-  ])("leaves a human message alone: %j", (probe) => expect(isAutomatedMessage(probe)).toBe(false));
+  ])("leave a human message alone: %j", (probe) => {
+    expect(sender.test(probe.from)).toBe(false);
+    expect(subject.test(probe.subject)).toBe(false);
+  });
 });
 
 describe("day groups", () => {

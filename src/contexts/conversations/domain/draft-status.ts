@@ -31,6 +31,9 @@ export const IN_FLIGHT_DRAFT_STATUSES: readonly DraftStatus[] = ["sending", "del
 /** Drafts that hold the conversation's reply slot: a new automatic draft waits until they settle. */
 export const PENDING_DRAFT_STATUSES: readonly DraftStatus[] = [...UNSENT_DRAFT_STATUSES, ...IN_FLIGHT_DRAFT_STATUSES];
 
+/** Drafts that answer the reply, waiting or already gone: an AI job that failed before one of them no longer matters. */
+export const ANSWERING_DRAFT_STATUSES: readonly DraftStatus[] = [...PENDING_DRAFT_STATUSES, "sent"];
+
 export function canMoveDraft(from: DraftStatus, to: DraftStatus): boolean {
   return DRAFT_FROM[to].includes(from);
 }

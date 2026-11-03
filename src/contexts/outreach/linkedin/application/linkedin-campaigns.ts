@@ -1,6 +1,8 @@
 import { UNCONFIRMED_AFTER_MINUTES } from "../../application/campaign-management";
 import type { UnconfirmedSend } from "../../application/management-ports";
 import type { EnrollOptions } from "../../application/enroll-options";
+import type { EnrollSkipCounts } from "../../domain/enrollment-eligibility";
+import { isLiveEnrollment } from "../../domain/enrollment-status";
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
@@ -23,21 +25,12 @@ export interface LinkedInCampaignRecord {
   createdBy: string | null;
 }
 
-export interface LinkedInEnrollResult {
+export interface LinkedInEnrollResult extends EnrollSkipCounts {
   /** People the query matched, or the ids a person picked. */
   requested: number;
-  skippedMissingIdentity: number;
-  skippedDuplicate: number;
-  /** LinkedIn has no suppression list; do-not-contact is counted in `skippedDoNotContact`. */
-  skippedSuppressed: number;
   added: number;
   alreadyEnrolled: number;
   skippedNoProfile: number;
-  skippedDoNotContact: number;
-  /** The latest reply reads as a request to stop and no person reviewed it. */
-  skippedStopRequest: number;
-  /** Contacts are not enrolled in campaigns. */
-  skippedContact: number;
   /** People this call enrolled. Absent on a dry run. */
   addedPersonIds?: string[];
   /** Dry run only: people the same call would enroll, up to the limit. */
@@ -217,7 +210,7 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
   ]);
   const invitation = campaign.steps[0]?.kind === "invitation" ? campaign.steps[0] : null;
   const rows: LinkedInEnrollmentView[] = enrollments.rows.map(({ variables, ...row }) => {
-    const pending = invitation !== null && row.connectionState === "none" && (row.status === "pending" || row.status === "active");
+    const pending = invitation !== null && row.connectionState === "none" && isLiveEnrollment(row.status);
     const noteLength = pending && invitation.body.trim() !== "" ? inviteNoteLength(invitation.body, variables) : null;
     return { ...row, noteLength, noteOverLimit: noteLength !== null && noteLength > INVITE_NOTE_MAX };
   });

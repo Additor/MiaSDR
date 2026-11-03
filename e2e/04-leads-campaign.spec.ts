@@ -103,7 +103,7 @@ test.describe("leads import to campaign start", () => {
     await openAddLeads(page);
     await page.getByPlaceholder(/Search name, email, title or company/).fill("s4-labs");
     await page.getByRole("button", { name: "Add matching leads" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Added 0 leads." })).toContainText("2 already added");
+    await expect(page.getByRole("status").filter({ hasText: "Added 0 leads." })).toContainText("2 already in the campaign");
   });
 });
 

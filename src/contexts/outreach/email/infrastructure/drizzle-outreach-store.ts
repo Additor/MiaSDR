@@ -19,7 +19,7 @@ import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { isLiveEnrollment, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
@@ -208,7 +208,7 @@ export const drizzleOutreachStore: OutreachStore = {
   async checkBlockers(claim): Promise<BlockReason | null> {
     // A reply, unsubscribe, bounce or cancel can land between the claim and the send.
     const [enrollment] = await db.select({ status: campaignEnrollments.status }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
-    if (!enrollment || enrollment.status !== "pending" && enrollment.status !== "active") return "enrollment_stopped";
+    if (!enrollment || !isLiveEnrollment(enrollment.status)) return "enrollment_stopped";
 
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";

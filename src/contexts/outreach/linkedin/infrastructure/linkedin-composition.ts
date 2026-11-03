@@ -32,9 +32,6 @@ import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./unipile-gateway";
 import { parseUnipilePayload, unreadablePayloadEvent } from "./unipile-webhook";
 
-/** Enrolls people in a LinkedIn campaign inside the caller's transaction (grid's campaign handoff). */
-export { enrollPeople } from "./drizzle-linkedin-campaign-store";
-
 const globalForFake = globalThis as unknown as { __miasdrFakeLinkedIn?: FakeLinkedInGateway };
 
 const fakeMode = () => env().LINKEDIN_PROVIDER === "fake";
