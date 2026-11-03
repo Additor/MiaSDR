@@ -88,13 +88,13 @@ describeDb("cross-row validators", () => {
       }
     });
 
-    it("reply_type_picks_reply_types_ins_trg: refuses a reply type whose category differs from the stated key", async () => {
+    it("reply_type_picks_reply_types_ins_trg: refuses a reply type whose group differs from the stated key", async () => {
       const w = await world();
       await expect(classify(w, w.message, 20, `applied_reply_type_id, applied_group_key|'${w.subA}', 'customer'`)).rejects.toThrow(REPLY_TYPE);
       await classify(w, w.message, 21, `applied_reply_type_id, applied_group_key|'${w.subA}', 'interested'`);
     });
 
-    it("reply_type_picks_reply_types_ins_trg: tolerates a null category key (the fixtures leave them null)", async () => {
+    it("reply_type_picks_reply_types_ins_trg: tolerates a null group key (the fixtures leave them null)", async () => {
       const w = await world();
       await classify(w, w.message, 22, `previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id|'${w.subA}', '${w.subB}', '${w.subA}'`);
     });

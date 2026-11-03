@@ -53,7 +53,7 @@ const hasAnyConversation = sql`exists (select 1 from ${conversations} inner join
 
 /**
  * The conditions of the lead filter on outreach and conversations tables: campaign membership, Replied, conversation,
- * last contact and CRM category. The people context adds its own conditions on `people` and `companies`, and
+ * last contact and reply group. The people context adds its own conditions on `people` and `companies`, and
  * `src/composition/leads.ts` hands this function to the lead list, the repository and the neighbor read.
  */
 export function activityCondition(filter: LeadFilter): SQL | undefined {
@@ -72,9 +72,9 @@ export function activityCondition(filter: LeadFilter): SQL | undefined {
     if (filter.lastContactTo) bounds.push(sql`last_contact.at < (${filter.lastContactTo}::date + 1)::timestamp at time zone 'UTC'`);
     conditions.push(sql`exists (select 1 from (${lastSentAt}) as last_contact where ${sql.join(bounds, sql` and `)})`);
   }
-  if (filter.category) {
+  if (filter.replyGroup) {
     conditions.push(
-      sql`exists (select 1 from ${conversations} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId} and ${conversations.groupKey} = ${filter.category})`,
+      sql`exists (select 1 from ${conversations} where ${conversations.personId} = ${people.id} and ${conversations.organizationId} = ${people.organizationId} and ${conversations.groupKey} = ${filter.replyGroup})`,
     );
   }
   return conditions.length > 0 ? and(...conditions) : undefined;

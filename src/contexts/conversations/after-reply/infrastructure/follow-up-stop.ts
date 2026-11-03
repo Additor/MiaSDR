@@ -79,7 +79,7 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
   if (!run || !ACTIVE_RUN_STATUSES.includes(run.status)) return null;
   const retired = await tx
     .update(drafts)
-    .set({ status: "stale", error: "The follow-up sequence ended.", updatedAt: input.now })
+    .set({ status: "stale", error: "The follow-ups ended.", updatedAt: input.now })
     .where(
       and(
         eq(drafts.organizationId, input.organizationId),
@@ -106,7 +106,7 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
   await recordEvent(tx, {
     organizationId: input.organizationId,
     conversationId: run.conversationId,
-    type: input.final === "interrupted" ? "sequence.interrupted" : "sequence.cancelled",
+    type: input.final === "interrupted" ? "follow_up.interrupted" : "follow_up.cancelled",
     actorUserId: input.actorUserId ?? null,
     from: { followUpRunId: input.runId, status: run.status },
     to: { followUpRunId: input.runId, status: input.final },

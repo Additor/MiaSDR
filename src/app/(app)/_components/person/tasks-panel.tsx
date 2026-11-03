@@ -45,7 +45,7 @@ export function useBrowserZone(): string | null {
   );
 }
 
-/** Where the panel writes: a reply record's tasks, or a person's tasks without a record. */
+/** Where the panel writes: a conversation's tasks, or a person's tasks without a conversation. */
 export type TaskTarget = { conversationId: string; personId?: never } | { personId: string; conversationId?: never };
 
 export type TasksPanelProps = TaskTarget & {

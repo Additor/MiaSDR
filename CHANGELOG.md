@@ -40,6 +40,11 @@ The tables and code now use the words the screens use, so start from an empty da
 - Inbox URLs use `group` and `type`. Actions URLs use `group` and `list`.
 - Stopping contact has one owner, `src/contexts/conversations/stopping`, with one table of what each trigger ends. Stop requests read the flag stored at ingest.
 - The workflow states `paused`, `classifying` and `error` are gone because nothing set them, and `unclassified` is now `no_type`.
+- Follow-up events are `follow_up.*`, which used to be `sequence.*`, and the skip conflict code is `follow_ups_changed`. A campaign's Sequence keeps its name.
+- The Leads filter param `category` is now `replyGroup`, and `/crm/pipeline` reads only `owner`, `q` and `showAll`.
+- `get_analytics` replies: the bucket `unclassified` is `no_type` and `classifiedShare` is `replyTypeShare`. The CSV column `Category` is `Reply group`.
+- `get_work_queue`: the group `classification` is `ai_pick`, on the Actions page too.
+- The deal event `deal.type_changed` is `deal.stage_changed`.
 - Every saved credential now lives in `integration_credentials`. `grid_provider_credentials` is gone, and `grid_providers.account_id` names the account that holds a provider's key. The rotation script reports one table.
 - `follow_up_flows.campaign_id` is required. Nothing ever created a flow without a campaign.
 - The draft status `generating` is gone because nothing wrote it. A draft row defaults to `awaiting_review`.

@@ -416,7 +416,7 @@ export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string;
   await recordEvent(tx, {
     organizationId: run.organizationId,
     conversationId: run.conversationId,
-    type: "sequence.started",
+    type: "follow_up.started",
     actorUserId: run.source === "human_override" ? run.actorUserId : null,
     from: existing ? { followUpRunId: existing.id, status: "cancelled" } : null,
     to: { followUpRunId: created.id, flowId: run.flowId, followUpVersionId: run.followUpVersionId, startStepPosition: run.startPosition },
@@ -446,7 +446,7 @@ export const drizzleRunStore: RunStore = {
         select r.id, r.status, q.campaign_id, v.version, r.current_step_position, r.started_by, r.created_at,
                (select count(*)::int from follow_up_steps st where st.follow_up_version_id = r.follow_up_version_id) as total_steps,
                (select ev.meta->>'reason' from events ev
-                 where ev.organization_id = r.organization_id and ev.conversation_id = r.conversation_id and ev.event_type in ('sequence.interrupted', 'sequence.cancelled')
+                 where ev.organization_id = r.organization_id and ev.conversation_id = r.conversation_id and ev.event_type in ('follow_up.interrupted', 'follow_up.cancelled')
                    and ev.to_data->>'followUpRunId' = r.id::text
                  order by ev.created_at desc limit 1) as ended_reason
         from follow_up_runs r join follow_up_flows q on q.id = r.flow_id join follow_up_versions v on v.id = r.follow_up_version_id
@@ -522,12 +522,12 @@ export const drizzleRunStore: RunStore = {
         .from(followUpRuns)
         .where(and(eq(followUpRuns.conversationId, event.conversationId), eq(followUpRuns.organizationId, event.organizationId), eq(followUpRuns.status, "active")))
         .for("update");
-      if (!run) throw new ConflictError("There is no active sequence run to pause.");
+      if (!run) throw new ConflictError("There are no follow-ups in progress to pause.");
       // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh. As in
       // `endRunTx`, that covers a draft a worker wrote and has not linked yet: the pause ends the worker's claim.
       await tx
         .update(drafts)
-        .set({ status: "stale", error: "The sequence was paused.", updatedAt: now })
+        .set({ status: "stale", error: "The follow-ups were paused.", updatedAt: now })
         .where(
           and(
             eq(drafts.organizationId, event.organizationId),
@@ -550,7 +550,7 @@ export const drizzleRunStore: RunStore = {
         .where(and(eq(followUpStepRuns.followUpRunId, run.id), eq(followUpStepRuns.organizationId, event.organizationId), stepMayBecome("scheduled")));
       await tx.update(followUpRuns).set({ status: "paused", updatedAt: now }).where(and(eq(followUpRuns.id, run.id), runMayBecome("paused")));
       await tx.execute(sql`update conversations set next_action_at = null where id = ${event.conversationId} and organization_id = ${event.organizationId} and workflow_state = 'waiting'`);
-      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "sequence.paused", actorUserId: event.actorUserId, to: { followUpRunId: run.id }, meta: viaMeta(event.via) });
+      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "follow_up.paused", actorUserId: event.actorUserId, to: { followUpRunId: run.id }, meta: viaMeta(event.via) });
     });
   },
 
@@ -564,13 +564,13 @@ export const drizzleRunStore: RunStore = {
         .orderBy(desc(followUpRuns.updatedAt))
         .limit(1)
         .for("update");
-      if (!run) throw new ConflictError("There is no paused sequence run to resume.");
+      if (!run) throw new ConflictError("There are no paused follow-ups to resume.");
       await tx
         .update(followUpStepRuns)
         .set({ dueAt: sql`greatest(${followUpStepRuns.dueAt}, ${ts(now)})`, updatedAt: now })
         .where(and(eq(followUpStepRuns.followUpRunId, run.id), eq(followUpStepRuns.status, "scheduled")));
       await tx.update(followUpRuns).set({ status: "active", updatedAt: now }).where(and(eq(followUpRuns.id, run.id), runMayBecome("active")));
-      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "sequence.resumed", actorUserId: event.actorUserId, to: { followUpRunId: run.id } });
+      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "follow_up.resumed", actorUserId: event.actorUserId, to: { followUpRunId: run.id } });
     });
   },
 
@@ -582,7 +582,7 @@ export const drizzleRunStore: RunStore = {
         .from(followUpRuns)
         .where(and(eq(followUpRuns.conversationId, event.conversationId), eq(followUpRuns.organizationId, event.organizationId), inArray(followUpRuns.status, [...ACTIVE_RUN_STATUSES])))
         .for("update");
-      if (!run) throw new ConflictError("There is no sequence run to cancel.");
+      if (!run) throw new ConflictError("There are no follow-ups to stop.");
       await endRunTx(tx, { organizationId: event.organizationId, runId: run.id, final: "cancelled", reason, now, actorUserId: event.actorUserId });
     });
   },
@@ -595,7 +595,7 @@ export const drizzleRunStore: RunStore = {
         .from(followUpRuns)
         .where(and(eq(followUpRuns.conversationId, event.conversationId), eq(followUpRuns.organizationId, event.organizationId), eq(followUpRuns.status, "active")))
         .for("update");
-      if (!run) throw new ConflictError("There is no active sequence run.");
+      if (!run) throw new ConflictError("There are no follow-ups in progress.");
       const [current] = await tx
         .select({ id: followUpStepRuns.id, position: followUpSteps.position, status: followUpStepRuns.status, draftId: followUpStepRuns.draftId })
         .from(followUpStepRuns)
@@ -615,11 +615,11 @@ export const drizzleRunStore: RunStore = {
       await tx.update(followUpStepRuns).set({ status: "skipped", updatedAt: now }).where(and(eq(followUpStepRuns.id, current.id), stepMayBecome("skipped")));
       // The next step waits its own delay from now, as if the skipped message had just gone out.
       const advanced = await advanceRunTx(tx, { organizationId: event.organizationId, runId: run.id, afterPosition: current.position, from: now, now });
-      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "sequence.step_skipped", actorUserId: event.actorUserId, from: { position: current.position }, to: advanced.next ? { position: advanced.next } : { completed: true } });
+      await recordEvent(tx, { organizationId: event.organizationId, conversationId: event.conversationId, type: "follow_up.step_skipped", actorUserId: event.actorUserId, from: { position: current.position }, to: advanced.next ? { position: advanced.next } : { completed: true } });
       return { skipped: current.position, next: advanced.next };
     });
     return skip.catch((error: unknown) => {
-      if (error instanceof StepMovedError) throw new ConflictError("The follow-up sequence changed while you skipped. Reload the page and try again.", { code: "sequence_changed" });
+      if (error instanceof StepMovedError) throw new ConflictError("The follow-ups changed while you skipped. Reload the page and try again.", { code: "follow_ups_changed" });
       throw error;
     });
   },

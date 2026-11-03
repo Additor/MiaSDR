@@ -5,7 +5,7 @@ import { chooseFromMoreMenu, e2eOrganizationId, expect, openFilters, seedContact
 /**
  * Contacts and Companies ("Leads and CRM" in docs/decisions.md). Seeds its own people under a unique key:
  *   Rhea  replied to a campaign through the fake mailbox (source campaign, public conversation), company Orbit
- *   Cora  a cold lead with an active enrollment and no reply record, company Orbit
+ *   Cora  a cold lead with an active enrollment and no conversation, company Orbit
  *   Lee   a lead at Nimbus, which has no contact until Lee becomes one
  * Rhea and Cora become contacts through `POST /api/leads/[id]/convert`, the call the Create deal dialog makes.
  */
@@ -186,11 +186,11 @@ test.describe("contacts and companies", () => {
     await expect(coraHistory.getByRole("row").filter({ hasText: `S36 Autumn ${SUFFIX}` })).toContainText("Became a contact");
   });
 
-  test("a contact with no reply record takes a note and a task", async ({ page }) => {
+  test("a contact with no conversation takes a note and a task", async ({ page }) => {
     await signInAdmin(page);
     const w = await seed(page.request);
     const [conversations] = await sql()`select count(*)::int as n from conversations where person_id = ${w.cora}`;
-    expect(conversations.n, "Cora has no reply record").toBe(0);
+    expect(conversations.n, "Cora has no conversation").toBe(0);
     await page.goto(`/crm/contacts/${w.cora}`);
 
     const note = `Prefers email after 3pm ${SUFFIX}`;

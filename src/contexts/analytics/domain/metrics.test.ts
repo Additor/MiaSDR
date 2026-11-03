@@ -85,23 +85,23 @@ describe("linkedin report", () => {
 
 describe("reply buckets", () => {
   it("maps classification state to a bucket", () => {
-    expect(replyBucket(null, null)).toBe("unclassified");
+    expect(replyBucket(null, null)).toBe("no_type");
     expect(replyBucket("proposed", "interested")).toBe("pending_review");
     expect(replyBucket("auto_applied", "interested")).toBe("interested");
     expect(replyBucket("overridden", "not_interested")).toBe("not_interested");
-    expect(replyBucket("accepted", null)).toBe("unclassified");
+    expect(replyBucket("accepted", null)).toBe("no_type");
   });
   it("totals buckets and hides suppressions when asked", () => {
     const report = repliesReport(
       [
-        { channel: "email", bucket: "interested", subcategory: "Meeting requested", replies: 2 },
-        { channel: "linkedin", bucket: "interested", subcategory: "Meeting requested", replies: 1 },
-        { channel: "email", bucket: "unclassified", subcategory: null, replies: 1 },
+        { channel: "email", bucket: "interested", replyType: "Meeting requested", replies: 2 },
+        { channel: "linkedin", bucket: "interested", replyType: "Meeting requested", replies: 1 },
+        { channel: "email", bucket: "no_type", replyType: null, replies: 1 },
       ],
       null,
     );
     expect(report.total).toBe(4);
-    expect(report.classifiedShare).toBe(0.75);
+    expect(report.replyTypeShare).toBe(0.75);
     expect(report.byReplyType).toEqual([{ bucket: "interested", name: "Meeting requested", replies: 3 }]);
     expect(report.byChannel[1].total).toBe(1);
     expect(report.suppressions).toBeNull();

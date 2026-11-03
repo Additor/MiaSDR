@@ -5,7 +5,7 @@ import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { withActor } from "@/app/_lib/api";
 
-/** Any note of the person, record-bound or not. Only the author or an admin changes it, as on the conversation routes. */
+/** Any note of the person, conversation-bound or not. Only the author or an admin changes it, as on the conversation routes. */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/people/[personId]/notes/[noteId]">) {
   const { personId, noteId } = await ctx.params;
   return withActor(async (actor) => {

@@ -24,7 +24,7 @@ describe("classifyError", () => {
     expect(classifyError(Object.assign(new Error("query failed"), { cause: { code: "22P02" } }))).toEqual({ status: 404, message: "Not found", details: {} });
   });
 
-  it("leaves anything else unclassified, so no caller shows its message", () => {
+  it("does not recognize anything else, so no caller shows its message", () => {
     expect(classifyError(new Error('relation "secret_table" does not exist'))).toBeNull();
     expect(classifyError("a string")).toBeNull();
     expect(classifyError(null)).toBeNull();

@@ -93,7 +93,7 @@ describeDb("lead delete qualification", () => {
     expect(outcome.deleted).toBe(0);
   });
 
-  it("says a lead with a CRM record cannot be deleted", async () => {
+  it("says a lead with a conversation cannot be deleted", async () => {
     const o = await org();
     const id = await person(o);
     await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${o.id}, ${id}, ${o.pipeline})`;

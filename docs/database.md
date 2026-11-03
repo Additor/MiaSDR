@@ -52,13 +52,13 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 
 ## Lock modes
 
-A row lock that serializes writers on `conversations` or `threads` takes `FOR NO KEY UPDATE`. It conflicts with itself, so the writers still queue, but it lets through the `FOR KEY SHARE` that a foreign key check takes when a draft or a message is inserted. Two orders meet on these rows: a reply send locks the conversation and its draft insert takes a key share on the conversation, while an AI draft write, a typed draft, the sequence engine, a reclassification and ingest lock the record and their inserts take a key share on the conversation. With `FOR UPDATE` on both sides the two waited on each other (40P01); `linkedin-reply.integration.test.ts` holds the case.
+A row lock that serializes writers on `conversations` or `threads` takes `FOR NO KEY UPDATE`. It conflicts with itself, so the writers still queue, but it lets through the `FOR KEY SHARE` that a foreign key check takes when a draft or a message is inserted. Two orders meet on these rows: a reply send locks the thread and its draft insert takes a key share on the conversation, while an AI draft write, a typed draft, the follow-up engine, a reclassification and ingest lock the conversation and their inserts take a key share on the thread. With `FOR UPDATE` on both sides the two waited on each other (40P01); `linkedin-reply.integration.test.ts` holds the case.
 
 `FOR UPDATE` stays where a row goes away or must hold back key shares:
 - A contact delete locks the person's conversations and threads `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
 - A reply send locks its conversation `FOR UPDATE` on both channels. It holds back an ingest's message insert, whose transaction would go on to retire drafts and update the conversation, a cycle with the send's draft lock.
 
-One order for the conflicting locks: the conversation before its threads. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its threads, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
+One order for the conflicting locks: the conversation before its threads. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its threads, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the thread first, but on the conversation it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then threads, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
 The organization's `agent-send:<organization id>` advisory lock (`agent-access/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
 
@@ -99,13 +99,13 @@ Triggers freeze the rows that other rows point at by value or by version. Each r
 - `threads`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status` and `updated_at` stay writable.
 - `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. The app writes the other columns only when it seeds a set: name, description, guidance, the type rules (`reply_draft`, `follow_ups`) and `sort_order`.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
-- `follow_up_versions` and `follow_up_steps`: `organization_id`, `flow_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
+- `follow_up_versions` and `follow_up_steps`: `organization_id`, `flow_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a flow, which cascades.
 
-To change a frozen value, insert a new row (a new knowledge version, a new sequence draft). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
+To change a frozen value, insert a new row (a new knowledge version, a new draft version of a flow). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
 
-## After a reply storage
+## Follow-ups after a reply storage
 
-The campaign setting Follow-ups after a reply (After a reply in code) lives in the sequence tables. `follow_up_flows.campaign_id` is required, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`) and a unique index on `(campaign_id)`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
+The campaign setting Follow-ups after a reply (`after-reply` in code) lives in the `follow_up_*` tables. `follow_up_flows.campaign_id` is required, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`) and a unique index on `(campaign_id)`. A campaign is in `ai_drafts` mode when it owns a flow with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
 
 `follow_up_flows.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
 
@@ -178,7 +178,7 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `ai_jobs`, `notes`, `tasks`
-- conversations, sequences (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
+- conversations, follow-ups (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
 - deals: `deal_stages`, `deals`
 - grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`
 - integrations: `integration_accounts`, `integration_credentials`

@@ -38,7 +38,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Stage:** a step of the deal Pipeline (New, Meeting, Proposal, Won, Lost by default). A stage never stops outreach.
 - **Pipeline:** the board of deals by stage. Reply handling never says pipeline.
 - **Reply type:** the label the AI picks for each reply, such as Meeting requested or Not now. The types are fixed: Settings > Reply handling lists them with what each one does, and the AI picks one from its name, description and guidance. The code calls it `ReplyType` (`reply_types`). An organization's types form a set (`reply_type_sets`), which the UI never shows.
-- **Group:** one of the four fixed groups of reply types: Interested, Existing customer, Not interested and Other. A group carries no behavior, except the lock of Existing customer; the type rules do. Filters label it "Reply group". The code calls it `groupKey`.
+- **Group:** one of the four fixed groups of reply types: Interested, Existing customer, Not interested and Other. A group carries no behavior, except the lock of Existing customer; the type rules do. Filters label it "Reply group". The code calls it `groupKey`, and the Leads URL param is `replyGroup`.
 - **Type rules:** what a type does once it applies, seeded and read-only. Reply draft says whether the AI writes one. Follow-ups say whether they keep going or stop. Each pick keeps a copy of the rules it used. Whether a pick waits for a person is one fixed rule for every type: see AI pick.
 - **Confidence floor:** the fixed 85 percent (`AI_PICK_CONFIDENCE_FLOOR`). An AI pick under it waits for a person.
 - **AI pick:** the AI's choice of a reply type for one reply, with its confidence and reasoning. A pick sends nothing, since the draft approval decides what goes out. It applies at once unless it is Asked to stop, it sits under the Confidence floor, or it would move a locked person out of Existing customer; those three wait for a person. A person corrects a wrong pick with Change type or Undo. The thread's history and the Actions section both read "AI picks". The code stores it in `reply_type_picks` (`replyTypePicks`). A person's own pick is a row with `provider = 'human'`.
@@ -55,7 +55,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Owner:** the deal's field only (shown as Deal owner). A conversation has an assignee, not an owner.
 - **Actions:** the work to do now: replies to approve, AI picks to review, follow-ups due, next steps, problems and tasks. It is the home page and opens on Mine.
 - **Mine, Unassigned, Others:** the three scopes of Actions. Mine is what is assigned to you, Unassigned has no assignee, Others is assigned to someone else. Unconfirmed sends, unmatched senders and dead letters are Shared and sit outside the scopes.
-- **Waiting since:** the time of the last message from the person. Actions lists the longest wait first.
+- **Waiting since:** the time of the last message from the person. An Actions row reads it as "Waiting 2 d", and Actions lists the longest wait first. The code calls it `waitingSince`.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
 - **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `conversation` (`conversations` table); a `threads` row is one channel's thread inside it.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
@@ -64,12 +64,13 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Enrichment column:** a table column that asks a provider for each row, such as Find work emails or Verify emails. A column that tries several providers in order is a `waterfall` in the code; the UI says "tried in order". The code calls the lookup a provider offers an action (`actionKey`).
 - **Enrichment provider:** a data vendor an organization connects with its own key in Settings > Integrations. The AI provider is a separate connection on the same page.
 - **Code names:** names that stay different in code and tables, so a reader can map them:
-  - The AI job kind `classification` is the job that picks a reply type.
+  - The AI job kind `classification` is the job that picks a reply type. The columns `reply_types.classification_guidance` and `reply_handling_settings.classification_instructions` feed that job.
   - The model output field `replyTypeKey` names the picked type.
   - The stored run reasons `type_changed`, `type_corrected` and `pick_undone` mean a person changed the reply type, corrected an AI pick or undid one.
+  - The Actions group `ai_pick` reads as AI picks.
   - The workflow state `no_type` reads as No type yet. The thread's type line says "No reply type yet", because no "Reply type" label stands next to it there.
 - A lead becomes a contact when you create a deal from it or make it a contact.
-- "Sequence" never names the post-reply feature, in user-facing text or in code.
+- "Sequence" never names the post-reply feature, in user-facing text or in code. Its events are `follow_up.*`.
 
 ## Capabilities and Constraints
 - Stack: Next.js 16.4 (App Router), React 19, Tailwind CSS 4.

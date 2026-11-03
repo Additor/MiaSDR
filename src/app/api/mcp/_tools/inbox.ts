@@ -103,8 +103,7 @@ export const listInboxTool = defineTool({
         ...base,
         total,
         threads: [],
-        // `sequence` is the code name of a follow-up after a reply.
-        scheduled: rows.map((r) => ({ kind: r.kind === "sequence" ? ("follow_up" as const) : r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: fencedField(out, r.subject), dueAt: r.dueAt.toISOString() })),
+        scheduled: rows.map((r) => ({ kind: r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: fencedField(out, r.subject), dueAt: r.dueAt.toISOString() })),
       };
       return { summary: `${counted(total, "scheduled send")}. Page ${params.page}.`, structured };
     }

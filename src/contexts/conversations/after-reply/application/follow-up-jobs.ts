@@ -44,13 +44,13 @@ async function startRuns(deps: FollowUpJobDeps, deadline: number, count: (key: s
       }
     } catch (error) {
       count("start_failed");
-      console.error(`Sequence run could not start for conversation ${candidate.conversationId}: ${errorMessage(error)}`);
+      console.error(`Follow-up run could not start for conversation ${candidate.conversationId}: ${errorMessage(error)}`);
     }
   }
   return started;
 }
 
-/** Stops every active or paused run that a reply, DNC, suppression, bounce or terminal stage has outdated. */
+/** Stops every active or paused run that a reply, DNC, suppression, bounce or stopping reply type has outdated. */
 async function sweepInterruptions(deps: FollowUpJobDeps, deadline: number, count: (key: string) => void): Promise<number> {
   let cursor: string | null = null;
   let stopped = 0;
@@ -122,7 +122,7 @@ async function draftStep(deps: FollowUpJobDeps, claim: ClaimedStep, count: (key:
 
   const ctx = await deps.replies.draftContext(org, claim.run.threadId);
   if (!ctx) {
-    await deps.engine.failAttempt(claim, "Sequence drafts need an email conversation.", null, now);
+    await deps.engine.failAttempt(claim, "Follow-up drafts need an email conversation.", null, now);
     count("failed");
     return;
   }

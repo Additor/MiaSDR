@@ -68,7 +68,7 @@ export function leadSearchCondition(term: string | undefined): SQL | undefined {
 
 /**
  * The conditions of the lead filter on other contexts' tables: campaign membership, Replied, conversation, last contact
- * and CRM category. `activityCondition` in `src/read-models/lead-activity.ts` defines them, and `src/composition/leads.ts`
+ * and reply group. `activityCondition` in `src/read-models/lead-activity.ts` defines them, and `src/composition/leads.ts`
  * passes it to every lead read built here, so no read can leave those filters out.
  */
 export type ActivityCondition = (filter: LeadFilter) => SQL | undefined;

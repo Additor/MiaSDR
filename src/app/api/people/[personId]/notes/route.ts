@@ -5,13 +5,13 @@ import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { withActor } from "@/app/_lib/api";
 
-/** Every note of the person, record-bound ones included, newest first. */
+/** Every note of the person, conversation-bound ones included, newest first. */
 export async function GET(_request: Request, ctx: RouteContext<"/api/people/[personId]/notes">) {
   const { personId } = await ctx.params;
   return withActor(async (actor) => listPersonNotes(taskDeps(), actor, personId));
 }
 
-/** A note on the person without a reply record (`conversation_id` null). */
+/** A note on the person without a conversation (`conversation_id` null). */
 export async function POST(request: Request, ctx: RouteContext<"/api/people/[personId]/notes">) {
   const { personId } = await ctx.params;
   return withActor(

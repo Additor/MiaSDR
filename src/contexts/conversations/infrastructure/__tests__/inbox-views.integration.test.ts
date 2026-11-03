@@ -123,7 +123,7 @@ describeDb("inbox filters, views and search", () => {
       expect((await list(f, { leadIds: ["00000000-0000-4000-8000-000000000000"] })).total).toBe(0);
     });
 
-    it("names each row's record and its assignee", async () => {
+    it("names each row's conversation and its assignee", async () => {
       const f = await fixture();
       const t = await inboundThread(f);
       const [rec] = await sql<{ id: string }[]>`select conversation_id as id from threads where id = ${t.threadId}`;
@@ -377,9 +377,9 @@ describeDb("inbox filters, views and search", () => {
     it("includes queued follow-up steps of active runs only and honors lead, campaign, mailbox and date filters", async () => {
       const f = await fixture();
       const nurture = await campaignWith(f, "Nurture");
-      const [seq] = await sql`insert into follow_up_flows (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
+      const [flow] = await sql`insert into follow_up_flows (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
       // The step goes in while the version is a draft: follow_up_steps_frozen_trg refuses it under a published one.
-      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
+      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow.id}, 1) returning id`;
       const [step] = await sql`
         insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${f.org}, ${ver.id}, 2, 'follow_up', 'Check in', 60, 'Say hi') returning id`;
@@ -392,7 +392,7 @@ describeDb("inbox filters, views and search", () => {
         const [msg] = await sql`select id from messages where thread_id = ${t.threadId} limit 1`;
         const [r] = await sql`
           insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-          values (${f.org}, ${rec.id}, ${t.threadId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
+          values (${f.org}, ${rec.id}, ${t.threadId}, ${flow.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
         const [sr] = await sql`
           insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version)
           values (${f.org}, ${r.id}, ${step.id}, ${stepStatus}, ${new Date(Date.now() + dueIn * HOUR)}, 1) returning id`;
@@ -408,7 +408,7 @@ describeDb("inbox filters, views and search", () => {
 
       const all = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
       expect(all.rows.map((r) => r.id)).toEqual([camp, active.id]);
-      expect(all.rows[1]).toMatchObject({ kind: "sequence", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
+      expect(all.rows[1]).toMatchObject({ kind: "follow_up", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
 
       const byLead = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { leadIds: [active.personId] });
       expect(byLead.rows.map((r) => r.id)).toEqual([active.id]);

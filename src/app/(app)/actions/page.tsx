@@ -217,7 +217,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           href: oldestCandidate.threadId ? `/inbox/${oldestCandidate.threadId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
         }
       : null;
-  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "AI picks", next_step: "Next steps" };
+  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", ai_pick: "AI picks", next_step: "Next steps" };
   // Every group in view with its count. A list with work is a jump link; the empty ones fold into one muted line, so the
   // strip says what waits without a row of zeros.
   const lists = [
@@ -322,7 +322,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               key={`${g}:${query}`}
               group={g}
               title={QUEUE_GROUP_LABELS[g].title}
-              description={g === "classification" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}
+              description={g === "ai_pick" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}
               total={page.total}
               initialItems={page.items.map(toView)}
               initialCursor={page.nextCursor}

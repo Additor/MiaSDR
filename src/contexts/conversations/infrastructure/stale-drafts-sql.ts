@@ -4,7 +4,7 @@ import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
 
 /**
- * Drafts nobody has acted on turn `stale` with `reason`: a new inbound message, a stage move or a correction made the
+ * Drafts nobody has acted on turn `stale` with `reason`: a new inbound message, a type change or a correction made the
  * text outdated. A draft that is sending or already sent stays as it is. Returns how many changed.
  */
 export async function staleOpenDraftsTx(tx: DbTx, input: { organizationId: string; conversationId: string; reason: string; now: Date }): Promise<number> {

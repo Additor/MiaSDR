@@ -38,7 +38,7 @@ const KNOWLEDGE_CANDIDATES = 200;
 /**
  * Latest version of each active document, chosen by `selectKnowledge`: capped always-included documents first, then
  * documents ranked by tag overlap with `stepTags`, inside one character budget. `includeUnmatched` (default true)
- * lets documents without a matching tag fill the rest, as before tags existed. A tagged sequence step passes false.
+ * lets documents without a matching tag fill the rest, as before tags existed. A tagged follow-up step passes false.
  */
 export async function knowledgeFor(organizationId: string, options: { alwaysOnly: boolean; stepTags?: readonly string[]; includeUnmatched?: boolean }) {
   // Stored tags are lowercase and trimmed, so the step's tags get the same treatment before the SQL compares them.
@@ -102,11 +102,11 @@ export async function replyTypeChangeFor(organizationId: string, conversationId:
     .limit(1);
   if (!moved) return null;
   const to = (moved.toData ?? {}) as { groupKey?: string | null; replyTypeId?: string | null };
-  const [sub] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
+  const [type] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
   const meta = moved.meta as { note?: unknown; occurredAt?: unknown };
   const occurred = typeof meta.occurredAt === "string" ? new Date(meta.occurredAt) : moved.createdAt;
   return {
-    stage: sub?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another stage"),
+    replyTypeName: type?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another type"),
     occurredAt: Number.isNaN(occurred.getTime()) ? moved.createdAt : occurred,
     note: typeof meta.note === "string" && meta.note.trim() !== "" ? meta.note : null,
   };

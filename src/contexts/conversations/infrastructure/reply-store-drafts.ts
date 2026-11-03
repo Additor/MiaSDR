@@ -17,7 +17,7 @@ type WrittenDraft = { id: string; stale: boolean } | typeof HANDLING_CLOSED;
  * Writes an AI draft in `tx` (`ReplyStore.insertDraft`). `held` runs once the conversation is locked: the AI worker passes its
  * claim check there, so the conversation lock comes before the job row lock, and a false answer writes nothing and returns null.
  * Reply handling marked done writes nothing and returns `HANDLING_CLOSED`, for every writer: a person's request, the
- * draft job and the sequence engine (docs/decisions.md, "Reply send rules").
+ * draft job and the follow-up engine (docs/decisions.md, "Reply send rules").
  */
 export async function insertDraftTx(tx: DbTx, input: AiDraft): Promise<WrittenDraft>;
 export async function insertDraftTx(tx: DbTx, input: AiDraft, held: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null>;

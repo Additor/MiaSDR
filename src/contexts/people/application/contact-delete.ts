@@ -234,7 +234,7 @@ export async function previewContactDelete(deps: ContactDeleteDeps, actor: Actor
 }
 
 /**
- * Deletes a contact in the order of plan 4.3, under the person's locks: records and their conversations, the outreach advisory
+ * Deletes a contact in this order, under the person's locks: conversations and their threads, the outreach advisory
  * lock, the people row, the do not contact row, the deals and the enrollments. 404 when the person is gone; 409 `not_a_contact`; 409
  * `contact_blocked { blockers }`; 409 `counts_changed { counts }` when the counts differ from what the dialog showed; 409
  * `try_again` after one retry on a lock error, or past the statement timeout.

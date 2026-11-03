@@ -4,7 +4,7 @@ import { expect, seedMember, seedReply, signInAdmin, signInAs, sql, test } from 
 const MEMBER = { name: "Bea Assign", email: "bea42@e2e-corp.test", password: "bea42-password-1" };
 const LEAD = { email: "cora@s42-group.test", firstName: "Cora", lastName: "Vance", title: "VP", company: "S42 Group" };
 
-/** The number the sidebar shows beside Actions: records and tasks that are the viewer's. Zero when the sidebar shows none. */
+/** The number the sidebar shows beside Actions: conversations and tasks that are the viewer's. Zero when the sidebar shows none. */
 async function pending(page: Page): Promise<number> {
   await page.goto("/actions");
   const badge = page.getByTestId("actions-pending");

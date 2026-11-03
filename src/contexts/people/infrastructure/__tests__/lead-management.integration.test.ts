@@ -239,7 +239,7 @@ describeDb("lead management", () => {
       expect((await uc.deleteLeads(deps, actor, { ids: [p] })).deleted).toBe(1);
     });
 
-    it("refuses a lead with a CRM record", async () => {
+    it("refuses a lead with a conversation", async () => {
       const { id: o, actor } = await org();
       const p = await person(o, "crm@acme.com");
       const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${o}, 'P') returning id`;
@@ -249,7 +249,7 @@ describeDb("lead management", () => {
       expect(result.blocked).toMatchObject([{ id: p, reason: "linked_conversations" }]);
     });
 
-    it("refuses a lead with history events and no CRM record", async () => {
+    it("refuses a lead with history events and no conversation", async () => {
       const { id: o, actor } = await org();
       const p = await person(o, "hist@acme.com");
       // Marking do not contact writes this event on a lead (`setPersonDoNotContact`).

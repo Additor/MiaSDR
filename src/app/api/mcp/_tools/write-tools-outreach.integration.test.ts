@@ -181,7 +181,7 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     const moved = await owner.tool("update_deal", { action: "move_stage", dealId, stageId: stage.id, expectedVersion: version });
     expect(moved.isError, moved.text).toBe(false);
     expect(moved.structured).toMatchObject({ dealId, stage: { stageId: stage.id }, appUrl: `http://localhost:3000/crm/deals/${dealId}` });
-    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where person_id = ${personId} and event_type in ('deal.type_changed', 'deal.updated') order by created_at desc limit 1`;
+    const [event] = await sql<{ meta: Record<string, unknown> }[]>`select meta from events where person_id = ${personId} and event_type in ('deal.stage_changed', 'deal.updated') order by created_at desc limit 1`;
     expect(event.meta).toMatchObject({ dealId, via: { tokenId: owner.tokenId } });
     const stale = await owner.tool("update_deal", { action: "edit", dealId, expectedVersion: version, title: "Acme 40 seats" });
     expect(stale.structured.error).toMatchObject({ code: "stale_version" });

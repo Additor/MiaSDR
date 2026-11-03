@@ -139,7 +139,7 @@ export const getConversationTool = defineTool({
       threadId = main.id;
     }
     const thread = await getThread(inboxDeps(), actor, threadId);
-    const [detail, panel, sequence, tasks] = await Promise.all([
+    const [detail, panel, followUp, tasks] = await Promise.all([
       byConversation ?? getConversationDetail(handling, actor, thread.conversationId),
       thread.channel === "linkedin" ? getLinkedInReplyPanel(linkedinReplyDeps(), actor, threadId) : getReplyPanel(replyDeps(), actor, threadId),
       getConversationFollowUp(followUpDeps(), actor, thread.conversationId),
@@ -185,7 +185,7 @@ export const getConversationTool = defineTool({
       aiPicks: detail.replyTypePicks.slice(0, RECENT).map((p) => ({ replyTypePickId: p.id, status: p.status, proposed: p.proposed.name, applied: p.applied.name, confidence: p.confidence, stopRequested: p.stopRequested })),
       notes: detail.notes.slice(0, RECENT).map((n) => ({ title: n.title, text: excerpt(n.body, NOTE_CHARS), author: n.authorName, at: n.createdAt.toISOString() })),
       tasks: tasks.map((t) => ({ taskId: t.id, name: t.name, dueAt: iso(t.dueAt), assigneeName: t.assigneeName })),
-      followUps: sequence.run ? { status: sequence.run.statusLabel, steps: sequence.run.steps.map((s) => ({ name: s.name, status: s.status, dueAt: s.dueAt.toISOString() })) } : null,
+      followUps: followUp.run ? { status: followUp.run.statusLabel, steps: followUp.run.steps.map((s) => ({ name: s.name, status: s.status, dueAt: s.dueAt.toISOString() })) } : null,
     };
     const summary = [
       `${person.name ?? person.email ?? "Unknown person"} on ${thread.channel}, ${counted(thread.messages.length, "message")}${fitted.omitted > 0 ? ` (the oldest ${fitted.omitted} left out)` : ""}. State ${conversation.workflowState}${conversation.replyTypeName ? `, reply type ${conversation.replyTypeName}` : ""}.`,

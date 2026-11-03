@@ -129,10 +129,10 @@ describeDb("a reply on a LinkedIn campaign", () => {
     expect(list.rows.map((row) => row.snippet)).toEqual(["Tell me more"]);
     expect(await unread.drizzleUnreadStore.counts(f.org)).toMatchObject({ total: 1, linkedin: 1 });
 
-    const record = await conversationOf(ada.person);
-    expect(record).toMatchObject({ workflow_state: "action_required", context_version: 1 });
+    const conversation = await conversationOf(ada.person);
+    expect(conversation).toMatchObject({ workflow_state: "action_required", context_version: 1 });
     const queue = await workQueueApp.getWorkQueue(workQueueComposition.workQueueDeps(), f.actor);
-    expect(Object.values(queue.groups).flatMap((group) => group.items.map((item) => item.conversationId))).toContain(record.id);
+    expect(Object.values(queue.groups).flatMap((group) => group.items.map((item) => item.conversationId))).toContain(conversation.id);
 
     await aiJobs.drizzleAiJobStore.enqueueMissing(new Date());
     expect((await sql`select kind from ai_jobs where organization_id = ${f.org}`).map((job) => job.kind)).toEqual(["classification"]);

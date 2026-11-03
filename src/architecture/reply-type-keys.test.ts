@@ -9,7 +9,7 @@ import { parseSource } from "./source-ast";
 /**
  * Behavior follows a reply type's rules and `systemRole`, never its key or group ("Reply types and type rules" in
  * docs/decisions.md). The scan reads every conversations layer and `src/app`, and rejects:
- * - a comparison of a group or category key with any string literal (`groupKey === "not_interested"`), also through
+ * - a comparison of a group key with any string literal (`groupKey === "not_interested"`), also through
  *   `switch` cases;
  * - a comparison of a bare `key` or `replyTypeKey` with a seeded type or group key (`t.key === "other"`);
  * - the string `"do_not_contact"`, the old key of the stop request type, outside `ALLOWED_DNC`;
@@ -46,9 +46,9 @@ const ALLOWED_DNC: Record<string, { count: number; reason: string }> = {
   ["src/app/(app)/inbox/[id]/_components/reply-composer-client.tsx"]: { count: 1, reason: "Send blocker for an address of a person marked do not contact." },
 };
 
-const KEY_NAME = /^(key|replyTypeKey|group_?key|category_?key)$/i;
-/** A group or category key compared with any literal is a finding. */
-const GROUP_NAME = /^(group|category)_?key$/i;
+const KEY_NAME = /^(key|replyTypeKey|group_?key)$/i;
+/** A group key compared with any literal is a finding. */
+const GROUP_NAME = /^group_?key$/i;
 /**
  * A bare `key` names many things (`event.key`, a sort key), so it is a finding only next to a reply type or group key
  * from the seed set (`demo_request`, `customer`, `other`).
@@ -81,7 +81,7 @@ function nameOf(node: ts.Node): string | null {
 }
 
 const isText = (node: ts.Node): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral => ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
-/** `node` reads a reply type, group or category key and `literal` is a value that key could hold. */
+/** `node` reads a reply type or group key and `literal` is a value that key could hold. */
 function comparesKey(node: ts.Node, literal: ts.Node): boolean {
   const name = nameOf(node) ?? "";
   if (!KEY_NAME.test(name) || !isText(literal)) return false;
@@ -129,7 +129,7 @@ describe("reply type behavior reads rules and roles, not keys", () => {
     expect(files.map(rel)).toContain(`${BASE}/domain/reply-type.ts`);
   });
 
-  it("compares no group or category key with a literal", () => {
+  it("compares no group key with a literal", () => {
     expect(findings.filter((f) => f.rule === "key comparison")).toEqual([]);
   });
 
@@ -151,7 +151,7 @@ describe("reply type behavior reads rules and roles, not keys", () => {
 
   it("catches each rule on a sample", () => {
     const rules = (text: string) => scan(path.join(ROOT, "sample.ts"), text).map((f) => f.rule);
-    expect(rules(`if (record.groupKey === "not_interested") stop();`)).toEqual(["key comparison"]);
+    expect(rules(`if (conversation.groupKey === "not_interested") stop();`)).toEqual(["key comparison"]);
     expect(rules(`if ("customer" !== row.group_key) stop();`)).toEqual(["key comparison"]);
     expect(rules(`switch (t.groupKey) { case "other": break; }`)).toEqual(["key comparison"]);
     expect(rules(`if (typeof raw.groupKey === "string") read();`)).toEqual([]);
@@ -160,7 +160,6 @@ describe("reply type behavior reads rules and roles, not keys", () => {
     expect(rules("sql`and group_key <> 'not_interested'`")).toEqual(["sql key literal"]);
     expect(rules(`if (t.key === "other") pick();`)).toEqual(["key comparison"]);
     expect(rules(`if (t.replyTypeKey !== "demo_request") pick();`)).toEqual(["key comparison"]);
-    expect(rules(`if (row.category_key === "anything") pick();`)).toEqual(["key comparison"]);
     expect(rules(`if (event.key === "Escape") close();`)).toEqual([]);
     expect(rules(`switch (e.key) { case "Enter": break; }`)).toEqual([]);
     expect(rules("sql`where key = 'do_not_contact' and x = ${y}`")).toEqual(["sql key literal", "do_not_contact"]);

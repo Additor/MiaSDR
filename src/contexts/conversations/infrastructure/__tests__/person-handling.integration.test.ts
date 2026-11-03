@@ -16,8 +16,8 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   let composition: typeof import("../composition");
   let aiJobsApp: typeof import("../../ai/application/ai-jobs");
   let arApp: typeof import("../../after-reply/application/after-reply");
-  let seqApp: typeof import("../../after-reply/application/follow-ups");
-  let seqJobsApp: typeof import("../../after-reply/application/follow-up-jobs");
+  let followUpsApp: typeof import("../../after-reply/application/follow-ups");
+  let followUpJobsApp: typeof import("../../after-reply/application/follow-up-jobs");
   let handling: typeof import("../person-handling");
   let runStops: typeof import("../../after-reply/infrastructure/follow-up-stop");
   let appDb: typeof import("@/platform/db/client").db;
@@ -43,7 +43,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     const clock = () => new Date();
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const [seqTick] = seqJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [followUpTick] = followUpJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
     return {
       org,
@@ -56,7 +56,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       aiRun: () => aiTick.run(ctx()),
       cycle: async () => {
         await aiTick.run(ctx());
-        return seqTick.run(ctx());
+        return followUpTick.run(ctx());
       },
     };
   }
@@ -124,17 +124,17 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     composition = await import("../composition");
     aiJobsApp = await import("../../ai/application/ai-jobs");
     arApp = await import("../../after-reply/application/after-reply");
-    seqApp = await import("../../after-reply/application/follow-ups");
-    seqJobsApp = await import("../../after-reply/application/follow-up-jobs");
+    followUpsApp = await import("../../after-reply/application/follow-ups");
+    followUpJobsApp = await import("../../after-reply/application/follow-up-jobs");
     handling = await import("../person-handling");
     runStops = await import("../../after-reply/infrastructure/follow-up-stop");
     appDb = (await import("@/platform/db/client")).db;
-    const seqStore = await import("../../after-reply/infrastructure/drizzle-follow-up-store");
+    const followUpStore = await import("../../after-reply/infrastructure/drizzle-follow-up-store");
     stores = {
       jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
       replies: (await import("../drizzle-reply-store")).drizzleReplyStore,
-      flows: seqStore.drizzleAfterReplyStore,
-      runs: seqStore.drizzleRunStore,
+      flows: followUpStore.drizzleAfterReplyStore,
+      runs: followUpStore.drizzleRunStore,
       engine: (await import("../../after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine,
     };
     FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
@@ -170,7 +170,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
           return facts;
         },
       };
-      await expect(seqApp.attemptRun({ runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" })).rejects.toMatchObject({ details: { code: "contact" } });
+      await expect(followUpsApp.attemptRun({ runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" })).rejects.toMatchObject({ details: { code: "contact" } });
       expect(await count("follow_up_runs", f.org)).toBe(0);
     });
 
@@ -178,7 +178,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       const { f, personId, conversationId } = await readyToStart();
       const conversion = await convertAndHold(personId);
       // The conversion has not committed, so the facts still read a lead and the start waits at the conversation lock.
-      const start = seqApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" }).then(
+      const start = followUpsApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" }).then(
         () => null,
         (error: unknown) => error,
       );
@@ -194,7 +194,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
 
     it("a lead still gets its run", async () => {
       const { f, conversationId } = await readyToStart();
-      const outcome = await seqApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" });
+      const outcome = await followUpsApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId, source: "ai_assignment" });
       expect(outcome).toHaveProperty("started");
       expect(await count("follow_up_runs", f.org, "status = 'active'")).toBe(1);
     });
@@ -246,13 +246,13 @@ describeDb("person handling for the lead-to-contact conversion", () => {
         return runStops.interruptPersonRunsTx(tx, f.org, [a.personId], "converted", now);
       });
       expect(stopped).toEqual({ runs: 1, drafts: 3 });
-      expect(stopped.drafts).toBe(await count("drafts", f.org, "status = 'stale' and error = 'The follow-up sequence ended.'"));
+      expect(stopped.drafts).toBe(await count("drafts", f.org, "status = 'stale' and error = 'The follow-ups ended.'"));
 
       const status = async (id: string) => (await one("select status from drafts where id = $1", [id])).status as string;
       expect([await status(orphan), await status(failed)]).toEqual(["stale", "stale"]);
       expect([await status(sending), await status(sent), await status(inbox)]).toEqual(["sending", "sent", "awaiting_review"]);
       expect(await one("select status from follow_up_runs where id = $1", [runA.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, `event_type = 'sequence.interrupted' and meta->>'reason' = 'converted' and conversation_id = '${a.conversationId}'`)).toBe(1);
+      expect(await count("events", f.org, `event_type = 'follow_up.interrupted' and meta->>'reason' = 'converted' and conversation_id = '${a.conversationId}'`)).toBe(1);
 
       // The other person's run and draft are untouched, and a second call finds nothing.
       expect(await one("select status from follow_up_runs where id = $1", [runB.id])).toMatchObject({ status: "active" });
@@ -293,7 +293,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   }
 
   describe("lockPersonConversations", () => {
-    it("holds the person's records and the person's outreach lock until the transaction ends", async () => {
+    it("holds the person's conversations and the person's outreach lock until the transaction ends", async () => {
       const f = await fixture();
       const { personId, conversationId } = await ingest(f);
       let release!: () => void;
@@ -318,7 +318,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(after).toBe(true);
     });
 
-    it("takes no record lock for a person without a conversation", async () => {
+    it("takes no conversation lock for a person without a conversation", async () => {
       const f = await fixture();
       const personId = await person(f);
       await expect(appDb.transaction((tx) => handling.lockPersonConversations(tx, f.org, personId))).resolves.toBeUndefined();

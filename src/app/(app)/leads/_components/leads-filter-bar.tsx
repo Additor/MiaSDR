@@ -27,7 +27,7 @@ export function LeadsFilterBar(props: {
   panelCount: number;
   /** List options at the right of the toolbar. */
   end?: ReactNode;
-  options: { campaigns: Array<{ id: string; name: string; channel: string }>; sources: string[]; categories: string[] };
+  options: { campaigns: Array<{ id: string; name: string; channel: string }>; sources: string[]; replyGroups: string[] };
 }) {
   const { filter, sort, size, options, panelCount, end } = props;
   const campaigns = options.campaigns.map((c) => ({ value: c.id, label: `${c.name} (${c.channel})` }));
@@ -56,7 +56,7 @@ export function LeadsFilterBar(props: {
               <SelectField label="Not in campaign" name="notCampaign" defaultValue={filter.notInCampaign ?? ""} options={[{ value: "", label: "No exclusion" }, ...campaigns]} />
               <TristateField label="Replied" name="replied" value={filter.replied} />
               <TristateField label="Has conversation" name="hasConversation" value={filter.hasConversation} />
-              <SelectField label="Reply group" name="category" defaultValue={filter.category ?? ""} options={[{ value: "", label: "Any group" }, ...options.categories.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
+              <SelectField label="Reply group" name="replyGroup" defaultValue={filter.replyGroup ?? ""} options={[{ value: "", label: "Any group" }, ...options.replyGroups.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
             </FilterSection>
             <FilterSection title="Reachability">
               <TristateField label="Has email" name="email" value={filter.hasEmail} />

@@ -46,7 +46,7 @@ test.describe("the conversation page", () => {
     await expect(line.getByTestId("type-name")).toHaveText("Meeting requested · Interested");
     await expect(line).toContainText("Draft · Follow-ups keep going");
     await expect(line.getByTestId("type-source")).toContainText("Picked by the AI");
-    // The old places are gone: no Waiting on pair, no Classification card, no category row in Next step.
+    // The old places are gone: no Waiting on pair, no pick card, no group row in Next step.
     await expect(main.getByText("Waiting on")).toHaveCount(0);
     await expect(main.getByTestId("classification")).toHaveCount(0);
     const step = main.getByTestId("next-step");

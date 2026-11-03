@@ -21,7 +21,7 @@ const filterSchema = z
     source: z.string().max(170),
     createdFrom: z.string().max(10),
     createdTo: z.string().max(10),
-    category: z.string().max(40),
+    replyGroup: z.string().max(40),
   })
   .partial()
   .strict();
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       source: f.source,
       from: f.createdFrom,
       to: f.createdTo,
-      category: f.category,
+      replyGroup: f.replyGroup,
     };
     const outcome = await deleteLeads(leadDeleteDeps, actor, { filter: parseLeadFilter((key) => raw[key]), confirmCount: body.confirmCount });
     return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };

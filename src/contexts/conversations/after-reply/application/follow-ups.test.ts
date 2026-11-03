@@ -31,7 +31,7 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
     owner: { id: "camp", name: "Autumn", channel: "email", status: "active", archived: false },
     flow: { status: "active", hasPublished: true },
     thread: { id: "c1", conversationId: "rec1", channel: "email" },
-    selection: { flowId: "seq", followUpVersionId: "v1", campaignId: "camp" },
+    selection: { flowId: "flow1", followUpVersionId: "v1", campaignId: "camp" },
     steps: [
       { id: "s1", followUpVersionId: "v1", position: 1, delayMinutes: 0 },
       { id: "s2", followUpVersionId: "v1", position: 2, delayMinutes: 2880 },
@@ -72,7 +72,7 @@ describe("startRun invariants", () => {
     expect(s.created).toHaveLength(0);
   });
 
-  it("refuses a conversation that belongs to another record", async () => {
+  it("refuses a thread that belongs to another conversation", async () => {
     const s = store(facts({ thread: { id: "c9", conversationId: "other", channel: "email" } }));
     await expect(startRun(s.deps, { organizationId: "org", conversationId: "rec1", threadId: "c9", source: "human_override" })).rejects.toBeInstanceOf(ConflictError);
     expect(s.created).toHaveLength(0);
@@ -100,7 +100,7 @@ describe("startRun invariants", () => {
     expect(s.created[0].steps.map((x) => x.position)).toEqual([2]);
   });
 
-  it("starts nothing for a type set to stop follow-ups, a non-email reply or no sequence", async () => {
+  it("starts nothing for a type set to stop follow-ups, a non-email reply or no flow", async () => {
     const terminal = facts();
     terminal.conversation.groupKey = "not_interested";
     terminal.conversation.replyTypeKey = "not_required_right_now";
@@ -125,7 +125,7 @@ describe("restartFollowUpRun", () => {
     const s = store(facts());
     const result = await restartFollowUpRun(s.deps, actor, "rec1");
     expect(result).toEqual({ runId: "run1", created: true });
-    expect(s.created[0]).toMatchObject({ source: "human_override", restart: true, actorUserId: "u1", flowId: "seq" });
+    expect(s.created[0]).toMatchObject({ source: "human_override", restart: true, actorUserId: "u1", flowId: "flow1" });
   });
 
   it("answers a conflict when the owning campaign has no flow to run", async () => {

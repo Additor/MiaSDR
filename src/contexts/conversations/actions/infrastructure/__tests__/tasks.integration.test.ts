@@ -151,7 +151,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     return id as string;
   }
 
-  it("adds, edits and deletes a note on a person with no reply record, stored with a null conversation_id", async () => {
+  it("adds, edits and deletes a note on a person with no conversation, stored with a null conversation_id", async () => {
     const w = await org();
     const personId = await personWithoutConversation(w.id);
     const { id } = await replies.addConversationNote(replyHandlingDeps, w.ann, { personId }, { title: " Call ", body: " Wants pricing " });
@@ -172,7 +172,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     await expect(replies.deleteConversationNote(replyHandlingDeps, w.ann, { personId }, id)).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("adds and completes a task on a person with no reply record, stored with a null conversation_id", async () => {
+  it("adds and completes a task on a person with no conversation, stored with a null conversation_id", async () => {
     const w = await org();
     const personId = await personWithoutConversation(w.id);
     const { id } = await tasks.createTask(deps, w.ann, { personId }, { name: "Send the deck", dueDay: "2026-10-20", timeZone: "UTC", assigneeId: w.bob.userId });
@@ -183,7 +183,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => [t.id, t.conversationId, t.isCompleted])).toEqual([[id, null, true]]);
   });
 
-  it("lists by person every note and task, record-bound ones included, and edits a conversation-bound note through the person", async () => {
+  it("lists by person every note and task, conversation-bound ones included, and edits a conversation-bound note through the person", async () => {
     const w = await org();
     const [{ person_id: personId }] = await sql`select person_id from conversations where id = ${w.conversationId}`;
     const onConversation = await replies.addConversationNote(replyHandlingDeps, w.ann, w.conversationId, { body: "on the conversation" });

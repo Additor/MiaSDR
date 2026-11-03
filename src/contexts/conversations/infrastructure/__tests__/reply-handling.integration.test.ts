@@ -5,7 +5,7 @@ import type { InboundEmailInput } from "../../application/ports";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, insertFollowUpFlow, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 
-describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings", () => {
+describeDb("Reply handling: type changes, undo, do not contact, tenancy, settings", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../composition");
@@ -47,7 +47,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     };
   };
 
-  /** A reply from a new lead: person, record and conversation exist afterwards. */
+  /** A reply from a new lead: person, conversation and thread exist afterwards. */
   async function lead(f: Fx, partial: Partial<InboundEmailInput> = {}) {
     const result = await composition.ingestInbound(mail(f, partial));
     const [conversation] = await sql`select * from conversations where person_id = ${result.personId}`;
@@ -100,7 +100,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     await sql.end();
   });
 
-  describe("stage moves", () => {
+  describe("type changes", () => {
     it("moves a conversation, logs it, bumps the version and retires open drafts", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -281,7 +281,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       // The Actions row reads the same pick: it is held, and it does not unlock a customer.
       const queue = await workQueue.getWorkQueue(queueDeps, f.actor);
       const row = Object.values(queue.groups).flatMap((g) => g.items).find((i) => i.conversationId === l.conversationId);
-      expect(row?.classification).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
+      expect(row?.aiPick).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
     });
 
     it("cancels a queued draft job for the undone classification", async () => {
@@ -326,15 +326,15 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
     });
 
-    it("ends the active sequence run with pick_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
+    it("ends the active follow-up run with pick_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
       const f = await fixture();
       const l = await lead(f);
       const target = await sub(f, "demo_request");
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const r = await rec(l.conversationId);
-      const seq = await insertFollowUpFlow(sql, f.org, "Demo follow-up");
+      const flow = await insertFollowUpFlow(sql, f.org, "Demo follow-up");
       // Steps go in while the version is a draft: follow_up_steps_frozen_trg refuses them under a published one.
-      const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq}, 1) returning id`;
+      const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow}, 1) returning id`;
       const stepIds: string[] = [];
       for (const [position, type, delay] of [[1, "reply", 0], [2, "follow_up", 60]] as const) {
         const [{ id }] = await sql`
@@ -345,7 +345,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${ver}`;
       const [{ id: runId }] = await sql`
         insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${l.conversationId}, ${l.threadId}, ${seq}, ${ver}, ${target.id}, 'active', 'ai_assignment', ${r.latest_inbound_message_id}, now()) returning id`;
+        values (${f.org}, ${l.conversationId}, ${l.threadId}, ${flow}, ${ver}, ${target.id}, 'active', 'ai_assignment', ${r.latest_inbound_message_id}, now()) returning id`;
       const draftId = await openDraft(f, l);
       await sql`insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, draft_id, expected_context_version) values (${f.org}, ${runId}, ${stepIds[0]}, 'awaiting_review', now(), ${draftId}, ${r.context_version})`;
       await sql`insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version) values (${f.org}, ${runId}, ${stepIds[1]}, 'scheduled', now() + interval '1 day', ${r.context_version})`;
@@ -355,16 +355,16 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from follow_up_runs where id = ${runId}`)[0].status).toBe("interrupted");
       expect((await sql`select status from follow_up_step_runs where follow_up_run_id = ${runId} order by due_at`).map((x) => x.status)).toEqual(["cancelled", "cancelled"]);
       expect((await sql`select status from drafts where id = ${draftId}`)[0].status).toBe("stale");
-      const interrupted = await sql`select meta from events where conversation_id = ${l.conversationId} and event_type = 'sequence.interrupted'`;
+      const interrupted = await sql`select meta from events where conversation_id = ${l.conversationId} and event_type = 'follow_up.interrupted'`;
       expect(interrupted).toHaveLength(1);
       expect(interrupted[0].meta).toMatchObject({ reason: "pick_undone" });
 
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
-      expect(await sql`select 1 from events where conversation_id = ${l.conversationId} and event_type = 'sequence.interrupted'`).toHaveLength(1);
+      expect(await sql`select 1 from events where conversation_id = ${l.conversationId} and event_type = 'follow_up.interrupted'`).toHaveLength(1);
       expect((await sql`select status from follow_up_runs where id = ${runId}`)[0].status).toBe("interrupted");
     });
 
-    it("refuses to undo over a later stage move, and only the latest message's classification", async () => {
+    it("refuses to undo over a later type change, and only the latest message's classification", async () => {
       const f = await fixture();
       const l = await lead(f);
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
@@ -440,7 +440,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   });
 
   describe("tenant isolation", () => {
-    it("never shows, reads or changes another organization's records", async () => {
+    it("never shows, reads or changes another organization's conversations", async () => {
       const a = await fixture();
       const b = await fixture();
       const la = await lead(a);
@@ -472,7 +472,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("closes a conversation with a reason and refuses a stage move while it is closed", async () => {
+    it("closes a conversation with a reason and refuses a type change while it is closed", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       expect(await rec(l.conversationId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
@@ -480,7 +480,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.changeReplyType(deps, f.actor, l.conversationId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.conversationId)).context_version })).rejects.toThrow(/marked done/);
     });
 
-    it("reopens a closed record once", async () => {
+    it("reopens a closed conversation once", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       await replies.reopenConversation(deps, f.actor, l.conversationId);

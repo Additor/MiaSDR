@@ -64,7 +64,7 @@ export const METRIC_DEFINITIONS: readonly MetricDefinition[] = [
   { key: "acceptanceRate", label: "Acceptance rate", definition: "Accepted divided by invited." },
   { key: "linkedinReplyRate", label: "LinkedIn reply rate", definition: "LinkedIn replied divided by accepted." },
   { key: "replies", label: "Replies", definition: "Inbound messages inside the window from people who were contacted before the message arrived. Each message counts once, even when the person is in several campaigns." },
-  { key: "classified", label: "Reply type share", definition: "Replies whose latest AI pick is applied (auto_applied, accepted or overridden) divided by all replies. A pick held for a check counts as pending review." },
+  { key: "replyTypeShare", label: "Reply type share", definition: "Replies whose latest AI pick is applied (auto_applied, accepted or overridden) divided by all replies. A pick held for a check counts as pending review." },
 ];
 
 // ---------------------------------------------------------------- campaigns
@@ -222,39 +222,39 @@ export function linkedinReport(input: {
   };
 }
 
-// ---------------------------------------------------------------- replies and classifications
+// ---------------------------------------------------------------- replies by group and reply type
 
-export const CATEGORY_BUCKETS = ["customer", "interested", "not_interested", "other", "pending_review", "unclassified"] as const;
-export type CategoryBucket = (typeof CATEGORY_BUCKETS)[number];
+export const REPLY_BUCKETS = ["customer", "interested", "not_interested", "other", "pending_review", "no_type"] as const;
+export type ReplyBucket = (typeof REPLY_BUCKETS)[number];
 
-const BUCKET_LABELS: Record<CategoryBucket, string> = {
+const BUCKET_LABELS: Record<ReplyBucket, string> = {
   customer: "Existing customer",
   interested: "Interested",
   not_interested: "Not interested",
   other: "Other",
   pending_review: "Pending review",
-  unclassified: "No type yet",
+  no_type: "No type yet",
 };
 
-export const bucketLabel = (bucket: CategoryBucket): string => BUCKET_LABELS[bucket];
+export const bucketLabel = (bucket: ReplyBucket): string => BUCKET_LABELS[bucket];
 
-const APPLIED = new Set<CategoryBucket>(["customer", "interested", "not_interested", "other"]);
+const APPLIED = new Set<ReplyBucket>(["customer", "interested", "not_interested", "other"]);
 
 /**
- * The bucket one reply falls in. `latestStatus` and `appliedCategory` come from the reply's latest
- * classification that is applied or proposed (null when there is none, or only failed, stale or rejected ones).
+ * The bucket one reply falls in. `latestStatus` and `appliedGroup` come from the reply's latest
+ * AI pick that is applied or proposed (null when there is none, or only failed, stale or rejected ones).
  */
-export function replyBucket(latestStatus: string | null, appliedCategory: string | null): CategoryBucket {
-  if (latestStatus === null) return "unclassified";
+export function replyBucket(latestStatus: string | null, appliedGroup: string | null): ReplyBucket {
+  if (latestStatus === null) return "no_type";
   if (latestStatus === "proposed") return "pending_review";
-  return APPLIED.has(appliedCategory as CategoryBucket) ? (appliedCategory as CategoryBucket) : "unclassified";
+  return APPLIED.has(appliedGroup as ReplyBucket) ? (appliedGroup as ReplyBucket) : "no_type";
 }
 
 export interface ReplyCountRow {
   channel: Channel;
-  bucket: CategoryBucket;
-  /** Subcategory name for applied classifications, else null. */
-  subcategory: string | null;
+  bucket: ReplyBucket;
+  /** Reply type name for an applied pick, else null. */
+  replyType: string | null;
   replies: number;
 }
 
@@ -262,42 +262,42 @@ export { SUPPRESSION_REASONS, type SuppressionReason };
 
 export interface RepliesReport {
   total: number;
-  /** Replies with an applied category divided by all replies. */
-  classifiedShare: number | null;
-  byBucket: Array<{ bucket: CategoryBucket; label: string; replies: number; share: number | null }>;
-  byChannel: Array<{ channel: Channel; total: number; byBucket: Record<CategoryBucket, number> }>;
-  byReplyType: Array<{ bucket: CategoryBucket; name: string; replies: number }>;
+  /** Replies with an applied group divided by all replies. */
+  replyTypeShare: number | null;
+  byBucket: Array<{ bucket: ReplyBucket; label: string; replies: number; share: number | null }>;
+  byChannel: Array<{ channel: Channel; total: number; byBucket: Record<ReplyBucket, number> }>;
+  byReplyType: Array<{ bucket: ReplyBucket; name: string; replies: number }>;
   /** Suppression rows created in the window. Null when a campaign filter is on: a suppression has no campaign. */
   suppressions: Record<SuppressionReason, number> | null;
 }
 
-const emptyBuckets = (): Record<CategoryBucket, number> => ({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, unclassified: 0 });
+const emptyBuckets = (): Record<ReplyBucket, number> => ({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, no_type: 0 });
 
 export function repliesReport(rows: readonly ReplyCountRow[], suppressions: Partial<Record<SuppressionReason, number>> | null): RepliesReport {
   const totals = emptyBuckets();
-  const perChannel = new Map<Channel, Record<CategoryBucket, number>>(CHANNELS.map((c) => [c, emptyBuckets()]));
-  const subs = new Map<string, { bucket: CategoryBucket; name: string; replies: number }>();
+  const perChannel = new Map<Channel, Record<ReplyBucket, number>>(CHANNELS.map((c) => [c, emptyBuckets()]));
+  const types = new Map<string, { bucket: ReplyBucket; name: string; replies: number }>();
   for (const r of rows) {
     totals[r.bucket] += r.replies;
-    (perChannel.get(r.channel) as Record<CategoryBucket, number>)[r.bucket] += r.replies;
-    if (r.subcategory) {
-      const key = `${r.bucket}/${r.subcategory}`;
-      const entry = subs.get(key) ?? { bucket: r.bucket, name: r.subcategory, replies: 0 };
+    (perChannel.get(r.channel) as Record<ReplyBucket, number>)[r.bucket] += r.replies;
+    if (r.replyType) {
+      const key = `${r.bucket}/${r.replyType}`;
+      const entry = types.get(key) ?? { bucket: r.bucket, name: r.replyType, replies: 0 };
       entry.replies += r.replies;
-      subs.set(key, entry);
+      types.set(key, entry);
     }
   }
-  const total = CATEGORY_BUCKETS.reduce((sum, b) => sum + totals[b], 0);
+  const total = REPLY_BUCKETS.reduce((sum, b) => sum + totals[b], 0);
   const applied = [...APPLIED].reduce((sum, b) => sum + totals[b], 0);
   return {
     total,
-    classifiedShare: ratio(applied, total),
-    byBucket: CATEGORY_BUCKETS.map((bucket) => ({ bucket, label: bucketLabel(bucket), replies: totals[bucket], share: ratio(totals[bucket], total) })),
+    replyTypeShare: ratio(applied, total),
+    byBucket: REPLY_BUCKETS.map((bucket) => ({ bucket, label: bucketLabel(bucket), replies: totals[bucket], share: ratio(totals[bucket], total) })),
     byChannel: CHANNELS.map((channel) => {
-      const byBucket = perChannel.get(channel) as Record<CategoryBucket, number>;
-      return { channel, total: CATEGORY_BUCKETS.reduce((sum, b) => sum + byBucket[b], 0), byBucket };
+      const byBucket = perChannel.get(channel) as Record<ReplyBucket, number>;
+      return { channel, total: REPLY_BUCKETS.reduce((sum, b) => sum + byBucket[b], 0), byBucket };
     }),
-    byReplyType: [...subs.values()].sort((a, b) => b.replies - a.replies || a.name.localeCompare(b.name)),
+    byReplyType: [...types.values()].sort((a, b) => b.replies - a.replies || a.name.localeCompare(b.name)),
     suppressions: suppressions === null ? null : Object.fromEntries(SUPPRESSION_REASONS.map((r) => [r, suppressions[r] ?? 0])) as Record<SuppressionReason, number>,
   };
 }

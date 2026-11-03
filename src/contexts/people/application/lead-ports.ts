@@ -183,7 +183,7 @@ export interface LeadDeleteOutreach {
 
 /** Conversations: `person-handling.ts`. */
 export interface LeadDeleteHandling {
-  /** The people among `ids` with a reply-handling record or an event. */
+  /** The people among `ids` with a conversation or an event. */
   peopleWithHistory(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<Set<string>>;
 }
 

@@ -196,7 +196,7 @@ describeDb("the agent send gate on a stop request", () => {
       expect(event.via).toBeTruthy();
     });
 
-    it("refuses a pick on a closed record", async () => {
+    it("refuses a pick on a closed conversation", async () => {
       const thread = await held();
       await agent.tool("update_conversation", { action: "close", conversationId: thread.conversationId, reason: "done" });
       const [{ v }] = await sql<{ v: number }[]>`select context_version as v from conversations where id = ${thread.conversationId}`;

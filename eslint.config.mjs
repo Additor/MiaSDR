@@ -30,6 +30,16 @@ const eslintConfig = defineConfig([
     ignores: ["src/components/ui/**", "src/test-support/**", "**/__tests__/**", "**/*.test.{ts,tsx}"],
     rules: { "max-lines": ["error", { max: 700, skipBlankLines: true, skipComments: true }] },
   },
+  // Only the UI kit imports Base UI, so every popup takes its placement from popup.ts.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/components/ui/**"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{ group: ["@base-ui/*"], message: "Import the primitive from @/components/ui." }],
+      }],
+    },
+  },
   // DDD dependency direction: domain is pure, application never touches infrastructure.
   {
     files: ["src/contexts/*/domain/**", "src/contexts/*/*/domain/**"],

@@ -111,7 +111,7 @@ export const LEAD_DELETE_STATEMENT_TIMEOUT = "30s";
 
 /**
  * Deletes leads that never had mail sent, are not in a running campaign and have
- * no CRM records. The rest stay and come back in `blocked` with a reason.
+ * no conversations. The rest stay and come back in `blocked` with a reason.
  * A filter delete needs the count the person confirmed, so a changed list is not deleted blind,
  * and it refuses an empty filter: "delete all matching" never means "delete everything".
  */
@@ -231,7 +231,7 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
       }
       // A busy batch (one held row, a lock timeout twice, the statement timeout) or a foreign key violation runs again one
       // lead at a time, so the others still go. A 23503 is the last guard: before the batch held its locks, a send claim or
-      // a new record could commit between the checks and the delete; under the locks no known writer can, so it catches
+      // a new conversation could commit between the checks and the delete; under the locks no known writer can, so it catches
       // only a reference no check covers, and the lead stays as `linked_conversations`. A lead still busy alone is `try_again`.
       for (const id of part) {
         try {

@@ -47,7 +47,7 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await settings.getByRole("link", { name: "Rae Costa" }).click();
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}$/);
 
-    // A reply asking for a demo is classified and starts the run. The thread's side column holds what the record page had.
+    // A reply asking for a demo is classified and starts the run. The thread's side column holds the follow-ups.
     await expect(typeLine(page).getByTestId("type-name")).toContainText("Demo request");
     await expect(page.locator("#main-content").getByTestId("thread-person").getByRole("link", { name: "Open lead" })).toBeVisible();
     // Campaigns, like the other histories, folds behind its count.

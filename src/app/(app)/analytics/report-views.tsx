@@ -405,7 +405,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
       <section className={REPORT_BLOCK}>
         <div className="stack-field">
           <h2 className="heading-section">{formatCount(report.total)} replies</h2>
-          <p className="text-sm text-muted-foreground">{report.classifiedShare === null ? "-" : percent(report.classifiedShare)} have an applied reply type.</p>
+          <p className="text-sm text-muted-foreground">{report.replyTypeShare === null ? "-" : percent(report.replyTypeShare)} have an applied reply type.</p>
         </div>
         <BarList label="Replies by group" max={report.total} bars={report.byBucket.map((b) => ({ key: b.bucket, label: b.label, value: b.replies }))} />
       </section>

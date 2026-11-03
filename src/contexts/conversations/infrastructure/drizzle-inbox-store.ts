@@ -37,7 +37,7 @@ interface ListRow {
 }
 
 interface ScheduledDbRow {
-  kind: "campaign" | "sequence";
+  kind: "campaign" | "follow_up";
   id: string;
   person_id: string;
   full_name: string | null;
@@ -194,14 +194,14 @@ export const drizzleInboxStore: InboxStore = {
       ...(present(filter.mailboxIds) ? [sql`ce.mailbox_id in (${uuidList(filter.mailboxIds)})`] : []),
       ...dueRange("ce.next_send_at"),
     ];
-    const sequenceWhere = [
+    const followUpWhere = [
       sql`ssr.organization_id = ${organizationId}`,
       sql`ssr.status = 'scheduled'`,
       sql`sr.status = 'active'`,
       // A paused campaign holds its follow-ups, so they are not scheduled to go out.
-      sql`seq_camp.status <> 'paused'`,
+      sql`flow_camp.status <> 'paused'`,
       ...person,
-      ...(present(filter.campaignIds) ? [sql`seq.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
+      ...(present(filter.campaignIds) ? [sql`flow.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
       ...(present(filter.mailboxIds) ? [sql`lower(c.account_ref) in ${mailboxAddresses(organizationId, filter.mailboxIds)}`] : []),
       ...dueRange("ssr.due_at"),
     ];
@@ -217,17 +217,17 @@ export const drizzleInboxStore: InboxStore = {
       join lateral (select e.v from jsonb_array_elements(camp.steps) as e(v) where (e.v->>'stepNumber')::int = ce.current_step + 1 limit 1) st on true
       where ${sql.join(campaignWhere, sql` and `)}
       union all
-      select 'sequence'::text, ssr.id, p.id, p.full_name, p.first_name, p.email, c.channel,
-             seq_camp.name, ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
+      select 'follow_up'::text, ssr.id, p.id, p.full_name, p.first_name, p.email, c.channel,
+             flow_camp.name, ss.name, null::text, case when c.channel = 'email' then c.account_ref else null end, ssr.due_at
       from follow_up_step_runs ssr
       join follow_up_runs sr on sr.id = ssr.follow_up_run_id and sr.organization_id = ssr.organization_id
       join follow_up_steps ss on ss.id = ssr.follow_up_step_id
-      join follow_up_flows seq on seq.id = sr.flow_id and seq.organization_id = sr.organization_id
-      join campaigns seq_camp on seq_camp.id = seq.campaign_id and seq_camp.organization_id = seq.organization_id
+      join follow_up_flows flow on flow.id = sr.flow_id and flow.organization_id = sr.organization_id
+      join campaigns flow_camp on flow_camp.id = flow.campaign_id and flow_camp.organization_id = flow.organization_id
       join threads c on c.id = sr.thread_id
       join conversations r on r.id = sr.conversation_id
       join people p on p.id = r.person_id
-      where ${sql.join(sequenceWhere, sql` and `)}`;
+      where ${sql.join(followUpWhere, sql` and `)}`;
     const rows = (await db.execute(sql`
       select * from (${union}) u order by u.due_at asc, u.id asc
       limit ${filter.pageSize} offset ${(filter.page - 1) * filter.pageSize}

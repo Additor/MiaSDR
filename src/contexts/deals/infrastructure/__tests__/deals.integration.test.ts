@@ -79,7 +79,7 @@ describeDb("deals context", () => {
       expect(after.enrollments.filter((e) => e.status === "cancelled" && e.stop_reason === "converted").map((e) => e.id).sort()).toEqual([lead.live, lead.pending].sort());
       expect(after.enrollments.find((e) => e.id === lead.repliedEnrollmentId)?.status).toBe("replied");
       expect(after.runs.map((r) => r.status)).toEqual(["interrupted"]);
-      expect(await kit.count("drafts", f.org, `conversation_id = '${lead.conversationId}' and status = 'stale' and error = 'The follow-up sequence ended.'`)).toBe(result.stopped.drafts);
+      expect(await kit.count("drafts", f.org, `conversation_id = '${lead.conversationId}' and status = 'stale' and error = 'The follow-ups ended.'`)).toBe(result.stopped.drafts);
 
       const deal = await kit.one("select * from deals where id = $1", [result.dealId]);
       expect(deal).toMatchObject({ person_id: lead.personId, stage_kind: "open", owner_user_id: f.owner.userId, currency: "EUR", source_enrollment_id: lead.repliedEnrollmentId, version: 0, closed_at: null });
@@ -227,7 +227,7 @@ describeDb("deals context", () => {
       await deals.moveDealStage(deps(), f.owner, dealId, { stageId: by("Proposal"), expectedVersion: 2 });
       await deals.updateDeal(deps(), f.owner, dealId, { expectedVersion: 3, title: "Renamed" });
       const kinds = await kit.sql`select event_type from events where person_id = ${personId} and event_type like 'deal.%' order by created_at`;
-      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.type_changed", "deal.type_changed", "deal.type_changed", "deal.updated"]);
+      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.stage_changed", "deal.stage_changed", "deal.stage_changed", "deal.updated"]);
     });
 
     it("deletes only an open deal, and the person stays a contact", async () => {

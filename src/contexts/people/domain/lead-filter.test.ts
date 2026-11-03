@@ -7,16 +7,16 @@ const UUID = "0b9c8a3e-1d2f-4a5b-8c7d-9e0f1a2b3c4d";
 describe("parseLeadFilter", () => {
   it("reads every param", () => {
     const filter = parseLeadFilter(
-      read({ q: " acme ", campaign: UUID, notCampaign: UUID, email: "yes", linkedin: "no", dnc: "yes", source: "import", from: "2024-01-02", to: "2024-02-03", category: "interested", ids: `${UUID},${UUID}` }),
+      read({ q: " acme ", campaign: UUID, notCampaign: UUID, email: "yes", linkedin: "no", dnc: "yes", source: "import", from: "2024-01-02", to: "2024-02-03", replyGroup: "interested", ids: `${UUID},${UUID}` }),
     );
     expect(filter).toEqual({
       query: "acme", campaign: UUID, notInCampaign: UUID, hasEmail: true, hasLinkedin: false, doNotContact: true,
-      source: "import", createdFrom: "2024-01-02", createdTo: "2024-02-03", category: "interested", ids: [UUID],
+      source: "import", createdFrom: "2024-01-02", createdTo: "2024-02-03", replyGroup: "interested", ids: [UUID],
     });
   });
 
   it("drops values that do not parse", () => {
-    const filter = parseLeadFilter(read({ q: "  ", campaign: "x'; drop", notCampaign: "nope", email: "maybe", source: "a b", from: "2024-13-40", to: "yesterday", category: "Bad Value", ids: "1,2" }));
+    const filter = parseLeadFilter(read({ q: "  ", campaign: "x'; drop", notCampaign: "nope", email: "maybe", source: "a b", from: "2024-13-40", to: "yesterday", replyGroup: "Bad Value", ids: "1,2" }));
     expect(filter).toEqual({});
     expect(isFilterActive(filter)).toBe(false);
   });
@@ -27,7 +27,7 @@ describe("parseLeadFilter", () => {
   });
 
   it("round-trips through the URL params", () => {
-    const filter = parseLeadFilter(read({ q: "a b", campaign: "none", email: "no", dnc: "no", source: "grid", from: "2024-01-01", category: "customer" }));
+    const filter = parseLeadFilter(read({ q: "a b", campaign: "none", email: "no", dnc: "no", source: "grid", from: "2024-01-01", replyGroup: "customer" }));
     const params = leadFilterParams(filter);
     expect(parseLeadFilter((key) => params.get(key))).toEqual(filter);
   });
@@ -77,7 +77,7 @@ describe("isFilterActive", () => {
     expect(isFilterActive({})).toBe(false);
     expect(isFilterActive({ query: "  " })).toBe(false);
     expect(isFilterActive({ ids: [] })).toBe(false);
-    for (const filter of [{ query: "a" }, { campaign: "any" }, { notInCampaign: UUID }, { hasEmail: false }, { hasLinkedin: false }, { doNotContact: false }, { source: "x" }, { createdFrom: "2024-01-01" }, { createdTo: "2024-01-01" }, { category: "customer" }, { ids: [UUID] }]) {
+    for (const filter of [{ query: "a" }, { campaign: "any" }, { notInCampaign: UUID }, { hasEmail: false }, { hasLinkedin: false }, { doNotContact: false }, { source: "x" }, { createdFrom: "2024-01-01" }, { createdTo: "2024-01-01" }, { replyGroup: "customer" }, { ids: [UUID] }]) {
       expect(isFilterActive(filter), JSON.stringify(filter)).toBe(true);
     }
   });

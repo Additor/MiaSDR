@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
-import { interruptOnTerminalStageTx } from "../../after-reply/infrastructure/follow-up-run-tx";
+import { interruptOnStoppingTypeTx } from "../../after-reply/infrastructure/follow-up-run-tx";
 import { aiJobs, replyTypePicks, threads, events, messages, conversations, replyTypes } from "@/platform/db/schema";
 import type { AiJobWorkerStore, ClaimedJob, JobKind } from "../../application/reply-ports";
 import { AUTO_REQUEUE_CEILING, type FailureKind } from "../domain/ai-job-requeue";
@@ -341,7 +341,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
             ...(settle ? { workflowState: "idle" } : {}),
           })
           .where(eq(conversations.id, conversation.id));
-        await interruptOnTerminalStageTx(tx, {
+        await interruptOnStoppingTypeTx(tx, {
           organizationId: input.job.organizationId,
           conversationId: conversation.id,
           replyTypeId: proposed.id,

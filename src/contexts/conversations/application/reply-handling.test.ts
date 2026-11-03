@@ -52,7 +52,7 @@ function deps(store: ReplyHandlingStore) {
   return { d, replayed };
 }
 
-describe("stage moves", () => {
+describe("type changes", () => {
   it("passes the change to the store and never sets do not contact, the stop request type included", async () => {
     const { store, calls } = fakeStore();
     const { d } = deps(store);
