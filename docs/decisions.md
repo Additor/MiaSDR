@@ -354,7 +354,7 @@ The campaign page lists email sends still `unknown` after 30 minutes (`UNCONFIRM
 
 ### Mailboxes and takeover
 
-- Connecting, editing, testing, disabling and removing a mailbox needs owner or admin. `verify` through the provider decides `connected` or `failed` with a reason.
+- Connecting, editing, testing, disabling and removing a mailbox needs owner or admin. Connecting calls `verify` through the provider before it writes a row: a refusal answers 400 with the reason and stores nothing, so an address that cannot send holds no place against the organization that can. On a stored mailbox, a recheck records `connected` or `failed` with a reason.
 - A mailbox with leads still in a sequence cannot be removed (disable it instead). A mailbox that is the only assigned sender of a campaign that is not completed cannot be removed either. Sending history blocks removal through the `sends` foreign keys.
 - **Takeover.** A follow-up stays on the mailbox that sent step 1, so it threads in the same Gmail conversation. When that mailbox is not `connected` (or gone) for longer than `takeoverAfterHours` (`channel_settings.email`, default 24, whole hours 1 to 168), another connected mailbox of the campaign's sender list may claim the follow-up. A connected mailbox that is out of hours, throttled or at its limit never loses its leads.
 - `mailboxes.unavailable_since` starts the clock when the status leaves `connected` and clears it on return. `sends.taken_over_from_mailbox_id` records the source mailbox.

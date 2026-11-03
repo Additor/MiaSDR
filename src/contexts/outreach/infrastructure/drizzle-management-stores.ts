@@ -452,7 +452,7 @@ export const drizzleMailboxStore: MailboxStore = {
     try {
       const [row] = await db
         .insert(mailboxes)
-        .values({ organizationId, emailAddress: input.emailAddress, displayName: input.displayName, status: "connecting" })
+        .values({ organizationId, emailAddress: input.emailAddress, displayName: input.displayName, status: "connected", lastTestedAt: input.testedAt })
         .returning({ id: mailboxes.id });
       return row.id;
     } catch (error) {

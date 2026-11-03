@@ -56,12 +56,25 @@ describeDb("campaign and mailbox management", () => {
       expect(mailbox.emailAddress).toBe(mailbox.emailAddress.toLowerCase());
     });
 
-    it("records why a mailbox could not be verified and lets it be retested", async () => {
+    it("keeps no row for an address it could not verify, so another organization can still connect it", async () => {
       const t = await org();
+      const u = await org();
       const address = `blocked${Math.random().toString(36).slice(2, 6)}@corp.test`;
       provider.unverifiable.add(address);
+      await expect(mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: address })).rejects.toThrow(/not allowed/);
+      expect(await mailboxUc.listMailboxes(t.mailboxDeps, t.actor)).toEqual([]);
+      provider.unverifiable.delete(address);
+      const { id } = await mailboxUc.connectMailbox(u.mailboxDeps, u.actor, { emailAddress: address });
+      expect(await stores.drizzleMailboxStore.get(u.actor.organizationId, id)).toMatchObject({ status: "connected", lastError: null, lastTestedAt: expect.any(Date) });
+    });
+
+    it("records why a connected mailbox stopped verifying and lets it be retested", async () => {
+      const t = await org();
+      const address = `lapsed${Math.random().toString(36).slice(2, 6)}@corp.test`;
       const { id } = await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: address });
-      expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))).toMatchObject({ status: "failed", lastError: expect.stringMatching(/not allowed/) });
+      provider.unverifiable.add(address);
+      await mailboxUc.retestMailbox(t.mailboxDeps, t.actor, id);
+      expect(await stores.drizzleMailboxStore.get(t.actor.organizationId, id)).toMatchObject({ status: "failed", lastError: expect.stringMatching(/not allowed/) });
       provider.unverifiable.delete(address);
       await mailboxUc.retestMailbox(t.mailboxDeps, t.actor, id);
       expect((await stores.drizzleMailboxStore.get(t.actor.organizationId, id))?.status).toBe("connected");

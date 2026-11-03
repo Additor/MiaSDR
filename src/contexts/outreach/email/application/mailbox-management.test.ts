@@ -49,6 +49,13 @@ describe("mailbox domain policy", () => {
     expect(t.verify).toHaveBeenCalledOnce();
   });
 
+  it("connect stores nothing for an address the provider refuses, and answers with the provider's reason", async () => {
+    const t = setup({ allowedDomains: ["operator.com"], openSignup: true });
+    t.verify.mockRejectedValueOnce(new Error("Gmail refused access"));
+    await expect(connectMailbox(t.deps, actor, { emailAddress: "sales@operator.com" })).rejects.toThrow(ValidationError);
+    expect(t.insert).not.toHaveBeenCalled();
+  });
+
   it("retest of a mailbox outside the list fails with the reason and never verifies", async () => {
     const t = setup({ allowedDomains: ["other.com"], openSignup: false });
     await retestMailbox(t.deps, actor, "m1");

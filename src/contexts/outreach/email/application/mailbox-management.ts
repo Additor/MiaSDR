@@ -78,8 +78,13 @@ export async function connectMailbox(deps: MailboxDeps, actor: Actor, input: { e
   if (!emailAddress) throw new ValidationError("Enter a valid email address.");
   const violation = mailboxPolicyViolation(deps.policy, emailAddress);
   if (violation) throw new ValidationError(violation);
-  const id = await deps.mailboxes.insert(actor.organizationId, { emailAddress, displayName: input.displayName?.trim() || null });
-  await verifyAndRecord(deps, actor, id, emailAddress);
+  // Verified first: an address is unique across the install, so a row for one the server cannot send as would hold it against the organization that can.
+  try {
+    await deps.provider.verify(emailAddress);
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : "Could not verify this mailbox.");
+  }
+  const id = await deps.mailboxes.insert(actor.organizationId, { emailAddress, displayName: input.displayName?.trim() || null, testedAt: deps.now() });
   return { id };
 }
 
