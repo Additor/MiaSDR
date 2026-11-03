@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +11,6 @@ import { callApi } from "@/app/_lib/api-client";
 import { HOME } from "@/app/_lib/home";
 
 export function OrganizationForm() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -27,8 +25,7 @@ export function OrganizationForm() {
       setError(result.error);
       return;
     }
-    router.push(HOME);
-    router.refresh();
+    window.location.assign(HOME);
   }
 
   return (

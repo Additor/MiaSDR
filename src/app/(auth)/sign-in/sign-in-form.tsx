@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,6 @@ const NOTICES: Record<string, string> = {
 };
 
 export function SignInForm({ signupAvailable, googleEnabled = false }: { signupAvailable: boolean; googleEnabled?: boolean }) {
-  const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -56,8 +55,8 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
       window.location.assign(oauthNext);
       return;
     }
-    router.push(safeNext(params.get("next")));
-    router.refresh();
+    // A full load, so nothing from an earlier session stays mounted.
+    window.location.assign(safeNext(params.get("next")));
   }
 
   async function resendLink() {

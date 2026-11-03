@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { AppSidebar } from "@/components/shell/app-sidebar";
 import { getOrgSendPause, getOrgTimeZone } from "@/components/shell/org-time-zone";
 import { OutboundPauseBanner } from "@/components/shell/outbound-pause-banner";
+import { RenderedOrganization } from "@/components/shell/rendered-organization";
 import { OrgTimeZoneProvider } from "@/components/shell/time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -53,6 +54,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
+      <RenderedOrganization id={organization.id} />
       <AppSidebar organizationName={organization.name} organizations={organizations} canCreateOrganization={canCreate} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup} isAdmin={isOwnerOrAdmin(role)} />
       <SidebarInset id="main-content" tabIndex={-1} className="outline-none">
         <OutboundPauseBanner banner={getOutboundPauseBanner(sendPause)} />

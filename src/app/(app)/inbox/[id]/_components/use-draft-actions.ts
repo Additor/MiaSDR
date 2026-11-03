@@ -72,11 +72,11 @@ export function useDraftActions(conversationId: string) {
     change,
     refresh,
     requestDraft: () => change("draft", () => runApiAction(callApi(`/api/inbox/${conversationId}/draft`, "POST"), { refresh })),
-    regenerate: (draftId: string, note: string) => change("regen", () => runApiAction(callApi(`/api/drafts/${draftId}/regenerate`, "POST", { note }), { refresh })),
+    regenerate: (draftId: string, revision: number, note: string) => change("regen", () => runApiAction(callApi(`/api/drafts/${draftId}/regenerate`, "POST", { revision, note }), { refresh })),
     resolve: (draftId: string, outcome: "delivered" | "not_delivered", note: string) => change("resolve", () => runApiAction(callApi(`/api/drafts/${draftId}/resolve`, "POST", { outcome, note }), { refresh })),
     // A ConfirmDialog stays open with the failure's sentence.
-    discard: async (draftId: string) => {
-      orThrow(await runApiAction(callApi(`/api/drafts/${draftId}/discard`, "POST"), { refresh }));
+    discard: async (draftId: string, revision: number) => {
+      orThrow(await runApiAction(callApi(`/api/drafts/${draftId}/discard`, "POST", { revision }), { refresh }));
     },
   };
 }

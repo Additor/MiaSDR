@@ -2,7 +2,7 @@
 
 import { BarChart3Icon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, PlusIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -68,6 +68,7 @@ const COUNTED: Record<string, { unit: string; testId: string; waiting: boolean }
 };
 
 /** Rows are 32px on a desktop pointer and 44px in the phone sheet. */
+const SIGN_IN = "/sign-in";
 const TOUCH = "max-md:h-11";
 
 /** A count that waits for a person: plain text in the brand hue, so it reads before the label does. */
@@ -127,7 +128,6 @@ interface AppSidebarProps {
 
 export function AppSidebar({ organizationName, organizations = [], canCreateOrganization = false, user, inboxUnread = 0, actionsPending = 0, setup = null, isAdmin = false }: AppSidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { theme = "system", setTheme } = useTheme();
   const { setOpenMobile } = useSidebar();
 
@@ -154,8 +154,8 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
       setSwitchError(switchErrorText(result));
       return;
     }
-    router.push(listPageOf(pathname));
-    router.refresh();
+    // A full load: client state belongs to the organization it was read for, and Next keeps hidden pages mounted across a push.
+    window.location.assign(listPageOf(pathname));
   }
 
   async function signOut() {
@@ -164,8 +164,8 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
       toast.error("Could not sign out. Try again.");
       return;
     }
-    router.push("/sign-in");
-    router.refresh();
+    // A full load: the next person on this browser must not find this person's pages kept mounted.
+    window.location.assign(SIGN_IN);
   }
 
   const activeRow = rowOf(pathname);

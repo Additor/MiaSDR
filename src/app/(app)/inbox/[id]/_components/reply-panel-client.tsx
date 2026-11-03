@@ -361,7 +361,7 @@ export function ReplyPanelClient({
                 {...regenerateControl({ status: draft.status, decisionWaiting, drafting, busy: busy !== null, aiConfigured: panel.aiConfigured })}
                 onClick={async () => {
                   if (!showRegenerate) return setShowRegenerate(true);
-                  if (await regenerate(draft.id, note)) {
+                  if (await regenerate(draft.id, draft.revision, note)) {
                     setShowRegenerate(false);
                     setNote("");
                   }
@@ -397,7 +397,7 @@ export function ReplyPanelClient({
           cancelLabel="Keep draft"
           pendingLabel="Discarding…"
           destructive
-          onConfirm={() => discard(draft.id)}
+          onConfirm={() => discard(draft.id, draft.revision)}
         />
       )}
     </div>

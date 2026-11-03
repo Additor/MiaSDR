@@ -46,4 +46,38 @@ test.describe("organizations", () => {
     await expect(page.getByTestId("org-switcher")).toContainText(ADMIN.organization);
     await expect(page.getByText(lead.lastName).first()).toBeVisible();
   });
+
+  test("a switch loads the page again, and a tab left on the old organization cannot write into the new one", async ({ page, context }) => {
+    await signInAdmin(page);
+    const secondName = unique("Fence Org");
+    await page.goto("/organizations/new");
+    const name = page.getByLabel("Organization name");
+    await waitForHydrated(name);
+    await name.fill(secondName);
+    await page.getByRole("button", { name: "Create organization" }).click();
+    await expect(page).toHaveURL(/\/actions$/);
+
+    // The stale tab: rendered for the new organization, then left alone.
+    const stale = await context.newPage();
+    await stale.goto("/settings/organization");
+    await expect(stale.getByTestId("org-switcher")).toContainText(secondName);
+    const nameField = stale.getByLabel("Name").first();
+    await waitForHydrated(nameField);
+
+    // A push would keep this mark, since Next keeps the page's client state.
+    await page.goto("/tables");
+    await page.evaluate(() => Object.assign(window, { __beforeSwitch: true }));
+    const switcher = page.getByTestId("org-switcher");
+    await waitForHydrated(switcher);
+    await switcher.click();
+    await page.getByRole("menuitemradio", { name: ADMIN.organization }).click();
+    await expect(page.getByTestId("org-switcher")).toContainText(ADMIN.organization);
+    expect(await page.evaluate(() => "__beforeSwitch" in window)).toBe(false);
+
+    await nameField.fill(`${secondName} edited`);
+    await stale.getByRole("button", { name: "Save" }).first().click();
+    await expect(stale.getByText("You switched organization in another tab. Reload this page to continue.").first()).toBeVisible();
+    await expect(page.getByTestId("org-switcher")).toContainText(ADMIN.organization);
+    await stale.close();
+  });
 });

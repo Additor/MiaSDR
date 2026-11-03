@@ -1,5 +1,6 @@
 "use client";
 
+import { organizationHeaders } from "@/app/_lib/api-client";
 import { DownloadIcon, RefreshCwIcon, PlayIcon, SendIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -229,7 +230,7 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
       if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
       const response = await fetch(gridUrl.sub(tableId, "export"), {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...organizationHeaders(), "content-type": "application/json" },
         // The server resolves the member's own view, so a filter, a sort and a personal view all carry over without the client sending them.
         body: JSON.stringify({ ...(onlySelected ? { rowIds: selectedIds } : { useView: true, search: grid.search.trim() }), columnKeys: visible.map((c) => c.key) }),
       });

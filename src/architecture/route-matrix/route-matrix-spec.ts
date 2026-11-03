@@ -144,8 +144,8 @@ export const ROUTES: Record<string, RouteSpec> = {
   "deals/[id]/stage": { ids: { id: "deals" }, handlers: { POST: ok({ stageId: SAMPLE_UUID, expectedVersion: 0 }) } },
 
   "drafts/[id]": { ids: { id: "drafts" }, handlers: { PATCH: ok({ revision: 1, bodyText: "x" }) } },
-  "drafts/[id]/discard": { ids: { id: "drafts" }, handlers: { POST: ok() } },
-  "drafts/[id]/regenerate": { ids: { id: "drafts" }, handlers: { POST: { lenientBody: true } } },
+  "drafts/[id]/discard": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1 }) } },
+  "drafts/[id]/regenerate": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1 }) } },
   "drafts/[id]/resolve": { ids: { id: "drafts" }, handlers: { POST: ok({ outcome: "delivered", note: "checked" }) } },
   "drafts/[id]/send": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1, idempotencyKey: "key-12345678" }) } },
 
