@@ -129,7 +129,7 @@ test.describe("at 390x844 in dark mode", () => {
     await page.getByRole("link", { name: /S4 launch/ }).click();
     await openCampaignTab(page, "sequence");
     const edited = `Edited ${unique("step")}`;
-    const body = page.getByLabel("Body").first();
+    const body = page.getByLabel("Message").first();
     await waitForHydrated(body);
     await body.fill(edited);
 

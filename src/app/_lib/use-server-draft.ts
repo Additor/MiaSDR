@@ -14,15 +14,16 @@ export function useServerDraft<T>(saved: T) {
   const [seen, setSeen] = useState(savedKey);
   const [value, setValue] = useState(saved);
   const [baseChanged, setBaseChanged] = useState(false);
-  const [adopting, setAdopting] = useState(false);
+  // The text a save just sent. Text typed since then is a new edit, and the server's copy must not replace it.
+  const [adopting, setAdopting] = useState<string | null>(null);
   if (savedKey !== seen) {
     setSeen(savedKey);
     const valueKey = JSON.stringify(value);
-    if (adopting || valueKey === seen) {
+    if (valueKey === adopting || valueKey === seen) {
       setValue(saved);
       setBaseChanged(false);
-    } else if (valueKey !== savedKey) setBaseChanged(true);
-    setAdopting(false);
+    } else if (adopting === null && valueKey !== savedKey) setBaseChanged(true);
+    setAdopting(null);
   }
   return {
     value,
@@ -33,6 +34,6 @@ export function useServerDraft<T>(saved: T) {
       setValue(saved);
       setBaseChanged(false);
     },
-    adoptNext: () => setAdopting(true),
+    adoptNext: () => setAdopting(JSON.stringify(value)),
   };
 }

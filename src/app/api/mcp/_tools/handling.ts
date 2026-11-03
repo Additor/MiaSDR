@@ -17,7 +17,7 @@ export const setReplyTypeTool = defineTool({
     "Sets how a reply handling is classified, as a person does in the inbox. `change` sets the group and reply type (`recordId`, `groupKey`, `replyTypeId` or null for the group alone, `expectedContextVersion` from get_conversation, optional `note`);",
     "a customer type stays locked unless `confirmUnlock`. `confirm_pick` marks an applied AI pick as seen and `undo_pick` reverts it (`replyTypePickId`).",
     "For a pick that waits for a check, as get_work_queue lists it: `accept_pick` applies the AI's proposal and `override_pick` applies `replyTypeKey` instead (`conversationId`, `expectedContextVersion`). Both queue a fresh draft when the type writes one.",
-    "A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: send_reply stays refused until a person reviews it.",
+    "A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: sending stays refused until a person reviews it.",
   ].join(" "),
   scope: "mcp:write",
   annotations: CHANGES,
