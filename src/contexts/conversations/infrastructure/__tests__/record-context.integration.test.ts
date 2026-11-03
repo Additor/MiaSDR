@@ -157,49 +157,62 @@ describeDb("a context version bump retires the picks held for a check", () => {
     expect(await pickStatus(pick)).toBe("proposed");
   });
 
-  describe("a held pick that asks to stop", () => {
+  describe("a pick that asks to stop", () => {
     const stopPick = async (f: Fx, recordId: string) => holdPick(f, recordId, { stopAsked: true });
+    /** The rule the agent send gate and Actions read. */
+    const reviewOpen = async (recordId: string, messageId?: string) => {
+      const target = messageId ?? (await sql`select latest_inbound_message_id as id from records where id = ${recordId}`)[0].id;
+      const { stopReviewOpen } = await import("../stop-requested-sql");
+      return stopReviewOpen((await import("@/platform/db/client")).db, target as string);
+    };
 
-    it("stays through a close and a reopen, so an agent stays refused until a person reviews it", async () => {
+    it("retires on a close and a reopen, and the stop request stays open", async () => {
       const f = await fixture();
       const l = await lead(f);
       const pick = await stopPick(f, l.recordId);
       await store.closeRecord({ organizationId: f.org, actorUserId: f.user, recordId: l.recordId, reason: "done", now: new Date() });
       await store.reopenRecord({ organizationId: f.org, actorUserId: f.user, recordId: l.recordId, now: new Date() });
-      expect(await pickStatus(pick)).toBe("proposed");
+      expect(await pickStatus(pick)).toBe("stale");
+      expect(await reviewOpen(l.recordId)).toBe(true);
     });
 
-    it("stays when an older message arrives late, since the reply stays the latest", async () => {
+    it("stays open for its reply when a newer reply arrives, since a thread turning private can make it the latest again", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const pick = await stopPick(f, l.recordId);
-      await composition.ingestInbound(mail(f, { bodyText: "Sent earlier.", receivedAt: new Date("2026-10-14T09:00:00Z") }));
-      expect(await pickStatus(pick)).toBe("proposed");
-    });
-
-    it("stays when a newer reply arrives, since a thread turning private can make its reply the latest again", async () => {
-      const f = await fixture();
-      const l = await lead(f);
-      const pick = await stopPick(f, l.recordId);
+      const [{ latest }] = await sql`select latest_inbound_message_id as latest from records where id = ${l.recordId}`;
+      await stopPick(f, l.recordId);
       await composition.ingestInbound(mail(f, { bodyText: "Actually, let's talk.", receivedAt: new Date("2026-10-14T12:00:00Z") }));
-      expect(await pickStatus(pick)).toBe("proposed");
+      expect(await reviewOpen(l.recordId, latest as string)).toBe(true);
     });
 
-    it("retires when a person marks the person do not contact, so clearing the mark does not ask again", async () => {
+    it("closes when a person marks the person do not contact, so clearing the mark does not ask again", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const pick = await stopPick(f, l.recordId);
+      await stopPick(f, l.recordId);
       await store.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: l.personId as string, enabled: true, reason: "asked", now: new Date() });
-      expect(await pickStatus(pick)).toBe("stale");
+      expect(await reviewOpen(l.recordId)).toBe(false);
     });
 
-    it("retires when a person changes the type", async () => {
+    it("closes when a person reviews it and stays open when an agent's call does the same", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const pick = await stopPick(f, l.recordId);
-      const { restartRecordWorkTx } = await import("../restart-record-work");
-      await inTx((tx) => restartRecordWorkTx(tx, { organizationId: f.org, recordId: l.recordId, reason: "stage_moved", draftReason: "moved", followUps: "stop", now: new Date(), actorUserId: f.user }));
-      expect(await pickStatus(pick)).toBe("stale");
+      await stopPick(f, l.recordId);
+      const { personReviewedStopsTx } = await import("../stop-review");
+      const review = { organizationId: f.org, recordId: l.recordId, actorUserId: f.user, now: new Date() };
+      await inTx((tx) => personReviewedStopsTx(tx, { ...review, via: { kind: "agent", tokenId: "t", tokenName: "Bot", clientName: null } }));
+      expect(await reviewOpen(l.recordId)).toBe(true);
+      await inTx((tx) => personReviewedStopsTx(tx, review));
+      expect(await reviewOpen(l.recordId)).toBe(false);
+    });
+
+    it("counts a reply's own words before any pick reads them, until a person reviews it", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      await composition.ingestInbound(mail(f, { bodyText: "Please stop emailing me.", receivedAt: new Date("2026-10-14T12:00:00Z") }));
+      expect(await reviewOpen(l.recordId)).toBe(true);
+      const { personReviewedStopsTx } = await import("../stop-review");
+      await inTx((tx) => personReviewedStopsTx(tx, { organizationId: f.org, recordId: l.recordId, actorUserId: f.user, now: new Date() }));
+      expect(await reviewOpen(l.recordId)).toBe(false);
     });
   });
 });

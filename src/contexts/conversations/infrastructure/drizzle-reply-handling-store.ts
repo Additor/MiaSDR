@@ -4,6 +4,7 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptPersonRunsTx } from "../after-reply/infrastructure/sequence-stop";
+import { personReviewedStopsTx } from "./stop-review";
 import { personTypeDecisionTx, restartRecordWorkTx } from "./restart-record-work";
 import {
   aiJobs,
@@ -23,6 +24,7 @@ import {
   records,
   sendAttempts,
   replyTypes,
+  stopReviews,
   users,
 } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
@@ -183,6 +185,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const draftJobPending = pendingJob !== undefined;
 
+    const roleOf = (c: (typeof cls)[number]["c"]) => subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null;
+    const reviewed = cls.length
+      ? await db.select({ messageId: stopReviews.messageId }).from(stopReviews).where(and(eq(stopReviews.organizationId, organizationId), inArray(stopReviews.messageId, [...new Set(cls.map(({ c }) => c.messageId))])))
+      : [];
+    const reviewedReplies = new Set(reviewed.map((r) => r.messageId));
+    const asksToStop = new Set(cls.filter(({ c }) => pickResponse(c.response).stopRequested === true || roleOf(c) === "stop_request").map(({ c }) => c.messageId));
+
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const response = pickResponse(c.response);
       return {
@@ -204,6 +213,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         proposedActive: subs.find((s) => s.id === c.proposedReplyTypeId)?.active === true,
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
+        stopReviewOpen: asksToStop.has(c.messageId) && !reviewedReplies.has(c.messageId),
         createdAt: c.createdAt,
         ...pickFlags(c, record),
       };
@@ -322,6 +332,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         now: input.now,
         actorUserId: input.actorUserId,
       });
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: before.id, actorUserId: input.actorUserId, via: input.via, now: input.now });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: before.personId,
@@ -357,6 +368,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       // The lock comes back as the record had it before the pick.
       const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
       await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(and(eq(replyTypePicks.id, cls.id), pickMayBecome("rejected")));
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, messageId: cls.messageId, actorUserId: input.actorUserId, via: input.via, now: input.now });
       // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
       // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx
@@ -411,8 +423,10 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       if (!candidate) throw new NotFoundError("AI pick not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
-      if (cls.acknowledgedAt) return;
       if (cls.status === "proposed") throw new ConflictError("Accept or change the AI's suggestion instead of acknowledging it.");
+      // Before the seen check: an agent may have marked the pick seen, and a person looking at it still reviews the stop.
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, messageId: cls.messageId, actorUserId: input.actorUserId, via: input.via, now: input.now });
+      if (cls.acknowledgedAt) return;
       await tx.update(replyTypePicks).set({ acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
       await tx.insert(events).values({
         organizationId: input.organizationId,
@@ -460,8 +474,8 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           now: input.now,
           set: { workflowState: afterPersonDecision(record.workflowState), nextActionAt: null },
           drafts: { reason: "The person was marked do not contact." },
-          personDecided: true,
         });
+        await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: record.id, actorUserId: input.actorUserId, now: input.now });
         draftsRetired += advanced.draftsRetired;
         await tx.insert(events).values({
           organizationId: input.organizationId,

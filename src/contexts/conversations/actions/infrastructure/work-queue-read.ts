@@ -7,6 +7,7 @@ import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibl
 import { rowsOf } from "@/platform/db/sql-values";
 import { holdReasonOf } from "../../domain/reply-type";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { stopReviewOpenSql } from "../../infrastructure/stop-requested-sql";
 
 /*
  * work-queue-read: the explicit read model of the Actions queue, built like `deals/infrastructure/crm-read.ts`.
@@ -96,7 +97,7 @@ const queueRowsSql = (organizationId: string) => sql`
       -- The pick of the latest reply (a stale one only when nothing else exists), and what it waits for: pickReviewOf.
       select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name, lp.hold_reason,
              case
-               when (lp.proposed or lp.applied) and lp.stop_asked and not lp.stopped then 'stop_review'
+               when lp.stop_open and not lp.stopped then 'stop_review'
                when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
                when lp.applied and coalesce(lp.check_mode, 'after') = 'after' then 'looks_right'
              end as kind
@@ -107,7 +108,7 @@ const queueRowsSql = (organizationId: string) => sql`
                k.status = 'proposed' and k.expected_context_version = r.context_version as held,
                k.status = 'auto_applied' and k.acknowledged_at is null
                  and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,
-               coalesce((k.response->>'stopRequested')::boolean, false) or kp.system_role = 'stop_request' as stop_asked,
+               ${stopReviewOpenSql(sql`r.latest_inbound_message_id`)} as stop_open,
                ${doNotContactSql("p")}
                  or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null and ${suppressedSql("p")}) as stopped
         from reply_type_picks k
@@ -122,8 +123,9 @@ const queueRowsSql = (organizationId: string) => sql`
       select c.id from conversations c where c.record_id = r.id and ${publicConversationSql("c")} order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
     ) cv on true
     where r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
-      -- A person checks an agent's unconfirmed send whatever state the record is in: no one else may have seen it.
-      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain)
+      -- A person checks an agent's unconfirmed send, and a stop request that keeps refusing agents, whatever state the record
+      -- is in: no one else may have seen it.
+      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or nk.kind = 'stop_review')
   ) q
   where not (q.grp = 'next_step' and q.has_task)`;
 

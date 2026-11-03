@@ -22,6 +22,8 @@ export interface PickFacts {
   proposedActive: boolean;
   holdReason: HoldReason | null;
   stopRequested: boolean;
+  /** A pick reads this reply as a request to stop and no person reviewed it, whatever this pick's status. */
+  stopReviewOpen: boolean;
   confidence: number | null;
   reasoning: string | null;
   error: string | null;
@@ -58,11 +60,8 @@ export function typeDecision<T extends PickFacts>(
   if (!pick || !pick.latest) return null;
   const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.appliedReplyTypeId === record.replyTypeId;
   const unchecked = applied && (pick.rules === null || pick.rules.checkMode === "after");
-  // A held stop request stays open past a version bump: it refuses agents until a person decides.
-  const open = pick.status === "proposed" || applied;
-  const stopAsked = pick.stopRequested || pick.proposedSystemRole === "stop_request";
   const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
-  if (open && stopAsked && !stopped) return { kind: "stop", pick };
+  if (pick.stopReviewOpen && !stopped) return { kind: "stop", pick };
   if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: pick.proposedActive ? "held" : "archived", pick };
   if (unchecked) return { kind: "looks_right", pick };
   return null;

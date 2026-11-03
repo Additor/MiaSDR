@@ -32,6 +32,7 @@ const facts = (partial: Partial<QueueFacts> = {}): QueueFacts => ({
   hasDraftToReview: false,
   hasReplyTypePickToReview: false,
   hasOpenTask: false,
+  hasStopToReview: false,
   ...partial,
 });
 
@@ -202,7 +203,7 @@ describe("what an AI pick waits for", () => {
     current: true,
     hasProposedType: true,
     proposedSystemRole: null,
-    stopRequested: false,
+    stopReviewOpen: false,
     acknowledged: false,
     appliedIsCurrentType: false,
     checkMode: "before",
@@ -228,17 +229,22 @@ describe("what an AI pick waits for", () => {
     for (const status of ["accepted", "overridden", "rejected", "failed"]) expect(pickReviewOf(applied({ status }))).toBeNull();
   });
 
-  it("turns an open pick that reads as a stop request into a stop review, unless contact already stopped", () => {
-    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request" }))).toBe("stop_review");
-    expect(pickReviewOf(pick({ stopRequested: true }))).toBe("stop_review");
-    expect(pickReviewOf(applied({ stopRequested: true, checkMode: "skip" }))).toBe("stop_review");
+  it("turns an open stop request into a stop review whatever the pick's status, unless contact already stopped", () => {
+    expect(pickReviewOf(pick({ stopReviewOpen: true }))).toBe("stop_review");
+    expect(pickReviewOf(applied({ stopReviewOpen: true, checkMode: "skip" }))).toBe("stop_review");
+    // An agent can move the pick. Only a person's review closes the question.
+    for (const status of ["stale", "rejected", "overridden"]) expect(pickReviewOf(pick({ status, current: false, stopReviewOpen: true }))).toBe("stop_review");
+    expect(pickReviewOf(applied({ acknowledged: true, stopReviewOpen: true }))).toBe("stop_review");
     // Do not contact or a suppressed address: nothing is left to stop, and a held stop request is not offered for Accept.
-    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopped: true }))).toBeNull();
-    expect(pickReviewOf(pick({ stopRequested: true, stopped: true }))).toBe("held");
-    expect(pickReviewOf(applied({ stopRequested: true, stopped: true }))).toBe("looks_right");
-    // A held stop request outlives a version bump: agents stay refused until a person decides.
-    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", current: false }))).toBe("stop_review");
-    expect(pickReviewOf(pick({ stopRequested: true, current: false }))).toBe("stop_review");
-    expect(pickReviewOf(pick({ status: "stale", stopRequested: true, current: false }))).toBeNull();
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopReviewOpen: true, stopped: true }))).toBeNull();
+    expect(pickReviewOf(pick({ stopReviewOpen: true, stopped: true }))).toBe("held");
+    expect(pickReviewOf(applied({ stopReviewOpen: true, stopped: true }))).toBe("looks_right");
+    // A person reviewed it, so the pick asks only what it asks otherwise.
+    expect(pickReviewOf(applied())).toBe("looks_right");
+  });
+
+  it("keeps a record with an open stop request in the queue whatever its state", () => {
+    expect(isInQueue(facts({ workflowState: "idle", hasStopToReview: true }), NOW)).toBe(true);
+    expect(isInQueue(facts({ workflowState: "idle" }), NOW)).toBe(false);
   });
 });

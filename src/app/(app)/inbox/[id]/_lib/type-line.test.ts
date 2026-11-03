@@ -16,6 +16,7 @@ const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   proposedActive: true,
   holdReason: null,
   stopRequested: false,
+  stopReviewOpen: false,
   confidence: 0.9,
   reasoning: "Asks for a demo.",
   error: null,
@@ -39,7 +40,7 @@ describe("typeDecision", () => {
   it("holds a proposed pick only while it is current", () => {
     expect(typeDecision(pick({ status: "proposed", holdReason: "low_confidence" }), email, demo)?.kind).toBe("held");
     expect(typeDecision(pick({ status: "proposed", current: false }), email, demo)).toBeNull();
-    expect(typeDecision(pick({ status: "proposed", stopRequested: true, current: false }), email, demo)?.kind).toBe("stop");
+    expect(typeDecision(pick({ status: "stale", stopRequested: true, stopReviewOpen: true, current: false }), email, demo)?.kind).toBe("stop");
   });
 
   it("offers no Accept for a held pick whose type an admin archived since", () => {
@@ -48,7 +49,7 @@ describe("typeDecision", () => {
   });
 
   it("puts a stop request first, and drops it once contact stopped", () => {
-    const stop = pick({ status: "proposed", proposedSystemRole: "stop_request", stopRequested: true });
+    const stop = pick({ status: "proposed", proposedSystemRole: "stop_request", stopRequested: true, stopReviewOpen: true });
     expect(typeDecision(stop, email, demo)?.kind).toBe("stop");
     expect(typeDecision(stop, { ...email, doNotContact: true }, demo)).toBeNull();
     expect(typeDecision(stop, { ...email, suppressed: true }, demo)).toBeNull();

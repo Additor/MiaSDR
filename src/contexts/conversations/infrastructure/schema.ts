@@ -421,6 +421,26 @@ export const replyTypePicks = pgTable(
   ],
 );
 
+/**
+ * A person reviewed the stop request a reply seems to make. The fact belongs to the reply, whatever its picks did since, and
+ * an agent's call never writes it (`personReviewedStopsTx`). `reviewed_by` is null for a review from before this table.
+ */
+export const stopReviews = pgTable(
+  "stop_reviews",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    messageId: uuid("message_id").notNull(),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: tstz("reviewed_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "stop_reviews_message_fk", columns: [t.messageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("cascade"),
+    unique("stop_reviews_message_uq").on(t.messageId),
+    index("stop_reviews_org_idx").on(t.organizationId),
+  ],
+);
+
 /** AI body and human edit stay separate so we can tell what the person changed. */
 export const drafts = pgTable(
   "drafts",

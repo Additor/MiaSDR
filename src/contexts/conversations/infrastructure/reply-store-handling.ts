@@ -5,6 +5,7 @@ import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppr
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
 import { personTypeDecisionTx, queuePickDraftTx, restartRecordWorkTx } from "./restart-record-work";
+import { personReviewedStopsTx } from "./stop-review";
 import { replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
@@ -145,6 +146,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           .returning({ id: replyTypePicks.id });
         replyTypePickId = row.id;
       }
+      await personReviewedStopsTx(tx, { organizationId: input.organizationId, recordId: head.recordId, actorUserId: input.actorUserId, now });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
