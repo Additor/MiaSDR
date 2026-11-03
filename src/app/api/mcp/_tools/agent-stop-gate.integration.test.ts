@@ -135,6 +135,17 @@ describeDb("the agent send gate on a stop request", () => {
     });
   });
 
+  it("keeps a person with an open stop request out of a campaign, until a person reviews it", async () => {
+    const thread = await conversation();
+    await seedPick(thread, "proposed");
+    const made = await agent.tool("draft_campaign", { action: "create", channel: "email", name: `Stop ${randomBytes(3).toString("hex")}` });
+    const campaignId = made.structured.campaignId as string;
+    const add = () => agent.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId, personIds: [thread.personId] });
+    expect((await add()).structured).toMatchObject({ enroll: { added: 0, skipped: { stopRequest: 1 } } });
+    await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) select organization_id, latest_inbound_message_id, now() from records where id = ${thread.recordId}`;
+    expect((await add()).structured).toMatchObject({ enroll: { added: 1 } });
+  });
+
   it("refuses a reply whose own words ask to stop before any pick read it", async () => {
     const thread = await conversation();
     expect(await sendCode(thread.conversationId)).toBe("agent_stop_requested");

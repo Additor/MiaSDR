@@ -66,7 +66,7 @@ const WRITES: Record<Channel, ChannelWrites> = {
   },
 };
 
-const SKIP_KEYS = ["skippedMissingIdentity", "skippedDuplicate", "skippedRemoved", "skippedSuppressed", "skippedDoNotContact", "skippedContact", "skippedNotFound"] as const;
+const SKIP_KEYS = ["skippedMissingIdentity", "skippedDuplicate", "skippedRemoved", "skippedSuppressed", "skippedDoNotContact", "skippedStopRequest", "skippedContact", "skippedNotFound"] as const;
 
 /** LinkedIn: people this call added whom another campaign already contacted or whose account already invited them. */
 const noticesView = z.object({ alreadyContactedPeople: z.number(), excludedByAccountPeople: z.number() }).nullable();

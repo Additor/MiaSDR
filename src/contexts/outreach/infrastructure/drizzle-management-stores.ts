@@ -18,6 +18,7 @@ import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { SEND_COUNTED } from "../domain/send-status";
 
 /** SQL condition for an archive filter on `campaigns`. */
@@ -218,6 +219,7 @@ export const drizzleCampaignStore: CampaignStore = {
     return inTransaction(handle, async (tx) => {
       const suppressed = suppressedSql("people");
       const dnc = doNotContactSql("people");
+      const stopOpen = personStopReviewOpenSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx
@@ -226,14 +228,15 @@ export const drizzleCampaignStore: CampaignStore = {
           noEmail: sql<number>`(count(*) filter (where ${people.email} is null))::int`,
           suppressed: sql<number>`(count(*) filter (where ${people.email} is not null and ${suppressed}))::int`,
           dnc: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and ${dnc}))::int`,
+          stopOpen: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and not ${dnc} and ${stopOpen}))::int`,
           already: sql<number>`(count(*) filter (where ${people.email} is not null and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${people.email} is not null and not ${already} and not ${suppressed} and not ${dnc} and not ${notContactSql}))::int`,
+          contact: sql<number>`(count(*) filter (where ${people.email} is not null and not ${already} and not ${suppressed} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
         })
         .from(people)
         .leftJoin(companies, eq(companies.id, people.companyId))
         .where(matching);
 
-      const eligibleWhere = and(matching, sql`${people.email} is not null`, sql`not ${suppressed}`, sql`not ${dnc}`, sql`not ${already}`, notContactSql);
+      const eligibleWhere = and(matching, sql`${people.email} is not null`, sql`not ${suppressed}`, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
       if (filter.dryRun) {
         const [{ n }] = await tx
           .select({ n: sql<number>`count(*)::int` })
@@ -248,6 +251,7 @@ export const drizzleCampaignStore: CampaignStore = {
           alreadyEnrolled: skipped.already,
           skippedSuppressed: skipped.suppressed,
           skippedDoNotContact: skipped.dnc,
+          skippedStopRequest: skipped.stopOpen,
           skippedContact: skipped.contact,
           skippedNoEmail: skipped.noEmail,
           wouldAdd: Math.min(n, filter.limit),
@@ -284,6 +288,7 @@ export const drizzleCampaignStore: CampaignStore = {
         alreadyEnrolled: skipped.already,
         skippedSuppressed: skipped.suppressed,
         skippedDoNotContact: skipped.dnc,
+        skippedStopRequest: skipped.stopOpen,
         skippedContact,
         skippedNoEmail: skipped.noEmail,
       };

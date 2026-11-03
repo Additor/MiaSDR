@@ -18,6 +18,7 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 const DAY_MS = 86_400_000;
@@ -206,6 +207,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     const matching = and(eq(people.organizationId, organizationId), leadSearchCondition(filter.query));
     return inTransaction(handle, async (tx) => {
       const dnc = doNotContactSql("people");
+      const stopOpen = personStopReviewOpenSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx
@@ -213,14 +215,15 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           matched: sql<number>`count(*)::int`,
           noProfile: sql<number>`(count(*) filter (where not ${hasProfile}))::int`,
           dnc: sql<number>`(count(*) filter (where ${hasProfile} and ${dnc}))::int`,
+          stopOpen: sql<number>`(count(*) filter (where ${hasProfile} and not ${dnc} and ${stopOpen}))::int`,
           already: sql<number>`(count(*) filter (where ${hasProfile} and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${hasProfile} and not ${already} and not ${dnc} and not ${notContactSql}))::int`,
+          contact: sql<number>`(count(*) filter (where ${hasProfile} and not ${already} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
         })
         .from(people)
         .leftJoin(companies, eq(companies.id, people.companyId))
         .where(matching);
 
-      const eligibleWhere = and(matching, hasProfile, sql`not ${dnc}`, sql`not ${already}`, notContactSql);
+      const eligibleWhere = and(matching, hasProfile, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
       if (filter.dryRun) {
         const [{ n }] = await tx
           .select({ n: sql<number>`count(*)::int` })
@@ -236,6 +239,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           alreadyEnrolled: skipped.already,
           skippedNoProfile: skipped.noProfile,
           skippedDoNotContact: skipped.dnc,
+          skippedStopRequest: skipped.stopOpen,
           skippedContact: skipped.contact,
           wouldAdd: Math.min(n, filter.limit),
         };
@@ -261,6 +265,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
         alreadyEnrolled: skipped.already,
         skippedNoProfile: skipped.noProfile,
         skippedDoNotContact: skipped.dnc,
+        skippedStopRequest: skipped.stopOpen,
         skippedContact: skipped.contact + skippedContact,
       };
     });

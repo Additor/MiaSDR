@@ -7,6 +7,7 @@ export interface EnrollCounts {
   skippedRemoved: number;
   skippedSuppressed: number;
   skippedDoNotContact: number;
+  skippedStopRequest: number;
   skippedContact: number;
   skippedNotFound: number;
 }
@@ -19,6 +20,7 @@ export const ZERO_COUNTS: EnrollCounts = {
   skippedRemoved: 0,
   skippedSuppressed: 0,
   skippedDoNotContact: 0,
+  skippedStopRequest: 0,
   skippedContact: 0,
   skippedNotFound: 0,
 };
@@ -39,6 +41,7 @@ export function skipReasons(counts: EnrollCounts, channel: "email" | "linkedin" 
     [counts.skippedMissingIdentity, identity],
     [counts.skippedSuppressed, "unsubscribed"],
     [counts.skippedDoNotContact, "marked do not contact"],
+    [counts.skippedStopRequest, counts.skippedStopRequest === 1 ? "seems to ask to stop; review it in Actions" : "seem to ask to stop; review them in Actions"],
     [counts.skippedContact, counts.skippedContact === 1 ? "is a contact" : "are contacts"],
     [counts.skippedNotFound, "no longer exist"],
   ];

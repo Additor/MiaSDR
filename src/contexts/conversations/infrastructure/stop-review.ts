@@ -3,7 +3,7 @@ import type { DbTx } from "@/platform/db/client";
 import { rowsOf } from "@/platform/db/sql-values";
 import type { AgentVia } from "@/shared/errors";
 import { detectsStopRequest } from "../domain/stop-request";
-import { pickAsksToStopSql } from "./stop-requested-sql";
+import { pickAsksToStopSql } from "@/platform/db/stop-review-sql";
 
 /**
  * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a record or a

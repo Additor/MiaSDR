@@ -7,7 +7,7 @@ import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibl
 import { rowsOf } from "@/platform/db/sql-values";
 import { holdReasonOf } from "../../domain/reply-type";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
-import { stopReviewOpenSql } from "../../infrastructure/stop-requested-sql";
+import { stopReviewOpenSql } from "@/platform/db/stop-review-sql";
 
 /*
  * work-queue-read: the explicit read model of the Actions queue, built like `deals/infrastructure/crm-read.ts`.

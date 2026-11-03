@@ -33,6 +33,8 @@ export interface LinkedInEnrollResult {
   alreadyEnrolled: number;
   skippedNoProfile: number;
   skippedDoNotContact: number;
+  /** The latest reply reads as a request to stop and no person reviewed it. */
+  skippedStopRequest: number;
   /** Contacts are not enrolled in campaigns. */
   skippedContact: number;
   /** People this call enrolled. Present only when the caller passed `collectIds`. */
