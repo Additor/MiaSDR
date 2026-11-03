@@ -38,7 +38,7 @@ const KNOWLEDGE_CANDIDATES = 200;
 /**
  * Latest version of each active document, chosen by `selectKnowledge`: capped always-included documents first, then
  * documents ranked by tag overlap with `stepTags`, inside one character budget. `includeUnmatched` (default true)
- * lets documents without a matching tag fill the rest, as before tags existed. A tagged sequence step passes false.
+ * lets documents without a matching tag fill the rest, as before tags existed. A tagged follow-up step passes false.
  */
 export async function knowledgeFor(organizationId: string, options: { alwaysOnly: boolean; stepTags?: readonly string[]; includeUnmatched?: boolean }) {
   // Stored tags are lowercase and trimmed, so the step's tags get the same treatment before the SQL compares them.

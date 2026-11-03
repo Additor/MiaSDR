@@ -2038,7 +2038,7 @@ BEGIN
 	END IF;
 	SELECT EXISTS (SELECT 1 FROM follow_up_versions v WHERE v.status = 'published' AND v.id IN (old_version, new_version)) INTO frozen;
 	IF frozen THEN
-		RAISE EXCEPTION 'follow_up_steps of a published sequence version are frozen: edit a new draft instead'
+		RAISE EXCEPTION 'follow_up_steps of a published follow-up version are frozen: edit a new draft instead'
 			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'follow_up_steps';
 	END IF;
 	IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
@@ -2056,7 +2056,7 @@ BEGIN
 			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'follow_up_versions';
 	END IF;
 	IF OLD.status = 'published' THEN
-		RAISE EXCEPTION 'a published sequence version is frozen: status and published_at cannot change'
+		RAISE EXCEPTION 'a published follow-up version is frozen: status and published_at cannot change'
 			USING ERRCODE = 'integrity_constraint_violation', TABLE = 'follow_up_versions';
 	END IF;
 	RETURN NEW;
@@ -2069,7 +2069,7 @@ BEGIN
 	IF pg_trigger_depth() > 1 OR current_setting('miasdr.allow_purge', true) = 'on' THEN
 		RETURN OLD;
 	END IF;
-	RAISE EXCEPTION 'a published sequence version cannot be deleted directly (delete the sequence, or set miasdr.allow_purge to on inside a transaction)'
+	RAISE EXCEPTION 'a published follow-up version cannot be deleted directly (delete the flow, or set miasdr.allow_purge to on inside a transaction)'
 		USING ERRCODE = 'integrity_constraint_violation', TABLE = 'follow_up_versions';
 END $$;
 

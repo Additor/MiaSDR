@@ -88,14 +88,14 @@ export interface InboxFilter {
 }
 
 export interface ScheduledRow {
-  /** `campaign`: a campaign step. `sequence`: a follow-up step of Follow-ups after a reply. */
-  kind: "campaign" | "sequence";
+  /** `campaign`: a campaign step. `follow_up`: a step of Follow-ups after a reply. */
+  kind: "campaign" | "follow_up";
   id: string;
   personId: string;
   personName: string | null;
   personEmail: string | null;
   channel: string;
-  /** Campaign or sequence name. */
+  /** Campaign name, or the flow's when it has no campaign. */
   sourceName: string;
   stepLabel: string;
   subject: string | null;

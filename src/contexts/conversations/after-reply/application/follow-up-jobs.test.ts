@@ -5,7 +5,7 @@ import { createFollowUpJobs } from "./follow-up-jobs";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /**
- * The sequence job writes the draft with the channel of the conversation it drafts for. The draft writer
+ * The follow-up job writes the draft with the channel of the conversation it drafts for. The draft writer
  * defaults to email, which breaks the draft channel trigger on a LinkedIn conversation.
  */
 function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; sweep?: boolean } = {}) {
@@ -103,7 +103,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
   return { job, inserted, interrupted };
 }
 
-describe("sequence draft channel", () => {
+describe("follow-up draft channel", () => {
   const run = (job: ReturnType<typeof setup>["job"]) => job.run({ deadline: Date.now() + 10_000, now: () => new Date("2026-10-16T10:00:00Z") });
 
   it("writes a draft on a LinkedIn conversation with channel linkedin", async () => {

@@ -17,9 +17,9 @@ describeDb("Follow-ups after a reply flows", () => {
   let composition: typeof import("../../../infrastructure/composition");
   let mgmt: typeof import("../../../application/reply-management");
   let aiJobsApp: typeof import("../../../ai/application/ai-jobs");
-  let seqApp: typeof import("../../application/follow-ups");
+  let followUpsApp: typeof import("../../application/follow-ups");
   let arApp: typeof import("../../application/after-reply");
-  let seqJobsApp: typeof import("../../application/follow-up-jobs");
+  let followUpJobsApp: typeof import("../../application/follow-up-jobs");
   let stores: {
     jobs: typeof import("../../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
     replies: typeof import("../../../infrastructure/drizzle-reply-store").drizzleReplyStore;
@@ -39,7 +39,7 @@ describeDb("Follow-ups after a reply flows", () => {
 
   async function fixture() {
     const tag = uniqueKey();
-    const [{ id: org }] = await sql`insert into organizations (name, slug) values ('Seq', ${"seq-" + tag}) returning id`;
+    const [{ id: org }] = await sql`insert into organizations (name, slug) values ('FollowUps', ${"follow-ups-" + tag}) returning id`;
     orgs.push(org);
     const [{ id: user }] = await sql`insert into users (name, email) values ('Member', ${`m-${tag}@x.test`}) returning id`;
     users.push(user);
@@ -51,12 +51,12 @@ describeDb("Follow-ups after a reply flows", () => {
     const clock = () => new Date(Date.now() + state.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const seqTickFor = (workerId: string) =>
-      (seqJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId, leaseMs: seqJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job])[0];
-    const seqTick = seqTickFor("w1");
+    const followUpTickFor = (workerId: string) =>
+      (followUpJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId, leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job])[0];
+    const followUpTick = followUpTickFor("w1");
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(() => mailbox), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
-    const seqDeps = { runs: stores.runs, now: clock };
+    const followUpDeps = { runs: stores.runs, now: clock };
     const arDeps = { flows: stores.flows, now: clock };
     return {
       org,
@@ -67,16 +67,16 @@ describeDb("Follow-ups after a reply flows", () => {
       state,
       tag,
       replyDeps,
-      seqDeps,
+      followUpDeps,
       arDeps,
       clock,
       aiRun: () => aiTick.run(ctx()),
-      seqRun: () => seqTick.run(ctx()),
-      seqRunAs: (w: string) => seqTickFor(w).run(ctx()),
+      followUpRun: () => followUpTick.run(ctx()),
+      followUpRunAs: (w: string) => followUpTickFor(w).run(ctx()),
       /** One tick of both jobs, in the registry's order. */
       cycle: async () => {
         await aiTick.run(ctx());
-        return seqTick.run(ctx());
+        return followUpTick.run(ctx());
       },
     };
   }
@@ -149,18 +149,18 @@ describeDb("Follow-ups after a reply flows", () => {
     composition = await import("../../../infrastructure/composition");
     mgmt = await import("../../../application/reply-management");
     aiJobsApp = await import("../../../ai/application/ai-jobs");
-    seqApp = await import("../../application/follow-ups");
+    followUpsApp = await import("../../application/follow-ups");
     arApp = await import("../../application/after-reply");
-    seqJobsApp = await import("../../application/follow-up-jobs");
-    const seqStore = await import("../drizzle-follow-up-store");
+    followUpJobsApp = await import("../../application/follow-up-jobs");
+    const followUpStore = await import("../drizzle-follow-up-store");
     stores = {
       jobs: (await import("../../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
       replies: (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore,
-      flows: seqStore.drizzleAfterReplyStore,
-      runs: seqStore.drizzleRunStore,
+      flows: followUpStore.drizzleAfterReplyStore,
+      runs: followUpStore.drizzleRunStore,
       engine: (await import("../drizzle-follow-up-engine")).drizzleFollowUpEngine,
     };
-    campaignIdOfFlow = seqStore.campaignIdOfFlow;
+    campaignIdOfFlow = followUpStore.campaignIdOfFlow;
     FakeAi = (await import("../../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../../../infrastructure/reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
@@ -385,8 +385,8 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run, campaignId } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await seqApp.cancelFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
-      const restarted = await seqApp.restartFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
+      await followUpsApp.cancelFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
+      const restarted = await followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
       expect(restarted.created).toBe(true);
       const runs = await sql`select r.status, r.started_by, q.campaign_id from follow_up_runs r join follow_up_flows q on q.id = r.flow_id where r.organization_id = ${f.org} order by r.created_at`;
       expect(runs.map((x) => `${x.status}:${x.started_by}`)).toEqual(["cancelled:ai_assignment", "active:human_override"]);
@@ -395,7 +395,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await one("select start_step_position from follow_up_runs where id = $1", [restarted.runId])).toMatchObject({ start_step_position: 2 });
       // In handoff mode a restart answers a conflict.
       await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
-      await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, run.conversation_id)).rejects.toBeInstanceOf(ConflictError);
+      await expect(followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, run.conversation_id)).rejects.toBeInstanceOf(ConflictError);
     });
   });
 
@@ -404,15 +404,15 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, campaignId, run } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       await sql`update campaigns set status = 'paused' where id = ${campaignId}`;
       f.state.offsetMs += 3 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await count("follow_up_step_runs", f.org, "status = 'drafting'")).toBe(0);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
       await sql`update campaigns set status = 'active' where id = ${campaignId}`;
-      const tick = await f.seqRun();
+      const tick = await f.followUpRun();
       expect(tick.detail?.drafted).toBe(1);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
@@ -434,10 +434,10 @@ describeDb("Follow-ups after a reply flows", () => {
         const { f, campaignId, run } = await withRun();
         const draft = await one("select id from drafts where organization_id = $1", [f.org]);
         await approve(f, draft.id);
-        await f.seqRun();
+        await f.followUpRun();
         await sql.unsafe(`update campaigns set ${change} where id = $1`, [campaignId]);
         f.state.offsetMs += 3 * DAY;
-        const tick = await f.seqRun();
+        const tick = await f.followUpRun();
         expect(tick.detail?.drafted, change).toBe(1);
         expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
       }
@@ -456,11 +456,11 @@ describeDb("Follow-ups after a reply flows", () => {
       const done = await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
       expect(done).toMatchObject({ mode: "handoff", stoppedRuns: 1, inProgress: [] });
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
       expect(await count("follow_up_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, run.conversation_id);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, run.conversation_id);
       expect(state.run).toMatchObject({ status: "interrupted", endedReason: "after_reply_off", endedReasonLabel: "Follow-ups turned off for this campaign", statusLabel: "Stopped" });
       expect(state.campaign).toMatchObject({ id: campaignId, mode: "handoff" });
     });
@@ -468,38 +468,38 @@ describeDb("Follow-ups after a reply flows", () => {
     it("the sweep ends runs whose flow was archived behind the app's back within one tick", async () => {
       const { f, run, flowId } = await withRun();
       await sql`update follow_up_flows set status = 'archived' where id = ${flowId}`;
-      const tick = await f.seqRun();
+      const tick = await f.followUpRun();
       expect(tick.detail?.interrupted_after_reply_off).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
     });
 
-    it("a run of a flow with no campaign survives the sweep even though the sequence is archived", async () => {
+    it("a run of a flow with no campaign survives the sweep even though the flow is archived", async () => {
       const { f, run, flowId } = await withRun();
       // Turn the flow into a legacy one: archived, owned by no campaign.
       await sql`update follow_up_flows set campaign_id = null, status = 'archived', name = ${"Legacy " + f.tag} where id = ${flowId}`;
-      const tick = await f.seqRun();
+      const tick = await f.followUpRun();
       expect(tick.detail?.interrupted_after_reply_off ?? 0).toBe(0);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted'")).toBe(0);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted'")).toBe(0);
       // It keeps going on its pinned version: the reply draft stays and the next step still drafts when due.
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
-      const later = await f.seqRun();
+      const later = await f.followUpRun();
       expect(later.detail?.drafted).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
     });
 
     it("the sweep and the step claim agree: a campaign-owned flow that is not active is not claimed, a legacy one is", async () => {
-      const lease = seqJobsApp.FOLLOW_UP_LEASE_MS;
+      const lease = followUpJobsApp.FOLLOW_UP_LEASE_MS;
       /** A run whose follow-up is due: the reply went out, so step 2 waits for its delay. */
       const dueRun = async () => {
         const ctx = await withRun();
         const draft = await one("select id from drafts where organization_id = $1", [ctx.f.org]);
         await approve(ctx.f, draft.id);
-        await ctx.f.seqRun();
+        await ctx.f.followUpRun();
         ctx.f.state.offsetMs += 10 * DAY;
         return ctx;
       };
@@ -511,7 +511,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await sql`update follow_up_flows set status = 'archived' where id = ${owned.flowId}`;
       // The claim runs before any sweep and still refuses the archived campaign flow.
       expect(await stores.engine.claimDue("w", owned.f.clock(), lease)).toBeNull();
-      const swept = await owned.f.seqRun();
+      const swept = await owned.f.followUpRun();
       expect(swept.detail?.interrupted_after_reply_off).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [owned.run.id])).toMatchObject({ status: "interrupted" });
 
@@ -522,7 +522,7 @@ describeDb("Follow-ups after a reply flows", () => {
 
     it("switching a campaign to handoff still ends its runs with after_reply_off while a legacy run of the same organization goes on", async () => {
       const { f, campaignId, run } = await withRun();
-      // A second conversation with a run on a legacy sequence in the same organization.
+      // A second conversation with a run on a flow with no campaign in the same organization.
       const lead = await ingest(f, { from: { email: `second-${f.tag}@acme.test`, name: "Second Lead" } });
       const legacyCampaign = await emailedBy(f, { personId: lead.personId, steps: STEPS });
       await f.cycle();
@@ -531,15 +531,15 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(legacyCampaign).not.toBe(campaignId);
 
       await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
-      await f.seqRun();
+      await f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'after_reply_off'")).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [legacyRun.id])).toMatchObject({ status: "active" });
     });
 
     it("a paused run stops too", async () => {
       const { f, campaignId, run } = await withRun();
-      await seqApp.pauseFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
+      await followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
       const done = await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
       expect(done.stoppedRuns).toBe(1);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
@@ -570,7 +570,7 @@ describeDb("Follow-ups after a reply flows", () => {
         await held;
       });
       await holding;
-      const start = seqApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "human_override" });
+      const start = followUpsApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "human_override" });
       await waitForLockWaiters(sql, 1);
       let switchedOff = false;
       const off = arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff" }).then(
@@ -601,7 +601,7 @@ describeDb("Follow-ups after a reply flows", () => {
           return facts;
         },
       };
-      await expect(seqApp.attemptRun({ runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "human_override" })).rejects.toMatchObject({ details: { code: "flow_off" } });
+      await expect(followUpsApp.attemptRun({ runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "human_override" })).rejects.toMatchObject({ details: { code: "flow_off" } });
       expect(await count("follow_up_runs", f.org)).toBe(0);
     });
   });
@@ -630,7 +630,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await loadStartOn(db, f.org, conversation, { threadId: thread })).toEqual(facts);
       expect(facts).toMatchObject({ thread: { id: thread, channel: "email" }, flow: { status: "active", hasPublished: true }, selection: { campaignId: expect.any(String) } });
       expect(facts?.steps).toHaveLength(3);
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state).toMatchObject({ run: null, canRestart: true, restartBlockedReason: null });
     });
   });
@@ -660,7 +660,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await f.cycle();
       expect(await count("follow_up_runs", f.org)).toBe(0);
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "Demo request is set to stop follow-ups." });
     });
 
@@ -675,7 +675,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(pick).toMatchObject({ status: "auto_applied", response: expect.objectContaining({ stopRequested: true }) });
       expect(await count("follow_up_runs", f.org)).toBe(0);
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "The reply asked to stop, so follow-ups do not start." });
     });
 
@@ -870,10 +870,10 @@ describeDb("Follow-ups after a reply flows", () => {
     async function blocked(change: (ctx: Awaited<ReturnType<typeof withRun>> & { personId: string }) => Promise<void>) {
       const ctx = await withRun();
       const personId = (await one("select person_id from conversations where id = $1", [ctx.run.conversation_id])).person_id as string;
-      expect((await seqApp.getConversationFollowUp(ctx.f.seqDeps, ctx.f.actor, ctx.run.conversation_id)).canRestart, "restartable before the change").toBe(true);
+      expect((await followUpsApp.getConversationFollowUp(ctx.f.followUpDeps, ctx.f.actor, ctx.run.conversation_id)).canRestart, "restartable before the change").toBe(true);
       await change({ ...ctx, personId });
-      const state = await seqApp.getConversationFollowUp(ctx.f.seqDeps, ctx.f.actor, ctx.run.conversation_id);
-      const err = await seqApp.restartFollowUpRun(ctx.f.seqDeps, ctx.f.actor, ctx.run.conversation_id).catch((e) => e);
+      const state = await followUpsApp.getConversationFollowUp(ctx.f.followUpDeps, ctx.f.actor, ctx.run.conversation_id);
+      const err = await followUpsApp.restartFollowUpRun(ctx.f.followUpDeps, ctx.f.actor, ctx.run.conversation_id).catch((e) => e);
       expect(err).toBeInstanceOf(ConflictError);
       expect(state.canRestart).toBe(false);
       expect(err.message).toBe(state.restartBlockedReason);
@@ -909,19 +909,19 @@ describeDb("Follow-ups after a reply flows", () => {
       const campaignId = await emailedBy(f, { steps: null });
       await sql`insert into follow_up_flows (organization_id, name, campaign_id, status) values (${f.org}, ${"Unpublished " + f.tag}, ${campaignId}, 'active')`;
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state.canRestart).toBe(false);
       expect(state.restartBlockedReason).toMatch(/no published follow-up steps/);
-      await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, conversation)).rejects.toThrow(/no published follow-up steps/);
+      await expect(followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, conversation)).rejects.toThrow(/no published follow-up steps/);
     });
 
     it("no campaign emailed the person", async () => {
       const f = await fixture();
       await ingest(f);
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "No campaign has emailed this person, so no follow-ups apply." });
-      await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, conversation)).rejects.toThrow("No campaign has emailed this person, so no follow-ups apply.");
+      await expect(followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, conversation)).rejects.toThrow("No campaign has emailed this person, so no follow-ups apply.");
     });
 
     it("a conversation without an email reply", async () => {
@@ -929,9 +929,9 @@ describeDb("Follow-ups after a reply flows", () => {
       await ingest(f);
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id as string;
       await sql`update conversations set latest_inbound_message_id = null, last_inbound_at = null where id = ${conversation}`;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state.restartBlockedReason).toBe("This conversation has no email reply to follow up on.");
-      await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, conversation)).rejects.toThrow("no email reply");
+      await expect(followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, conversation)).rejects.toThrow("no email reply");
     });
 
     it("a reply type set to stop follow-ups, named", async () => {
@@ -979,13 +979,13 @@ describeDb("Follow-ups after a reply flows", () => {
 
       // Nothing becomes due while the reply waits for a person, however much time passes.
       f.state.offsetMs += 10 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org)).toBe(1);
 
       const sent = await approve(f, draft.id);
       expect(sent.status).toBe("sent");
       expect(mailbox.delivered.length).toBe(deliveredBefore + 1);
-      await f.seqRun();
+      await f.followUpRun();
       const afterSend = await sql`select sr.status, sr.due_at, sr.sent_message_id, st.position from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.follow_up_run_id = ${run.id} order by st.position`;
       expect(afterSend[0]).toMatchObject({ status: "sent" });
       expect(afterSend[0].sent_message_id).not.toBeNull();
@@ -997,10 +997,10 @@ describeDb("Follow-ups after a reply flows", () => {
 
       // Not yet due, then due: a draft appears, awaiting review, and still nothing is sent.
       f.state.offsetMs += 1 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org)).toBe(1);
       f.state.offsetMs += 2 * DAY;
-      const tick = await f.seqRun();
+      const tick = await f.followUpRun();
       expect(tick.detail?.drafted).toBe(1);
       const follow = await one("select * from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
       expect(follow.request).toMatchObject({ stepPosition: 2 });
@@ -1012,13 +1012,13 @@ describeDb("Follow-ups after a reply flows", () => {
 
       // The human sends it. The last step follows, then the run completes.
       expect((await approve(f, follow.id)).status).toBe("sent");
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 4 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       const last = await one("select * from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
       expect(last.request).toMatchObject({ stepPosition: 3 });
       expect((await approve(f, last.id)).status).toBe("sent");
-      await f.seqRun();
+      await f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "completed" });
       expect(await one("select workflow_state, next_action_at from conversations where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "idle", next_action_at: null });
       expect(mailbox.delivered.length).toBe(deliveredBefore + 3);
@@ -1028,7 +1028,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await mgmt.discardDraft(f.replyDeps, f.actor, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       const steps = await sql`select sr.status, sr.due_at, st.position from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.follow_up_run_id = ${run.id} order by st.position`;
       expect(steps.map((s) => s.status)).toEqual(["skipped", "scheduled", "scheduled"]);
       expect(Math.abs(steps[1].due_at.getTime() - (f.clock().getTime() + 2 * DAY))).toBeLessThan(60_000);
@@ -1038,9 +1038,9 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const first = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, first.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       const step2 = async () =>
         one("select sr.status, sr.draft_id, sr.attempt_count from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.follow_up_run_id = $1 and st.position = 2", [run.id]);
       const drafted: string[] = [];
@@ -1051,7 +1051,7 @@ describeDb("Follow-ups after a reply flows", () => {
         drafted.push(step.draft_id);
         // Superseded by a write that did not stop the run.
         await sql`update drafts set status = 'stale' where id = ${step.draft_id}`;
-        await f.seqRun();
+        await f.followUpRun();
       }
       expect(await step2()).toMatchObject({ status: "failed", draft_id: drafted[2], attempt_count: 3 });
       expect(await count("drafts", f.org, `request->>'stepPosition' = '2'`)).toBe(3);
@@ -1066,7 +1066,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await f.cycle();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       const msg = await one("select sent_at from messages where organization_id = $1 and direction = 'outbound'", [f.org]);
       const step2 = await one("select sr.due_at from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.organization_id = $1 and st.position = 2", [f.org]);
       const sent = new Date(msg.sent_at);
@@ -1081,7 +1081,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const b = await ingest(f);
       await emailedBy(f);
       const conversationA = (await one("select conversation_id from threads where id = $1", [a.threadId])).conversation_id;
-      await expect(seqApp.restartFollowUpRun(f.seqDeps, f.actor, conversationA, { threadId: b.threadId })).rejects.toBeInstanceOf(ConflictError);
+      await expect(followUpsApp.restartFollowUpRun(f.followUpDeps, f.actor, conversationA, { threadId: b.threadId })).rejects.toBeInstanceOf(ConflictError);
       expect(await count("follow_up_runs", f.org)).toBe(0);
     });
   });
@@ -1093,11 +1093,11 @@ describeDb("Follow-ups after a reply flows", () => {
       const open = await count("follow_up_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')");
       expect(open).toBe(0);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
-      if (reason) expect(await count("events", f.org, `event_type = 'sequence.interrupted' and meta->>'reason' = '${reason}'`)).toBe(1);
+      if (reason) expect(await count("events", f.org, `event_type = 'follow_up.interrupted' and meta->>'reason' = '${reason}'`)).toBe(1);
       // Time passes and nothing new is drafted.
       const drafts = await count("drafts", f.org);
       f.state.offsetMs += 30 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org)).toBe(drafts);
     };
 
@@ -1111,7 +1111,7 @@ describeDb("Follow-ups after a reply flows", () => {
     it("an automatic reply does not stop it", async () => {
       const { f, r, run } = await withRun();
       await composition.ingestInbound(mail(f, { providerThreadId: r.input.providerThreadId, bodyText: "I am out of office.", autoReply: true }));
-      await f.seqRun();
+      await f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
     });
 
@@ -1119,7 +1119,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const person = await one("select id from people where organization_id = $1", [f.org]);
       await sql`insert into contact_policies (person_id, organization_id, do_not_contact, source, set_at) values (${person.id}, ${f.org}, true, 'human', now())`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "do_not_contact");
     });
 
@@ -1140,7 +1140,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const person = await one("select email from people where organization_id = $1", [f.org]);
       await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${person.email}, 'unsubscribed')`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "unsubscribed");
     });
 
@@ -1148,7 +1148,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const person = await one("select email from people where organization_id = $1", [f.org]);
       await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${person.email}, 'bounced')`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "bounce");
     });
 
@@ -1156,7 +1156,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const sub = await replyTypeId(f.org, "not_required_right_now");
       await sql`update conversations set group_key = 'not_interested', reply_type_id = ${sub}, context_version = context_version where organization_id = ${f.org}`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "terminal_stage");
     });
 
@@ -1165,7 +1165,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const ooo = await one("select id, group_key, follow_ups from reply_types where organization_id = $1 and key = 'out_of_office'", [f.org]);
       expect(ooo.follow_ups).toBe("stop");
       await sql`update conversations set group_key = ${ooo.group_key}, reply_type_id = ${ooo.id} where organization_id = ${f.org}`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "terminal_stage");
     });
 
@@ -1175,21 +1175,21 @@ describeDb("Follow-ups after a reply flows", () => {
       const keepGoing = await one("select id, group_key from reply_types where organization_id = $1 and key = 'already_using_a_tool'", [kept.f.org]);
       await sql`update reply_types set follow_ups = 'continue' where id = ${keepGoing.id}`;
       await sql`update conversations set group_key = ${keepGoing.group_key}, reply_type_id = ${keepGoing.id} where organization_id = ${kept.f.org}`;
-      await kept.f.seqRun();
+      await kept.f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [kept.run.id])).toMatchObject({ status: "active" });
 
       const { f, run } = await withRun();
       const stop = await one("select id, group_key from reply_types where organization_id = $1 and key = 'meeting_requested'", [f.org]);
       await sql`update reply_types set follow_ups = 'stop' where id = ${stop.id}`;
       await sql`update conversations set group_key = ${stop.group_key}, reply_type_id = ${stop.id} where organization_id = ${f.org}`;
-      await f.seqRun();
+      await f.followUpRun();
       await expectStopped(f, run.id, "terminal_stage");
     });
 
     it("an edit of the rule of the type a run started on leaves the run going", async () => {
       const { f, run } = await withRun();
       await sql`update reply_types set follow_ups = 'stop' where id = ${run.reply_type_id}`;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
     });
 
@@ -1197,12 +1197,12 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       const person = await one("select email from people where organization_id = $1", [f.org]);
       await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${person.email}, 'unsubscribed')`;
       // The sweep runs first in a tick, but even the guard before drafting would catch it.
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
     });
@@ -1215,7 +1215,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await count("follow_up_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
-      expect(await count("events", f.org, `event_type = 'sequence.interrupted' and meta->>'reason' = '${reason}'`)).toBe(1);
+      expect(await count("events", f.org, `event_type = 'follow_up.interrupted' and meta->>'reason' = '${reason}'`)).toBe(1);
     };
     const personOf = (f: Fx) => one("select id, email from people where organization_id = $1", [f.org]);
     const suppression = async () => (await import("@/test-support/suppression")).suppressionStore();
@@ -1345,19 +1345,19 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = ctxRun;
       const first = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, first.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       // Only this organization has AI, so a due step another test left behind is released and this run's step is the one drafted.
       const resolver = replyAiResolverOf(async (o: string) => (o === f.org ? f.ai : null));
       const tickWith = (beforeWrite: () => Promise<void>) =>
-        (seqJobsApp.createFollowUpJobs({
+        (followUpJobsApp.createFollowUpJobs({
           runs: stores.runs,
           engine: { ...stores.engine, writeDraft: async (claim, input) => (await beforeWrite(), stores.engine.writeDraft(claim, input)) },
           replies: stores.replies,
           ai: resolver,
           now: f.clock,
           workerId: "race",
-          leaseMs: seqJobsApp.FOLLOW_UP_LEASE_MS,
+          leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS,
           notConfiguredDelayMs: 60_000,
         }) as [Job])[0].run({ deadline: Date.now() + 60_000, now: f.clock });
       return { f, run, tickWith };
@@ -1409,7 +1409,7 @@ describeDb("Follow-ups after a reply flows", () => {
           await new Promise((r) => setTimeout(r, i * 7));
           await stop();
         };
-        await Promise.all([f.seqRunAs("a"), f.seqRunAs("b"), delayed()]);
+        await Promise.all([f.followUpRunAs("a"), f.followUpRunAs("b"), delayed()]);
         await expectNoLiveDraft(f, run.id);
         expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       }
@@ -1429,9 +1429,9 @@ describeDb("Follow-ups after a reply flows", () => {
       await expect(arApp.saveCampaignAfterReply(b.arDeps, b.actor, campaignA, { mode: "ai_drafts", steps: [STEPS[0]] })).rejects.toBeInstanceOf(NotFoundError);
       // A conversation of another organization is NotFound for every per-conversation control.
       const conversationA = (await one("select id from conversations where organization_id = $1", [a.org])).id;
-      await expect(seqApp.getConversationFollowUp(b.seqDeps, b.actor, conversationA)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(seqApp.restartFollowUpRun(b.seqDeps, b.actor, conversationA)).rejects.toThrow();
-      await expect(seqApp.pauseFollowUpRun(b.seqDeps, b.actor, conversationA)).rejects.toThrow();
+      await expect(followUpsApp.getConversationFollowUp(b.followUpDeps, b.actor, conversationA)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(followUpsApp.restartFollowUpRun(b.followUpDeps, b.actor, conversationA)).rejects.toThrow();
+      await expect(followUpsApp.pauseFollowUpRun(b.followUpDeps, b.actor, conversationA)).rejects.toThrow();
       expect(await count("follow_up_runs", a.org)).toBe(0);
       expect((await arApp.getCampaignAfterReply(a.arDeps, a.actor, campaignA)).mode).toBe("ai_drafts");
       expect(await one("select name from follow_up_flows where campaign_id = $1", [campaignA])).toMatchObject({ name: "Only A (after a reply)" });
@@ -1455,22 +1455,22 @@ describeDb("Follow-ups after a reply flows", () => {
       await emailedBy(f);
       await f.aiRun();
       // Two workers race to start the run and to adopt the reply draft.
-      await Promise.all([f.seqRunAs("a"), f.seqRunAs("b"), f.seqRunAs("c")]);
+      await Promise.all([f.followUpRunAs("a"), f.followUpRunAs("b"), f.followUpRunAs("c")]);
       expect(await count("follow_up_runs", f.org)).toBe(1);
       expect(await count("follow_up_step_runs", f.org)).toBe(3);
       expect(await count("follow_up_step_runs", f.org, "draft_id is not null")).toBe(1);
 
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       const before = f.ai.draftCalls;
-      await Promise.all([f.seqRunAs("a"), f.seqRunAs("b"), f.seqRunAs("c"), f.seqRunAs("d")]);
+      await Promise.all([f.followUpRunAs("a"), f.followUpRunAs("b"), f.followUpRunAs("c"), f.followUpRunAs("d")]);
       expect(f.ai.draftCalls).toBe(before + 1);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
       expect(await count("follow_up_step_runs", f.org, "status = 'awaiting_review'")).toBe(1);
       // Running again changes nothing.
-      await f.seqRun();
+      await f.followUpRun();
       expect(f.ai.draftCalls).toBe(before + 1);
       expect(await count("follow_up_runs", f.org)).toBe(1);
     });
@@ -1479,13 +1479,13 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       await sql`update follow_up_step_runs set status = 'drafting', attempt_count = 1, updated_at = ${f.clock()} where follow_up_run_id = ${run.id} and status = 'scheduled' and due_at <= ${f.clock()}`;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("follow_up_step_runs", f.org, "status = 'awaiting_review'")).toBe(0);
       f.state.offsetMs += 11 * 60_000;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("follow_up_step_runs", f.org, "status = 'awaiting_review'")).toBe(1);
     });
 
@@ -1493,14 +1493,14 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const draft = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, draft.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       const created = await one("select id, request from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
       // Simulate the crash: the step lost its link and sits as drafting past its lease.
       await sql`update follow_up_step_runs set status = 'drafting', draft_id = null, updated_at = ${new Date(f.clock().getTime() - 3600_000)} where id = ${created.request.followUpStepRunId}`;
       const calls = f.ai.draftCalls;
-      await f.seqRun();
+      await f.followUpRun();
       expect(f.ai.draftCalls).toBe(calls);
       expect(await one("select status, draft_id from follow_up_step_runs where id = $1", [created.request.followUpStepRunId])).toMatchObject({ status: "awaiting_review", draft_id: created.id });
       expect(await count("drafts", f.org)).toBe(2);
@@ -1514,7 +1514,7 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const first = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, first.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       const stepRunId = (await one("select sr.id from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.follow_up_run_id = $1 and st.position = 2", [run.id])).id as string;
       return { f, run, stepRunId };
@@ -1532,7 +1532,7 @@ describeDb("Follow-ups after a reply flows", () => {
       f.ai.failWith = new AiError("The model is overloaded.", "transient");
 
       for (let attempt = 1; attempt < MAX_DRAFT_ATTEMPTS; attempt++) {
-        expect((await f.seqRun()).detail).toMatchObject({ retry: 1 });
+        expect((await f.followUpRun()).detail).toMatchObject({ retry: 1 });
         const row = await stepRun(stepRunId);
         expect(row).toMatchObject({ status: "scheduled", attempt_count: attempt, last_error: "The model is overloaded.", draft_id: null });
         // The retry waits draftRetryDelayMs from the failure: one minute, then two.
@@ -1541,18 +1541,18 @@ describeDb("Follow-ups after a reply flows", () => {
         expect(wait).toBeLessThan(draftRetryDelayMs(attempt) + 1000);
         // Not due yet: the next tick claims nothing.
         const calls = f.ai.draftCalls;
-        await f.seqRun();
+        await f.followUpRun();
         expect(f.ai.draftCalls).toBe(calls);
         f.state.offsetMs += draftRetryDelayMs(attempt) + 1000;
       }
 
-      expect((await f.seqRun()).detail).toMatchObject({ failed: 1 });
+      expect((await f.followUpRun()).detail).toMatchObject({ failed: 1 });
       expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: "The model is overloaded.", draft_id: null });
       // A failed step holds the run where it is. Later ticks do not claim it again.
       expect(await one("select status, current_step_position from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active", current_step_position: 2 });
       const calls = f.ai.draftCalls;
       f.state.offsetMs += DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(f.ai.draftCalls).toBe(calls);
       expect(await count("drafts", f.org, `request->>'stepPosition' = '2'`)).toBe(0);
     });
@@ -1560,33 +1560,33 @@ describeDb("Follow-ups after a reply flows", () => {
     it("fails the step on the first attempt for a permanent error", async () => {
       const { f, stepRunId } = await dueStep2();
       f.ai.failWith = new AiError("The API key was rejected.", "permanent");
-      expect((await f.seqRun()).detail).toMatchObject({ failed: 1 });
+      expect((await f.followUpRun()).detail).toMatchObject({ failed: 1 });
       expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: 1, last_error: "The API key was rejected." });
     });
 
     // claimDue sweeps every organization, so these drive it through a tick: steps of other files' organizations are released untouched.
     it("fails a step left drafting past its lease once it used every attempt, and takes over one with attempts left", async () => {
       const { f, stepRunId } = await dueStep2();
-      const leaseMs = seqJobsApp.FOLLOW_UP_LEASE_MS;
+      const leaseMs = followUpJobsApp.FOLLOW_UP_LEASE_MS;
       await sql`update follow_up_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS}, updated_at = ${new Date(f.clock().getTime() - leaseMs - 60_000)} where id = ${stepRunId}`;
       const calls = f.ai.draftCalls;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: "Drafting did not finish.", draft_id: null });
       expect(f.ai.draftCalls).toBe(calls);
 
       // One attempt short of the cap: the claim takes the step over, counts the attempt and drafts it.
       const other = await dueStep2();
       await sql`update follow_up_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS - 1}, updated_at = ${new Date(other.f.clock().getTime() - leaseMs - 60_000)} where id = ${other.stepRunId}`;
-      expect((await other.f.seqRun()).detail).toMatchObject({ drafted: 1 });
+      expect((await other.f.followUpRun()).detail).toMatchObject({ drafted: 1 });
       expect(await stepRun(other.stepRunId)).toMatchObject({ status: "awaiting_review", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: null });
     });
 
     it("leaves a step at the cap alone while it is drafting inside its lease", async () => {
       const { f, stepRunId } = await dueStep2();
-      const leaseMs = seqJobsApp.FOLLOW_UP_LEASE_MS;
+      const leaseMs = followUpJobsApp.FOLLOW_UP_LEASE_MS;
       await sql`update follow_up_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS}, updated_at = ${new Date(f.clock().getTime() - leaseMs + 60_000)} where id = ${stepRunId}`;
       const calls = f.ai.draftCalls;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await stepRun(stepRunId)).toMatchObject({ status: "drafting", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: null });
       expect(f.ai.draftCalls).toBe(calls);
     });
@@ -1595,7 +1595,7 @@ describeDb("Follow-ups after a reply flows", () => {
   describe("a worker that lost its claim", () => {
     type Engine = import("../../application/follow-up-ports").FollowUpEngineStore;
     type Resolver = import("../../../ai/application/ai-ports").ReplyAiResolver;
-    const lease = () => seqJobsApp.FOLLOW_UP_LEASE_MS;
+    const lease = () => followUpJobsApp.FOLLOW_UP_LEASE_MS;
     const step2 = async (runId: string) =>
       (await one("select sr.id from follow_up_step_runs sr join follow_up_steps st on st.id = sr.follow_up_step_id where sr.follow_up_run_id = $1 and st.position = 2", [runId])).id as string;
 
@@ -1604,11 +1604,11 @@ describeDb("Follow-ups after a reply flows", () => {
       const { f, run } = await withRun();
       const first = await one("select id from drafts where organization_id = $1", [f.org]);
       await approve(f, first.id);
-      await f.seqRun();
+      await f.followUpRun();
       f.state.offsetMs += 3 * DAY;
       const own = replyAiResolverOf(async (o: string) => (o === f.org ? f.ai : null));
       const tickAs = (workerId: string, wrap: { engine?: Partial<Engine>; ai?: Resolver } = {}) =>
-        (seqJobsApp.createFollowUpJobs({
+        (followUpJobsApp.createFollowUpJobs({
           engine: { ...stores.engine, ...wrap.engine },
           runs: stores.runs,
           replies: stores.replies,
@@ -1627,8 +1627,8 @@ describeDb("Follow-ups after a reply flows", () => {
         f.state.offsetMs += lease() + 60_000;
       },
       "a person paused and resumed the run": async (f: Fx, conversationId: string) => {
-        await seqApp.pauseFollowUpRun(f.seqDeps, f.actor, conversationId);
-        await seqApp.resumeFollowUpRun(f.seqDeps, f.actor, conversationId);
+        await followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, conversationId);
+        await followUpsApp.resumeFollowUpRun(f.followUpDeps, f.actor, conversationId);
       },
     };
     /** `writeDraft`: a loses the step while the model writes, so b writes a draft first and a writes late. */
@@ -1743,7 +1743,7 @@ describeDb("Follow-ups after a reply flows", () => {
           linkDraft: async (...args: Parameters<Engine["linkDraft"]>) => {
             if (!paused && JSON.stringify(args).includes(stepRunId)) {
               paused = true;
-              await seqApp.pauseFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
+              await followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
             }
             return stores.engine.linkDraft(...args);
           },
@@ -1792,29 +1792,29 @@ describeDb("Follow-ups after a reply flows", () => {
     it("pauses, resumes, skips and cancels", async () => {
       const { f, run } = await withRun();
       const conversationId = run.conversation_id;
-      await seqApp.pauseFollowUpRun(f.seqDeps, f.actor, conversationId);
+      await followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, conversationId);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "paused" });
       // The reply draft is retired and its step is back to scheduled.
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
       f.state.offsetMs += 10 * DAY;
-      await f.seqRun();
+      await f.followUpRun();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
-      await expect(seqApp.pauseFollowUpRun(f.seqDeps, f.actor, conversationId)).rejects.toBeInstanceOf(ConflictError);
+      await expect(followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, conversationId)).rejects.toBeInstanceOf(ConflictError);
 
-      await seqApp.resumeFollowUpRun(f.seqDeps, f.actor, conversationId);
+      await followUpsApp.resumeFollowUpRun(f.followUpDeps, f.actor, conversationId);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
-      await f.seqRun();
+      await f.followUpRun();
       // The reply is drafted afresh.
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
 
-      const skipped = await seqApp.skipFollowUpStep(f.seqDeps, f.actor, conversationId);
+      const skipped = await followUpsApp.skipFollowUpStep(f.followUpDeps, f.actor, conversationId);
       expect(skipped).toEqual({ skipped: 1, next: 2 });
       expect(await count("drafts", f.org, "status = 'discarded'")).toBe(1);
 
-      await seqApp.cancelFollowUpRun(f.seqDeps, f.actor, conversationId);
+      await followUpsApp.cancelFollowUpRun(f.followUpDeps, f.actor, conversationId);
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "cancelled" });
       expect(await count("follow_up_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
-      await expect(seqApp.cancelFollowUpRun(f.seqDeps, f.actor, conversationId)).rejects.toBeInstanceOf(ConflictError);
+      await expect(followUpsApp.cancelFollowUpRun(f.followUpDeps, f.actor, conversationId)).rejects.toBeInstanceOf(ConflictError);
     });
 
     it("advancing to a step another writer moved after the pick rolls back the whole settle", async () => {
@@ -1889,9 +1889,9 @@ describeDb("Follow-ups after a reply flows", () => {
       await sql.unsafe(`create function ${fn}() returns trigger language plpgsql as $$ begin if old.id = '${step2.id}' then return null; end if; return new; end $$`);
       await sql.unsafe(`create trigger ${fn} before update on follow_up_step_runs for each row execute function ${fn}()`);
       try {
-        const error = await seqApp.skipFollowUpStep(f.seqDeps, f.actor, run.conversation_id).catch((e: unknown) => e);
+        const error = await followUpsApp.skipFollowUpStep(f.followUpDeps, f.actor, run.conversation_id).catch((e: unknown) => e);
         expect(error).toBeInstanceOf(ConflictError);
-        expect(error).toMatchObject({ message: "The follow-up sequence changed while you skipped. Reload the page and try again.", details: { code: "sequence_changed" } });
+        expect(error).toMatchObject({ message: "The follow-ups changed while you skipped. Reload the page and try again.", details: { code: "follow_ups_changed" } });
       } finally {
         await sql.unsafe(`drop trigger ${fn} on follow_up_step_runs`);
         await sql.unsafe(`drop function ${fn}()`);
@@ -1903,12 +1903,12 @@ describeDb("Follow-ups after a reply flows", () => {
 
     it("reads the conversation's campaign and run with labels", async () => {
       const { f, run, campaignId } = await withRun();
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, run.conversation_id);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, run.conversation_id);
       expect(state.campaign).toMatchObject({ id: campaignId, mode: "ai_drafts" });
       expect(state.run).toMatchObject({ id: run.id, status: "active", statusLabel: "Running", startedBy: "ai_assignment", startedByLabel: "Automatic", version: 1, totalSteps: 3, currentStepPosition: 1, endedReason: null, endedReasonLabel: null });
       expect(state.run?.steps.map((x) => x.status)).toEqual(["awaiting_review", "scheduled", "scheduled"]);
-      await seqApp.cancelFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
-      const ended = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, run.conversation_id);
+      await followUpsApp.cancelFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
+      const ended = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, run.conversation_id);
       expect(ended.run).toMatchObject({ status: "cancelled", endedReason: "manual", endedReasonLabel: "A person cancelled the follow-ups" });
     });
 
@@ -1917,7 +1917,7 @@ describeDb("Follow-ups after a reply flows", () => {
       await ingest(f);
       const campaignId = await emailedBy(f, { steps: null });
       const conversation = (await one("select id from conversations where organization_id = $1", [f.org])).id;
-      const state = await seqApp.getConversationFollowUp(f.seqDeps, f.actor, conversation);
+      const state = await followUpsApp.getConversationFollowUp(f.followUpDeps, f.actor, conversation);
       expect(state).toMatchObject({ run: null, campaign: { id: campaignId, mode: "handoff" } });
     });
   });
@@ -1967,7 +1967,7 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(candidates.filter((c) => c.organizationId === f.org)).toEqual([]);
       expect((await stores.runs.loadStart(lead.org, leadConversation, {}))?.contact).toBe(false);
       expect((await stores.runs.loadStart(f.org, conversation, {}))?.contact).toBe(true);
-      expect(await seqApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "ai_assignment" })).toEqual({ blocked: "The person is a contact, so follow-ups do not apply." });
+      expect(await followUpsApp.attemptRun({ runs: stores.runs, now: f.clock }, { organizationId: f.org, conversationId: conversation, source: "ai_assignment" })).toEqual({ blocked: "The person is a contact, so follow-ups do not apply." });
     });
 
     it("has its active run interrupted by the sweep with the converted reason, and a lead's run is left alone", async () => {
@@ -1976,23 +1976,23 @@ describeDb("Follow-ups after a reply flows", () => {
       const personId = (await one("select person_id from conversations where id = $1", [converted.run.conversation_id])).person_id as string;
       await makeContact(personId);
 
-      await converted.f.seqRun();
+      await converted.f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [converted.run.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", converted.f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'converted'")).toBe(1);
+      expect(await count("events", converted.f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'converted'")).toBe(1);
       expect(await count("drafts", converted.f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await count("follow_up_step_runs", converted.f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
       expect(await one("select status from follow_up_runs where id = $1", [lead.run.id])).toMatchObject({ status: "active" });
       expect(await count("drafts", lead.f.org, "status = 'awaiting_review'")).toBe(1);
-      expect(await count("events", lead.f.org, "event_type = 'sequence.interrupted'")).toBe(0);
+      expect(await count("events", lead.f.org, "event_type = 'follow_up.interrupted'")).toBe(0);
     });
 
     it("keeps a paused run from surviving the sweep too", async () => {
       const { f, run } = await withRun();
-      await seqApp.pauseFollowUpRun(f.seqDeps, f.actor, run.conversation_id);
+      await followUpsApp.pauseFollowUpRun(f.followUpDeps, f.actor, run.conversation_id);
       await makeContact((await one("select person_id from conversations where id = $1", [run.conversation_id])).person_id as string);
-      await f.seqRun();
+      await f.followUpRun();
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'converted'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'converted'")).toBe(1);
     });
   });
 });

@@ -373,9 +373,9 @@ describeDb("inbox filters, views and search", () => {
     it("includes queued follow-up steps of active runs only and honors lead, campaign, mailbox and date filters", async () => {
       const f = await fixture();
       const nurture = await campaignWith(f, "Nurture");
-      const [seq] = await sql`insert into follow_up_flows (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
+      const [flow] = await sql`insert into follow_up_flows (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
       // The step goes in while the version is a draft: follow_up_steps_frozen_trg refuses it under a published one.
-      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
+      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow.id}, 1) returning id`;
       const [step] = await sql`
         insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${f.org}, ${ver.id}, 2, 'follow_up', 'Check in', 60, 'Say hi') returning id`;
@@ -388,7 +388,7 @@ describeDb("inbox filters, views and search", () => {
         const [msg] = await sql`select id from messages where thread_id = ${t.threadId} limit 1`;
         const [r] = await sql`
           insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-          values (${f.org}, ${rec.id}, ${t.threadId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
+          values (${f.org}, ${rec.id}, ${t.threadId}, ${flow.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
         const [sr] = await sql`
           insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version)
           values (${f.org}, ${r.id}, ${step.id}, ${stepStatus}, ${new Date(Date.now() + dueIn * HOUR)}, 1) returning id`;
@@ -404,7 +404,7 @@ describeDb("inbox filters, views and search", () => {
 
       const all = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
       expect(all.rows.map((r) => r.id)).toEqual([camp, active.id]);
-      expect(all.rows[1]).toMatchObject({ kind: "sequence", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
+      expect(all.rows[1]).toMatchObject({ kind: "follow_up", sourceName: "Nurture", stepLabel: "Check in", mailbox: f.mailbox });
 
       const byLead = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, { leadIds: [active.personId] });
       expect(byLead.rows.map((r) => r.id)).toEqual([active.id]);
@@ -425,8 +425,8 @@ describeDb("inbox filters, views and search", () => {
     it("keeps the steps of a flow with no campaign listed while its run is active", async () => {
       const f = await fixture();
       // A flow with no campaign is archived. Its runs in flight keep going, so their steps stay scheduled.
-      const [seq] = await sql`insert into follow_up_flows (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
-      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
+      const [flow] = await sql`insert into follow_up_flows (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
+      const [ver] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow.id}, 1) returning id`;
       const [step] = await sql`
         insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${f.org}, ${ver.id}, 2, 'follow_up', 'Legacy check in', 60, 'Say hi') returning id`;
@@ -437,14 +437,14 @@ describeDb("inbox filters, views and search", () => {
       const [msg] = await sql`select id from messages where thread_id = ${t.threadId} limit 1`;
       const [run] = await sql`
         insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${rec.id}, ${t.threadId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
+        values (${f.org}, ${rec.id}, ${t.threadId}, ${flow.id}, ${ver.id}, ${rec.reply_type_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
       const [sr] = await sql`
         insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version)
         values (${f.org}, ${run.id}, ${step.id}, 'scheduled', ${new Date(Date.now() + 2 * HOUR)}, 1) returning id`;
 
       const result = await inbox.listScheduledInbox(composition.inboxDeps(), f.actor, {});
       expect(result.rows.map((r) => r.id)).toEqual([sr.id]);
-      expect(result.rows[0]).toMatchObject({ kind: "sequence", sourceName: "Legacy nurture", stepLabel: "Legacy check in" });
+      expect(result.rows[0]).toMatchObject({ kind: "follow_up", sourceName: "Legacy nurture", stepLabel: "Legacy check in" });
       expect(result.total).toBe(1);
     });
   });

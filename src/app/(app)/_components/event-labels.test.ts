@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EVENT_LABELS, eventLabel } from "./event-labels";
 
-/** Namespaces of `events.event_type`. A literal such as "deal.created" or 'sequence.cancelled' in these is an event type. */
-const NAMESPACES = ["reply_type", "reply_type_pick", "contact_policy", "contact", "draft", "workflow", "sequence", "enrollment", "outreach", "lifecycle", "deal", "assignee"];
+/** Namespaces of `events.event_type`. A literal such as "deal.created" or 'follow_up.cancelled' in these is an event type. */
+const NAMESPACES = ["reply_type", "reply_type_pick", "contact_policy", "contact", "draft", "workflow", "follow_up", "enrollment", "outreach", "lifecycle", "deal", "assignee"];
 const LITERAL = new RegExp(`["'\`]((?:${NAMESPACES.join("|")})\\.[a-z_]+)["'\`]`, "g");
 
 function sources(dir: string): string[] {
@@ -29,7 +29,7 @@ describe("EVENT_LABELS", () => {
   it("labels every event type the code writes", () => {
     const written = writtenEventTypes();
     // The scan must see the types this plan adds, or it is not reading the right files.
-    expect(written).toEqual(expect.arrayContaining(["lifecycle.converted", "deal.created", "deal.type_changed", "deal.updated", "deal.deleted", "reply_type.changed", "sequence.started", "assignee.changed"]));
+    expect(written).toEqual(expect.arrayContaining(["lifecycle.converted", "deal.created", "deal.type_changed", "deal.updated", "deal.deleted", "reply_type.changed", "follow_up.started", "assignee.changed"]));
     expect(written.filter((type) => !(type in EVENT_LABELS))).toEqual([]);
   });
 

@@ -326,15 +326,15 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
     });
 
-    it("ends the active sequence run with pick_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
+    it("ends the active follow-up run with pick_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
       const f = await fixture();
       const l = await lead(f);
       const target = await sub(f, "demo_request");
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const r = await rec(l.conversationId);
-      const [{ id: seq }] = await sql`insert into follow_up_flows (organization_id, name) values (${f.org}, 'Demo follow-up') returning id`;
+      const [{ id: flow }] = await sql`insert into follow_up_flows (organization_id, name) values (${f.org}, 'Demo follow-up') returning id`;
       // Steps go in while the version is a draft: follow_up_steps_frozen_trg refuses them under a published one.
-      const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${seq}, 1) returning id`;
+      const [{ id: ver }] = await sql`insert into follow_up_versions (organization_id, flow_id, version) values (${f.org}, ${flow}, 1) returning id`;
       const stepIds: string[] = [];
       for (const [position, type, delay] of [[1, "reply", 0], [2, "follow_up", 60]] as const) {
         const [{ id }] = await sql`
@@ -345,7 +345,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${ver}`;
       const [{ id: runId }] = await sql`
         insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${l.conversationId}, ${l.threadId}, ${seq}, ${ver}, ${target.id}, 'active', 'ai_assignment', ${r.latest_inbound_message_id}, now()) returning id`;
+        values (${f.org}, ${l.conversationId}, ${l.threadId}, ${flow}, ${ver}, ${target.id}, 'active', 'ai_assignment', ${r.latest_inbound_message_id}, now()) returning id`;
       const draftId = await openDraft(f, l);
       await sql`insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, draft_id, expected_context_version) values (${f.org}, ${runId}, ${stepIds[0]}, 'awaiting_review', now(), ${draftId}, ${r.context_version})`;
       await sql`insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, expected_context_version) values (${f.org}, ${runId}, ${stepIds[1]}, 'scheduled', now() + interval '1 day', ${r.context_version})`;
@@ -355,12 +355,12 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from follow_up_runs where id = ${runId}`)[0].status).toBe("interrupted");
       expect((await sql`select status from follow_up_step_runs where follow_up_run_id = ${runId} order by due_at`).map((x) => x.status)).toEqual(["cancelled", "cancelled"]);
       expect((await sql`select status from drafts where id = ${draftId}`)[0].status).toBe("stale");
-      const interrupted = await sql`select meta from events where conversation_id = ${l.conversationId} and event_type = 'sequence.interrupted'`;
+      const interrupted = await sql`select meta from events where conversation_id = ${l.conversationId} and event_type = 'follow_up.interrupted'`;
       expect(interrupted).toHaveLength(1);
       expect(interrupted[0].meta).toMatchObject({ reason: "pick_undone" });
 
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
-      expect(await sql`select 1 from events where conversation_id = ${l.conversationId} and event_type = 'sequence.interrupted'`).toHaveLength(1);
+      expect(await sql`select 1 from events where conversation_id = ${l.conversationId} and event_type = 'follow_up.interrupted'`).toHaveLength(1);
       expect((await sql`select status from follow_up_runs where id = ${runId}`)[0].status).toBe("interrupted");
     });
 

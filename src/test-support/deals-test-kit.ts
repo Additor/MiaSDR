@@ -10,7 +10,7 @@ export { waitForLockWaiters } from "@/test-support/db";
 
 /*
  * Fixtures for the deals integration tests: organizations with members, leads with a reply conversation, a running Follow-ups after a reply
- * follow-up with its draft, and live enrollments. Everything goes through the real ingest and sequence code where a test
+ * follow-up with its draft, and live enrollments. Everything goes through the real ingest and follow-up code where a test
  * needs that state. Needs TEST_DATABASE_URL pointing at a migrated Postgres; `bootDealsKit` sets the environment first and
  * `cleanup` puts it back.
  */
@@ -26,8 +26,8 @@ export async function bootDealsKit(url: string) {
   const threads = await import("@/contexts/conversations/infrastructure/composition");
   const aiJobsApp = await import("@/contexts/conversations/ai/application/ai-jobs");
   const arApp = await import("@/contexts/conversations/after-reply/application/after-reply");
-  const seqJobsApp = await import("@/contexts/conversations/after-reply/application/follow-up-jobs");
-  const seqStore = await import("@/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store");
+  const followUpJobsApp = await import("@/contexts/conversations/after-reply/application/follow-up-jobs");
+  const followUpStore = await import("@/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-store");
   const jobs = (await import("@/contexts/conversations/ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore;
   const replies = (await import("@/contexts/conversations/infrastructure/drizzle-reply-store")).drizzleReplyStore;
   const engine = (await import("@/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine;
@@ -59,7 +59,7 @@ export async function bootDealsKit(url: string) {
     const clock = () => new Date();
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const [seqTick] = seqJobsApp.createFollowUpJobs({ engine, runs: seqStore.drizzleRunStore, replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [followUpTick] = followUpJobsApp.createFollowUpJobs({ engine, runs: followUpStore.drizzleRunStore, replies, ai: resolver, now: clock, workerId: "w1", leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
 
     const mail = (partial: Partial<InboundEmailInput> = {}): InboundEmailInput => {
@@ -126,12 +126,12 @@ export async function bootDealsKit(url: string) {
       async emailedBy(personId: string) {
         const campaignId = await createCampaign(sql, { organizationId: org });
         const sent = await recordSentEmail(sql, { organizationId: org, campaignId, personId, sentAt: new Date(Date.now() - 3_600_000) });
-        await arApp.saveCampaignAfterReply({ flows: seqStore.drizzleAfterReplyStore, now: clock }, owner, campaignId, { mode: "ai_drafts", steps: FLOW_STEPS });
+        await arApp.saveCampaignAfterReply({ flows: followUpStore.drizzleAfterReplyStore, now: clock }, owner, campaignId, { mode: "ai_drafts", steps: FLOW_STEPS });
         return { campaignId, repliedEnrollmentId: sent.enrollmentId };
       },
       cycle: async () => {
         await aiTick.run(ctx());
-        return seqTick.run(ctx());
+        return followUpTick.run(ctx());
       },
     };
   }

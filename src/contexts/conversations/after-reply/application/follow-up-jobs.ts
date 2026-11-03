@@ -44,7 +44,7 @@ async function startRuns(deps: FollowUpJobDeps, deadline: number, count: (key: s
       }
     } catch (error) {
       count("start_failed");
-      console.error(`Sequence run could not start for conversation ${candidate.conversationId}: ${errorMessage(error)}`);
+      console.error(`Follow-up run could not start for conversation ${candidate.conversationId}: ${errorMessage(error)}`);
     }
   }
   return started;
@@ -122,7 +122,7 @@ async function draftStep(deps: FollowUpJobDeps, claim: ClaimedStep, count: (key:
 
   const ctx = await deps.replies.draftContext(org, claim.run.threadId);
   if (!ctx) {
-    await deps.engine.failAttempt(claim, "Sequence drafts need an email conversation.", null, now);
+    await deps.engine.failAttempt(claim, "Follow-up drafts need an email conversation.", null, now);
     count("failed");
     return;
   }

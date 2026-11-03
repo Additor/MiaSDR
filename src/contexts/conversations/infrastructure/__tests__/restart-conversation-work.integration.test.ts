@@ -31,7 +31,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
   let mgmt: typeof import("../../application/reply-management");
   let aiJobsApp: typeof import("../../ai/application/ai-jobs");
   let arApp: typeof import("../../after-reply/application/after-reply");
-  let seqJobsApp: typeof import("../../after-reply/application/follow-up-jobs");
+  let followUpJobsApp: typeof import("../../after-reply/application/follow-up-jobs");
   let replyHandlingApp: typeof import("../../application/reply-handling");
   let stores: {
     jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
@@ -59,10 +59,10 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     const clock = () => new Date(Date.now() + state.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const [seqTick] = seqJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [followUpTick] = followUpJobsApp.createFollowUpJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: followUpJobsApp.FOLLOW_UP_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(() => mailbox), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
-    const seqDeps = { runs: stores.runs, now: clock };
+    const followUpDeps = { runs: stores.runs, now: clock };
     const arDeps = { flows: stores.flows, now: clock };
     const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
     return {
@@ -75,14 +75,14 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       state,
       clock,
       replyDeps,
-      seqDeps,
+      followUpDeps,
       arDeps,
       replyHandlingDeps,
       aiRun: () => aiTick.run(ctx()),
       /** One tick of both jobs, in the registry's order. */
       cycle: async () => {
         await aiTick.run(ctx());
-        return seqTick.run(ctx());
+        return followUpTick.run(ctx());
       },
     };
   }
@@ -147,14 +147,14 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     mgmt = await import("../../application/reply-management");
     aiJobsApp = await import("../../ai/application/ai-jobs");
     arApp = await import("../../after-reply/application/after-reply");
-    seqJobsApp = await import("../../after-reply/application/follow-up-jobs");
+    followUpJobsApp = await import("../../after-reply/application/follow-up-jobs");
     replyHandlingApp = await import("../../application/reply-handling");
-    const seqStore = await import("../../after-reply/infrastructure/drizzle-follow-up-store");
+    const followUpStore = await import("../../after-reply/infrastructure/drizzle-follow-up-store");
     stores = {
       jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
       replies: (await import("../drizzle-reply-store")).drizzleReplyStore,
-      flows: seqStore.drizzleAfterReplyStore,
-      runs: seqStore.drizzleRunStore,
+      flows: followUpStore.drizzleAfterReplyStore,
+      runs: followUpStore.drizzleRunStore,
       engine: (await import("../../after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine,
       crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
@@ -180,7 +180,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await versionOf(conversationId)).toBe(version + 1);
 
       expect(await one("select status from follow_up_runs where id = $1", [old.id])).toMatchObject({ status: "interrupted" });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'type_changed'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'type_changed'")).toBe(1);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
       expect(await one("select status, error from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "stale", error: "A person changed the reply type after this draft was written." });
       expect(await count("follow_up_step_runs", f.org, `follow_up_run_id = '${old.id}' and status in ('scheduled', 'drafting', 'awaiting_review')`)).toBe(0);
@@ -193,7 +193,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await count("follow_up_step_runs", f.org, `follow_up_run_id = '${runs[0].id}'`)).toBe(2);
       expect(await one("select expected_context_version from follow_up_step_runs where follow_up_run_id = $1 limit 1", [runs[0].id])).toMatchObject({ expected_context_version: version + 1 });
 
-      // The next sequence tick drafts the new run's reply step.
+      // The next follow-up tick drafts the new run's reply step.
       await f.cycle();
       const fresh = await one("select expected_context_version, status, request from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
       expect(fresh.expected_context_version).toBe(version + 1);
@@ -223,8 +223,8 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select context_version, reply_type_id from conversations where id = $1", [conversationId])).toMatchObject({ context_version: version + 1, reply_type_id: (await sub(f.org, "meeting_done")).id });
       expect(await count("follow_up_runs", f.org)).toBe(1);
       expect(await count("follow_up_runs", f.org, "status = 'active'")).toBe(0);
-      expect(await count("events", f.org, "event_type = 'sequence.started'")).toBe(1);
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'type_changed'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.started'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'type_changed'")).toBe(1);
     });
 
     it("starts no run for a contact whose record never had one", async () => {
@@ -290,7 +290,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
   });
 
   describe("a run start reads the rules the pick stored", () => {
-    /** A reply the AI picks and applies, from a lead the campaign emailed an hour earlier. The sequence tick has not run. */
+    /** A reply the AI picks and applies, from a lead the campaign emailed an hour earlier. The follow-up tick has not run. */
     async function picked(body: string) {
       const f = await fixture();
       const r = await composition.ingestInbound(mail(f, { bodyText: body }));
@@ -309,8 +309,8 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       await sql`update reply_types set follow_ups = 'continue' where organization_id = ${f.org} and key = 'not_required_right_now'`;
       await f.cycle();
       expect(await count("follow_up_runs", f.org)).toBe(0);
-      const seq = await import("../../after-reply/application/follow-ups");
-      expect((await seq.getConversationFollowUp(f.seqDeps, f.actor, conversationId)).restartBlockedReason).toBe("Not now is set to stop follow-ups.");
+      const followUps = await import("../../after-reply/application/follow-ups");
+      expect((await followUps.getConversationFollowUp(f.followUpDeps, f.actor, conversationId)).restartBlockedReason).toBe("Not now is set to stop follow-ups.");
     });
 
     it("starts at the step the pick's Reply draft rule chose, after the type's rule changed", async () => {
@@ -423,7 +423,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(result).toMatchObject({ replyTypeKey: "meeting_done", draftQueued: true });
       expect(await versionOf(conversationId)).toBe(version + 1);
       expect(await one("select status, error from drafts where id = $1", [stale.id])).toMatchObject({ status: "stale", error: "A person corrected the reply type after this draft was written." });
-      expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'type_corrected'")).toBe(1);
+      expect(await count("events", f.org, "event_type = 'follow_up.interrupted' and meta->>'reason' = 'type_corrected'")).toBe(1);
       const active = await rows("select flow_id from follow_up_runs where organization_id = $1 and status = 'active'", [f.org]);
       expect(active.map((a) => a.flow_id)).toEqual([flowId]);
       // The classification row moved to the new version, so the draft job accepts it.

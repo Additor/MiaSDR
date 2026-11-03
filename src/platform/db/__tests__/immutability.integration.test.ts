@@ -3,7 +3,7 @@ import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
 import { seedWorld, uid, type World } from "../../../test-support/full-world";
 
 /**
- * Conversation identity, reply type keys, knowledge versions and published sequence
+ * Conversation identity, reply type keys, knowledge versions and published follow-up
  * versions stay as written. Each test names the trigger it protects, so dropping the trigger fails exactly that test.
  * Every trigger also gets a pass case for the update paths the application uses. Needs TEST_DATABASE_URL.
  */
@@ -12,9 +12,9 @@ const KEYS = /reply_types keys are immutable/;
 const KNOWLEDGE = /knowledge_document_versions is append-only/;
 const KNOWLEDGE_DELETE = /knowledge_document_versions is append-only: rows cannot be deleted directly/;
 const VERSION_IDENTITY = /follow_up_versions identity is immutable/;
-const VERSION_FROZEN = /a published sequence version is frozen/;
-const VERSION_DELETE = /a published sequence version cannot be deleted directly/;
-const STEPS_FROZEN = /follow_up_steps of a published sequence version are frozen/;
+const VERSION_FROZEN = /a published follow-up version is frozen/;
+const VERSION_DELETE = /a published follow-up version cannot be deleted directly/;
+const STEPS_FROZEN = /follow_up_steps of a published follow-up version are frozen/;
 
 /** Columns each trigger guards. The foreign key scan below fails if an ON DELETE/UPDATE SET NULL action could write one. */
 const GUARDED: Record<string, string[]> = {
@@ -39,15 +39,15 @@ describeDb("immutable identity and versions", () => {
     await sql.end();
   });
 
-  /** A sequence with a published version 1 that holds one step. Returns the ids. */
+  /** A flow with a published version 1 that holds one step. Returns the ids. */
   async function flowWithPublished(w: World) {
-    const [seq] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"s-" + uid()}) returning id`;
-    const [version] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${seq.id}, 1, 'draft') returning id`;
+    const [flow] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"s-" + uid()}) returning id`;
+    const [version] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${flow.id}, 1, 'draft') returning id`;
     const [step] = await sql`
       insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${w.org}, ${version.id}, 1, 'reply', 'Reply', 0, 'Answer the question.') returning id`;
     await sql`update follow_up_versions set status = 'published', published_at = now(), updated_at = now() where id = ${version.id}`;
-    return { sequence: seq.id as string, version: version.id as string, step: step.id as string };
+    return { flow: flow.id as string, version: version.id as string, step: step.id as string };
   }
 
   describe("threads_identity_trg", () => {
@@ -129,7 +129,7 @@ describeDb("immutable identity and versions", () => {
     it("raises when the identity of any version changes", async () => {
       const w = await world();
       const s = await flowWithPublished(w);
-      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.flow}, 2, 'draft') returning id`;
       await expect(sql`update follow_up_versions set version = 7 where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
       const [other] = await sql`insert into follow_up_flows (organization_id, name) values (${w.org}, ${"o-" + uid()}) returning id`;
       await expect(sql`update follow_up_versions set flow_id = ${other.id} where id = ${draft.id}`).rejects.toThrow(VERSION_IDENTITY);
@@ -146,7 +146,7 @@ describeDb("immutable identity and versions", () => {
       const w = await world();
       const s = await flowWithPublished(w);
       // The draft is edited, then published: the same statement the store uses. An updated_at touch on the published row passes.
-      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.flow}, 2, 'draft') returning id`;
       await sql`update follow_up_versions set updated_at = now() where id = ${draft.id}`;
       await sql`update follow_up_versions set status = 'published', published_at = now(), updated_at = now() where id = ${draft.id}`;
       await sql`update follow_up_versions set updated_at = now() where id = ${s.version}`;
@@ -156,14 +156,14 @@ describeDb("immutable identity and versions", () => {
   });
 
   describe("follow_up_versions_no_delete_trg", () => {
-    it("raises on a direct delete of a published version, allows a draft, and passes through the sequence delete", async () => {
+    it("raises on a direct delete of a published version, allows a draft, and passes through the flow delete", async () => {
       const w = await world();
       const s = await flowWithPublished(w);
       await expect(sql`delete from follow_up_versions where id = ${s.version}`).rejects.toThrow(VERSION_DELETE);
-      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.flow}, 2, 'draft') returning id`;
       await sql`delete from follow_up_versions where id = ${draft.id}`;
-      await sql`delete from follow_up_flows where id = ${s.sequence}`;
-      expect((await sql`select 1 from follow_up_versions where flow_id = ${s.sequence}`).length).toBe(0);
+      await sql`delete from follow_up_flows where id = ${s.flow}`;
+      expect((await sql`select 1 from follow_up_versions where flow_id = ${s.flow}`).length).toBe(0);
       expect((await sql`select 1 from follow_up_steps where id = ${s.step}`).length).toBe(0);
     });
   });
@@ -185,7 +185,7 @@ describeDb("immutable identity and versions", () => {
     it("raises when a step moves from a draft into a published version", async () => {
       const w = await world();
       const s = await flowWithPublished(w);
-      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.flow}, 2, 'draft') returning id`;
       const [step] = await sql`
         insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${w.org}, ${draft.id}, 1, 'reply', 'Reply', 0, 'Draft text.') returning id`;
@@ -195,7 +195,7 @@ describeDb("immutable identity and versions", () => {
     it("keeps draft steps editable: delete and re-insert, as the store does", async () => {
       const w = await world();
       const s = await flowWithPublished(w);
-      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.sequence}, 2, 'draft') returning id`;
+      const [draft] = await sql`insert into follow_up_versions (organization_id, flow_id, version, status) values (${w.org}, ${s.flow}, 2, 'draft') returning id`;
       await sql`
         insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
         values (${w.org}, ${draft.id}, 1, 'reply', 'Reply', 0, 'v1')`;

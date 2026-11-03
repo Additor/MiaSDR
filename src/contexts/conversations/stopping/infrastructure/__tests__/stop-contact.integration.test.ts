@@ -4,7 +4,7 @@ import { holdLocks } from "@/test-support/deals-test-kit";
 import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import { STOP_TABLE, STOP_TRIGGERS, type StopTriggerKind } from "../../domain/stop-table";
 
-const RUN_DRAFT_ERROR = "The follow-up sequence ended.";
+const RUN_DRAFT_ERROR = "The follow-ups ended.";
 
 /**
  * Walks `STOP_TABLE` against real rows: each trigger ends exactly what its row says, and everything else stays. The world
@@ -126,7 +126,7 @@ describeDb("stopContactTx walks the trigger table", () => {
 
       // Runs end on every channel: an email_only trigger still ends this run on a LinkedIn thread.
       expect(await runState(w.reached.run)).toBe("interrupted");
-      const [runEvent] = await sql`select meta from events where organization_id = ${w.org} and conversation_id = ${w.reached.conversation} and event_type = 'sequence.interrupted'`;
+      const [runEvent] = await sql`select meta from events where organization_id = ${w.org} and conversation_id = ${w.reached.conversation} and event_type = 'follow_up.interrupted'`;
       expect(runEvent.meta).toEqual({ reason: row.runReason });
 
       expect(await draftState(w.reached.runDraft)).toMatchObject({ status: "stale", error: row.drafts === "all_open" ? row.draftError : RUN_DRAFT_ERROR });

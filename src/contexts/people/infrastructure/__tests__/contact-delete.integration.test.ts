@@ -104,15 +104,15 @@ describeDb("contact delete", () => {
     const attempt = await one(sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa-${t}`}, ${o.actors.member.userId}, 'prepared') returning id`);
     await sql`update send_attempts set status = 'sent' where id = ${attempt}`;
-    const sequence = await one(sql`insert into follow_up_flows (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
-    const version = await one(sql`insert into follow_up_versions (organization_id, flow_id, version) values (${o.org}, ${sequence}, 1) returning id`);
+    const flow = await one(sql`insert into follow_up_flows (organization_id, name) values (${o.org}, ${`Seq ${t}`}) returning id`);
+    const version = await one(sql`insert into follow_up_versions (organization_id, flow_id, version) values (${o.org}, ${flow}, 1) returning id`);
     const step = await one(sql`
       insert into follow_up_steps (organization_id, follow_up_version_id, position, step_type, name, delay_minutes, ai_instructions)
       values (${o.org}, ${version}, 1, 'reply', 'Step 1', 0, 'Write a short note.') returning id`);
     await sql`update follow_up_versions set status = 'published', published_at = now() where id = ${version}`;
     const run = await one(sql`
       insert into follow_up_runs (organization_id, conversation_id, thread_id, flow_id, follow_up_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
-      values (${o.org}, ${record}, ${thread}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
+      values (${o.org}, ${record}, ${thread}, ${flow}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
     await sql`
       insert into follow_up_step_runs (organization_id, follow_up_run_id, follow_up_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;

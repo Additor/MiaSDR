@@ -47,7 +47,7 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
   if (!next) {
     await tx.update(followUpRuns).set({ status: "completed", updatedAt: input.now }).where(and(eq(followUpRuns.id, input.runId), runMayBecome("completed")));
     await tx.execute(sql`update conversations set next_action_at = null, workflow_state = case when workflow_state = 'waiting' then 'idle' else workflow_state end where id = ${run.conversationId} and organization_id = ${input.organizationId}`);
-    await recordEvent(tx, { organizationId: input.organizationId, conversationId: run.conversationId, type: "sequence.completed", actorUserId: null, to: { followUpRunId: input.runId } });
+    await recordEvent(tx, { organizationId: input.organizationId, conversationId: run.conversationId, type: "follow_up.completed", actorUserId: null, to: { followUpRunId: input.runId } });
     return { next: null };
   }
   const due = dueAfter(input.from, next.delayMinutes, await organizationTimeZone(input.organizationId, tx));

@@ -260,12 +260,12 @@ export const drizzleFollowUpEngine: FollowUpEngineStore = {
           if (!sent) return false;
           await tx.update(followUpStepRuns).set({ status: "sent", sentMessageId: sent.id, lastError: null, updatedAt: now }).where(and(ofStep, stepMayBecome("sent")));
           await advanceRunTx(tx, { organizationId: row.organizationId, runId: sr.runId, afterPosition: sr.position, from: sent.sentAt, now });
-          await recordEvent(tx, { organizationId: row.organizationId, conversationId: sr.conversationId, type: "sequence.step_sent", actorUserId: null, to: { followUpRunId: sr.runId, position: sr.position, messageId: sent.id } });
+          await recordEvent(tx, { organizationId: row.organizationId, conversationId: sr.conversationId, type: "follow_up.step_sent", actorUserId: null, to: { followUpRunId: sr.runId, position: sr.position, messageId: sent.id } });
         } else if (sr.draftStatus === "discarded") {
           // A person discarded the draft: that step is handled, and the next waits its own delay from now.
           await tx.update(followUpStepRuns).set({ status: "skipped", updatedAt: now }).where(and(ofStep, stepMayBecome("skipped")));
           await advanceRunTx(tx, { organizationId: row.organizationId, runId: sr.runId, afterPosition: sr.position, from: now, now });
-          await recordEvent(tx, { organizationId: row.organizationId, conversationId: sr.conversationId, type: "sequence.step_skipped", actorUserId: null, to: { followUpRunId: sr.runId, position: sr.position, reason: "draft_discarded" } });
+          await recordEvent(tx, { organizationId: row.organizationId, conversationId: sr.conversationId, type: "follow_up.step_skipped", actorUserId: null, to: { followUpRunId: sr.runId, position: sr.position, reason: "draft_discarded" } });
         } else if (sr.draftStatus === "stale") {
           // Superseded or outdated by a context change that did not stop the run: draft the step again, a few times.
           if (sr.attemptCount >= MAX_DRAFT_ATTEMPTS) {
@@ -410,7 +410,7 @@ export const drizzleFollowUpEngine: FollowUpEngineStore = {
       if (late) {
         // A claim that still drafts the step adopts this draft as its orphan.
         if (late === "stopped" || step.status !== "drafting") {
-          await retireStepDraft(tx, claim, draftId, late === "stopped" ? "The follow-up sequence ended." : "The follow-up step moved on without this draft.", now);
+          await retireStepDraft(tx, claim, draftId, late === "stopped" ? "The follow-ups ended." : "The follow-up step moved on without this draft.", now);
         }
         return late;
       }
@@ -427,7 +427,7 @@ export const drizzleFollowUpEngine: FollowUpEngineStore = {
       await tx.execute(sql`
         update conversations set workflow_state = 'action_required', next_action_at = null
         where id = ${sr.conversationId} and organization_id = ${organizationId} and workflow_state in ('waiting', 'idle')`);
-      await recordEvent(tx, { organizationId, conversationId: sr.conversationId, type: "sequence.draft_created", actorUserId: null, to: { stepRunId, draftId } });
+      await recordEvent(tx, { organizationId, conversationId: sr.conversationId, type: "follow_up.draft_created", actorUserId: null, to: { stepRunId, draftId } });
       return "linked";
     });
   },
