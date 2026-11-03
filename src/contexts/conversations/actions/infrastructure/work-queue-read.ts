@@ -104,7 +104,6 @@ const queueRowsSql = (organizationId: string) => sql`
       from (
         select k.id, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name,
                kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode, k.response->>'holdReason' as hold_reason,
-               k.status = 'proposed' as proposed,
                k.status = 'proposed' and k.expected_context_version = r.context_version as held,
                k.status = 'auto_applied' and k.acknowledged_at is null
                  and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,

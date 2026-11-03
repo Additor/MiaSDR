@@ -146,6 +146,27 @@ describeDb("the agent send gate on a stop request", () => {
     expect((await add()).structured).toMatchObject({ enroll: { added: 1 } });
   });
 
+  it("keeps a person whose own words ask to stop out of a campaign before any pick reads them", async () => {
+    const thread = await conversation();
+    const made = await agent.tool("draft_campaign", { action: "create", channel: "email", name: `Words ${randomBytes(3).toString("hex")}` });
+    const add = await agent.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId: made.structured.campaignId as string, personIds: [thread.personId] });
+    expect(add.structured).toMatchObject({ enroll: { added: 0, skipped: { stopRequest: 1 } } });
+  });
+
+  it("keeps them out of the Tables handoff and a search's campaign, until a person reviews it", async () => {
+    const thread = await conversation();
+    const { enrollEmailPeople } = await import("@/contexts/outreach/infrastructure/composition");
+    const { enrollPeople } = await import("@/contexts/outreach/linkedin/infrastructure/linkedin-composition");
+    await sql`update people set linkedin_slug = ${`lena-${randomBytes(3).toString("hex")}`} where id = ${thread.personId}`;
+    const [{ id: email }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'email', ${`h${randomBytes(3).toString("hex")}`}, 'draft', ${sql.json([])}) returning id`;
+    const [{ id: linkedin }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'linkedin', ${`s${randomBytes(3).toString("hex")}`}, 'draft', ${sql.json([])}) returning id`;
+    expect(await enrollEmailPeople(org.organizationId, email, [thread.personId])).toBe(0);
+    expect(await enrollPeople(org.organizationId, linkedin, [thread.personId])).toBe(0);
+    await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) select organization_id, latest_inbound_message_id, now() from records where id = ${thread.recordId}`;
+    expect(await enrollEmailPeople(org.organizationId, email, [thread.personId])).toBe(1);
+    expect(await enrollPeople(org.organizationId, linkedin, [thread.personId])).toBe(1);
+  });
+
   describe("a held pick that does not ask to stop", () => {
     async function held(body = "Tell me more.") {
       const thread = await conversation(body);
@@ -160,6 +181,7 @@ describeDb("the agent send gate on a stop request", () => {
       const thread = await held();
       const answer = await agent.tool("set_reply_type", { action: "accept_pick", conversationId: thread.conversationId, expectedContextVersion: thread.v });
       expect(answer.isError).toBeFalsy();
+      expect(answer.structured).toMatchObject({ recordId: thread.recordId, contextVersion: thread.v + 1 });
       const [pick] = await sql`select status from reply_type_picks where record_id = ${thread.recordId} order by created_at desc limit 1`;
       expect(pick.status).toBe("accepted");
     });

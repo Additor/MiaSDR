@@ -50,4 +50,29 @@ describeDb("account keys across organizations", () => {
     expect(n).toBe(1);
     expect((await ingestInbound(mail(b.organizationId))).status).toBe("duplicate");
   });
+
+  it("keeps the same LinkedIn chat apart for each organization", async () => {
+    const { drizzleLinkedInConversationStore: store } = await import("../drizzle-linkedin-conversation-store");
+    const a = await createTestOrg(sql, "Old account owner");
+    const b = await createTestOrg(sql, "New account owner");
+    orgs.push(a, b);
+    const tag = randomBytes(4).toString("hex");
+    const chat = (organizationId: string) => ({
+      organizationId,
+      accountRef: `account-${tag}`,
+      accountName: null,
+      providerThreadId: `chat-${tag}`,
+      providerMessageId: `message-${tag}`,
+      counterparty: { providerId: `member-${tag}`, name: "Lena Lead", profileUrl: null, slug: `lena-${tag}` },
+      personId: null,
+      bodyText: "Tell me more.",
+      receivedAt: new Date(),
+    });
+    const first = await store.ingestLinkedIn(chat(a.organizationId));
+    const second = await store.ingestLinkedIn(chat(b.organizationId));
+    expect(first.status).toBe("created");
+    expect(second.status).toBe("created");
+    expect(second.status === "created" && first.status === "created" && second.conversationId !== first.conversationId).toBe(true);
+    expect((await store.ingestLinkedIn(chat(b.organizationId))).status).toBe("duplicate");
+  });
 });

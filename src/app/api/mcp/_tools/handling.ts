@@ -65,9 +65,14 @@ export const setReplyTypeTool = defineTool({
         replyTypeKey: input.action === "accept_pick" ? null : need(input.replyTypeKey, "replyTypeKey", input.action),
         expectedContextVersion: need(input.expectedContextVersion, "expectedContextVersion", input.action),
       });
+      const parts = [`Set to ${result.replyTypeKey}, version ${result.contextVersion}.`];
+      if (result.draftsRetired > 0) parts.push(`${result.draftsRetired} open draft(s) retired.`);
+      if (result.draftQueued) parts.push("A fresh draft is on its way.");
+      if (result.runEnded) parts.push("Follow-ups of the old type ended.");
+      if (result.runStarted) parts.push("Follow-ups started.");
       return {
-        summary: `Set to ${result.replyTypeKey}.${result.draftQueued ? " A fresh draft is on its way." : ""}`,
-        structured: { action: input.action, recordId: null, contextVersion: null, draftsRetired: 0, followUpsStarted: false, followUpsEnded: false },
+        summary: parts.join(" "),
+        structured: { action: input.action, recordId: result.recordId, contextVersion: result.contextVersion, draftsRetired: result.draftsRetired, followUpsStarted: result.runStarted, followUpsEnded: result.runEnded },
       };
     }
     const pickId = need(input.replyTypePickId, "replyTypePickId", input.action);

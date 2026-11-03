@@ -157,10 +157,10 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
             if (!enrollmentId) return false;
             const [matchedEnrollment] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)));
             // The person-wide stop, ahead of filing: a message that fails to file must not leave their other campaigns running.
-            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, channel: "email", now });
+            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId, channel: "email", now });
             return true;
           });
-          // After the sequence stopped: a replayed batch repeats both steps, and both are idempotent.
+          // After the sequence stopped. A replayed batch repeats both steps: the stop skips a filed message, and filing dedupes.
           const stored = await storeInInbox(inbox, mailbox, email, false);
           // Mail from a lead without thread headers has no matched send, but the sender-address stop still ended its enrollments.
           return matched || (stored.status === "created" && (stored.outreachStopped ?? 0) > 0) ? "reply" : "unmatched_message";

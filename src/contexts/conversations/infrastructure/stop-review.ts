@@ -1,9 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
-import { rowsOf } from "@/platform/db/sql-values";
 import type { AgentVia } from "@/shared/errors";
-import { detectsStopRequest } from "../domain/stop-request";
-import { pickAsksToStopSql } from "@/platform/db/stop-review-sql";
+import { pickAsksToStopSql, wordsAskToStopSql } from "@/platform/db/stop-review-sql";
 
 /**
  * The one writer of `stop_reviews` (`src/architecture/stop-review-writer.test.ts`). A person's decision about a record or a
@@ -24,15 +22,11 @@ export async function personReviewedStopsTx(
     from reply_type_picks k
     where k.organization_id = ${organizationId} and k.record_id = ${recordId} ${scope} and ${pickAsksToStopSql("k")}
     on conflict (message_id) do nothing`);
-  const [reply] = rowsOf<{ id: string; body: string | null }>(
-    await tx.execute(sql`
-      select m.id, m.body_text as body from messages m
-      where m.organization_id = ${organizationId}
-        and m.id = ${input.messageId ? sql`${input.messageId}::uuid` : sql`(select r.latest_inbound_message_id from records r where r.id = ${recordId} and r.organization_id = ${organizationId})`}`),
-  );
-  if (!reply || !detectsStopRequest(reply.body ?? "")) return;
+  const reply = input.messageId ? sql`${input.messageId}::uuid` : sql`(select r.latest_inbound_message_id from records r where r.id = ${recordId} and r.organization_id = ${organizationId})`;
   await tx.execute(sql`
     insert into stop_reviews (organization_id, message_id, reviewed_by, reviewed_at)
-    values (${organizationId}, ${reply.id}::uuid, ${actorUserId}::uuid, ${now.toISOString()}::timestamptz)
+    select m.organization_id, m.id, ${actorUserId}::uuid, ${now.toISOString()}::timestamptz
+    from messages m
+    where m.organization_id = ${organizationId} and m.id = ${reply} and ${wordsAskToStopSql("m")}
     on conflict (message_id) do nothing`);
 }

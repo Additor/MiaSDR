@@ -253,7 +253,7 @@ export interface ReplyStore {
    * A person's pick for the latest reply: `replyTypeKey: null` accepts the held AI pick, a key overrides it. The type's
    * rules decide the draft and follow-ups (`decideReplyType`). Accepting a held stop request answers 409 `stop_review`.
    */
-  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; via?: AgentVia }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
+  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; via?: AgentVia }): Promise<{ personId: string; recordId: string; contextVersion: number; groupKey: string; replyTypeKey: string; draftQueued: boolean; draftsRetired: number; runStarted: boolean; runEnded: boolean }>;
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 

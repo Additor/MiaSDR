@@ -463,7 +463,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
 
 /**
  * Enrolls specific people (found by a search) into a LinkedIn campaign. Skips people without a profile slug, member URL or member id, with
- * do-not-contact, contacts, or already enrolled, and does nothing for a completed or foreign campaign. Safe to repeat.
+ * do-not-contact, an open stop request, contacts, or already enrolled, and does nothing for a completed or foreign campaign. Safe to repeat.
  */
 export async function enrollPeopleCounted(organizationId: string, campaignId: string, personIds: string[], handle?: DbHandle): Promise<{ added: number; skippedContact: number }> {
   if (personIds.length === 0) return { added: 0, skippedContact: 0 };
@@ -475,7 +475,7 @@ export async function enrollPeopleCounted(organizationId: string, campaignId: st
     if (!campaign || campaign.status === "completed") return { added: 0, skippedContact: 0 };
 
     const dnc = doNotContactSql("people");
-    const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`);
+    const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`, sql`not ${personStopReviewOpenSql("people")}`);
     const eligible = await tx
       .select({ id: people.id, slug: people.linkedinSlug, url: people.linkedinUrl, memberId: sql<string | null>`${people.raw}->>'linkedin_member_id'` })
       .from(people)

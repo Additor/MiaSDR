@@ -161,7 +161,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         contextVersion: restart.contextVersion,
       });
       const draftQueued = wantsDraft ? await queuePickDraftTx(tx, { organizationId: input.organizationId, replyTypePickId, contextVersion: restart.contextVersion }) : false;
-      return { personId: head.personId, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued };
+      return { personId: head.personId, recordId: head.recordId, contextVersion: restart.contextVersion, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued, draftsRetired: restart.draftsRetired, runStarted: restart.runStarted, runEnded: restart.runsEnded > 0 };
     });
   },
 

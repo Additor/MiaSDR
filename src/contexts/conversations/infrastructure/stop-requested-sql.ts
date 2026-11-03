@@ -26,16 +26,9 @@ export async function replyAskedToStop(exec: DbHandle, messageId: string | null)
   return row?.asked === true || detectsStopRequest(row?.body ?? "");
 }
 
-/**
- * The agent send gate's question about a reply: did it ask to stop, with no person's review since. Its own words count before
- * any pick reads them, so an agent cannot answer in the gap before classification, or where no AI provider ever reads it.
- */
+/** The agent send gate's question about a reply: did it ask to stop, with no person's review since (`stopReviewOpenSql`). */
 export async function stopReviewOpen(exec: DbHandle, messageId: string | null): Promise<boolean> {
   if (!messageId) return false;
-  const [row] = rowsOf<{ open: boolean; reviewed: boolean; body: string | null }>(
-    await exec.execute(sql`select ${stopReviewOpenSql(sql`${messageId}::uuid`)} as open,
-      exists (select 1 from stop_reviews sr where sr.message_id = ${messageId}::uuid) as reviewed,
-      (select m.body_text from messages m where m.id = ${messageId}::uuid) as body`),
-  );
-  return row?.open === true || (row?.reviewed === false && detectsStopRequest(row.body ?? ""));
+  const [row] = rowsOf<{ open: boolean }>(await exec.execute(sql`select ${stopReviewOpenSql(sql`${messageId}::uuid`)} as open`));
+  return row?.open === true;
 }

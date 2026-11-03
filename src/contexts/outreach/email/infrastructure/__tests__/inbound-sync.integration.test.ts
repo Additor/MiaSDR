@@ -189,6 +189,20 @@ describeDb("inbound mail sync", () => {
     expect(conversation.provider_thread_id).toBe(row.thread_id);
   });
 
+  it("leaves an enrollment made after the reply running when the batch replays", async () => {
+    const f = await sentFixture();
+    const row = await sendRow(f.enrollmentIds[0]);
+    f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, sendId: row.id, threadId: row.thread_id });
+    const cursorBefore = (await mailboxRow(f.mailbox)).gmail_history_cursor;
+    await sync.syncMailboxInbox(inbox(f.provider), f.mailbox);
+    const status = async () => (await sql`select status from campaign_enrollments where id = ${f.enrollmentIds[0]}`)[0].status;
+    expect(await status()).toBe("replied");
+    await sql`update campaign_enrollments set status = 'active' where id = ${f.enrollmentIds[0]}`;
+    await sql`update mailboxes set gmail_history_cursor = ${cursorBefore} where id = ${f.mailbox}`;
+    await sync.syncMailboxInbox(inbox(f.provider), f.mailbox);
+    expect(await status()).toBe("active");
+  });
+
   it("stores an auto-reply flagged, and skips bounces and our own messages", async () => {
     const f = await sentFixture();
     f.provider.deliverInbound(f.address, { from: { email: f.emails[0], name: null }, headers: { "auto-submitted": "auto-replied" }, subject: "Automatic reply: Hi" });

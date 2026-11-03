@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { conversations, leadCcs, mailboxes, messages, people, replyTypeSets, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_REPLY_TYPES } from "../domain/default-reply-types";
+import { detectsStopRequest } from "../domain/stop-request";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
@@ -145,7 +146,7 @@ export const drizzleConversationStore: InboundConversationStore = {
           fromAddress: input.from.email,
           toAddress: input.to.join(", ") || null,
           bodyText: input.bodyText,
-          raw: { autoReply: input.autoReply, rfcMessageId: input.rfcMessageId, inReplyTo: input.inReplyTo, fromName: input.from.name, ...(input.cc?.length ? { cc: normalizeCcList(input.cc) } : {}), ...(input.possibleBounce ? { possibleBounce: true } : {}) },
+          raw: { autoReply: input.autoReply, ...(detectsStopRequest(input.bodyText) ? { stopAsked: true } : {}), rfcMessageId: input.rfcMessageId, inReplyTo: input.inReplyTo, fromName: input.from.name, ...(input.cc?.length ? { cc: normalizeCcList(input.cc) } : {}), ...(input.possibleBounce ? { possibleBounce: true } : {}) },
           sentAt: input.receivedAt,
         })
         .onConflictDoNothing()
