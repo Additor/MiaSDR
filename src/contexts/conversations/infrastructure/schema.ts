@@ -446,7 +446,7 @@ export const drafts = pgTable(
     editedBodyText: text("edited_body_text"),
     /** CC recipients the human chose for this reply (lowercased addresses from lead_ccs). Empty by default. */
     cc: text("cc").array().notNull().default(sql`'{}'::text[]`),
-    status: text("status").$type<DraftStatus>().notNull().default("generating"),
+    status: text("status").$type<DraftStatus>().notNull().default("awaiting_review"),
     provider: text("provider"),
     model: text("model"),
     request: jsonb("request").$type<unknown>(),

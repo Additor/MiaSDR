@@ -23,7 +23,6 @@ const ACTIVITY_SHOWN = 12;
 /** Draft history wording. It differs from the reply panel's status badge, which names the draft in front of you. */
 const DRAFT_STATUS: Record<string, string> = {
   awaiting_review: "Waits for review",
-  generating: "Being written",
   sending: "Sending",
   sent: "Sent",
   discarded: "Discarded",

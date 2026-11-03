@@ -3,7 +3,7 @@ import { draftStatusLabel, replyTypeSourceTip } from "./labels";
 
 describe("inbox labels", () => {
   it("names every draft status without underscores", () => {
-    for (const status of ["generating", "awaiting_review", "sending", "sent", "discarded", "stale", "failed", "delivery_uncertain"]) {
+    for (const status of ["awaiting_review", "sending", "sent", "discarded", "stale", "failed", "delivery_uncertain"]) {
       expect(draftStatusLabel(status)).not.toMatch(/_/);
     }
     expect(draftStatusLabel("awaiting_review")).toBe("Awaiting review");

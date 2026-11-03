@@ -1311,7 +1311,7 @@ describeDb("Follow-ups after a reply flows", () => {
     /** Every draft of the run is retired or was never written once the run is stopped. */
     const expectNoLiveDraft = async (f: Fx, runId: string) => {
       expect(await one("select status from follow_up_runs where id = $1", [runId])).toMatchObject({ status: "interrupted" });
-      expect(await count("drafts", f.org, `status in ('generating', 'awaiting_review') and request->>'followUpRunId' = '${runId}'`)).toBe(0);
+      expect(await count("drafts", f.org, `status = 'awaiting_review' and request->>'followUpRunId' = '${runId}'`)).toBe(0);
       expect(await count("follow_up_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
     };
 

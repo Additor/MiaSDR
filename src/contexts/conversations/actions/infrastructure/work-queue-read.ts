@@ -88,7 +88,7 @@ const queueRowsSql = (organizationId: string) => sql`
             and exists (select 1 from reply_type_picks c where c.id = j.entity_id and c.conversation_id = r.id and c.message_id = r.latest_inbound_message_id
                           and c.expected_context_version = r.context_version and c.status not in ('stale', 'rejected')))
         )
-        and not exists (select 1 from drafts d where d.conversation_id = r.id and d.status in ('generating', 'awaiting_review', 'sending', 'sent') and d.created_at >= j.created_at)
+        and not exists (select 1 from drafts d where d.conversation_id = r.id and d.status in ('awaiting_review', 'sending', 'sent') and d.created_at >= j.created_at)
       order by j.failed_at desc limit 1
     ) fj on true
     left join lateral (

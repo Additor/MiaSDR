@@ -7062,7 +7062,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'generating'"
+          "default": "'awaiting_review'"
         },
         "provider": {
           "name": "provider",
@@ -7279,7 +7279,7 @@
         },
         "drafts_status_ck": {
           "name": "drafts_status_ck",
-          "value": "\"drafts\".\"status\" in ('generating', 'awaiting_review', 'sending', 'sent', 'discarded', 'stale', 'failed', 'delivery_uncertain')"
+          "value": "\"drafts\".\"status\" in ('awaiting_review', 'sending', 'sent', 'discarded', 'stale', 'failed', 'delivery_uncertain')"
         },
         "drafts_channel_ck": {
           "name": "drafts_channel_ck",
