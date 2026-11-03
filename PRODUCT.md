@@ -28,7 +28,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Follow-ups in progress:** the runs of Follow-ups after a reply that have not ended.
 - **Lead status:** where a lead stands in outreach. One of New (in no campaign), Queued (waits for its first step), In sequence (inside the campaign's steps), Paused (its campaign is not running), Replied, Finished (every step went out, no reply) or Stopped (a bounce, a suppression, a failure or a cancellation cut it short). Leads only: a contact has no lead status.
 - **In sequence:** the lead status for a lead inside the campaign's steps.
-- **Reachability:** which channels can reach a person, kept apart from the lead status. The term stays internal; the UI shows "Do not contact" (no channel) and "Email suppressed" (email only, LinkedIn stays open).
+- **Reachability:** which channels can reach a person, kept apart from the lead status. The term stays internal; the UI shows "Do not contact" (no channel), "Email suppressed" and "LinkedIn blocked" (an address that unsubscribed or was added by hand; a bounced address leaves LinkedIn open).
 - **Lead:** a person you are trying to reach, including an unknown sender who wrote first. Leads live in Leads, outside the CRM.
 - **Contact:** a person you do business with. Add contact creates one, with or without a deal. A lead becomes a contact when you create a deal from it or make it a contact. Contacts cannot join a campaign and never go back to Leads. A contact without an open deal can be deleted.
 - **Company:** the employer of a lead or a contact, identified by its domain. Companies lists a company once it enters the CRM (see Listed in Companies). Two companies can merge, and a company with no people can be deleted.

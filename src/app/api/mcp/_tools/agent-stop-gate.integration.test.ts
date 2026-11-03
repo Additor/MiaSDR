@@ -154,16 +154,19 @@ describeDb("the agent send gate on a stop request", () => {
 
   it("keeps them out of the Tables handoff and a search's campaign, until a person reviews it", async () => {
     const thread = await seedThread();
-    const { enrollEmailPeople } = await import("@/contexts/outreach/infrastructure/composition");
-    const { enrollPeople } = await import("@/contexts/outreach/linkedin/infrastructure/linkedin-composition");
+    const { enrollPickedTx } = await import("@/contexts/outreach/infrastructure/composition");
+    const { enrollFoundPeople } = await import("@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store");
+    const { db } = await import("@/platform/db/client");
+    const enrollEmail = async (ids: string[], campaign: string) => (await db.transaction((tx) => enrollPickedTx(tx, org.organizationId, campaign, "email", ids, { viaTokenId: null }))).added;
+    const enrollFound = async (ids: string[], campaign: string) => (await enrollFoundPeople(org.organizationId, campaign, ids)).added;
     await sql`update people set linkedin_slug = ${`lena-${randomBytes(3).toString("hex")}`} where id = ${thread.personId}`;
     const [{ id: email }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'email', ${`h${randomBytes(3).toString("hex")}`}, 'draft', ${sql.json([])}) returning id`;
     const [{ id: linkedin }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'linkedin', ${`s${randomBytes(3).toString("hex")}`}, 'draft', ${sql.json([])}) returning id`;
-    expect(await enrollEmailPeople(org.organizationId, email, [thread.personId])).toBe(0);
-    expect(await enrollPeople(org.organizationId, linkedin, [thread.personId])).toBe(0);
+    expect(await enrollEmail([thread.personId], email)).toBe(0);
+    expect(await enrollFound([thread.personId], linkedin)).toBe(0);
     await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) select organization_id, latest_inbound_message_id, now() from conversations where id = ${thread.conversationId}`;
-    expect(await enrollEmailPeople(org.organizationId, email, [thread.personId])).toBe(1);
-    expect(await enrollPeople(org.organizationId, linkedin, [thread.personId])).toBe(1);
+    expect(await enrollEmail([thread.personId], email)).toBe(1);
+    expect(await enrollFound([thread.personId], linkedin)).toBe(1);
   });
 
   describe("a held pick that does not ask to stop", () => {

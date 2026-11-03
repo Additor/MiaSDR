@@ -41,10 +41,10 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
 import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { failedOutcome, isLiveEnrollment, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
-import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
 
@@ -328,9 +328,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   async checkBlockers(claim) {
     // A reply, a removal or a suppression can land between the claim and the send.
     const [enrollment] = await db.select({ status: campaignEnrollments.status }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
-    if (!enrollment || !LIVE.includes(enrollment.status as "pending" | "active")) return "enrollment_stopped";
+    if (!enrollment || !isLiveEnrollment(enrollment.status)) return "enrollment_stopped";
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
+    if (await isLinkedinBlockedBySuppression(db, claim.organizationId, claim.person.id)) return "suppressed";
     return (await isDoNotContact(db, claim.organizationId, claim.person.id)) ? "do_not_contact" : null;
   },
 

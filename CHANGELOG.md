@@ -22,6 +22,10 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 
 ### Changed
 
+- An address on the suppression list because it unsubscribed or was added by hand now blocks LinkedIn too: new enrollment skips its owners, a restore refuses them, the next campaign step does not go out, and the person's LinkedIn shows as blocked with the reason. A bounced address still blocks email only.
+- Every enroll path reads one rule, so a dry run and the enroll it previews answer the same counts. A lead removed earlier now counts as removed, not as a duplicate, in an enroll by search. A person who fits two reasons counts once. A lead with only a Sales Navigator or Recruiter URL can now be added by id, as a search already could. Dry runs by id answer `added: 0` and `wouldAdd`.
+- The campaign list's stopped count means what the campaign page means: bounced, suppressed, failed or cancelled. A removed lead no longer counts as stopped.
+- An automated message no longer marks one thread unread when the Inbox list does not.
 - One install now serves one organization. First-run setup creates it, and the server refuses another. Creating and switching organizations are gone. `AUTH_SIGNUP` is removed, so accounts need an invitation. `MAILBOX_ALLOWED_DOMAINS` stays optional.
 - AI picks follow one fixed rule: a pick waits for a person only for a stop request, confidence under 85%, or a move out of Existing customer. Every other pick applies at once, and Change type or Undo corrects it. Reply types are fixed, and Settings > Reply handling lists them read-only. Looks right, Check before and after, the confidence floor setting and the MCP `confirm_pick` action are gone.
 - Every LinkedIn reply now lands in the Inbox and Actions and reaches the AI. Personal campaigns are gone, along with the MCP fields `personal`, `hiddenSends` and the campaign list's `type`, and the refusal `agent_sender_not_owned`.

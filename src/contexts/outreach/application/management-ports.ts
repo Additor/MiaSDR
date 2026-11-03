@@ -2,6 +2,7 @@ import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import type { DbHandle } from "@/platform/db/client";
 import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
+import type { EnrollSkipCounts } from "../domain/enrollment-eligibility";
 import type { WorkingHours } from "../domain/working-hours";
 import type { MailboxStatus } from "../domain/mailbox-status";
 
@@ -12,9 +13,9 @@ export interface CampaignSummary {
   steps: number;
   enrolled: number;
   sent: number;
-  /** Leads that answered. Also counted in `stopped`. */
+  /** Leads that answered. */
   replied: number;
-  /** Replied, bounced, suppressed, failed or cancelled: out of the sequence before finishing. */
+  /** Leads the lead status calls Stopped (`STOPPED_ENROLLMENT_STATUSES`). */
   stopped: number;
   completed: number;
   /** Sends the provider never confirmed, older than the grace period. A person has to settle them. */
@@ -59,19 +60,11 @@ export interface EnrollmentRow {
   stopReason: string | null;
 }
 
-export interface EnrollResult {
+export interface EnrollResult extends EnrollSkipCounts {
   /** People the query matched, or the ids a person picked. */
   requested: number;
-  skippedMissingIdentity: number;
-  skippedDuplicate: number;
   added: number;
   alreadyEnrolled: number;
-  skippedSuppressed: number;
-  skippedDoNotContact: number;
-  /** The latest reply reads as a request to stop and no person reviewed it. */
-  skippedStopRequest: number;
-  /** Contacts are not enrolled in campaigns. */
-  skippedContact: number;
   skippedNoEmail: number;
   /** Dry run only: people the same call would enroll, up to the limit. */
   wouldAdd?: number;

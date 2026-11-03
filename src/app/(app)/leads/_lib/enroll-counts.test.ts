@@ -8,9 +8,9 @@ describe("enroll counts", () => {
     expect(total).toEqual({ ...ZERO_COUNTS, requested: 510, added: 507, skippedContact: 3 });
   });
 
-  it("lists only the nonzero skip reasons, in dialog order", () => {
+  it("lists only the nonzero skip reasons, in order of precedence", () => {
     const counts = { ...ZERO_COUNTS, requested: 9, skippedDuplicate: 1, skippedMissingIdentity: 2, skippedNotFound: 3 };
-    expect(skipReasons(counts, "email")).toEqual(["1 already in the campaign", "2 without an email", "3 no longer exist"]);
+    expect(skipReasons(counts, "email")).toEqual(["2 without an email", "1 already in the campaign", "3 no longer exist"]);
     expect(skipReasons(ZERO_COUNTS, "email")).toEqual([]);
   });
 

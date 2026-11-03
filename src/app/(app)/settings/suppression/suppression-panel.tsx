@@ -77,7 +77,7 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
     <div>
       <div className="stack-group pb-section">
         <p className="text-sm text-muted-foreground">
-          Campaigns and replies never email an address on this list. An unsubscribe link, a verified bounce and Suppress in the Inbox add to it. LinkedIn stays open: use Do not contact on a person to stop every channel.
+          Campaigns and replies never email an address on this list. An unsubscribe link, a verified bounce and Suppress in the Inbox add to it. An address that unsubscribed or was added by hand also closes LinkedIn campaigns to its owners; a bounce does not. Use Do not contact on a person to stop every channel.
         </p>
         {!canManage && <AdminNotice action="add or remove addresses" />}
       </div>

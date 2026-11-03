@@ -8,6 +8,8 @@
  * or stopped (cut short by a bounce, a suppression, a failure or a cancellation).
  */
 
+import { isLiveEnrollment, STOPPED_ENROLLMENT_STATUSES } from "./enrollment-status";
+
 export const LEAD_STATES = ["new", "queued", "in_sequence", "paused", "replied", "finished", "stopped"] as const;
 export type LeadState = (typeof LEAD_STATES)[number];
 
@@ -65,7 +67,7 @@ export const NEW_LEAD_STATUS: LeadStatus = { state: "new", enrollment: null, oth
  */
 export type ReadLeadStatuses = (organizationId: string, personIds: readonly string[]) => Promise<Map<string, LeadStatus>>;
 
-const STOPPED = new Set(["bounced", "suppressed", "failed", "cancelled"]);
+const STOPPED = new Set<string>(STOPPED_ENROLLMENT_STATUSES);
 
 /** Newest `updatedAt` first, then the higher id, so the pick does not flip between renders. */
 function newest(facts: readonly LeadEnrollmentFact[]): LeadEnrollmentFact | null {
@@ -83,7 +85,7 @@ export function latestContact(messageAt: Date | null, facts: readonly Pick<LeadE
 }
 
 /** A `pending` or `active` enrollment of a campaign that is not active (paused, or still a draft) sends nothing until the campaign runs. */
-export const heldByCampaign = (status: string, campaignStatus: string): boolean => (status === "active" || status === "pending") && campaignStatus !== "active";
+export const heldByCampaign = (status: string, campaignStatus: string): boolean => isLiveEnrollment(status) && campaignStatus !== "active";
 
 /**
  * The lead's status from its enrollments, its latest outbound message and whether it wrote in a
@@ -118,7 +120,7 @@ export function leadStatus(input: { enrollments: readonly LeadEnrollmentFact[]; 
   const replied = newest(live.filter((e) => e.status === "replied"));
   if (replied || input.hasInbound) return result("replied", replied);
 
-  const running = live.filter((e) => e.status === "active" || e.status === "pending");
+  const running = live.filter((e) => isLiveEnrollment(e.status));
   const campaignActive = (e: LeadEnrollmentFact) => e.campaignStatus === "active";
   const sending = newest(running.filter((e) => e.status === "active" && campaignActive(e)));
   if (sending) return result("in_sequence", sending);

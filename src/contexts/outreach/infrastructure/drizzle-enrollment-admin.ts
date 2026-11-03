@@ -1,17 +1,12 @@
 import { and, asc, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
 import { db, inTransaction } from "@/platform/db/client";
-import { campaignEnrollments, campaignSenders, campaigns, linkedinAccounts, linkedinEnrollmentDetails, mailboxes, people } from "@/platform/db/schema";
+import { campaignEnrollments, campaignSenders, campaigns, linkedinAccounts, linkedinEnrollmentDetails, mailboxes } from "@/platform/db/schema";
 import type { EnrollmentAdminStore, OutreachChannel, SenderRef } from "../application/enrollment-admin";
 import { REMOVED_STATUS, canRemoveEnrollment } from "../domain/enrollment-status";
 import { endEnrollmentsTx } from "./enrollment-end";
-import { profileUrlFor } from "../linkedin/domain/linkedin";
-import { insertSkippingContacts, notContactSql } from "./contact-guard";
-import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { enrollPickedTx } from "./enrollment-eligibility";
 import { SEND_COUNTED } from "../domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
-
-const CHUNK = 500;
 
 const senderLabel = (channel: OutreachChannel) =>
   channel === "email"
@@ -21,75 +16,8 @@ const senderLabel = (channel: OutreachChannel) =>
 const toRef = (row: { id: string; label: string; status: string }): SenderRef => ({ id: row.id, label: row.label, connected: row.status === "connected" });
 
 export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
-  async enrollPicked(organizationId, campaignId, channel, personIds, viaTokenId, handle) {
-    const ids = [...new Set(personIds)];
-    return inTransaction(handle, async (tx) => {
-      const suppressed = sql<boolean>`${suppressedSql("people")}`;
-      const dnc = sql<boolean>`${doNotContactSql("people")}`;
-      const stopOpen = sql<boolean>`${personStopReviewOpenSql("people")}`;
-      // Qualified by hand: a single-table select renders bare column names, which a subquery would bind to its own table.
-      const already = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status <> 'removed')`;
-      const removed = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status = 'removed')`;
-      const contact = sql<boolean>`not ${notContactSql}`;
-      const found = new Map<string, { id: string; hasIdentity: boolean; slug: string | null; suppressed: boolean; dnc: boolean; stopOpen: boolean; contact: boolean; already: boolean; removed: boolean }>();
-      for (let i = 0; i < ids.length; i += CHUNK) {
-        const rows = await tx
-          .select({
-            id: people.id,
-            slug: people.linkedinSlug,
-            hasEmail: sql<boolean>`people.email is not null`,
-            suppressed,
-            dnc,
-            stopOpen,
-            contact,
-            already,
-            removed,
-          })
-          .from(people)
-          // The organization filter is what keeps an id of another organization out. It reads as not found.
-          .where(and(eq(people.organizationId, organizationId), inArray(people.id, ids.slice(i, i + CHUNK))));
-        for (const r of rows) found.set(r.id, { id: r.id, slug: r.slug, hasIdentity: channel === "email" ? r.hasEmail : r.slug !== null, suppressed: channel === "email" && r.suppressed, dnc: r.dnc, stopOpen: r.stopOpen, contact: r.contact, already: r.already, removed: r.removed });
-      }
-
-      const counts = { requested: ids.length, added: 0, skippedMissingIdentity: 0, skippedDuplicate: 0, skippedRemoved: 0, skippedSuppressed: 0, skippedDoNotContact: 0, skippedStopRequest: 0, skippedContact: 0, skippedNotFound: 0 };
-      const eligible: Array<{ id: string; slug: string | null }> = [];
-      for (const id of ids) {
-        const p = found.get(id);
-        if (!p) counts.skippedNotFound += 1;
-        else if (!p.hasIdentity) counts.skippedMissingIdentity += 1;
-        else if (p.removed) counts.skippedRemoved += 1;
-        else if (p.already) counts.skippedDuplicate += 1;
-        else if (p.suppressed) counts.skippedSuppressed += 1;
-        else if (p.dnc) counts.skippedDoNotContact += 1;
-        else if (p.stopOpen) counts.skippedStopRequest += 1;
-        else if (p.contact) counts.skippedContact += 1;
-        else eligible.push(p);
-      }
-      eligible.sort((a, b) => (a.id < b.id ? -1 : 1));
-
-      for (let i = 0; i < eligible.length; i += CHUNK) {
-        const chunk = eligible.slice(i, i + CHUNK);
-        const slugOf = new Map(chunk.map((p) => [p.id, p.slug as string]));
-        const { inserted, skippedContact } = await insertSkippingContacts(tx, organizationId, chunk.map((p) => p.id), (sp, ids) =>
-          sp
-            .insert(campaignEnrollments)
-            .values(ids.map((personId) => ({ organizationId, campaignId, personId, channel, enrolledViaTokenId: viaTokenId })))
-            .onConflictDoNothing()
-            .returning({ id: campaignEnrollments.id, personId: campaignEnrollments.personId }),
-        );
-        if (channel === "linkedin" && inserted.length > 0) {
-          await tx
-            .insert(linkedinEnrollmentDetails)
-            .values(inserted.map((e) => ({ enrollmentId: e.id, organizationId, profileUrl: profileUrlFor(slugOf.get(e.personId) as string) })))
-            .onConflictDoNothing();
-        }
-        counts.added += inserted.length;
-        counts.skippedContact += skippedContact;
-        // A concurrent enroll of the same person won the insert.
-        counts.skippedDuplicate += chunk.length - skippedContact - inserted.length;
-      }
-      return counts;
-    });
+  enrollPicked(organizationId, campaignId, channel, personIds, options, handle) {
+    return inTransaction(handle, (tx) => enrollPickedTx(tx, organizationId, campaignId, channel, personIds, options));
   },
 
   async removeEnrollments(organizationId, campaignId, channel, enrollmentIds, now) {

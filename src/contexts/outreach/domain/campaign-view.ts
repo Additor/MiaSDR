@@ -103,9 +103,9 @@ export function campaignSummary(input: { channel: OutreachChannelName; counts: T
   ];
 }
 
-/** Progress text of a campaign row. `stopped` excludes replies, which have their own count. */
+/** Progress text of a campaign row. Its words count what the same words count on the campaign's page. */
 export function emailProgressText(c: { sent: number; replied: number; completed: number; stopped: number }): string {
-  return `${num(c.sent)} sent, ${num(c.replied)} replied, ${num(c.completed)} finished, ${num(Math.max(0, c.stopped - c.replied))} stopped`;
+  return `${num(c.sent)} sent, ${num(c.replied)} replied, ${num(c.completed)} finished, ${num(c.stopped)} stopped`;
 }
 
 export function linkedinProgressText(c: { invited: number; connected: number; replied: number }): string {

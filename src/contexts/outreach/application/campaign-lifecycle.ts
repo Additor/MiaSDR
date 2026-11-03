@@ -229,7 +229,7 @@ export async function enrollPickedOn<Step, Row extends CampaignRow<Step>, Enroll
   if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
   if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
   return enrollUnder(deps.campaigns, async (t) => (await loadCampaign(deps.campaigns, actor, id, t)).status, options, tx, (t) =>
-    adminStore(deps).enrollPicked(actor.organizationId, id, channel, personIds, actor.via?.tokenId ?? null, t),
+    adminStore(deps).enrollPicked(actor.organizationId, id, channel, personIds, { viaTokenId: actor.via?.tokenId ?? null, dryRun: options.dryRun }, t),
   );
 }
 

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import type { Reachability } from "@/contexts/people/domain/reachability";
 import { cn } from "@/components/ui/utils";
-import { DoNotContactTip, SuppressedTip } from "./reach-icons";
+import { DoNotContactTip, LinkedInBlockedTip, SuppressedTip } from "./reach-icons";
 import { StateTip } from "./state-tip";
 
 const linkClasses =
@@ -14,7 +14,8 @@ const textClasses = "inline-flex min-h-6 items-center gap-1.5 text-sm";
 /**
  * The reach row of a record header: Email, LinkedIn and phone as links, each showing its own state. A person marked do
  * not contact gets a neutral badge in front, with the reason and date on hover and focus, and the links read muted. A
- * suppressed address keeps its link, crossed out, with the reason on hover and focus; LinkedIn stays open. The contact
+ * suppressed address keeps its link, crossed out, with the reason on hover and focus, and so does a profile whose
+ * address's suppression reason closes LinkedIn. A bounced address leaves LinkedIn open. The contact
  * points come from `leadContactPoints`, as in `ReachIcons`, so a missing or unsafe address or profile is left out. A phone
  * that cannot make a safe link prints as plain text.
  */
@@ -38,7 +39,18 @@ export function ReachLinks({ reach, contact, phone, phoneHref }: { reach: Reacha
       </a>,
     );
   }
-  if (linkedin) {
+  if (linkedin && reach.linkedin.state === "blocked") {
+    items.push(
+      <StateTip
+        key="linkedin"
+        trigger={<a href={linkedin.href} target="_blank" rel="noopener noreferrer" className={cn(linkClasses, "text-muted-foreground")} data-testid="reach-linkedin-blocked" />}
+        tip={<LinkedInBlockedTip linkedin={reach.linkedin} />}
+      >
+        <span className="line-through">LinkedIn profile</span>
+        <span className="sr-only">(opens in a new tab)</span>
+      </StateTip>,
+    );
+  } else if (linkedin) {
     items.push(
       <a key="linkedin" href={linkedin.href} target="_blank" rel="noopener noreferrer" className={cn(linkClasses, tone)}>
         LinkedIn profile

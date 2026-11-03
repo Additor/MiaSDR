@@ -1,24 +1,21 @@
 import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
-import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError } from "@/shared/errors";
 import { campaignEnrollments, campaigns, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
 import { STEPS_EDITABLE, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type StepInput } from "../domain/campaign";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { buildVariables } from "../domain/variables";
-import type { EnrollmentStatus } from "../domain/enrollment-status";
+import { REMOVED_STATUS, STOPPED_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { enrollmentVariableColumns, personVariableColumns } from "./enrollment-variables";
 import { UNCONFIRMED_AFTER_MINUTES } from "../application/campaign-management";
-import { insertSkippingContacts, notContactSql } from "./contact-guard";
+import { enrollByQueryTx } from "./enrollment-eligibility";
 import type { SendResolutionStore } from "../application/send-resolution";
 import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
 import { inboxThreadsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
-import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../domain/send-status";
 
@@ -63,44 +60,6 @@ export async function unconfirmedSendsOf(channel: "email" | "linkedin", organiza
   return { total, rows: rows.map((r) => ({ ...r, enrollmentId: r.enrollmentId as string, stepNumber: r.stepNumber as number })) };
 }
 
-/** Every outcome but completion: the campaign row counts these as stopped, replies included. */
-const STOPPED: readonly EnrollmentStatus[] = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
-
-/**
- * Enrolls specific people into an email campaign. Skips contacts and people with an open stop request; suppression and
- * do-not-contact are the caller's rules (the Grid handoff checks them first). Safe to repeat.
- */
-export async function enrollEmailPeopleCounted(organizationId: string, campaignId: string, personIds: string[], tx?: DbHandle): Promise<{ added: number; skippedContact: number }> {
-  const ids = [...new Set(personIds)].sort();
-  let added = 0;
-  let skippedContact = 0;
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
-    const { inserted } = await insertSkippingContacts(tx ?? db, organizationId, chunk, async (sp, keep) => {
-      const rows = await sp.execute<{ id: string }>(sql`
-        insert into campaign_enrollments (organization_id, campaign_id, person_id, channel)
-        select people.organization_id, ${campaignId}::uuid, people.id, 'email' from people
-        where people.organization_id = ${organizationId} and people.id in (${sql.join(keep.map((id) => sql`${id}::uuid`), sql`, `)}) and ${notContactSql} and not ${personStopReviewOpenSql("people")}
-        order by people.id
-        on conflict do nothing
-        returning id`);
-      return [...rows];
-    });
-    added += inserted.length;
-    // Counted after the insert: a person who became a contact meanwhile is in the count, never missing from it.
-    const [{ n }] = await (tx ?? db)
-      .select({ n: sql<number>`count(*)::int` })
-      .from(people)
-      .where(and(eq(people.organizationId, organizationId), inArray(people.id, chunk), sql`not ${notContactSql}`));
-    skippedContact += n;
-  }
-  return { added, skippedContact };
-}
-
-export async function enrollEmailPeople(organizationId: string, campaignId: string, personIds: string[], tx?: DbHandle): Promise<number> {
-  return (await enrollEmailPeopleCounted(organizationId, campaignId, personIds, tx)).added;
-}
-
 /** A step edit lands only while the campaign is still editable, so a launch that commits first makes the edit miss. */
 export const stepsStillEditable = (patch: { steps?: unknown }) => (patch.steps === undefined ? undefined : inArray(campaigns.status, [...STEPS_EDITABLE]));
 
@@ -128,8 +87,8 @@ export const drizzleCampaignStore: CampaignStore = {
         steps: sql<number>`jsonb_array_length(${campaigns.steps})::int`,
         archivedAt: campaigns.archivedAt,
         createdAt: campaigns.createdAt,
-        enrolled: sql<number>`count(${campaignEnrollments.id})::int`,
-        stopped: sql<number>`(count(${campaignEnrollments.id}) filter (where ${inArray(campaignEnrollments.status, STOPPED)}))::int`,
+        enrolled: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} <> ${REMOVED_STATUS}))::int`,
+        stopped: sql<number>`(count(${campaignEnrollments.id}) filter (where ${inArray(campaignEnrollments.status, [...STOPPED_ENROLLMENT_STATUSES])}))::int`,
         replied: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} = 'replied'))::int`,
         completed: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} = 'completed'))::int`,
       })
@@ -219,86 +178,10 @@ export const drizzleCampaignStore: CampaignStore = {
     return rows.length > 0;
   },
 
-  async enroll(organizationId, id, filter, handle): Promise<EnrollResult> {
-    const search = leadSearchCondition(filter.query);
-    const matching = and(eq(people.organizationId, organizationId), search);
-
+  enroll(organizationId, id, filter, handle): Promise<EnrollResult> {
     return inTransaction(handle, async (tx) => {
-      const suppressed = suppressedSql("people");
-      const dnc = doNotContactSql("people");
-      const stopOpen = personStopReviewOpenSql("people");
-      const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
-
-      const [skipped] = await tx
-        .select({
-          matched: sql<number>`count(*)::int`,
-          noEmail: sql<number>`(count(*) filter (where ${people.email} is null))::int`,
-          suppressed: sql<number>`(count(*) filter (where ${people.email} is not null and ${suppressed}))::int`,
-          dnc: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and ${dnc}))::int`,
-          stopOpen: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and not ${dnc} and ${stopOpen}))::int`,
-          already: sql<number>`(count(*) filter (where ${people.email} is not null and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${people.email} is not null and not ${already} and not ${suppressed} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
-        })
-        .from(people)
-        .leftJoin(companies, eq(companies.id, people.companyId))
-        .where(matching);
-
-      const eligibleWhere = and(matching, sql`${people.email} is not null`, sql`not ${suppressed}`, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
-      if (filter.dryRun) {
-        const [{ n }] = await tx
-          .select({ n: sql<number>`count(*)::int` })
-          .from(people)
-          .leftJoin(companies, eq(companies.id, people.companyId))
-          .where(eligibleWhere);
-        return {
-          requested: skipped.matched,
-          skippedMissingIdentity: skipped.noEmail,
-          skippedDuplicate: skipped.already,
-          added: 0,
-          alreadyEnrolled: skipped.already,
-          skippedSuppressed: skipped.suppressed,
-          skippedDoNotContact: skipped.dnc,
-          skippedStopRequest: skipped.stopOpen,
-          skippedContact: skipped.contact,
-          skippedNoEmail: skipped.noEmail,
-          wouldAdd: Math.min(n, filter.limit),
-        };
-      }
-
-      const eligible = await tx
-        .select({ id: people.id })
-        .from(people)
-        .leftJoin(companies, eq(companies.id, people.companyId))
-        .where(eligibleWhere)
-        .orderBy(asc(people.createdAt), asc(people.id))
-        .limit(filter.limit);
-
-      let added = 0;
-      let skippedContact = skipped.contact;
-      const eligibleIds = eligible.map((p) => p.id).sort();
-      for (let i = 0; i < eligibleIds.length; i += 500) {
-        const result = await insertSkippingContacts(tx, organizationId, eligibleIds.slice(i, i + 500), (sp, ids) =>
-          sp
-            .insert(campaignEnrollments)
-            .values(ids.map((personId) => ({ organizationId, campaignId: id, personId, channel: "email", enrolledViaTokenId: filter.viaTokenId ?? null })))
-            .onConflictDoNothing()
-            .returning({ id: campaignEnrollments.id }),
-        );
-        added += result.inserted.length;
-        skippedContact += result.skippedContact;
-      }
-      return {
-        requested: skipped.matched,
-        skippedMissingIdentity: skipped.noEmail,
-        skippedDuplicate: skipped.already,
-        added,
-        alreadyEnrolled: skipped.already,
-        skippedSuppressed: skipped.suppressed,
-        skippedDoNotContact: skipped.dnc,
-        skippedStopRequest: skipped.stopOpen,
-        skippedContact,
-        skippedNoEmail: skipped.noEmail,
-      };
+      const { counts } = await enrollByQueryTx(tx, organizationId, id, "email", filter);
+      return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoEmail: counts.skippedMissingIdentity };
     });
   },
 

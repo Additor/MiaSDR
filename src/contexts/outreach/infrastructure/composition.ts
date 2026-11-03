@@ -36,7 +36,7 @@ import { notConfiguredProvider } from "../email/infrastructure/not-configured-pr
 export { drizzleEnrollmentAdminStore as enrollmentAdminStore } from "./drizzle-enrollment-admin";
 
 /** Enrolls people in an email campaign inside the caller's transaction (grid's campaign handoff). */
-export { enrollEmailPeople } from "./drizzle-management-stores";
+export { enrollPickedTx, readEnrollBlocks } from "./enrollment-eligibility";
 
 /** Cross-campaign notices reader. The notice use cases take it directly. */
 export { drizzleCrossCampaignNotices as crossCampaignNotices } from "./drizzle-cross-campaign-notices";

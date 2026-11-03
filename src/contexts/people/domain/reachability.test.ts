@@ -9,11 +9,11 @@ describe("reachability", () => {
     expect(reachability(open)).toEqual({
       doNotContact: null,
       email: { state: "open", suppressionReason: null, since: null },
-      linkedin: { state: "open" },
+      linkedin: { state: "open", suppressionReason: null, since: null },
     });
   });
 
-  it("blocks email only for a suppressed address, and LinkedIn stays open", () => {
+  it("blocks email only for a bounced address, and LinkedIn stays open", () => {
     const reach = reachability({ ...open, suppression: { reason: "bounced", since } });
     expect(reach.email).toEqual({ state: "suppressed", suppressionReason: "bounced", since });
     expect(reach.linkedin.state).toBe("open");
@@ -41,5 +41,22 @@ describe("suppressionReasonLabel", () => {
 
   it("falls back to a readable word for an unknown reason", () => {
     expect(suppressionReasonLabel("do_not_mail")).toBe("Do not mail");
+  });
+
+  it.each(["unsubscribed", "manual", "complaint"])("closes LinkedIn for an address on the list as %s", (reason) => {
+    const since = new Date("2026-10-01T00:00:00Z");
+    const reach = reachability({ doNotContact: null, email: "a@b.test", suppression: { reason, since }, hasLinkedin: true });
+    expect(reach.email.state).toBe("suppressed");
+    expect(reach.linkedin).toEqual({ state: "blocked", suppressionReason: reason, since });
+  });
+
+  it("leaves LinkedIn open for a bounced address", () => {
+    const reach = reachability({ doNotContact: null, email: "a@b.test", suppression: { reason: "bounced", since: null }, hasLinkedin: true });
+    expect(reach.email.state).toBe("suppressed");
+    expect(reach.linkedin.state).toBe("open");
+  });
+
+  it("calls a person without a profile missing, whatever the list says", () => {
+    expect(reachability({ doNotContact: null, email: "a@b.test", suppression: { reason: "unsubscribed", since: null }, hasLinkedin: false }).linkedin.state).toBe("missing");
   });
 });

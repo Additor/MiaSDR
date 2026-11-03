@@ -431,7 +431,7 @@ function StatusLine({ lead, now }: { lead: LeadListRow; now: string }) {
   const { contact, reach, status } = lead.activity;
   const channels = reach.doNotContact
     ? ["Do not contact"]
-    : [contact.email ? (reach.email.state === "suppressed" ? "Email suppressed" : "Email") : null, contact.linkedin ? "LinkedIn" : null].filter((name): name is string => name !== null);
+    : [contact.email ? (reach.email.state === "suppressed" ? "Email suppressed" : "Email") : null, contact.linkedin ? (reach.linkedin.state === "blocked" ? "LinkedIn blocked" : "LinkedIn") : null].filter((name): name is string => name !== null);
   return (
     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-normal text-muted-foreground md:hidden" data-testid="lead-status-line">
       <span>{channels.length > 0 ? channels.join(", ") : "No channel"}</span>

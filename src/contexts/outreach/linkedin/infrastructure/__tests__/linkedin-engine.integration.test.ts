@@ -289,6 +289,37 @@ describeDb("linkedin engine", () => {
     expect(rows.find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt: 0, error: "do_not_contact" });
   });
 
+  it.each([
+    ["unsubscribed", true],
+    ["manual", true],
+    ["bounced", false],
+  ])("a suppression as %s that lands after the claim: blocked %s", async (reason, blocked) => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    await invite(gateway, f);
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    expect(accepted.status).toBe("done");
+    current = new Date("2026-10-15T10:03:00Z");
+    await sql`update people set email = ${`${f.slugs[0]}@list.test`} where id = (select person_id from campaign_enrollments where id = ${f.enrollmentIds[0]})`;
+    const racing: typeof store = {
+      ...store,
+      async claimNext(options) {
+        const claim = await store.claimNext(options);
+        if (claim) await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${`${f.slugs[0]}@list.test`}, ${reason})`;
+        return claim;
+      },
+    };
+    const outcome = await engine.runNextLinkedInAction({ ...deps(gateway), store: racing }, f.account);
+    if (blocked) {
+      expect(outcome).toEqual({ kind: "blocked", reason: "suppressed" });
+      expect(gateway.messages).toHaveLength(0);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", stop_reason: "suppressed", next_send_at: null });
+    } else {
+      expect(outcome.kind).toBe("sent");
+      expect(gateway.messages).toHaveLength(1);
+    }
+  });
+
   it("stops the sequence when the lead replies, and a redelivered reply changes nothing", async () => {
     const f = await fixture();
     const gateway = new FakeLinkedInGateway();

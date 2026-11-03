@@ -18,7 +18,7 @@ Any of these ends a lead's sequence and cancels its unsent steps and unsent draf
 | --- | --- |
 | A real reply on any channel (email or LinkedIn) | The lead's sequence stops in every campaign. The reply lands in the Inbox. |
 | Do-not-contact on the person | Blocks every channel. A person sets it, with a reason, on the lead page, the contact page, the deal page or the Inbox thread, or for many contacts at once from the Contacts bulk bar. |
-| Suppression list | An address that unsubscribed, hard-bounced or was added by hand. It blocks email to that address in your organization. |
+| Suppression list | An address that unsubscribed, hard-bounced or was added by hand. It blocks email to that address in your organization. An address that unsubscribed or was added by hand also blocks LinkedIn outreach to its owners: no new campaign takes them, a removed lead cannot be restored, and no further campaign step goes out. A bounce blocks email only, because it says nothing about the person. |
 | Hard bounce | The address goes on the suppression list and its sequences end. |
 | Unsubscribe link or one-click header | The address goes on the suppression list and its sequences end. |
 | The lead becomes a contact: you create a deal for it, press Make contact on the lead page, or confirm the matching-lead step of Add contact | Its pending and active enrollments end in every campaign with the stop reason "Became a contact", its follow-ups after a reply end, and the app discards their unsent drafts. A contact cannot go back to Leads or join a campaign again, even after you delete its deal. The Create deal and Make contact dialogs name these counts before you confirm. |
@@ -31,7 +31,7 @@ These do not stop outreach:
 - A bounce notice that cannot be tied to a mail you sent, or that fails the sender checks, does not suppress the address. It shows as an unverified bounce for a person to review.
 - The app flags a reply that asks to stop in two ways: its words ask, or the AI picks Asked to stop, which waits for a check. The thread's type line and the Actions row show "Possible stop request" with Review stop request, which opens Stop contacting. Contact stops only when a person chooses Stop contacting there. Follow-ups for that reply stop and get no draft, whichever type the AI or a person picks, even when a person picks before the AI reads the reply. The app does not suppress on its own, because quoted text can fake a stop request, and changing a reply type never marks anyone do not contact.
 
-Before each send the app checks the campaign status, the suppression list, do not contact and the enrollment status again, right before the provider call. A reply that lands in the seconds between that check and Gmail's answer cannot be undone, so one more email can go out in that window. The same holds for a conversion: a send the app claimed before the deal and the conversion commit may still go out.
+Before each send the app checks the campaign status, the suppression list (on LinkedIn, for the reasons that block it), do not contact and the enrollment status again, right before the provider call. A reply that lands in the seconds between that check and Gmail's answer cannot be undone, so one more email can go out in that window. The same holds for a conversion: a send the app claimed before the deal and the conversion commit may still go out.
 
 ## Contacts that start in the CRM
 
