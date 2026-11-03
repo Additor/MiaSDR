@@ -24,7 +24,7 @@ vi.mock("../../after-reply/infrastructure/drizzle-follow-up-store", async (impor
 });
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
-describeDb("restart record work: stage move, correction, stale drafts", () => {
+describeDb("restart conversation work: type change, correction, stale drafts", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 6 });
   let composition: typeof import("../composition");
@@ -168,7 +168,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     await sql.end();
   });
 
-  describe("stage move", () => {
+  describe("type change", () => {
     it("ends the old run, retires its draft, bumps the version and starts a fresh run of the campaign flow in one commit", async () => {
       const { f, conversationId, version, flowId } = await withRun();
       const old = await one("select id, status from follow_up_runs where organization_id = $1", [f.org]);
@@ -369,12 +369,12 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
   });
 
   describe("replyTypeChange in the draft prompt", () => {
-    it("passes the move's stage, time and note to the model and drops the classifier's reason", async () => {
+    it("passes the new type, time and note to the model and drops the classifier's reason", async () => {
       const { f, r, conversationId, version } = await withRun({ flow: false });
       await move(f, conversationId, "meeting_done", version, "Met on Tuesday, they want the contract");
       await mgmt.requestDraft(f.replyDeps, f.actor, r.threadId);
       const input = f.ai.lastDraftInput!;
-      expect(input.replyTypeChange).toMatchObject({ stage: "After a meeting", note: "Met on Tuesday, they want the contract" });
+      expect(input.replyTypeChange).toMatchObject({ replyTypeName: "After a meeting", note: "Met on Tuesday, they want the contract" });
       expect(input.replyTypeChange!.occurredAt).toBeInstanceOf(Date);
       // The classifier read the old inbound message; that reading is stale after the move.
       expect(input.classification?.reason).toBeNull();
@@ -382,7 +382,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
 
     it("leaves replyTypeChange null with no move, and ignores a move that came before the last inbound message", async () => {
       const { f, r, input, conversationId, version } = await withRun({ flow: false });
-      // The drafts written before any move carry no stage change.
+      // The drafts written before any move carry no type change.
       expect(f.ai.lastDraftInput).not.toBeNull();
       expect(f.ai.lastDraftInput?.replyTypeChange).toBeNull();
 

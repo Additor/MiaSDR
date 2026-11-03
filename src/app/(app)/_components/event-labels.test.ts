@@ -29,7 +29,7 @@ describe("EVENT_LABELS", () => {
   it("labels every event type the code writes", () => {
     const written = writtenEventTypes();
     // The scan must see the types this plan adds, or it is not reading the right files.
-    expect(written).toEqual(expect.arrayContaining(["lifecycle.converted", "deal.created", "deal.type_changed", "deal.updated", "deal.deleted", "reply_type.changed", "follow_up.started", "assignee.changed"]));
+    expect(written).toEqual(expect.arrayContaining(["lifecycle.converted", "deal.created", "deal.stage_changed", "deal.updated", "deal.deleted", "reply_type.changed", "follow_up.started", "assignee.changed"]));
     expect(written.filter((type) => !(type in EVENT_LABELS))).toEqual([]);
   });
 
@@ -40,8 +40,8 @@ describe("EVENT_LABELS", () => {
     expect(eventLabel({ eventType: "assignee.changed", toData: { assignedTo: "u1", assigneeName: "Ann" } })).toBe("Assigned to Ann");
     expect(eventLabel({ eventType: "assignee.changed", toData: { assignedTo: "u1", assigneeName: null } })).toBe("Assigned the conversation");
     expect(eventLabel({ eventType: "assignee.changed", toData: { assignedTo: null, assigneeName: null } })).toBe("Unassigned the conversation");
-    expect(eventLabel({ eventType: "deal.type_changed", toData: { stageName: "Proposal" } })).toBe("Moved deal to Proposal");
-    expect(eventLabel({ eventType: "deal.type_changed", toData: null })).toBe("Moved deal to another stage");
+    expect(eventLabel({ eventType: "deal.stage_changed", toData: { stageName: "Proposal" } })).toBe("Moved deal to Proposal");
+    expect(eventLabel({ eventType: "deal.stage_changed", toData: null })).toBe("Moved deal to another stage");
   });
 
   it("never says record and falls back to the readable token", () => {

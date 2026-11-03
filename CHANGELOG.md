@@ -40,6 +40,7 @@ The tables and code now use the words the screens use, so start from an empty da
 - The Leads filter param `category` is now `replyGroup`, and `/crm/pipeline` reads only `owner`, `q` and `showAll`.
 - `get_analytics` replies: the bucket `unclassified` is `no_type` and `classifiedShare` is `replyTypeShare`. The CSV column `Category` is `Reply group`.
 - `get_work_queue`: the group `classification` is `ai_pick`, on the Actions page too.
+- The deal event `deal.type_changed` is `deal.stage_changed`.
 
 ### Removed
 

@@ -1305,18 +1305,18 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await one("select status from follow_up_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
     });
 
-    it("interruptOnTerminalStageTx reads the conversation's current type when the caller passes no decision", async () => {
-      const { interruptOnTerminalStageTx } = await import("../follow-up-run-tx");
+    it("interruptOnStoppingTypeTx reads the conversation's current type when the caller passes no decision", async () => {
+      const { interruptOnStoppingTypeTx } = await import("../follow-up-run-tx");
       const { db } = await import("@/platform/db/client");
       const { f, run } = await withRun();
       const conversation = await one("select id from conversations where organization_id = $1", [f.org]);
       const ooo = await one("select id, group_key from reply_types where organization_id = $1 and key = 'out_of_office'", [f.org]);
       // Still on the type the run started on, which keeps going: nothing ends.
-      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: run.reply_type_id, now: f.clock() }))).toBe(0);
+      expect(await db.transaction((tx) => interruptOnStoppingTypeTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: run.reply_type_id, now: f.clock() }))).toBe(0);
       await sql`update conversations set group_key = ${ooo.group_key}, reply_type_id = ${ooo.id} where id = ${conversation.id}`;
       // The caller's decision wins over the stored rule.
-      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: ooo.id, followUps: "continue", now: f.clock() }))).toBe(0);
-      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: ooo.id, now: f.clock() }))).toBe(1);
+      expect(await db.transaction((tx) => interruptOnStoppingTypeTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: ooo.id, followUps: "continue", now: f.clock() }))).toBe(0);
+      expect(await db.transaction((tx) => interruptOnStoppingTypeTx(tx, { organizationId: f.org, conversationId: conversation.id, replyTypeId: ooo.id, now: f.clock() }))).toBe(1);
       await expectStoppedNow(f, run.id, "terminal_stage");
     });
 

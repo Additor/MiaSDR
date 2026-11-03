@@ -70,7 +70,7 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
  * the rule. A caller that passes none gets the Follow-ups rule of the conversation's current reply type, read here, so the
  * caller writes the conversation first. No key or group decides.
  */
-export async function interruptOnTerminalStageTx(
+export async function interruptOnStoppingTypeTx(
   tx: Tx,
   input: {
     organizationId: string;

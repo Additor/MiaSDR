@@ -38,7 +38,7 @@ export async function moveDealStage(deps: DealsDeps, actor: Actor, dealId: strin
     await deps.events.append(tx, {
       organizationId: actor.organizationId,
       personId: deal.personId,
-      eventType: moved ? "deal.type_changed" : "deal.updated",
+      eventType: moved ? "deal.stage_changed" : "deal.updated",
       actorType: "human",
       actorUserId: actor.userId,
       fromData: { stageId: deal.stageId, stageName: from?.name ?? null, stageKind: deal.stageKind },

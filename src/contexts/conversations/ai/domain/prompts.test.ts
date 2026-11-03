@@ -23,15 +23,15 @@ describe("prompts", () => {
     );
     expect(user).toContain("<untrusted_reviewer_feedback_n1>");
   });
-  it("tells the draft about a stage move and fences its note", () => {
+  it("tells the draft about a type change and fences its note", () => {
     const base = { channel: "email" as const, person: input.person, thread: input.thread, subject: "Re: Hi", classification: null, operatorInstructions: "", knowledge: [], feedback: null, previousDraft: null, senderName: null };
     const none = buildDraftPrompt({ ...base, replyTypeChange: null }, "n1").user;
     expect(none).not.toContain("moved this conversation");
-    const moved = buildDraftPrompt({ ...base, replyTypeChange: { stage: "Meeting done", occurredAt: new Date("2026-10-14T09:00:00Z"), note: "Call went well, send the contract" } }, "n1").user;
+    const moved = buildDraftPrompt({ ...base, replyTypeChange: { replyTypeName: "Meeting done", occurredAt: new Date("2026-10-14T09:00:00Z"), note: "Call went well, send the contract" } }, "n1").user;
     expect(moved).toContain('moved this conversation to the stage "Meeting done" (2026-10-14)');
     expect(moved).toContain("<untrusted_stage_note_n1>");
     expect(moved).toContain("send the contract");
-    const noNote = buildDraftPrompt({ ...base, replyTypeChange: { stage: "Meeting done", occurredAt: new Date("2026-10-14T09:00:00Z"), note: null } }, "n1").user;
+    const noNote = buildDraftPrompt({ ...base, replyTypeChange: { replyTypeName: "Meeting done", occurredAt: new Date("2026-10-14T09:00:00Z"), note: null } }, "n1").user;
     expect(noNote).not.toContain("stage_note");
   });
   it("keeps subject, classification reason and sender name inside fences and cannot be closed from inside", () => {
@@ -43,7 +43,7 @@ describe("prompts", () => {
         thread: input.thread,
         subject: `Re: ${evil}`,
         classification: { replyTypeName: "Other", reason: `reason ${evil}` },
-        replyTypeChange: { stage: "Meeting done", occurredAt: new Date("2026-10-14T00:00:00Z"), note: `note ${evil}` },
+        replyTypeChange: { replyTypeName: "Meeting done", occurredAt: new Date("2026-10-14T00:00:00Z"), note: `note ${evil}` },
         operatorInstructions: "",
         knowledge: [],
         feedback: null,
@@ -66,11 +66,11 @@ describe("prompts", () => {
   });
 });
 
-describe("stage note instruction", () => {
+describe("type change note instruction", () => {
   it.each([
     ["email", DRAFT_SYSTEM],
     ["linkedin", DRAFT_SYSTEM_LINKEDIN],
-  ])("keeps the %s prompt's rules above a stage note", (_channel, system) => {
+  ])("keeps the %s prompt's rules above a type change note", (_channel, system) => {
     const rule = system.split("\n\n").find((p) => p.includes("moved the conversation to a new stage"));
     expect(rule).toBeDefined();
     // The note informs the draft. It never outranks the thread or the rules.

@@ -151,7 +151,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       expect(await one("select status, last_error from ai_jobs where organization_id = $1 and kind = 'initial_draft'", [g.org])).toMatchObject({ status: "queued" });
     });
 
-    it("puts the stage move note and the matching knowledge in the prompt", async () => {
+    it("puts the type change note and the matching knowledge in the prompt", async () => {
       const f = await drafted();
       await knowledgeApp.createKnowledge(stores.knowledge, { ...f.actor, role: "admin" }, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
       const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);

@@ -836,7 +836,7 @@ The enrollments a conversion cancels show the stop label "Became a contact" (`st
 | `moveDealStage` | Needs the current `version`; 409 `stale_version`. A lost stage needs a reason (422). |
 | `deleteDeal` | Open stages only (409 `deal_closed`). `DELETE /api/deals/[id]?expectedVersion=` checks the version when given. |
 
-Events: `deal.created`, `deal.type_changed`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.type_changed` as "Moved deal to {stage}", `reply_type.changed` as "Changed the reply type" and `lifecycle.converted` as "Became a contact".
+Events: `deal.created`, `deal.stage_changed`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.stage_changed` as "Moved deal to {stage}", `reply_type.changed` as "Changed the reply type" and `lifecycle.converted` as "Became a contact".
 
 #### Pipeline board and lists
 

@@ -44,7 +44,7 @@ export async function produceDraft(
     person: ctx.person,
     thread: ctx.thread,
     subject: ctx.subject,
-    // A stage move after the last reply outdates the classifier's reading of that reply.
+    // A type change after the last reply outdates the classifier's reading of that reply.
     classification: ctx.classification ? { replyTypeName: ctx.classification.replyTypeName, reason: ctx.replyTypeChange ? null : ctx.classification.reason } : null,
     replyTypeChange: ctx.replyTypeChange,
     operatorInstructions: ctx.operatorInstructions,

@@ -39,7 +39,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "lifecycle.converted": "Became a contact",
   "contact.added": "Added as a contact",
   "deal.created": "Created deal",
-  "deal.type_changed": "Moved deal to {stage}",
+  "deal.stage_changed": "Moved deal to {stage}",
   "deal.updated": "Updated deal",
   "deal.deleted": "Deleted deal",
 };

@@ -111,8 +111,8 @@ export interface ClassifyInput {
 
 /** A person changed the reply type after the last inbound message, because something happened off the thread. */
 export interface ReplyTypeChange {
-  /** Name of the stage the conversation moved to. */
-  stage: string;
+  /** Name of the new reply type, or of its group when the change set the group alone. */
+  replyTypeName: string;
   occurredAt: Date;
   note: string | null;
 }
@@ -125,7 +125,7 @@ export interface DraftInput {
   /** Empty for LinkedIn. */
   subject: string;
   classification: { replyTypeName: string; reason: string | null } | null;
-  /** The newest stage move since the last inbound message, or null. The classifier's reason is dropped when it is set. */
+  /** The newest type change since the last inbound message, or null. The classifier's reason is dropped when it is set. */
   replyTypeChange: ReplyTypeChange | null;
   operatorInstructions: string;
   knowledge: Array<{ title: string; content: string }>;

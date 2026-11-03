@@ -102,11 +102,11 @@ export async function replyTypeChangeFor(organizationId: string, conversationId:
     .limit(1);
   if (!moved) return null;
   const to = (moved.toData ?? {}) as { groupKey?: string | null; replyTypeId?: string | null };
-  const [sub] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
+  const [type] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
   const meta = moved.meta as { note?: unknown; occurredAt?: unknown };
   const occurred = typeof meta.occurredAt === "string" ? new Date(meta.occurredAt) : moved.createdAt;
   return {
-    stage: sub?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another stage"),
+    replyTypeName: type?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another type"),
     occurredAt: Number.isNaN(occurred.getTime()) ? moved.createdAt : occurred,
     note: typeof meta.note === "string" && meta.note.trim() !== "" ? meta.note : null,
   };

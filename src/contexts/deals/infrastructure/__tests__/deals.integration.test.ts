@@ -227,7 +227,7 @@ describeDb("deals context", () => {
       await deals.moveDealStage(deps(), f.owner, dealId, { stageId: by("Proposal"), expectedVersion: 2 });
       await deals.updateDeal(deps(), f.owner, dealId, { expectedVersion: 3, title: "Renamed" });
       const kinds = await kit.sql`select event_type from events where person_id = ${personId} and event_type like 'deal.%' order by created_at`;
-      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.type_changed", "deal.type_changed", "deal.type_changed", "deal.updated"]);
+      expect(kinds.map((k) => k.event_type)).toEqual(["deal.created", "deal.stage_changed", "deal.stage_changed", "deal.stage_changed", "deal.updated"]);
     });
 
     it("deletes only an open deal, and the person stays a contact", async () => {

@@ -445,7 +445,7 @@ function renderedLabels(): Array<{ file: string; text: string }> {
     for (const text of texts) if (text !== null) out.push({ file, text });
   };
   push(EVENT_LABELS_FILE, Object.keys(EVENT_LABELS).map((eventType) => eventLabel({ eventType, toData: { stageName: "Proposal" } })));
-  push(EVENT_LABELS_FILE, ["deal.type_changed", "inbound.unknown_type"].map((eventType) => eventLabel({ eventType })));
+  push(EVENT_LABELS_FILE, ["deal.stage_changed", "inbound.unknown_type"].map((eventType) => eventLabel({ eventType })));
   push(CAMPAIGN_VIEW_FILE, Object.keys(STOP_REASON_LABELS).map(enrollmentStopLabel));
   push(AFTER_REPLY_FILE, stringValues(afterReply.INTERRUPT_REASON_LABELS));
   push(AFTER_REPLY_FILE, stringValues(afterReply.OTHER_END_REASON_LABELS));
@@ -607,7 +607,7 @@ describe("stored values have labels", () => {
   it("labels every event type the code writes, deal events included", () => {
     const written = writtenEventTypes();
     const values = new Set(written.map((w) => w.value));
-    for (const expected of ["lifecycle.converted", "deal.created", "deal.type_changed", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
+    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_changed", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
     expect(written.filter((w) => !Object.hasOwn(EVENT_LABELS, w.value)).map((w) => `${w.file}: ${w.value}`)).toEqual([]);
   });
 });

@@ -5,7 +5,7 @@ import type { InboundEmailInput } from "../../application/ports";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 
-describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings", () => {
+describeDb("Reply handling: type changes, undo, do not contact, tenancy, settings", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../composition");
@@ -100,7 +100,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     await sql.end();
   });
 
-  describe("stage moves", () => {
+  describe("type changes", () => {
     it("moves a conversation, logs it, bumps the version and retires open drafts", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -364,7 +364,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from follow_up_runs where id = ${runId}`)[0].status).toBe("interrupted");
     });
 
-    it("refuses to undo over a later stage move, and only the latest message's classification", async () => {
+    it("refuses to undo over a later type change, and only the latest message's classification", async () => {
       const f = await fixture();
       const l = await lead(f);
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
@@ -472,7 +472,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("closes a conversation with a reason and refuses a stage move while it is closed", async () => {
+    it("closes a conversation with a reason and refuses a type change while it is closed", async () => {
       const l = await lead(f);
       await replies.closeConversation(deps, f.actor, l.conversationId, { reason: "Went with a competitor" });
       expect(await rec(l.conversationId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
