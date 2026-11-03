@@ -2,8 +2,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, MCP_TOKEN_NAME_MAX, mcpGrantId, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
 import { tokenAccess, tokenActions, tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
 import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
-import { isOwnerOrAdmin } from "../domain/roles";
-import type { AuditEntry } from "./audit-log";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 
 /** A token as lists show it. The secret appears once, in the answer to `createMcpToken`. */
 export interface McpTokenView {

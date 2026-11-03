@@ -60,7 +60,7 @@ A row lock that serializes writers on `conversations` or `threads` takes `FOR NO
 
 One order for the conflicting locks: the conversation before its threads. Marking reply handling done takes the conversation `FOR NO KEY UPDATE` and then `FOR SHARE` on its threads, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes conversations, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
-The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
+The organization's `agent-send:<organization id>` advisory lock (`agent-access/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
 
 | Path | Order |
 | --- | --- |
@@ -173,7 +173,8 @@ Every table that holds customer data carries `organization_id uuid not null` wit
 Each context declares its tables in `src/contexts/<context>/infrastructure/schema.ts`. Analytics owns no tables and reads the others through its read model.
 
 - identity: `users`, `sessions`, `accounts`, `verifications`
-- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`, `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
+- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
+- agent-access: `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `ai_jobs`, `notes`, `tasks`

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { getMcpSettings, updateMcpSettings } from "@/contexts/tenancy/application/mcp-tokens";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { getMcpSettings, updateMcpSettings } from "@/contexts/agent-access/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => getMcpSettings(mcpTokenDeps(), actor));

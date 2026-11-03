@@ -9,8 +9,8 @@ describeDb("MCP principal", () => {
   let resolveAccess: typeof import("../../application/mcp-principal").resolveMcpAccess;
   let deps: import("../../application/mcp-principal").McpPrincipalDeps;
   let hash: (token: string) => string;
-  let members: typeof import("../../application/member-management");
-  let memberStore: typeof import("../drizzle-member-store").drizzleMemberStore;
+  let members: typeof import("@/contexts/tenancy/application/member-management");
+  let memberStore: import("@/contexts/tenancy/application/member-management").MemberStore;
   const orgs: TestOrg[] = [];
   const users: string[] = [];
 
@@ -48,8 +48,8 @@ describeDb("MCP principal", () => {
     const composition = await import("../mcp-composition");
     deps = composition.mcpPrincipalDeps();
     hash = composition.hashMcpToken;
-    members = await import("../../application/member-management");
-    memberStore = (await import("../drizzle-member-store")).drizzleMemberStore;
+    members = await import("@/contexts/tenancy/application/member-management");
+    memberStore = (await import("@/contexts/tenancy/infrastructure/drizzle-member-store")).drizzleMemberStore((await import("../member-access-composition")).memberAgentAccess);
     orgs.push(await createTestOrg(sql, "MCP A"), await createTestOrg(sql, "MCP B"), await createTestOrg(sql, "MCP off"));
     await settings(orgs[0], { enabled: true });
     await settings(orgs[1], { enabled: true });

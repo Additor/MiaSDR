@@ -68,6 +68,7 @@ const SCHEMA_FILES: Record<string, string[]> = {
   platform: ["platform/jobs/schema.ts"],
   identity: ["contexts/identity/infrastructure/schema.ts"],
   tenancy: ["contexts/tenancy/infrastructure/schema.ts"],
+  "agent-access": ["contexts/agent-access/infrastructure/schema.ts"],
   integrations: ["contexts/integrations/infrastructure/schema.ts"],
   people: ["contexts/people/infrastructure/schema.ts"],
   outreach: ["contexts/outreach/infrastructure/schema.ts"],

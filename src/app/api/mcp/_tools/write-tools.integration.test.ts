@@ -175,8 +175,8 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
   });
 
   it("logs write calls as changes and leaves a list call among the reads", async () => {
-    const { listMcpToolCalls } = await import("@/contexts/tenancy/application/mcp-tool-calls");
-    const { mcpToolCallDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { listMcpToolCalls } = await import("@/contexts/agent-access/application/mcp-tool-calls");
+    const { mcpToolCallDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: orgs[0].userId, organizationId: orgs[0].organizationId, role: "owner" };
     const changes = (await listMcpToolCalls(mcpToolCallDeps(), owner, { writesOnly: true, before: null })).calls;
     expect(changes.some((c) => c.tool === "write_reply_draft" && c.action === "create_manual" && c.target.threadId === thread.threadId)).toBe(true);

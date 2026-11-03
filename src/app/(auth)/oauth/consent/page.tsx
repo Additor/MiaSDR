@@ -8,8 +8,8 @@ import { toActor } from "@/app/_lib/api";
 import { mcpOAuthAvailable } from "@/contexts/identity/domain/mcp-oauth";
 import { oauthClientFor } from "@/contexts/identity/infrastructure/mcp-oauth";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { consentChoices, consentExtras } from "@/contexts/tenancy/application/mcp-tokens";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { consentChoices, consentExtras } from "@/contexts/agent-access/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
 import { ConsentForm } from "./consent-form";
 

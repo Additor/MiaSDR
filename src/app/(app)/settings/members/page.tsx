@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInvitations, listMembers } from "@/contexts/tenancy/application/member-management";
-import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
+import { memberDeps } from "@/composition/members";
 import { isOwnerOrAdmin, parseRoles } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { env } from "@/shared/env";

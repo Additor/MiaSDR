@@ -5,7 +5,7 @@
  * runs inside `runTool`: an error `classifyError` does not know is logged here and the agent gets a plain sentence.
  */
 import { z } from "zod";
-import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import type { McpPrincipal } from "@/contexts/agent-access/application/mcp-principal";
 import { STATUS_CODES } from "./api-errors";
 import { classifyError } from "./classify-error";
 import type { Actor } from "@/shared/errors";

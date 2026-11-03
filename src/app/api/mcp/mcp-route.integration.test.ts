@@ -30,7 +30,7 @@ describeDb("/api/mcp", () => {
 
   beforeAll(async () => {
     ({ POST, GET } = await import("./route"));
-    hash = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).hashMcpToken;
+    hash = (await import("@/contexts/agent-access/infrastructure/mcp-composition")).hashMcpToken;
     orgs.push(await createTestOrg(sql, "MCP on"), await createTestOrg(sql, "MCP off"));
     await enable(orgs[0], true);
   });

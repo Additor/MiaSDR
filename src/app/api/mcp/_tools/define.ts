@@ -1,10 +1,10 @@
 import type { McpServer, ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { clientNameFrom, logMcp, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
-import type { McpPrincipal, PrincipalAllowance } from "@/contexts/tenancy/application/mcp-principal";
-import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/application/mcp-tool-calls";
-import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
-import type { McpRateBucket } from "@/contexts/tenancy/domain/mcp-rate-limit";
+import type { McpPrincipal, PrincipalAllowance } from "@/contexts/agent-access/application/mcp-principal";
+import { callTarget, type McpToolCallEntry } from "@/contexts/agent-access/application/mcp-tool-calls";
+import { hasScope, type McpScope } from "@/contexts/agent-access/domain/mcp-policy";
+import type { McpRateBucket } from "@/contexts/agent-access/domain/mcp-rate-limit";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { CARD_MIME_TYPE, CARDS } from "./cards";
 import { estimateTokens, MAX_RESPONSE_TOKENS, toolOutputContext, type ToolOutputContext } from "./output";

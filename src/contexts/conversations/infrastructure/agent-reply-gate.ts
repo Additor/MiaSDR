@@ -2,7 +2,7 @@ import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { campaignEnrollments, channelSettings, drafts, mailboxes, mcpTokens, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { readSendPause } from "@/contexts/outreach/domain/send-pause";
-import { readAgentSendGate } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
+import { readAgentSendGate } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import type { AgentVia } from "@/shared/errors";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";

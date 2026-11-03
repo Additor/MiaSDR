@@ -19,13 +19,24 @@ export interface InvitationRow {
   createdAt: Date;
 }
 
+/**
+ * Port. What agent access does inside a member change, in the same transaction. Agent access sits above tenancy and reads
+ * its members, so `src/composition/members.ts` passes this in.
+ */
+export interface MemberAgentAccess {
+  /** Runs before any member row lock, so a role change or a removal lands between agent actions, never inside one. */
+  lock(tx: DbHandle, organizationId: string): Promise<void>;
+  /** Ends what the removed member's agents hold. */
+  memberRemoved(tx: DbHandle, removal: { organizationId: string; userId: string; actorUserId: string }): Promise<void>;
+}
+
 /** Member changes run inside one transaction that holds the organization's member rows, so two requests cannot both pass the last-owner check. */
 export interface MemberTx {
   /** The transaction itself, for what other contexts let go of in the same commit. */
   handle: DbHandle;
   members(): Promise<MemberView[]>;
   setRole(memberId: string, role: Role): Promise<void>;
-  /** Removes the member and revokes their MCP tokens; `actorUserId` is who the audit log names for the revoke. */
+  /** Removes the member and ends their agent access; `actorUserId` is who the audit log names for the revoke. */
   remove(memberId: string, actorUserId: string): Promise<void>;
 }
 

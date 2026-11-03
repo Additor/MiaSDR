@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { auth } from "@/contexts/identity/infrastructure/auth";
 import { ValidationError } from "@/shared/errors";
 import type { InvitationReader } from "../application/invitation-view";
-import type { InvitationGateway, MemberDeps } from "../application/member-management";
+import type { InvitationGateway, MemberAgentAccess, MemberDeps } from "../application/member-management";
 import { drizzleInvitationReader } from "./drizzle-invitation-reader";
 import { drizzleMemberDirectory } from "./drizzle-member-directory";
 import { drizzleMemberStore } from "./drizzle-member-store";
@@ -26,7 +26,7 @@ export const betterAuthInvitations: InvitationGateway = {
   },
 };
 
-export const memberDeps = (): MemberDeps => ({ members: drizzleMemberStore, invitations: betterAuthInvitations });
+export const memberDeps = (agentAccess: MemberAgentAccess): MemberDeps => ({ members: drizzleMemberStore(agentAccess), invitations: betterAuthInvitations });
 
 /** Reads one invitation for the accept page and its API route. */
 export const invitationViewDeps = (): { invitations: InvitationReader } => ({ invitations: drizzleInvitationReader });

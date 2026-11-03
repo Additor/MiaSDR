@@ -3,8 +3,8 @@ import { z } from "zod";
 import { withActor } from "@/app/_lib/api";
 import { mcpOAuthAvailable } from "@/contexts/identity/domain/mcp-oauth";
 import { answerConsent, consentQueryValid, oauthClientFor } from "@/contexts/identity/infrastructure/mcp-oauth";
-import { consentChoices, consentExtras, grantMcpAccess, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/tenancy/application/mcp-tokens";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { consentChoices, consentExtras, grantMcpAccess, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/agent-access/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/agent-access/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
 

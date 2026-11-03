@@ -1,4 +1,4 @@
-import { isOwnerOrAdmin } from "./roles";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { McpSettings } from "./mcp-settings";
 
 /**

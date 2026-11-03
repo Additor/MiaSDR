@@ -10,7 +10,7 @@ import { listLinkedInAccountStatus } from "@/contexts/outreach/linkedin/applicat
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { listMembers } from "@/contexts/tenancy/application/member-management";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
+import { memberDeps } from "@/composition/members";
 import { defineTool, READ_ONLY } from "./define";
 
 const output = z.object({

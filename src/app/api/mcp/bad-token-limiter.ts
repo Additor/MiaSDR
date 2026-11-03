@@ -1,4 +1,4 @@
-import { MCP_BAD_TOKEN_LIMIT, rateRetryAfterSeconds, rateWindowStart } from "@/contexts/tenancy/domain/mcp-rate-limit";
+import { MCP_BAD_TOKEN_LIMIT, rateRetryAfterSeconds, rateWindowStart } from "@/contexts/agent-access/domain/mcp-rate-limit";
 
 /** Client IPs one process remembers. Past this, the IP seen longest ago is dropped. */
 const MAX_IPS = 10_000;

@@ -203,8 +203,8 @@ describeDb("MCP send_reply: agent email replies", () => {
   });
 
   it("makes a policy save wait for an agent reply or start that holds the lock", async () => {
-    const { updateMcpSettings } = await import("@/contexts/tenancy/application/mcp-tokens");
-    const { mcpTokenDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { updateMcpSettings } = await import("@/contexts/agent-access/application/mcp-tokens");
+    const { mcpTokenDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     for (const [take, mailbox] of [["pg_advisory_xact_lock", 31], ["pg_advisory_xact_lock_shared", 30]] as const) {
       const lock = await sql.reserve();
@@ -318,8 +318,8 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(await listed(agent.token)).toContain("send_reply");
     expect(await listed(writer.token)).not.toContain("send_reply");
 
-    const { updateMcpSettings } = await import("@/contexts/tenancy/application/mcp-tokens");
-    const { mcpTokenDeps } = await import("@/contexts/tenancy/infrastructure/mcp-composition");
+    const { updateMcpSettings } = await import("@/contexts/agent-access/application/mcp-tokens");
+    const { mcpTokenDeps } = await import("@/contexts/agent-access/infrastructure/mcp-composition");
     const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
     const off = await updateMcpSettings(mcpTokenDeps(), owner, { agentSendMode: "off" });
     expect(off.agentSendEpoch).toBe(1);
