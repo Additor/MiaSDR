@@ -99,7 +99,7 @@ export async function addSuppressions(deps: SuppressionListDeps, actor: Actor, i
 }
 
 /**
- * Removes an address an owner or admin pasted on this page. Everything else stays: unsubscribes, complaints and bounces,
+ * Removes an address an owner or admin pasted on this page. Everything else stays: unsubscribes and bounces,
  * and the `manual` rows that a stop request or the deletion of a person marked do not contact wrote, because there a
  * person asked not to be contacted. Removing revives nothing; a stopped sequence stays stopped.
  */
@@ -108,6 +108,6 @@ export async function removeSuppression(deps: SuppressionListDeps, actor: Actor,
   if (!UUID.test(id)) throw new NotFoundError("Address not found");
   const row = await deps.list.find(actor.organizationId, id);
   if (!row) throw new NotFoundError("Address not found");
-  if (!row.addedInSettings) throw new ConflictError("Only an address added on this page can be removed. Unsubscribes, stop requests, complaints and bounces stay on the list.");
+  if (!row.addedInSettings) throw new ConflictError("Only an address added on this page can be removed. Unsubscribes, stop requests and bounces stay on the list.");
   await deps.list.remove(actor.organizationId, id, { organizationId: actor.organizationId, actorUserId: actor.userId, action: "suppression.removed", entityId: id, meta: { email: row.email } });
 }

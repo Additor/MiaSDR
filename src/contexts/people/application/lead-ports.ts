@@ -36,7 +36,7 @@ export interface LeadDetail {
   /** Custom field definitions of the organization (not archived), for labels. */
   customColumns: Array<{ key: string; name: string }>;
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
-  /** The address is on the organization's suppression list (unsubscribed, bounced, manual, complaint). */
+  /** The address is on the organization's suppression list (unsubscribed, bounced, manual). */
   suppression: { reason: string; note: string | null; createdAt: Date } | null;
   enrollments: Array<{
     id: string;

@@ -11,7 +11,7 @@ import { humanizeToken } from "@/shared/humanize";
  */
 
 /** Why an address sits on the suppression list. Mirrors `suppression_reason_ck`. */
-export const SUPPRESSION_REASONS = ["unsubscribed", "bounced", "manual", "complaint"] as const;
+export const SUPPRESSION_REASONS = ["unsubscribed", "bounced", "manual"] as const;
 export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
 
 /** The form an address takes on the suppression list, and the form every lookup compares with. */
@@ -67,7 +67,6 @@ const SUPPRESSION_REASON: Record<SuppressionReason, string> = {
   unsubscribed: "Unsubscribed",
   bounced: "Bounced",
   manual: "Added by hand",
-  complaint: "Spam complaint",
 };
 
 export const suppressionReasonLabel = (reason: string): string => SUPPRESSION_REASON[reason as SuppressionReason] ?? humanizeToken(reason);

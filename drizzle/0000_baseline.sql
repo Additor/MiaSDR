@@ -418,7 +418,7 @@ CREATE TABLE "suppression_list" (
 	"added_in_settings" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "suppression_org_email_uq" UNIQUE("organization_id","email"),
-	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual', 'complaint'))
+	CONSTRAINT "suppression_reason_ck" CHECK ("suppression_list"."reason" in ('unsubscribed', 'bounced', 'manual'))
 );
 --> statement-breakpoint
 CREATE TABLE "integration_accounts" (

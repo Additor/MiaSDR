@@ -24,13 +24,13 @@ import { countOf, formatCount } from "@/shared/format-number";
 interface Row {
   id: string;
   email: string;
-  reason: "unsubscribed" | "bounced" | "manual" | "complaint";
+  reason: "unsubscribed" | "bounced" | "manual";
   note: string | null;
   addedInSettings: boolean;
   createdAt: string;
 }
 
-const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Stopped by a person", complaint: "Spam complaint" };
+const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Stopped by a person" };
 /** A `manual` row pasted here reads apart from one a stop request or a do-not-contact deletion wrote, which cannot be removed. */
 const reasonLabel = (row: Row) => (row.addedInSettings ? "Added here" : REASON_LABEL[row.reason]);
 

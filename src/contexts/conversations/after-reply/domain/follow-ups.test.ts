@@ -85,7 +85,6 @@ describe("interruptReason", () => {
   it("stops on do not contact, unsubscribe and bounce", () => {
     expect(interruptReason(facts({ doNotContact: true }))).toBe("do_not_contact");
     expect(interruptReason(facts({ suppression: "unsubscribed" }))).toBe("unsubscribed");
-    expect(interruptReason(facts({ suppression: "complaint" }))).toBe("unsubscribed");
     expect(interruptReason(facts({ suppression: "bounced" }))).toBe("bounce");
   });
   it("stops a contact's run with the converted reason, after do not contact and suppression", () => {

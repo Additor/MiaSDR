@@ -146,7 +146,7 @@ describeDb("analytics read model", () => {
 
   /**
    * Gives `rival` one contacted email lead and one LinkedIn lead, each with a reply, plus an accepted invitation and a
-   * complaint suppression, all inside the window. A view that drops an organization filter counts these for `world`.
+   * manual suppression, all inside the window. A view that drops an organization filter counts these for `world`.
    */
   async function rivalActivity(w: World) {
     const org = w.actor.organizationId;
@@ -167,7 +167,7 @@ describeDb("analytics read model", () => {
     await send(org, li, 2, "linkedin", "sent", "2026-03-11T16:00:00Z", { account: w.account }); // 03-11
     await details(org, li, "connected", "2026-03-11T11:00:00Z"); // 03-11
     await reply(liLead, "linkedin", "2026-03-12T13:00:00Z"); // 03-12
-    await sql`insert into suppression_list (organization_id, email, reason, created_at) values (${org}, ${uniq() + "@c.test"}, 'complaint', '2026-03-11T12:00:00Z')`;
+    await sql`insert into suppression_list (organization_id, email, reason, created_at) values (${org}, ${uniq() + "@c.test"}, 'manual', '2026-03-11T12:00:00Z')`;
   }
 
   let world: World;
@@ -292,7 +292,7 @@ describeDb("analytics read model", () => {
       { bucket: "not_interested", name: "No budget", replies: 1 },
     ]);
     expect(data.byChannel.find((c) => c.channel === "linkedin")!.total).toBe(1);
-    expect(data.suppressions).toEqual({ unsubscribed: 0, bounced: 1, manual: 0, complaint: 0 });
+    expect(data.suppressions).toEqual({ unsubscribed: 0, bounced: 1, manual: 0 });
     const scoped = await get("replies", { campaignId: world.emailCampaign });
     expect(scoped.data.total).toBe(3);
     expect(scoped.data.suppressions).toBeNull();
@@ -350,7 +350,7 @@ describeDb("analytics read model", () => {
     const replies = (await get("replies", {}, rival.actor)).data;
     expect(replies.total).toBe(2);
     expect(Object.fromEntries(replies.byBucket.map((b) => [b.bucket, b.replies]))).toEqual({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, unclassified: 2 });
-    expect(replies.suppressions).toEqual({ unsubscribed: 0, bounced: 0, manual: 0, complaint: 1 });
+    expect(replies.suppressions).toEqual({ unsubscribed: 0, bounced: 0, manual: 1 });
 
     const series = (await get("timeseries", {}, rival.actor)).data;
     const by = (day: string) => series.points.find((p) => p.day === day)!;

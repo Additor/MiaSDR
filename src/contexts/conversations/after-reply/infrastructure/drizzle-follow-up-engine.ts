@@ -92,7 +92,7 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
          rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, s.follow_ups, rec.workflow_state,
          ${doNotContactSql("p")} as dnc,
          (select sl.reason from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)
-           order by case sl.reason when 'complaint' then 0 when 'unsubscribed' then 1 when 'bounced' then 2 else 3 end limit 1) as suppression,
+           order by case sl.reason when 'unsubscribed' then 0 when 'bounced' then 1 else 2 end limit 1) as suppression,
          p.lifecycle = 'contact' as contact,
          ${flowRunnableSql("fl")} as flow_active
   from follow_up_runs r

@@ -107,7 +107,7 @@ describe("reply buckets", () => {
     expect(report.suppressions).toBeNull();
   });
   it("fills missing suppression reasons with zero", () => {
-    expect(repliesReport([], { bounced: 2 }).suppressions).toEqual({ unsubscribed: 0, bounced: 2, manual: 0, complaint: 0 });
+    expect(repliesReport([], { bounced: 2 }).suppressions).toEqual({ unsubscribed: 0, bounced: 2, manual: 0 });
   });
 });
 

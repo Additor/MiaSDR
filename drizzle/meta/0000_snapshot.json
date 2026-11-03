@@ -3503,7 +3503,7 @@
       "checkConstraints": {
         "suppression_reason_ck": {
           "name": "suppression_reason_ck",
-          "value": "\"suppression_list\".\"reason\" in ('unsubscribed', 'bounced', 'manual', 'complaint')"
+          "value": "\"suppression_list\".\"reason\" in ('unsubscribed', 'bounced', 'manual')"
         }
       },
       "isRLSEnabled": false

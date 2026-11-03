@@ -44,6 +44,7 @@ Nothing used these, and the database baseline drops them, so start from an empty
 - The redirects from old URLs such as `/crm/records/[id]` and `/settings/email`.
 - 24 `GET` API handlers that no screen, MCP tool or test called. Screens read through the server, and MCP tools call the same use cases.
 - `draft_knowledge_citations` and 12 columns with no reader. A draft's stored request still names the knowledge it used.
+- The `complaint` suppression reason and its label, because no path ever wrote it. The Replies report no longer counts complaints.
 - The `shadcn` and `date-fns` packages. `src/app/globals.css` keeps the few CSS rules the app uses.
 
 ### Fixed

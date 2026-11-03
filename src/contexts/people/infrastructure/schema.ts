@@ -245,6 +245,6 @@ export const suppressionList = pgTable(
   },
   (t) => [
     unique("suppression_org_email_uq").on(t.organizationId, t.email),
-    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual', 'complaint')`),
+    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual')`),
   ],
 );
