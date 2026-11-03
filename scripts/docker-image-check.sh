@@ -3,6 +3,7 @@
 #   - the container reports healthy and /api/health answers 200
 #   - the rotation script runs under plain node
 #   - the migrate script runs under plain node against a fresh database, then finds nothing pending
+#   - the MCP route loads in the standalone output
 #   - the E2E helper routes answer 404 even with a session, a valid CRON_SECRET and every runtime helper
 #     variable on (the same assertions as e2e/09-production-image.spec.ts)
 #
@@ -70,6 +71,8 @@ expect() {
 
 # A valid secret: the job tick accepts it, so the 404s below are not caused by a bad secret.
 expect "jobs/tick accepts the secret" "$(status -X POST -H "authorization: Bearer ${cron_secret}" "$base/api/jobs/tick")" 200
+# The MCP SDK is the dependency most likely to be missing from the standalone output: a missing module answers 500, not 401.
+expect "api/mcp loads and asks for a token" "$(status -X POST -H 'content-type: application/json' "$base/api/mcp" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')" 401
 
 setup="$(status -X POST -H 'content-type: application/json' "$base/api/setup" \
   -d '{"name":"CI Admin","email":"ci-admin@example.test","password":"ci-password-12345","organizationName":"CI Org","timeZone":"UTC"}')"
