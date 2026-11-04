@@ -11,6 +11,7 @@ import {
   type SearchPage,
   type WebhookRegistration,
 } from "../../../application/linkedin-ports";
+import { WEBHOOKS, WEBHOOK_SECRET_HEADER } from "./unipile-webhook";
 
 /*
  * Unipile adapter over fetch, no SDK. Every call below was checked against the official reference
@@ -290,18 +291,14 @@ export class UnipileGateway implements LinkedInGateway {
     await this.removeWebhooks({ requestUrl: input.requestUrl });
     const headers = [
       { key: "Content-Type", value: "application/json" },
-      { key: "x-unipile-secret", value: input.secret },
+      { key: WEBHOOK_SECRET_HEADER, value: input.secret },
     ];
     const registered: string[] = [];
     const hooks: WebhookRegistration["hooks"] = [];
-    for (const [source, events] of [
-      ["users", ["new_relation"]],
-      ["messaging", ["message_received"]],
-    ] as const) {
-      const name = `${source}:${events.join(",")}`;
+    for (const { name, source, event } of WEBHOOKS) {
       try {
         await this.call("POST", "/api/v1/webhooks", {
-          json: { source, request_url: input.requestUrl, name: `${input.name} ${source}`, events, headers, format: "json" },
+          json: { source, request_url: input.requestUrl, name: `${input.name} ${source}`, events: [event], headers, format: "json" },
         });
         registered.push(name);
         hooks.push({ name, error: null });

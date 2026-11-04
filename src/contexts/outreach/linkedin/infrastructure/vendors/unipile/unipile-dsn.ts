@@ -32,6 +32,15 @@ export function normalizeDsn(input: string, policy: DsnPolicy = STRICT_DSN_POLIC
   return parseDsn(input, policy)?.host ?? null;
 }
 
+/**
+ * What the gateway needs from stored credentials, or null when the policy does not allow the DSN. A stored DSN is checked
+ * again before every use, so a row saved under an older, looser rule cannot reach the network.
+ */
+export function storedConnection(credentials: Record<string, string>, policy?: DsnPolicy): { dsn: string; scheme: DsnScheme; apiKey: string } | null {
+  const parsed = parseDsn(credentials.dsn ?? "", policy);
+  return parsed ? { dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey ?? "" } : null;
+}
+
 /** The single parse of a DSN: the normalized host and the scheme the gateway must use. The gateway never re-derives either. */
 export function parseDsn(input: string, policy: DsnPolicy = STRICT_DSN_POLICY): { host: string; scheme: DsnScheme } | null {
   const trimmed = input.trim();

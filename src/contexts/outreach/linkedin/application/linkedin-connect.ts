@@ -3,7 +3,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { LinkedInGatewayError } from "./linkedin-ports";
 import { isLocalOrigin } from "@/shared/local-origin";
-import { storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
+import { syncWith, type LinkedInManagementDeps } from "./linkedin-management";
 
 /** How long the wizard link stays valid. */
 export const CONNECT_LINK_MINUTES = 15;
@@ -43,7 +43,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   if (ownerUserId && !(await deps.members?.isMember(actor.organizationId, ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  const gateway = storedGateway(deps, credentials);
+  const gateway = deps.vendor.gatewayFor(credentials);
   const now = deps.now();
 
   let reconnectAccount: string | null = null;
@@ -128,7 +128,7 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
     return { status: 200, outcome: "failed" };
   }
   try {
-    await syncWith(deps, link.organizationId, storedGateway(deps, credentials));
+    await syncWith(deps, link.organizationId, deps.vendor.gatewayFor(credentials));
   } catch (error) {
     // The vendor retries a non-200, and the link stays pending for that.
     await deps.connectLinks.noteError(link.id, deps.vendor.explain(error));

@@ -103,11 +103,6 @@ function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can manage LinkedIn.");
 }
 
-/** Throws a ConflictError a person can act on when the stored connection can no longer be used. */
-export function storedGateway(deps: LinkedInManagementDeps, credentials: LinkedInCredentials): LinkedInGateway {
-  return deps.vendor.gatewayFor(credentials);
-}
-
 const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => deps.vendor.webhooks.requestUrl(deps.appUrl, organizationId);
 
 /**
@@ -239,7 +234,7 @@ export async function syncLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   requireAdmin(actor);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  const gateway = storedGateway(deps, credentials);
+  const gateway = deps.vendor.gatewayFor(credentials);
   try {
     return await syncAndRecord(deps, actor.organizationId, gateway);
   } catch (error) {
@@ -251,7 +246,7 @@ export async function registerLinkedInWebhooks(deps: LinkedInManagementDeps, act
   requireAdmin(actor);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  return registerWebhooks(deps, actor.organizationId, storedGateway(deps, credentials), credentials);
+  return registerWebhooks(deps, actor.organizationId, deps.vendor.gatewayFor(credentials), credentials);
 }
 
 /** Everything an owner or admin needs to register the webhooks by hand in the vendor's dashboard. Each call writes an audit row. */
@@ -277,7 +272,7 @@ export async function disconnectLinkedIn(deps: LinkedInManagementDeps, actor: Ac
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (credentials && !isLocalOrigin(deps.appUrl)) {
     try {
-      await storedGateway(deps, credentials).removeWebhooks({ requestUrl: webhookRequestUrl(deps, actor.organizationId) });
+      await deps.vendor.gatewayFor(credentials).removeWebhooks({ requestUrl: webhookRequestUrl(deps, actor.organizationId) });
     } catch (error) {
       console.error(`LinkedIn disconnect: could not remove ${deps.vendor.name} webhooks for organization ${actor.organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }

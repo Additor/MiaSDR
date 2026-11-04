@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { receiveUnipileWebhook } from "@/composition/inbox-filing";
+import { WEBHOOK_SECRET_HEADER } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const delivery = await receiveUnipileWebhook({ organizationId, secret: request.headers.get("x-unipile-secret"), payload });
+  const delivery = await receiveUnipileWebhook({ organizationId, secret: request.headers.get(WEBHOOK_SECRET_HEADER), payload });
   if (delivery.status === 401) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return NextResponse.json({ ok: true, status: delivery.result.status });
 }

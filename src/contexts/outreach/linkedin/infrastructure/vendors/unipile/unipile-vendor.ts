@@ -1,7 +1,8 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import { LinkedInGatewayError, type LinkedInGateway, type LinkedInVendor } from "../../../application/linkedin-ports";
-import { parseDsn, type DsnPolicy, type DsnScheme } from "./unipile-dsn";
+import { parseDsn, storedConnection, type DsnPolicy, type DsnScheme } from "./unipile-dsn";
 import { UnipileGateway } from "./unipile-gateway";
+import { WEBHOOKS, WEBHOOK_SECRET_HEADER } from "./unipile-webhook";
 
 const NAME = "Unipile";
 const WEBHOOK_PATH = "/api/webhooks/unipile";
@@ -45,11 +46,10 @@ export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedI
       return { dsn: parsed.host, apiKey };
     },
 
-    // A stored DSN is checked again before every use, so a row saved under an older, looser rule cannot reach the network.
     gatewayFor(credentials) {
-      const parsed = parseDsn(credentials.dsn ?? "", options.dsnPolicy);
-      if (!parsed) throw new ConflictError("The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard.");
-      return gatewayFor({ dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey ?? "" });
+      const connection = storedConnection(credentials, options.dsnPolicy);
+      if (!connection) throw new ConflictError("The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard.");
+      return gatewayFor(connection);
     },
 
     describe: (credentials) => ({ dsn: credentials?.dsn ?? null }),
@@ -63,11 +63,8 @@ export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedI
 
     webhooks: {
       requestUrl: (appUrl, organizationId) => `${withoutSlash(appUrl)}${WEBHOOK_PATH}?org=${organizationId}`,
-      headerName: "x-unipile-secret",
-      hooks: [
-        { name: "users:new_relation", source: "users", event: "new_relation" },
-        { name: "messaging:message_received", source: "messaging", event: "message_received" },
-      ],
+      headerName: WEBHOOK_SECRET_HEADER,
+      hooks: WEBHOOKS,
     },
 
     connectUrls({ appUrl, linkId, secret }) {

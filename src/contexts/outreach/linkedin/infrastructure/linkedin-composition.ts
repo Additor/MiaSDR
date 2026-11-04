@@ -30,9 +30,11 @@ import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
-import { parseDsn, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
+import { storedConnection, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
 import { createUnipileVendor } from "./vendors/unipile/unipile-vendor";
 import { parseUnipilePayload, unipileEventKey, unreadablePayloadEvent } from "./vendors/unipile/unipile-webhook";
+
+export { WEBHOOK_SECRET_HEADER } from "./vendors/unipile/unipile-webhook";
 
 const globalForFake = globalThis as unknown as { __miasdrFakeLinkedIn?: FakeLinkedInGateway };
 
@@ -61,9 +63,8 @@ export function linkedinGateways(options: { allowLoopback?: boolean } = {}): Lin
     async forOrganization(organizationId): Promise<LinkedInGateway | null> {
       const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
       if (!credentials) return null;
-      // A DSN saved under an older rule is checked again, so the key only goes to an allowed host.
-      const parsed = parseDsn(credentials.dsn ?? "", dsnPolicy(options));
-      return parsed ? new UnipileGateway({ dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey ?? "" }) : null;
+      const connection = storedConnection(credentials, dsnPolicy(options));
+      return connection ? new UnipileGateway(connection) : null;
     },
   };
 }

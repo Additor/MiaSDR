@@ -12,6 +12,15 @@ import type { LinkedInInboundEvent } from "../../../domain/linkedin";
  *                     sender.attendee_provider_id === account_info.user_id marks an echo.
  */
 
+/** The header that carries the organization's secret on every webhook. */
+export const WEBHOOK_SECRET_HEADER = "x-unipile-secret";
+
+/** The webhooks this app registers at Unipile. Their events are the ones it acts on. */
+export const WEBHOOKS = [
+  { name: "users:new_relation", source: "users", event: "new_relation" },
+  { name: "messaging:message_received", source: "messaging", event: "message_received" },
+] as const;
+
 type Json = Record<string, unknown>;
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
@@ -54,7 +63,7 @@ export function parseUnipilePayload(payload: unknown): LinkedInInboundEvent | nu
 }
 
 /** The events this app acts on. One of them that fails to parse is a changed payload, and the reply inside it would be lost. */
-const HANDLED_EVENTS = new Set(["message_received", "new_relation"]);
+const HANDLED_EVENTS = new Set<string>(WEBHOOKS.map((hook) => hook.event));
 
 /** Names the event when Unipile sent one this app acts on and `parseUnipilePayload` could not read it. */
 export function unreadablePayloadEvent(payload: unknown): string | null {

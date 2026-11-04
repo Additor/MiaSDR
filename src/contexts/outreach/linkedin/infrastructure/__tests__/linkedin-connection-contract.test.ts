@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Actor } from "@/shared/errors";
 import * as connect from "../../application/linkedin-connect";
 import * as mgmt from "../../application/linkedin-management";
@@ -53,8 +53,6 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
 const refusal = (run: () => Promise<unknown>) => run().then(() => null, (error: Error) => error.message);
 
 describe("LinkedIn connection contract", () => {
-  beforeEach(() => vi.spyOn(console, "error").mockImplementation(() => undefined));
-
   it("words a refused connection the same way", async () => {
     const f = world();
     const connectWith = (dsn: string, apiKey: string) => refusal(() => mgmt.connectLinkedIn(f.deps, actor, { dsn, apiKey }));
