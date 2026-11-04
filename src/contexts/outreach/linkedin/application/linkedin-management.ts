@@ -204,6 +204,7 @@ export async function listLinkedInAccountStatus(deps: LinkedInManagementDeps, ac
 }
 
 export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor) {
+  requireAdmin(actor);
   const now = deps.now();
   const [credentials, webhooks, sync, accounts, links] = await Promise.all([
     deps.accounts.getCredentials(actor.organizationId),

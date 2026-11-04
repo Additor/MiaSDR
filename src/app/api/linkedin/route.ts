@@ -3,7 +3,7 @@ import { connectLinkedIn, disconnectLinkedIn, listLinkedInAccounts } from "@/con
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { withActor, withAdmin } from "@/app/_lib/api";
 
-export const GET = () => withActor((actor) => listLinkedInAccounts(linkedinManagementDeps(), actor));
+export const GET = () => withAdmin("Only an owner or admin can manage LinkedIn.", (actor) => listLinkedInAccounts(linkedinManagementDeps(), actor));
 
 export const POST = (request: Request) =>
   withAdmin("Only an owner or admin can manage LinkedIn.", async (actor) => connectLinkedIn(linkedinManagementDeps(), actor, z.object({ dsn: z.string().max(200), apiKey: z.string().max(500) }).parse(await request.json())));
