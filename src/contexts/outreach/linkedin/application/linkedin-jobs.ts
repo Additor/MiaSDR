@@ -14,7 +14,7 @@ const POLL_BUDGET_MS = 15_000;
 
 /**
  * Per tick: replay failed webhook events (so a reply stops its sequence before sends are claimed),
- * reconcile unknown outcomes, read search pages, then give every due account one unit of work.
+ * reconcile unknown outcomes, read inboxes that have no webhook, read search pages, then give every due account one unit of work.
  */
 export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort, poll?: LinkedInInboundPollDeps): Job[] {
   return [
@@ -70,6 +70,20 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
         return { processed: report.foundSent + report.retryable + report.expired, more: report.checked >= 25, detail: { waiting: report.stillWaiting } };
       },
     },
+    ...(poll
+      ? [
+          {
+            // Before the search, which may use the rest of the tick, and before the sends: a claim refuses an account whose inbox was not read lately.
+            // A share of the tick, because every job shares one deadline.
+            name: "linkedin.poll-inbound",
+            failureKeys: ["failed"],
+            async run(ctx: TickContext) {
+              const report = await pollLinkedInInbound(poll, Math.min(ctx.deadline, Date.now() + POLL_BUDGET_MS));
+              return { processed: report.deliveries, more: false, detail: { accounts: report.accounts, finished: report.finished, failed: report.failed } };
+            },
+          } satisfies Job,
+        ]
+      : []),
     {
       // One page per claim. The pacing gap lives on the rows, so the job never sleeps: a search that is not due is skipped.
       name: "linkedin.search",
@@ -87,19 +101,6 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
         return { processed, more: true, detail };
       },
     },
-    ...(poll
-      ? [
-          {
-            // Before the sends: a claim refuses an account whose inbox was not read lately. A share of the tick, because every job shares one deadline.
-            name: "linkedin.poll-inbound",
-            failureKeys: ["failed"],
-            async run(ctx: TickContext) {
-              const report = await pollLinkedInInbound(poll, Math.min(ctx.deadline, Date.now() + POLL_BUDGET_MS));
-              return { processed: report.deliveries, more: false, detail: { accounts: report.accounts, finished: report.finished, failed: report.failed } };
-            },
-          } satisfies Job,
-        ]
-      : []),
     {
       name: "linkedin.run",
       failureKeys: ["failed", "resolve_failed"],
