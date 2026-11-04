@@ -13,7 +13,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
   const sql = testSql({ max: 6 });
   let inbound: typeof import("../../application/linkedin-inbound");
   let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
-  let parse: typeof import("../unipile-webhook").parseUnipilePayload;
+  let parse: typeof import("../vendors/unipile/unipile-webhook").parseUnipilePayload;
   let campaignsApp: typeof import("../../application/linkedin-campaigns");
   let linkedinComposition: typeof import("../linkedin-composition");
   let inboxApp: typeof import("@/contexts/conversations/application/inbox");
@@ -103,7 +103,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
   beforeAll(async () => {
     inbound = await import("../../application/linkedin-inbound");
     inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
-    ({ parseUnipilePayload: parse } = await import("../unipile-webhook"));
+    ({ parseUnipilePayload: parse } = await import("../vendors/unipile/unipile-webhook"));
     campaignsApp = await import("../../application/linkedin-campaigns");
     linkedinComposition = await import("../linkedin-composition");
     inboxApp = await import("@/contexts/conversations/application/inbox");

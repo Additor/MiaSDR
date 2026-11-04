@@ -1,4 +1,4 @@
-import type { LinkedInInboundEvent } from "../domain/linkedin";
+import type { LinkedInInboundEvent } from "../../../domain/linkedin";
 
 /*
  * Webhook payloads, per developer.unipile.com/docs (read 2026-10-14):

@@ -1,5 +1,5 @@
-import { linkedinSlug } from "../domain/linkedin";
-import { parseLinkedInProfileRef, PROVIDER_ID } from "../domain/linkedin-identity";
+import { linkedinSlug } from "../../../domain/linkedin";
+import { parseLinkedInProfileRef, PROVIDER_ID } from "../../../domain/linkedin-identity";
 import {
   LinkedInGatewayError,
   type GatewayAccount,
@@ -10,7 +10,7 @@ import {
   type NetworkDistance,
   type SearchPage,
   type WebhookRegistration,
-} from "../application/linkedin-ports";
+} from "../../../application/linkedin-ports";
 
 /*
  * Unipile adapter over fetch, no SDK. Every call below was checked against the official reference

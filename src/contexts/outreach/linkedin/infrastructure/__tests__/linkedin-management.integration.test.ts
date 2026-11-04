@@ -102,7 +102,7 @@ describeDb("linkedin connection and campaigns", () => {
     const [{ receiveLinkedInWebhook }, { createDrizzleLinkedInInboundStore }, { parseUnipilePayload }] = await Promise.all([
       import("../../application/linkedin-inbound"),
       import("../drizzle-linkedin-inbound-store"),
-      import("../unipile-webhook"),
+      import("../vendors/unipile/unipile-webhook"),
     ]);
     const a = await org();
     const b = await org();

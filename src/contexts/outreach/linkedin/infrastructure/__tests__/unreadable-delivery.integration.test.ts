@@ -21,7 +21,7 @@ describeDb("an unreadable Unipile delivery", () => {
     orgs.push(org);
     const { receiveLinkedInWebhook } = await import("../../application/linkedin-inbound");
     const { createDrizzleLinkedInInboundStore } = await import("../drizzle-linkedin-inbound-store");
-    const { parseUnipilePayload, unreadablePayloadEvent } = await import("../unipile-webhook");
+    const { parseUnipilePayload, unreadablePayloadEvent } = await import("../vendors/unipile/unipile-webhook");
     const { inboxFiling } = await import("@/composition/inbox-filing");
     const deps = { store: createDrizzleLinkedInInboundStore(inboxFiling), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent };
     const result = await receiveLinkedInWebhook(deps, { organizationId: org.organizationId, payload });

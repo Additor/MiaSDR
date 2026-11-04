@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LinkedInGatewayError } from "../../application/linkedin-ports";
-import { normalizeDsn, parseDsn } from "../../application/linkedin-management";
+import { LinkedInGatewayError } from "../../../../application/linkedin-ports";
+import { normalizeDsn, parseDsn } from "../../../../application/linkedin-management";
 import { UnipileGateway, classifyHttpError } from "../unipile-gateway";
 
 interface Call {

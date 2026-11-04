@@ -19,7 +19,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
   let opsStore: typeof import("../drizzle-linkedin-operations-store").drizzleLinkedInOperationsStore;
   let auditSink: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
-  let parse: typeof import("../unipile-webhook").parseUnipilePayload;
+  let parse: typeof import("../vendors/unipile/unipile-webhook").parseUnipilePayload;
   const orgs: TestOrg[] = [];
   const current = new Date("2026-10-15T10:00:00Z");
 
@@ -63,7 +63,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
     ({ drizzleLinkedInOperationsStore: opsStore } = await import("../drizzle-linkedin-operations-store"));
     ({ auditSink } = await import("@/contexts/tenancy/infrastructure/audit"));
     inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
-    ({ parseUnipilePayload: parse } = await import("../unipile-webhook"));
+    ({ parseUnipilePayload: parse } = await import("../vendors/unipile/unipile-webhook"));
   });
 
   afterAll(async () => {

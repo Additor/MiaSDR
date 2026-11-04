@@ -29,8 +29,8 @@ import { drizzleLinkedInSearchEngineStore, drizzleLinkedInSearchStore } from "./
 import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
-import { UnipileGateway } from "./unipile-gateway";
-import { parseUnipilePayload, unreadablePayloadEvent } from "./unipile-webhook";
+import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
+import { parseUnipilePayload, unreadablePayloadEvent } from "./vendors/unipile/unipile-webhook";
 
 const globalForFake = globalThis as unknown as { __miasdrFakeLinkedIn?: FakeLinkedInGateway };
 
