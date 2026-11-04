@@ -10,7 +10,7 @@ Unipile is a hosted API that connects to LinkedIn profiles on your behalf. MiaSD
 
 ## Connect
 
-1. In the Unipile dashboard, note the DSN (base URL such as `https://<subdomain>.unipile.com:<port>`) and create an API key. Connect each LinkedIn profile in the Unipile dashboard. MiaSDR has no hosted auth link yet.
+1. In the Unipile dashboard, note the DSN (base URL such as `https://<subdomain>.unipile.com:<port>`) and create an API key. Connect each LinkedIn profile afterwards from Settings, LinkedIn, or in the Unipile dashboard.
 2. In MiaSDR open Settings, LinkedIn (an owner or admin). Save the DSN and API key. The page checks the key with `GET /api/v1/accounts?limit=1`, stores the credentials encrypted with `INTEGRATION_CREDENTIALS_KEY`, imports the profiles into your organization and registers the webhooks.
 3. Webhooks call `POST /api/webhooks/unipile?org=<organization id>` with a secret header the page generates. Unipile must reach your `APP_URL` from the internet. Without a public URL, replies and accepted invitations do not arrive.
 4. DSN hosts under `*.unipile.com` are accepted. For a custom domain, list it in `LINKEDIN_DSN_ALLOWED_HOSTS`.
