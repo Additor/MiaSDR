@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import { LinkedInGatewayError, type LinkedInEngineDeps, type LinkedInInboundDeps, type LinkedInInboundStore } from "../../application/linkedin-ports";
 import { FakeLinkedInGateway } from "../fake-linkedin-gateway";
@@ -19,7 +20,7 @@ describeDb("linkedin engine", () => {
   let inbound: typeof import("../../application/linkedin-inbound");
   let store: typeof import("../drizzle-linkedin-store").drizzleLinkedInStore;
   let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
-  let parse: typeof import("../unipile-webhook").parseUnipilePayload;
+  let parse: typeof import("../vendors/unipile/unipile-webhook").parseUnipilePayload;
   const cleanup: string[] = [];
 
   const start = new Date("2026-10-14T10:00:00Z");
@@ -34,6 +35,7 @@ describeDb("linkedin engine", () => {
     store: override ? { ...inboundStore, ...override } : inboundStore,
     clock,
     parse,
+    eventKey: unipileEventKey,
   });
 
   async function fixture(options: { people?: number; dailyLimit?: number; steps?: unknown[]; hours?: unknown; premium?: boolean } = {}) {
@@ -108,7 +110,7 @@ describeDb("linkedin engine", () => {
     inbound = await import("../../application/linkedin-inbound");
     ({ drizzleLinkedInStore: store } = await import("../drizzle-linkedin-store"));
     inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
-    ({ parseUnipilePayload: parse } = await import("../unipile-webhook"));
+    ({ parseUnipilePayload: parse } = await import("../vendors/unipile/unipile-webhook"));
   });
 
   afterAll(async () => {

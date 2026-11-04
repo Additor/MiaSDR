@@ -3,7 +3,7 @@ export type ConnectLinkStatus = "pending" | "completed" | "expired" | "failed";
 export interface ConnectLink {
   id: string;
   organizationId: string;
-  /** The `name` sent to Unipile, echoed back on the callback. */
+  /** The `name` sent to the vendor, echoed back on the callback. */
   providerName: string;
   /** Hex SHA-256 of the notify secret. The secret itself is never stored. */
   secretHash: string;

@@ -42,7 +42,7 @@ src/components/     ui/ primitives (shadcn, with cn in ui/utils.ts), hooks/ and 
 
 A screen's own pieces sit next to its `page.tsx`. Once a route folder holds more than a handful of them, components go in `_components/` and pure logic with its tests in `_lib/`, as `tables`, `campaigns/[id]`, `inbox/[id]` and `leads` do. UI that several areas share lives in `src/app/(app)/_components` (the person views, the record header); primitives and the app shell live in `src/components`.
 
-New infrastructure files take one of these names: `drizzle-<noun>-store.ts` for a store that implements a port, `<noun>-read-model.ts` or `<noun>-read.ts` for a read across tables, `<noun>-sql.ts` for SQL helpers that run inside another write's transaction, and `composition.ts` or `<module>-composition.ts` for wiring. Some older files predate the rule.
+New infrastructure files take one of these names: `drizzle-<noun>-store.ts` for a store that implements a port, `<noun>-read-model.ts` or `<noun>-read.ts` for a read across tables, `<noun>-sql.ts` for SQL helpers that run inside another write's transaction, and `composition.ts` or `<module>-composition.ts` for wiring. An outside vendor's adapter sits in `infrastructure/vendors/`, with no `-composition` file inside. Some older files predate the rule.
 
 Unit tests of `domain/` and `application/` sit next to the file they test. Tests of `infrastructure/` and `src/platform/db`, most of them integration tests against Postgres, sit in that folder's `__tests__/`.
 

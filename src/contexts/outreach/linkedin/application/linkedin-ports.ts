@@ -73,7 +73,7 @@ export interface SearchPage {
   totalEstimate: number | null;
 }
 
-/** Port for LinkedIn. One instance serves one set of provider credentials. Unipile is the only adapter. */
+/** Port for LinkedIn. One instance serves one set of provider credentials. Adapters live in `infrastructure/vendors`. */
 export interface LinkedInGateway {
   /** Confirms the credentials work. Throws a LinkedInGatewayError a person can act on. */
   verify(): Promise<void>;
@@ -94,15 +94,15 @@ export interface LinkedInGateway {
   /** For reconciling an unknown message: a message from the account owner with this text after `since`. */
   findSentMessage(input: { account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
   searchPeople(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage>;
-  /** Registers webhooks that call `requestUrl` with `secret` in the `x-unipile-secret` header. Idempotent. */
+  /** Registers webhooks that call `requestUrl` and carry `secret`, in the header `LinkedInVendor.webhooks` names. Idempotent. */
   registerWebhooks(input: { requestUrl: string; secret: string; name: string }): Promise<WebhookRegistration>;
   /** Deletes every webhook whose `request_url` equals `requestUrl` (all list pages). Returns how many it deleted. */
   removeWebhooks(input: { requestUrl: string }): Promise<{ removed: number }>;
   /**
-   * Makes a single-use hosted-auth link. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new LinkedIn account.
-   * The caller sends the person to `url` in a full page navigation (Unipile advises against an iframe).
+   * Makes a single-use link that connects a LinkedIn account. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new one.
+   * The caller sends the person to `url` in a full page navigation.
    */
-  createHostedAuthLink(input: HostedAuthLinkInput): Promise<{ url: string }>;
+  createConnectLink(input: ConnectLinkInput): Promise<{ url: string }>;
 }
 
 /** One entry per hook the gateway tried to create. `error` holds the gateway failure, which the caller turns into fixed text. */
@@ -112,15 +112,45 @@ export interface WebhookRegistration {
   hooks: Array<{ name: string; error: unknown | null }>;
 }
 
-export interface HostedAuthLinkInput {
+export interface ConnectLinkInput {
   /** Echoed back as `name` on the notify callback. */
   name: string;
   expiresAt: Date;
   successRedirectUrl: string;
   failureRedirectUrl: string;
-  /** Left out when Unipile cannot reach this app (a local address). */
+  /** Left out when the vendor cannot reach this app (a local address). */
   notifyUrl: string | null;
   reconnectAccount: string | null;
+}
+
+/** Fields a vendor needs to reach its API, stored encrypted as given. The application passes them through without reading them. */
+export type VendorCredentials = Record<string, string>;
+
+/** What the connection flows need to know about the company behind a gateway: its credentials, sentences, webhooks and callback. */
+export interface LinkedInVendor {
+  /** The stable value stored and logged for this vendor. */
+  readonly key: string;
+  /** How people know this vendor, for sentences. */
+  readonly name: string;
+  /** Checks what a person entered and returns the credentials to store. Throws a ValidationError a person can act on. */
+  readConnectInput(input: Record<string, string>): VendorCredentials;
+  /** Builds the gateway for credentials. Throws a ConflictError a person can act on when they may no longer be used. */
+  gatewayFor(credentials: VendorCredentials): LinkedInGateway;
+  /** What an owner or admin sees about the connection. */
+  describe(credentials: VendorCredentials | null): { dsn: string | null };
+  /** Fixed text for a gateway failure. The upstream text never reaches a person. */
+  explain(error: unknown): string;
+  /** The same, for a sync that used stored credentials. */
+  explainSyncFailure(error: unknown): string;
+  readonly webhooks: {
+    requestUrl(appUrl: string, organizationId: string): string;
+    /** The header that carries the organization's secret. */
+    headerName: string;
+    hooks: ReadonlyArray<{ name: string; source: string; event: string }>;
+  };
+  connectUrls(input: { appUrl: string; linkId: string; secret: string }): { success: string; failure: string; notify: string };
+  /** Reads the vendor's connect callback. Null for a body it cannot read. */
+  readConnectNotify(payload: unknown): { status: string; connected: boolean; accountId: string | null; name: string } | null;
 }
 
 /** Hands out the gateway for an organization, or null when that organization has not connected LinkedIn. */
@@ -285,4 +315,6 @@ export interface LinkedInInboundDeps {
   parse: (payload: unknown) => LinkedInInboundEvent | null;
   /** The event's name when it is one this app acts on and `parse` could not read it. */
   unreadable?: (payload: unknown) => string | null;
+  /** Idempotency key for the ledger. Null when the event has no id to key on. */
+  eventKey: (event: LinkedInInboundEvent, organizationId: string) => string | null;
 }

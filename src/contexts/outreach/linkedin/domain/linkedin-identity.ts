@@ -2,7 +2,7 @@
 // Sales Navigator, Recruiter or classic provider id. No I/O.
 import { linkedinSlug } from "./linkedin";
 
-/** A Unipile provider id (ACo..., ACw..., AE...). It is case sensitive, so callers must never lowercase it. */
+/** A provider member id (ACo..., ACw..., AE...). It is case sensitive, so callers must never lowercase it. */
 export const PROVIDER_ID = /^A(Co|Cw|E)[A-Za-z0-9_-]+$/;
 
 export type LinkedInApi = "classic" | "sales_navigator" | "recruiter";

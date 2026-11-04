@@ -1,4 +1,4 @@
-import type { LinkedInInboundEvent } from "../domain/linkedin";
+import type { LinkedInInboundEvent } from "../../../domain/linkedin";
 
 /*
  * Webhook payloads, per developer.unipile.com/docs (read 2026-10-14):
@@ -11,6 +11,15 @@ import type { LinkedInInboundEvent } from "../domain/linkedin";
  *                     There is no is_sender field. Messages the account owner sent also arrive, so
  *                     sender.attendee_provider_id === account_info.user_id marks an echo.
  */
+
+/** The header that carries the organization's secret on every webhook. */
+export const WEBHOOK_SECRET_HEADER = "x-unipile-secret";
+
+/** The webhooks this app registers at Unipile. Their events are the ones it acts on. */
+export const WEBHOOKS = [
+  { name: "users:new_relation", source: "users", event: "new_relation" },
+  { name: "messaging:message_received", source: "messaging", event: "message_received" },
+] as const;
 
 type Json = Record<string, unknown>;
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
@@ -54,7 +63,7 @@ export function parseUnipilePayload(payload: unknown): LinkedInInboundEvent | nu
 }
 
 /** The events this app acts on. One of them that fails to parse is a changed payload, and the reply inside it would be lost. */
-const HANDLED_EVENTS = new Set(["message_received", "new_relation"]);
+const HANDLED_EVENTS = new Set<string>(WEBHOOKS.map((hook) => hook.event));
 
 /** Names the event when Unipile sent one this app acts on and `parseUnipilePayload` could not read it. */
 export function unreadablePayloadEvent(payload: unknown): string | null {
@@ -63,4 +72,16 @@ export function unreadablePayloadEvent(payload: unknown): string | null {
   if (!event || !HANDLED_EVENTS.has(event)) return null;
   if (body.account_type !== undefined && body.account_type !== "LINKEDIN") return null;
   return parseUnipilePayload(payload) ? null : event;
+}
+
+/**
+ * Idempotency key for the ledger. A redelivery of the same fact yields the same key.
+ * `message_received` keys on the message id, `new_relation` on the member. The organization id is part
+ * of the key because `inbound_events` is unique on (provider, key) across tenants: without it, another
+ * organization could claim a key first and drop the real event. Version 2 added the organization. Replay
+ * reads the stored payload, never the key, so the old v1 rows need no translation.
+ */
+export function unipileEventKey(event: LinkedInInboundEvent, organizationId: string): string | null {
+  if (event.type === "message_received") return event.messageId ? `unipile:message_received:v2:${organizationId}:${event.account}:${event.messageId}` : null;
+  return `unipile:new_relation:v2:${organizationId}:${event.account}:${event.member}`;
 }

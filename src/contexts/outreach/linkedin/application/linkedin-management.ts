@@ -7,7 +7,7 @@ import { DEFAULT_LINKEDIN_RULES } from "../domain/linkedin";
 import { INVITE_LIMIT_RULE, MESSAGE_LIMIT_RULE, limitProblem, limitWarnings } from "../domain/linkedin-limits";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { type WorkingHours } from "../../domain/working-hours";
-import { LinkedInGatewayError, type GatewayAccount, type LinkedInGateway } from "./linkedin-ports";
+import type { GatewayAccount, LinkedInGateway, LinkedInVendor, VendorCredentials } from "./linkedin-ports";
 import type { LinkedInConnectStore } from "./linkedin-connect-ports";
 
 import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
@@ -36,15 +36,8 @@ export interface AccountStatusChange {
   to: "connected" | "disconnected";
 }
 
-export const WEBHOOK_HEADER = "x-unipile-secret";
-
-export interface LinkedInCredentials {
-  /** Host of the Unipile DSN, such as `api1.unipile.com:13111`, without scheme or trailing slash. */
-  dsn: string;
-  apiKey: string;
-  /** Shared secret Unipile sends in `x-unipile-secret` on every webhook. Generated on first save. */
-  notifySecret: string;
-}
+/** Vendor fields stored as given, plus the shared secret the vendor sends on every webhook. Generated on first save. */
+export type LinkedInCredentials = VendorCredentials & { notifySecret: string };
 
 export interface LinkedInAccountRecord {
   id: string;
@@ -69,7 +62,7 @@ export interface LinkedInAccountStore {
   saveCredentials(organizationId: string, credentials: LinkedInCredentials): Promise<void>;
   /** The last stored registration result, or null when none was recorded. */
   getWebhookStatus(organizationId: string): Promise<WebhookStatus | null>;
-  /** Replaces the stored registration result. A no-op when the organization has no Unipile row. */
+  /** Replaces the stored registration result. A no-op when the organization has no connection row. */
   saveWebhookStatus(organizationId: string, status: WebhookStatus): Promise<void>;
   /** Removes the credentials and marks every account disconnected. */
   clearCredentials(organizationId: string): Promise<void>;
@@ -78,11 +71,11 @@ export interface LinkedInAccountStore {
     organizationId: string,
     accounts: Array<GatewayAccount & { isPremium: boolean | null; headline: string | null }>,
   ): Promise<{ added: number; updated: number; skipped: number; skippedReasons: string[]; changes: AccountStatusChange[] }>;
-  /** Organizations whose Unipile integration is enabled and has a credential row. Decrypting is left to `getCredentials`. */
+  /** Organizations whose LinkedIn integration is enabled and has a credential row. Decrypting is left to `getCredentials`. */
   listCredentialedOrganizations(): Promise<string[]>;
   /** The last stored sync result. Both fields are null when no sync was recorded. */
   getSyncStatus(organizationId: string): Promise<SyncStatus>;
-  /** Merges the given fields into the stored sync result. A no-op when the organization has no Unipile row. */
+  /** Merges the given fields into the stored sync result. A no-op when the organization has no connection row. */
   saveSyncStatus(organizationId: string, patch: Partial<SyncStatus>): Promise<void>;
   list(organizationId: string, now: Date): Promise<LinkedInAccountRecord[]>;
   /** Returns the stored limits after the change, or null when the account is not in this organization. */
@@ -97,10 +90,7 @@ export interface LinkedInAccountStore {
 
 export interface LinkedInManagementDeps {
   accounts: LinkedInAccountStore;
-  /** Builds a gateway for credentials, so a connection can be verified before it is saved. */
-  gatewayFor: (credentials: Pick<LinkedInCredentials, "dsn" | "apiKey"> & { scheme?: DsnScheme }) => LinkedInGateway;
-  /** Which DSN hosts may receive the API key. Defaults to `*.unipile.com` only. */
-  dsnPolicy?: DsnPolicy;
+  vendor: LinkedInVendor;
   appUrl: string;
   now: () => Date;
   audit: AuditSink;
@@ -113,86 +103,7 @@ function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can manage LinkedIn.");
 }
 
-export interface DsnPolicy {
-  /** Hosts allowed besides `*.unipile.com`: `host`, `host:port` or `*.domain`. */
-  allowedHosts: string[];
-  /** Lets localhost, 127.0.0.1 and [::1] through, with plain http. Tests and the fake provider only. */
-  allowLoopback: boolean;
-}
-
-/** `http` only for an allowed loopback host. Everything else is `https`. */
-export type DsnScheme = "https" | "http";
-
-const STRICT_DSN_POLICY: DsnPolicy = { allowedHosts: [], allowLoopback: false };
-const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\])$/;
-const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
-
-function hostAllowed(hostname: string, host: string, entries: string[]): boolean {
-  if (hostname.endsWith(".unipile.com")) return true;
-  return entries.some((raw) => {
-    const entry = raw.trim().toLowerCase();
-    if (entry === "") return false;
-    if (entry.startsWith("*.")) return hostname.endsWith(entry.slice(1));
-    return entry === host || entry === hostname;
-  });
-}
-
-/**
- * Accepts `https://api1.unipile.com:13111/` or `api1.unipile.com:13111` and returns the bare host with its port, or null.
- * The key is sent to this host, so it must be a Unipile host (or one the operator listed). IP literals, userinfo,
- * paths, non-https schemes and ports outside 1..65535 are refused.
- */
-export function normalizeDsn(input: string, policy: DsnPolicy = STRICT_DSN_POLICY): string | null {
-  return parseDsn(input, policy)?.host ?? null;
-}
-
-/** The single parse of a DSN: the normalized host and the scheme the gateway must use. The gateway never re-derives either. */
-export function parseDsn(input: string, policy: DsnPolicy = STRICT_DSN_POLICY): { host: string; scheme: DsnScheme } | null {
-  const trimmed = input.trim();
-  if (trimmed === "" || trimmed.length > 255) return null;
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed)?.[1]?.toLowerCase() ?? null;
-  if (scheme !== null && scheme !== "https" && scheme !== "http") return null;
-  let url: URL;
-  try {
-    url = new URL(scheme ? trimmed : `https://${trimmed}`);
-  } catch {
-    return null;
-  }
-  if (url.username || url.password || url.search || url.hash || url.pathname !== "/") return null;
-  const hostname = url.hostname.toLowerCase();
-  // URL drops a default port and leaves the rest alone, so read the port from the text.
-  const authority = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split("/")[0];
-  const port = /:(\d*)$/.exec(authority.replace(/^\[[^\]]*\]/, ""))?.[1];
-  if (port !== undefined && (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535)) return null;
-  const host = url.host.toLowerCase();
-
-  if (LOOPBACK.test(hostname)) return policy.allowLoopback ? { host, scheme: "http" } : null;
-  // Plain http is for loopback only.
-  if (scheme === "http") return null;
-  if (hostname.startsWith("[") || /^[0-9.]+$/.test(hostname) || /^0x/i.test(hostname)) return null;
-  if (!HOSTNAME.test(hostname)) return null;
-  return hostAllowed(hostname, host, policy.allowedHosts) ? { host, scheme: "https" } : null;
-}
-
-/** Turns gateway failures into fixed messages. The upstream error text is never passed on, because the host may not be Unipile. */
-export function explain(error: unknown): string {
-  if (error instanceof LinkedInGatewayError) {
-    if (error.code === "auth") return "Unipile rejected the API key. Check the key and the DSN in your Unipile dashboard.";
-    if (error.code === "unavailable") return "Could not reach Unipile. Check the DSN and try again.";
-    if (error.code === "insufficient_privileges") return "Unipile refused the request because this API key or LinkedIn account lacks access to it.";
-    return "Unipile refused the request. Check the DSN and the API key.";
-  }
-  return "Could not reach Unipile.";
-}
-
-/** A stored DSN is checked again before every use, so a row saved under an older, looser rule cannot reach the network. */
-export function storedGateway(deps: LinkedInManagementDeps, credentials: LinkedInCredentials): LinkedInGateway {
-  const parsed = parseDsn(credentials.dsn, deps.dsnPolicy);
-  if (!parsed) throw new ConflictError("The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard.");
-  return deps.gatewayFor({ dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey });
-}
-
-const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => `${deps.appUrl.replace(/\/$/, "")}/api/webhooks/unipile?org=${organizationId}`;
+const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => deps.vendor.webhooks.requestUrl(deps.appUrl, organizationId);
 
 /**
  * The accounts with their status, limits and use today, for an owner or admin. Members only see that LinkedIn is
@@ -215,7 +126,7 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    dsn: credentials?.dsn ?? null,
+    ...deps.vendor.describe(credentials),
     webhooks,
     sync,
     accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account) })),
@@ -243,10 +154,9 @@ export async function syncWith(deps: LinkedInManagementDeps, organizationId: str
 }
 
 /** The fixed text stored and shown after a failed sync. The upstream error text never reaches the page. */
-export function syncErrorText(error: unknown): string {
-  if (error instanceof LinkedInGatewayError && error.code === "auth") return "Unipile rejected the saved key. Connect again with a new key.";
+export function syncErrorText(vendor: LinkedInVendor, error: unknown): string {
   if (error instanceof ConflictError) return error.message;
-  return explain(error);
+  return vendor.explainSyncFailure(error);
 }
 
 /** `syncWith`, then the result goes on the integration row. A failed sync keeps `lastSyncAt` and rethrows the original error. */
@@ -257,7 +167,7 @@ export async function syncAndRecord(deps: LinkedInManagementDeps, organizationId
     result = await syncWith(deps, organizationId, typeof gateway === "function" ? gateway() : gateway);
   } catch (error) {
     try {
-      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(error) });
+      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(deps.vendor, error) });
     } catch (saveError) {
       console.error(`LinkedIn sync: could not save the failure for organization ${organizationId}: ${saveError instanceof Error ? saveError.name : "unknown error"}`);
     }
@@ -273,23 +183,18 @@ export interface ConnectResult {
   webhooks: { status: "registered" | "skipped" | "failed"; detail: string };
 }
 
-/** Verifies the Unipile credentials, saves them encrypted, pulls the LinkedIn accounts and registers webhooks. */
-export async function connectLinkedIn(deps: LinkedInManagementDeps, actor: Actor, input: { dsn: string; apiKey: string }): Promise<ConnectResult> {
+/** Verifies the vendor credentials, saves them encrypted, pulls the LinkedIn accounts and registers webhooks. */
+export async function connectLinkedIn(deps: LinkedInManagementDeps, actor: Actor, input: Record<string, string>): Promise<ConnectResult> {
   requireAdmin(actor);
-  const parsed = parseDsn(input.dsn, deps.dsnPolicy);
-  if (!parsed) throw new ValidationError("Enter the DSN as shown in the Unipile dashboard, for example api1.unipile.com:13111. Only Unipile hosts are accepted.");
-  const apiKey = input.apiKey.trim();
-  if (apiKey === "" || apiKey.length > 500) throw new ValidationError("Enter the Unipile API key.");
-
-  const dsn = parsed.host;
-  const gateway = deps.gatewayFor({ dsn, scheme: parsed.scheme, apiKey });
+  const entered = deps.vendor.readConnectInput(input);
+  const gateway = deps.vendor.gatewayFor(entered);
   try {
     await gateway.verify();
   } catch (error) {
-    throw new ValidationError(explain(error));
+    throw new ValidationError(deps.vendor.explain(error));
   }
   const existing = await deps.accounts.getCredentials(actor.organizationId);
-  const credentials: LinkedInCredentials = { dsn, apiKey, notifySecret: existing?.notifySecret ?? randomBytes(24).toString("base64url") };
+  const credentials: LinkedInCredentials = { ...entered, notifySecret: existing?.notifySecret ?? randomBytes(24).toString("base64url") };
   await deps.accounts.saveCredentials(actor.organizationId, credentials);
 
   const synced = await syncAndRecord(deps, actor.organizationId, gateway);
@@ -307,74 +212,69 @@ async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: st
   };
   if (isLocalOrigin(deps.appUrl)) {
     await persist([]);
-    return { status: "skipped", detail: "APP_URL is a local or private address, so Unipile cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL." };
+    return { status: "skipped", detail: `APP_URL is a local or private address, so ${deps.vendor.name} cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL.` };
   }
   try {
     const { registered, hooks } = await gateway.registerWebhooks({ requestUrl: webhookRequestUrl(deps, organizationId), secret: credentials.notifySecret, name: "MiaSDR" });
-    await persist(hooks.map((h) => (h.error === null ? { name: h.name, status: "registered" as const } : { name: h.name, status: "failed" as const, error: explain(h.error) })));
+    await persist(hooks.map((h) => (h.error === null ? { name: h.name, status: "registered" as const } : { name: h.name, status: "failed" as const, error: deps.vendor.explain(h.error) })));
     const failed = hooks.filter((h) => h.error !== null);
     if (failed.length) {
       // The status stays failed. The text names the hooks that exist so nobody re-registers a working one.
-      const detail = registered.length ? `Registered: ${registered.join(", ")}. Failed: ${failed.map((h) => h.name).join(", ")} - ${explain(failed[0].error)}` : explain(failed[0].error);
+      const detail = registered.length ? `Registered: ${registered.join(", ")}. Failed: ${failed.map((h) => h.name).join(", ")} - ${deps.vendor.explain(failed[0].error)}` : deps.vendor.explain(failed[0].error);
       return { status: "failed", detail };
     }
     return { status: "registered", detail: registered.length ? `Registered: ${registered.join(", ")}.` : "Already registered." };
   } catch (error) {
-    await persist(WEBHOOK_NAMES.map((name) => ({ name, status: "failed" as const, error: explain(error) })));
-    return { status: "failed", detail: explain(error) };
+    await persist(deps.vendor.webhooks.hooks.map(({ name }) => ({ name, status: "failed" as const, error: deps.vendor.explain(error) })));
+    return { status: "failed", detail: deps.vendor.explain(error) };
   }
 }
-
-const WEBHOOK_NAMES = ["users:new_relation", "messaging:message_received"];
 
 export async function syncLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor): Promise<{ found: number; added: number; updated: number; skipped: number; skippedReasons: string[] }> {
   requireAdmin(actor);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError("Connect Unipile first.");
-  const gateway = storedGateway(deps, credentials);
+  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
+  const gateway = deps.vendor.gatewayFor(credentials);
   try {
     return await syncAndRecord(deps, actor.organizationId, gateway);
   } catch (error) {
-    throw new ConflictError(explain(error));
+    throw new ConflictError(deps.vendor.explain(error));
   }
 }
 
 export async function registerLinkedInWebhooks(deps: LinkedInManagementDeps, actor: Actor): Promise<ConnectResult["webhooks"]> {
   requireAdmin(actor);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError("Connect Unipile first.");
-  return registerWebhooks(deps, actor.organizationId, storedGateway(deps, credentials), credentials);
+  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
+  return registerWebhooks(deps, actor.organizationId, deps.vendor.gatewayFor(credentials), credentials);
 }
 
-/** Everything an owner or admin needs to register the webhooks by hand in the Unipile dashboard. Each call writes an audit row. */
+/** Everything an owner or admin needs to register the webhooks by hand in the vendor's dashboard. Each call writes an audit row. */
 export async function getLinkedInWebhookSetup(deps: LinkedInManagementDeps, actor: Actor) {
   requireAdmin(actor);
   const [credentials, status] = await Promise.all([deps.accounts.getCredentials(actor.organizationId), deps.accounts.getWebhookStatus(actor.organizationId)]);
-  if (!credentials) throw new ConflictError("Connect Unipile first.");
+  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
   // The row is written first: when it fails, the secret does not leave.
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "integration.secret_viewed", entityType: "integration", meta: { provider: "unipile" } });
+  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "integration.secret_viewed", entityType: "integration", meta: { provider: deps.vendor.key } });
   const requestUrl = webhookRequestUrl(deps, actor.organizationId);
   return {
     requestUrl,
-    headerName: WEBHOOK_HEADER,
+    headerName: deps.vendor.webhooks.headerName,
     secret: credentials.notifySecret,
-    webhooks: [
-      { name: WEBHOOK_NAMES[0], source: "users", event: "new_relation", requestUrl },
-      { name: WEBHOOK_NAMES[1], source: "messaging", event: "message_received", requestUrl },
-    ],
+    webhooks: deps.vendor.webhooks.hooks.map((hook) => ({ ...hook, requestUrl })),
     status,
   };
 }
 
-/** Removes this organization's webhooks at Unipile, then clears the credentials. A gateway failure is logged and never blocks the disconnect. */
+/** Removes this organization's webhooks at the vendor, then clears the credentials. A gateway failure is logged and never blocks the disconnect. */
 export async function disconnectLinkedIn(deps: LinkedInManagementDeps, actor: Actor): Promise<void> {
   requireAdmin(actor);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (credentials && !isLocalOrigin(deps.appUrl)) {
     try {
-      await storedGateway(deps, credentials).removeWebhooks({ requestUrl: webhookRequestUrl(deps, actor.organizationId) });
+      await deps.vendor.gatewayFor(credentials).removeWebhooks({ requestUrl: webhookRequestUrl(deps, actor.organizationId) });
     } catch (error) {
-      console.error(`LinkedIn disconnect: could not remove Unipile webhooks for organization ${actor.organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
+      console.error(`LinkedIn disconnect: could not remove ${deps.vendor.name} webhooks for organization ${actor.organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }
   }
   await deps.accounts.clearCredentials(actor.organizationId);

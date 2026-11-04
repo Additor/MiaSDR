@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createUnipileVendor } from "../unipile-vendor";
+import { unipileEventKey } from "../unipile-webhook";
 import type { Actor } from "@/shared/errors";
 import { ValidationError } from "@/shared/errors";
-import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../../domain/send-policy";
-import type { LinkedInEngineDeps, LinkedInGatewayProvider, LinkedInInboundDeps } from "../../application/linkedin-ports";
+import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../../../../domain/send-policy";
+import type { LinkedInEngineDeps, LinkedInGatewayProvider, LinkedInInboundDeps } from "../../../../application/linkedin-ports";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 import { startUnipileStandin, type UnipileStandin } from "./unipile-standin";
 import { UnipileGateway } from "../unipile-gateway";
@@ -27,22 +29,22 @@ const APP_URL = "https://app.example.com";
 describeDb("unipile gateway against the local stand-in", () => {
   useTestEnv({ LINKEDIN_PROVIDER: undefined });
   const sql = testSql({ max: 6 });
-  let engine: typeof import("../../application/send-next-linkedin");
-  let inbound: typeof import("../../application/linkedin-inbound");
-  let mgmt: typeof import("../../application/linkedin-management");
-  let searchUc: typeof import("../../application/linkedin-search");
-  let searchEngine: typeof import("../../application/run-linkedin-search");
-  let store: typeof import("../drizzle-linkedin-store").drizzleLinkedInStore;
-  let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
-  let accountStore: typeof import("../drizzle-linkedin-account-store").drizzleLinkedInAccountStore;
-  let connectStore: typeof import("../drizzle-linkedin-connect-store").drizzleLinkedInConnectStore;
+  let engine: typeof import("../../../../application/send-next-linkedin");
+  let inbound: typeof import("../../../../application/linkedin-inbound");
+  let mgmt: typeof import("../../../../application/linkedin-management");
+  let searchUc: typeof import("../../../../application/linkedin-search");
+  let searchEngine: typeof import("../../../../application/run-linkedin-search");
+  let store: typeof import("../../../drizzle-linkedin-store").drizzleLinkedInStore;
+  let inboundStore: ReturnType<typeof import("../../../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
+  let accountStore: typeof import("../../../drizzle-linkedin-account-store").drizzleLinkedInAccountStore;
+  let connectStore: typeof import("../../../drizzle-linkedin-connect-store").drizzleLinkedInConnectStore;
   let auditSink: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
-  let searchStore: typeof import("../drizzle-linkedin-search-store").drizzleLinkedInSearchStore;
-  let searchEngineStore: typeof import("../drizzle-linkedin-search-store").drizzleLinkedInSearchEngineStore;
-  let campaignStore: typeof import("../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
-  let sink: typeof import("../search-lead-sink").searchLeadSink;
+  let searchStore: typeof import("../../../drizzle-linkedin-search-store").drizzleLinkedInSearchStore;
+  let searchEngineStore: typeof import("../../../drizzle-linkedin-search-store").drizzleLinkedInSearchEngineStore;
+  let campaignStore: typeof import("../../../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
+  let sink: typeof import("../../../search-lead-sink").searchLeadSink;
   let parse: typeof import("../unipile-webhook").parseUnipilePayload;
-  let composition: typeof import("../linkedin-composition");
+  let composition: typeof import("../../../linkedin-composition");
   let route: typeof import("@/app/api/webhooks/unipile/route");
   const cleanup: Array<Pick<TestOrg, "organizationId"> & Partial<TestOrg>> = [];
 
@@ -72,8 +74,8 @@ describeDb("unipile gateway against the local stand-in", () => {
     forOrganization: async () => new UnipileGateway({ dsn: standin.dsn, apiKey: API_KEY, timeoutMs, scheme: "http" }),
   });
   const engineDeps = (gateways: LinkedInGatewayProvider = shortProvider()): LinkedInEngineDeps => ({ store, gateways, clock, random: () => 0 });
-  const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse });
-  const mgmtDeps = () => ({ accounts: accountStore, gatewayFor: (c: { dsn: string; apiKey: string; scheme?: "http" | "https" }) => new UnipileGateway(c), dsnPolicy: { allowedHosts: [], allowLoopback: true }, appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
+  const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse, eventKey: unipileEventKey });
+  const mgmtDeps = () => ({ accounts: accountStore, vendor: createUnipileVendor({ dsnPolicy: { allowedHosts: [], allowLoopback: true } }), appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
 
   async function fixture(options: { people?: number; steps?: unknown[]; distance?: "SECOND_DEGREE" | "FIRST_DEGREE" } = {}) {
     const tag = uniqueKey();
@@ -137,21 +139,21 @@ describeDb("unipile gateway against the local stand-in", () => {
   }
 
   beforeAll(async () => {
-    engine = await import("../../application/send-next-linkedin");
-    inbound = await import("../../application/linkedin-inbound");
-    mgmt = await import("../../application/linkedin-management");
-    searchUc = await import("../../application/linkedin-search");
-    searchEngine = await import("../../application/run-linkedin-search");
-    ({ drizzleLinkedInStore: store } = await import("../drizzle-linkedin-store"));
-    inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
-    ({ drizzleLinkedInAccountStore: accountStore } = await import("../drizzle-linkedin-account-store"));
-    ({ drizzleLinkedInConnectStore: connectStore } = await import("../drizzle-linkedin-connect-store"));
+    engine = await import("../../../../application/send-next-linkedin");
+    inbound = await import("../../../../application/linkedin-inbound");
+    mgmt = await import("../../../../application/linkedin-management");
+    searchUc = await import("../../../../application/linkedin-search");
+    searchEngine = await import("../../../../application/run-linkedin-search");
+    ({ drizzleLinkedInStore: store } = await import("../../../drizzle-linkedin-store"));
+    inboundStore = (await import("../../../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
+    ({ drizzleLinkedInAccountStore: accountStore } = await import("../../../drizzle-linkedin-account-store"));
+    ({ drizzleLinkedInConnectStore: connectStore } = await import("../../../drizzle-linkedin-connect-store"));
     ({ auditSink } = await import("@/contexts/tenancy/infrastructure/audit"));
-    ({ drizzleLinkedInSearchStore: searchStore, drizzleLinkedInSearchEngineStore: searchEngineStore } = await import("../drizzle-linkedin-search-store"));
-    ({ drizzleLinkedInCampaignStore: campaignStore } = await import("../drizzle-linkedin-campaign-store"));
-    ({ searchLeadSink: sink } = await import("../search-lead-sink"));
+    ({ drizzleLinkedInSearchStore: searchStore, drizzleLinkedInSearchEngineStore: searchEngineStore } = await import("../../../drizzle-linkedin-search-store"));
+    ({ drizzleLinkedInCampaignStore: campaignStore } = await import("../../../drizzle-linkedin-campaign-store"));
+    ({ searchLeadSink: sink } = await import("../../../search-lead-sink"));
     ({ parseUnipilePayload: parse } = await import("../unipile-webhook"));
-    composition = await import("../linkedin-composition");
+    composition = await import("../../../linkedin-composition");
     route = await import("@/app/api/webhooks/unipile/route");
   });
 

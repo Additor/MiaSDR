@@ -2,7 +2,7 @@ import { linkedinSlug } from "../domain/linkedin";
 import {
   LinkedInGatewayError,
   type GatewayAccount,
-  type HostedAuthLinkInput,
+  type ConnectLinkInput,
   type GatewayProfile,
   type LinkedInGateway,
   type LinkedInGatewayProvider,
@@ -72,7 +72,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
   onSearch: ((call: { account: string; url: string; cursor: string | null }) => Promise<void> | void) | null = null;
   /** Demo data: this many made-up people, ten per page, when `searchPages` is empty. */
   autoSearchTotal = 0;
-  readonly hostedLinks: HostedAuthLinkInput[] = [];
+  readonly hostedLinks: ConnectLinkInput[] = [];
   hostedLinkError: LinkedInGatewayError | null = null;
   readonly webhookRegistrations: Array<{ requestUrl: string; secret: string }> = [];
   /** Webhooks that exist at the fake provider right now. */
@@ -265,7 +265,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return before - keep.length;
   }
 
-  async createHostedAuthLink(input: HostedAuthLinkInput): Promise<{ url: string }> {
+  async createConnectLink(input: ConnectLinkInput): Promise<{ url: string }> {
     if (this.hostedLinkError) throw this.hostedLinkError;
     this.hostedLinks.push(input);
     // The fake wizard succeeds at once: the account exists for the next sync and the link is the success redirect.

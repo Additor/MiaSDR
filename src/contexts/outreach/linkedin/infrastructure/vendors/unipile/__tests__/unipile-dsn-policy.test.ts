@@ -14,8 +14,8 @@ describe("dsnPolicy loopback", () => {
     vi.stubEnv("INTEGRATION_CREDENTIALS_KEY", "x".repeat(40));
     vi.stubEnv("UNSUBSCRIBE_SECRET", "x".repeat(40));
     vi.resetModules();
-    const { dsnPolicy } = await import("../linkedin-composition");
-    const { normalizeDsn } = await import("../../application/linkedin-management");
+    const { dsnPolicy } = await import("../../../linkedin-composition");
+    const { normalizeDsn } = await import("../unipile-dsn");
     return { p: dsnPolicy(options), normalizeDsn };
   }
 

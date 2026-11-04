@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeDsn } from "./linkedin-management";
+import { normalizeDsn } from "../unipile-dsn";
 
 const strict = { allowedHosts: [], allowLoopback: false };
 
