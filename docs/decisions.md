@@ -412,7 +412,13 @@ Domain-wide delegation lets `verify()` succeed for any Workspace address. `MAILB
 
 ## LinkedIn outreach
 
-Code: `src/contexts/outreach/linkedin`. `domain/linkedin.ts` holds step rules, limits and pacing. `application/send-next-linkedin.ts` runs one action, `application/linkedin-inbound.ts` handles webhooks. `infrastructure/vendors/unipile/` is the adapter: `unipile-gateway.ts` behind the `LinkedInGateway` port, `unipile-vendor.ts` behind the `LinkedInVendor` port (credentials, sentences, webhook setup, connect callback), and `unipile-webhook.ts` with the payload parser and event keys. `src/architecture/linkedin-vendor-boundary.test.ts` keeps the vendor out of `application/` and `domain/`. `LINKEDIN_PROVIDER=fake` swaps in `FakeLinkedInGateway` (one demo account, 45 made-up search results).
+Code: `src/contexts/outreach/linkedin`. `domain/linkedin.ts` holds step rules, limits and pacing. `application/send-next-linkedin.ts` runs one action, `application/linkedin-inbound.ts` handles webhooks. `infrastructure/vendors/unipile/` is the adapter: `unipile-gateway.ts` behind the `LinkedInGateway` port, `unipile-vendor.ts` behind the `LinkedInVendor` port (credentials, sentences, webhook setup, connect callback), and `unipile-webhook.ts` with the payload parser and event keys. `infrastructure/vendors/edges/` is the second adapter, with `edges-inbound.ts` for the inbox it reads by polling. `src/architecture/linkedin-vendor-boundary.test.ts` keeps the vendors out of `application/` and `domain/`.
+
+### LinkedIn vendors
+
+- **A vendor per account, one per organization.** `linkedin_accounts.provider` is set when the row is created and never changes. `forAccount` hands an account only the vendor that holds it, so an unsettled send is never looked for at a vendor that does not hold it, which would read as not found and resend. An organization connects one vendor at a time, and a profile on another vendor is refused.
+- **Reading instead of webhooks.** For a vendor with no message webhook, `linkedin.poll-inbound` runs before `linkedin.run`, on its own share of the tick, because all jobs share one deadline. It reads in steps of one call, records each step's deliveries in the same ledger as a webhook's, and then moves the cursor. Up to 15 minutes can pass before a stop request is read, a limit accepted on 2026-11-04. A claim refuses such an account when no read finished in that time.
+- **Edges sync adds no accounts.** A workspace lists identities nobody connected through this app, so an account is added only when its connect link settles (`checkConnectLink`). `LINKEDIN_PROVIDER=fake` swaps in `FakeLinkedInGateway` (one demo account, 45 made-up search results).
 
 ### Unipile gateway
 

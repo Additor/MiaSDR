@@ -139,7 +139,8 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    vendor: { key: vendor.key, name: vendor.name },
+    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null },
+    vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
     ...vendor.describe(credentials),
     webhooks,
     sync,

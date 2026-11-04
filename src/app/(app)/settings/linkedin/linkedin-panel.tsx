@@ -57,10 +57,14 @@ interface ConnectLinkRow {
 
 interface State {
   connected: boolean;
+  /** The connected vendor, or the default one. */
+  vendor: { key: string; name: string; pollsConnect: boolean };
+  vendors: Array<{ key: string; name: string }>;
   dsn: string | null;
   accounts: Account[];
   links: ConnectLinkRow[];
-  webhookUrl: string;
+  /** Null: this vendor has no webhooks to register. */
+  webhookUrl: string | null;
   webhooks: StoredWebhookStatus | null;
   sync: StoredSyncStatus | null;
   limits: { invites: { min: number; max: number }; messages: { min: number; max: number } };
@@ -86,6 +90,23 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   const { isBusy, run } = useApiAction<"connect" | "link" | "sync" | "webhooks" | "setup">();
   const pending = isBusy("connect");
   const refresh = () => router.refresh();
+  const pendingLink = state?.vendor.pollsConnect ? state.links.find((link) => link.status === "pending")?.id : undefined;
+  const [formVendor, setFormVendor] = useState<string | null>(null);
+
+  // This vendor's link does not report back, and its page does not return here: ask until the sign-in settles.
+  useEffect(() => {
+    if (!pendingLink) return;
+    const timer = setInterval(() => {
+      void (async () => {
+        const result = await runApiAction(callApi<{ status: string; error: string | null }>("/api/linkedin/accounts/connect-status", "POST", { linkId: pendingLink }), { expectData: true });
+        if (!result.ok || result.data.status === "pending") return;
+        if (result.data.status === "completed") toast.success("LinkedIn account connected.");
+        else toast.error(result.data.error ?? "LinkedIn did not connect the account.");
+        router.refresh();
+      })();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [pendingLink, router]);
 
   // Back from the Unipile wizard: pull the new account in at once, then drop the query so a reload does not repeat it.
   useEffect(() => {
@@ -106,6 +127,9 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   }, [params, router]);
 
   if (!canManage || !state) return <AdminNotice action="connect or change LinkedIn" replacesPage />;
+  const vendor = state.connected ? state.vendor : (state.vendors.find((item) => item.key === formVendor) ?? state.vendor);
+  const hasWebhooks = state.connected ? state.webhookUrl !== null : vendor.key === "unipile";
+  const asksDsn = vendor.key === "unipile";
 
   function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,7 +137,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
     const data = new FormData(form);
     void run("connect", async () => {
       setError(null);
-      const result = await runApiAction(callApi<ConnectResult>("/api/linkedin", "POST", { dsn: data.get("dsn"), apiKey: data.get("apiKey") }), { refresh, expectData: true });
+      const result = await runApiAction(callApi<ConnectResult>("/api/linkedin", "POST", asksDsn ? { dsn: data.get("dsn"), apiKey: data.get("apiKey") } : { vendor: vendor.key, apiKey: data.get("apiKey") }), { refresh, expectData: true });
       if (!result.ok) return setError(result.error);
       form.reset();
       setEditingCredentials(false);
@@ -124,16 +148,26 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   }
 
   /**
-   * One full-page navigation to Unipile's wizard. Unipile advises against an iframe. One link opens at a time: `linking`
-   * names the account whose button reads "Opening Unipile…" until the page leaves.
+   * One full-page navigation to the vendor's page. Unipile advises against an iframe. One link opens at a time: `linking`
+   * names the account whose button reads "Opening…" until the page leaves. A page that never returns here opens in a new
+   * tab, made before the request so a browser does not block it, and this page asks how the sign-in went.
    */
   const startHostedAuth = (accountId: string | null) =>
     run("link", async () => {
       setLinking(accountId ?? "new");
+      const tab = state.vendor.pollsConnect ? window.open("about:blank", "_blank") : null;
+      if (tab) tab.opener = null;
       const result = await runApiAction(callApi<{ url: string }>("/api/linkedin/accounts/hosted-auth", "POST", accountId ? { accountId } : newOwner === NO_OWNER ? {} : { ownerUserId: newOwner }), { expectData: true });
       if (!result.ok) {
         setLinking(null);
+        tab?.close();
         toast.error(result.error);
+        return;
+      }
+      if (tab) {
+        tab.location.href = result.data.url;
+        setLinking(null);
+        refresh();
         return;
       }
       window.location.assign(result.data.url);
@@ -168,30 +202,49 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   return (
     <div>
       <SettingsSection
-        title="Unipile connection"
+        title={`${vendor.name} connection`}
         description={
           <>
             <Badge variant="outline" className="mr-2">
               Preview
             </Badge>
             A full campaign has not run on a real LinkedIn account yet.{" "}
-            {state.connected ? `Connected to ${state.dsn}.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
+            {state.connected ? (state.dsn ? `Connected to ${state.dsn}.` : `Connected to ${vendor.name}.`) : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
           </>
         }
       >
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={state.connected ? "connected" : "disconnected"} />
-          {state.connected && (
+          {state.connected && hasWebhooks && (
             <WebhookBadge webhooks={state.webhooks} />
           )}
         </div>
         <form onSubmit={connect} className="stack-group">
           {(!state.connected || editingCredentials) && (
             <div className="grid gap-group sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="dsn">DSN</FieldLabel>
-                <Input id="dsn" name="dsn" placeholder="api1.unipile.com:13111" required autoComplete="off" />
-              </Field>
+              {!state.connected && state.vendors.length > 1 && (
+                <Field className="sm:col-span-2">
+                  <FieldLabel>LinkedIn provider</FieldLabel>
+                  <Select items={state.vendors.map((item) => ({ value: item.key, label: item.name }))} value={vendor.key} onValueChange={(value) => value && setFormVendor(value)}>
+                    <SelectTrigger aria-label="LinkedIn provider" className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {state.vendors.map((item) => (
+                        <SelectItem key={item.key} value={item.key}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              {asksDsn && (
+                <Field>
+                  <FieldLabel htmlFor="dsn">DSN</FieldLabel>
+                  <Input id="dsn" name="dsn" placeholder="api1.unipile.com:13111" required autoComplete="off" />
+                </Field>
+              )}
               <Field>
                 <FieldLabel htmlFor="apiKey">API key</FieldLabel>
                 <Input id="apiKey" name="apiKey" type="password" required autoComplete="off" />
@@ -217,7 +270,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
             )}
             {state.connected && !editingCredentials && (
               <>
-                {/* Unipile cannot call a local address back, so a link there never learns the account it made: its owner is set on the row. */}
+                {/* A vendor cannot call a local address back, so a link there never learns the account it made: its owner is set on the row. */}
                 {ownerOnConnect && (
                   <Select items={ownerChoices(members)} value={newOwner} onValueChange={(v) => v && setNewOwner(v)}>
                     <SelectTrigger aria-label="Owner of the new account" className="w-48">
@@ -233,7 +286,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
                   </Select>
                 )}
                 <Button type="button" onClick={() => void startHostedAuth(null)} disabled={linking !== null}>
-                  {linking === "new" ? "Opening Unipile…" : "Connect a LinkedIn account"}
+                  {linking === "new" ? `Opening ${vendor.name}…` : "Connect a LinkedIn account"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button type="button" variant="ghost" />}>More</DropdownMenuTrigger>
@@ -242,9 +295,11 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
                     <DropdownMenuItem disabled={isBusy("sync")} onClick={() => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."))}>
                       {isBusy("sync") ? "Syncing…" : "Sync accounts"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={isBusy("webhooks")} onClick={() => void registerWebhooks()}>
-                      {isBusy("webhooks") ? "Registering…" : "Register webhooks"}
-                    </DropdownMenuItem>
+                    {hasWebhooks && (
+                      <DropdownMenuItem disabled={isBusy("webhooks")} onClick={() => void registerWebhooks()}>
+                        {isBusy("webhooks") ? "Registering…" : "Register webhooks"}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onClick={() => setConfirmDisconnect(true)}>
                       Disconnect
@@ -255,7 +310,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
             )}
           </div>
         </form>
-        {state.connected && (
+        {state.connected && hasWebhooks && (
           <details className="group border-t pt-group">
             <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium focus-ring">Manual webhook setup</summary>
             <div className="grid gap-3 pt-2 text-sm">
@@ -313,12 +368,22 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
               Recent connection links <Count value={formatCount(state.links.length)} className="font-normal" />
             </summary>
             <div className="stack-field pt-2 text-sm">
-              <p className="text-muted-foreground">A link lasts 15 minutes. It completes when Unipile reports the new account.</p>
+              <p className="text-muted-foreground">{state.vendor.pollsConnect ? `A link lasts 48 hours. It completes when you finish signing in at ${vendor.name}, in the tab it opened. Keep this page open, or come back to it.` : `A link lasts 15 minutes. It completes when ${vendor.name} reports the new account.`}</p>
               {state.links.map((link) => (
                 <div key={link.id} className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={link.status} />
                   <Time value={link.createdAt} className="text-muted-foreground" />
                   {link.lastError && <span className="text-destructive">{link.lastError}</span>}
+                  {state.vendor.pollsConnect && link.status === "pending" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void run("link", async () => toastResult(await runApiAction(callApi("/api/linkedin/accounts/connect-status", "POST", { linkId: link.id, cancel: true }), { refresh }), "Link cancelled."))}
+                    >
+                      Cancel
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -330,7 +395,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
         <SettingsSection title="LinkedIn accounts">
           {state.accounts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">No LinkedIn accounts yet.</span> Connect a LinkedIn profile in the Unipile dashboard, then choose Sync accounts.
+              <span className="font-medium text-foreground">No LinkedIn accounts yet.</span> {state.vendor.pollsConnect ? "Choose Connect a LinkedIn account above." : `Connect a LinkedIn profile in the ${vendor.name} dashboard, then choose Sync accounts.`}
             </p>
           ) : (
             <ul className={RULED_LIST}>
@@ -346,9 +411,9 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
       <ConfirmDialog
         open={confirmDisconnect}
         onOpenChange={setConfirmDisconnect}
-        title="Disconnect Unipile?"
-        description="MiaSDR deletes the saved key and removes its webhooks at Unipile. Every LinkedIn account shows as disconnected until you connect again."
-        confirmLabel="Disconnect Unipile"
+        title={`Disconnect ${vendor.name}?`}
+        description={`MiaSDR deletes the saved key${hasWebhooks ? ` and removes its webhooks at ${vendor.name}` : ""}. Every LinkedIn account shows as disconnected until you connect again.`}
+        confirmLabel={`Disconnect ${vendor.name}`}
         cancelLabel="Stay connected"
         pendingLabel="Disconnecting…"
         destructive
@@ -471,7 +536,7 @@ function AccountRow({
         </div>
         {account.status !== "connected" && (
           <Button variant="ghost" size="sm" onClick={onReconnect} disabled={linkOpening}>
-            {reconnecting ? "Opening Unipile…" : "Reconnect"}
+            {reconnecting ? "Opening…" : "Reconnect"}
           </Button>
         )}
       </div>

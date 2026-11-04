@@ -189,8 +189,9 @@ async function readNetwork(client: EdgesClient, account: string, cursor: EdgesCu
   const times = page.map((row) => edgesTime(row.connected_at)).filter((t) => !Number.isNaN(t));
   const pastLookback = times.length > 0 && Math.min(...times) < Date.parse(run.startedAt) - NETWORK_LOOKBACK_MS;
   if (answer.nextCursor && !pastLookback) return step({ ...cursor, networkSeen, run: { ...run, page: answer.nextCursor } }, deliveries);
-  const { run: _finished, ...rest } = { ...cursor, networkSeen };
-  return { deliveries, cursor: rest, finishedRunStartedAt: new Date(run.startedAt) };
+  const finished: EdgesCursor = { ...cursor, networkSeen };
+  delete finished.run;
+  return { deliveries, cursor: finished, finishedRunStartedAt: new Date(run.startedAt) };
 }
 
 const fullName = (row: Json) => str(row.full_name) ?? ([str(row.first_name), str(row.last_name)].filter(Boolean).join(" ") || null);

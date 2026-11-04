@@ -211,6 +211,7 @@ export const ROUTES: Record<string, RouteSpec> = {
 
   "linkedin": { handlers: { GET: admin(), POST: admin({ dsn: "api1.unipile.com:13111", apiKey: "k" }), DELETE: admin() } },
   "linkedin/accounts/[id]": { ids: { id: "linkedin_accounts" }, handlers: { PATCH: admin({ dailyInviteLimit: 10 }) } },
+  "linkedin/accounts/connect-status": { handlers: { POST: admin({ linkId: "00000000-0000-4000-8000-000000000000" }) } },
   "linkedin/accounts/hosted-auth": { handlers: { POST: { admin: true, lenientBody: true } } },
   "linkedin/campaigns": { handlers: { GET: ok(), POST: ok() } },
   "linkedin/campaigns/[id]": { ids: { id: linkedinCampaign }, handlers: { PATCH: ok(), DELETE: ok() } },

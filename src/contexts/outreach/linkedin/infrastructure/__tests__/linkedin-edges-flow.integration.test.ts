@@ -314,6 +314,12 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       expect(used.cancelled).toEqual([]);
     });
 
+    it("refuses to reconnect an account left from another vendor", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      const old = await account(t.f, "unipile");
+      await expect(connect.createConnectLink(t.deps, t.actor, { reconnectAccountId: old.id })).rejects.toThrow(/not on Edges/);
+    });
+
     it("hides a link from another organization", async () => {
       const t = await setup("pending", { member: "ACoAAx", slug: "x" });
       const other = { ...t.actor, organizationId: (await org()).id };

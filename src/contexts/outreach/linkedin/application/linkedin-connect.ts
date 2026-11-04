@@ -50,6 +50,8 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
     const accounts = await deps.accounts.list(actor.organizationId, now);
     const account = accounts.find((a) => a.id === input.reconnectAccountId);
     if (!account) throw new NotFoundError("LinkedIn account not found");
+    // An account stays with its vendor, so one left from an earlier vendor cannot be reconnected through this one.
+    if (!(await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account.providerAccountId)) throw new ConflictError(`This LinkedIn account is not on ${vendor.name}, and cannot move to it. Connect ${vendor.name} accounts as new ones.`);
     reconnectAccount = account.providerAccountId;
   }
 

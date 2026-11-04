@@ -20,6 +20,16 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### LinkedIn through Edges
+
+You can connect LinkedIn through [Edges](docs/setup/linkedin-edges.md) instead of Unipile. It has not been run against a real Edges account from MiaSDR yet.
+
+- An organization connects one provider at a time. A profile already connected through Unipile cannot move to Edges.
+- Replies and acceptances are read from each account about every 10 minutes, inside its working hours. An account sends nothing until a read finished in the last 15 minutes, and a message can still go out up to 15 minutes after a stop request.
+- `GET /api/linkedin` gains `vendor` and `vendors`, and `webhookUrl` can be null. Existing Unipile setups keep working unchanged.
+
+The database gains `linkedin_accounts.provider`, `inbound_cursor` and `inbound_read_at`, and `inbound_events.provider` allows `edges`. The new constraint on `inbound_events` checks every row while it holds its lock, so stop old instances first on a large install (docs/operations.md).
+
 ### Changed
 
 - An address on the suppression list because it unsubscribed or was added by hand now blocks LinkedIn too: new enrollment skips its owners, a restore refuses them, the next campaign step does not go out, and the person's LinkedIn shows as blocked with the reason. A bounced address still blocks email only.

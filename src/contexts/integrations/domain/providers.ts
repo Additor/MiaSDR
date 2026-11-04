@@ -21,6 +21,7 @@ export const MANAGED_PROVIDERS: ProviderSpec[] = AI_CONNECTIONS.map((c) => ({ ke
 /** Providers with their own settings page. They are listed here but never edited here. */
 export const EXTERNAL_PROVIDERS: Record<string, { label: string; href: string }> = {
   unipile: { label: "Unipile (LinkedIn)", href: "/settings/linkedin" },
+  edges: { label: "Edges (LinkedIn)", href: "/settings/linkedin" },
 };
 
 export function managedProvider(key: string): ProviderSpec | undefined {
