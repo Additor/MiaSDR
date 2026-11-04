@@ -1,20 +1,22 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
-import type { Job, SlotPort } from "@/platform/jobs/types";
+import type { Job, TickContext, SlotPort } from "@/platform/jobs/types";
 import { replayLinkedInEvents } from "./linkedin-inbound";
 import { syncAndRecord, syncErrorText, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
-import type { LinkedInEngineDeps, LinkedInInboundDeps } from "./linkedin-ports";
+import type { LinkedInEngineDeps, LinkedInInboundDeps, LinkedInInboundPollDeps } from "./linkedin-ports";
+import { pollLinkedInInbound } from "./poll-linkedin-inbound";
 import type { LinkedInSearchEngineDeps } from "./linkedin-search-ports";
 import { runNextSearchPage } from "./run-linkedin-search";
 import { reconcileLinkedInSends, runNextLinkedInAction } from "./send-next-linkedin";
 
 const SYNC_LEASE_MS = 120_000;
 const SYNC_RETRY_MS = 10 * 60_000;
+const POLL_BUDGET_MS = 15_000;
 
 /**
  * Per tick: replay failed webhook events (so a reply stops its sequence before sends are claimed),
  * reconcile unknown outcomes, read search pages, then give every due account one unit of work.
  */
-export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort): Job[] {
+export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort, poll?: LinkedInInboundPollDeps): Job[] {
   return [
     {
       // One sync per organization per UTC hour, so a disconnected account shows up without anyone pressing Sync.
@@ -85,6 +87,19 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
         return { processed, more: true, detail };
       },
     },
+    ...(poll
+      ? [
+          {
+            // Before the sends: a claim refuses an account whose inbox was not read lately. A share of the tick, because every job shares one deadline.
+            name: "linkedin.poll-inbound",
+            failureKeys: ["failed"],
+            async run(ctx: TickContext) {
+              const report = await pollLinkedInInbound(poll, Math.min(ctx.deadline, Date.now() + POLL_BUDGET_MS));
+              return { processed: report.deliveries, more: false, detail: { accounts: report.accounts, finished: report.finished, failed: report.failed } };
+            },
+          } satisfies Job,
+        ]
+      : []),
     {
       name: "linkedin.run",
       failureKeys: ["failed", "resolve_failed"],

@@ -24,6 +24,7 @@ import {
   MAX_RESOLVE_ATTEMPTS,
   accountBlock,
   dailyInviteLimit,
+  inboundIsStale,
   inviteBlock,
   linkedinRules,
   nextRunAfter,
@@ -46,7 +47,7 @@ import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
-import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
+import { disconnectLinkedInAccount, pauseLinkedInAccount, VENDORS_READ_BY_POLL } from "./linkedin-account-state";
 
 type Tx = DbTx;
 
@@ -166,6 +167,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const zoneValue = general?.timeZone;
       const workingHours: WorkingHours = (account.workingHours as WorkingHours | null) ?? options.defaultWorkingHours(typeof zoneValue === "string" ? zoneValue : null);
       if (accountBlock(options.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, nextAllowedRunAt: account.nextAllowedRunAt, workingHours })) return null;
+      // A vendor with no webhook for messages: a stop request may be unread, or the read may be failing. Nothing goes out on old news.
+      if (VENDORS_READ_BY_POLL.includes(account.provider) && inboundIsStale(options.now, account.inboundReadAt)) return null;
 
       const rules = linkedinRules(await channelValues(tx, account.organizationId, "linkedin"));
       const nowIso = options.now.toISOString();

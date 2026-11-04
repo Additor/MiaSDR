@@ -346,6 +346,35 @@ export interface LinkedInInboundStore {
   apply(organizationId: string, event: LinkedInInboundEvent, now: Date): Promise<{ result: InboundResult; note: string | null }>;
 }
 
+/** One step of reading an account's inbox. */
+export interface LinkedInInboundRead {
+  /** Raw deliveries for the same ledger a webhook goes through. */
+  deliveries: unknown[];
+  /** Where the next step starts. Its shape belongs to the vendor's adapter. */
+  cursor: unknown;
+  /** Set on the step that ends a full read: when that read started. */
+  finishedRunStartedAt: Date | null;
+}
+
+/** For a vendor that sends no webhook for messages. Throws a LinkedInGatewayError when it cannot read. */
+export interface LinkedInInboundSource {
+  read(input: { organizationId: string; account: string; cursor: unknown; now: Date }): Promise<LinkedInInboundRead>;
+}
+
+export interface LinkedInInboundPollStore {
+  /** Connected accounts on such a vendor last read before `readBefore`, oldest read first. */
+  listDue(readBefore: Date): Promise<Array<{ id: string; organizationId: string; provider: string; providerAccountId: string; cursor: unknown; workingHours: WorkingHours }>>;
+  saveCursor(accountId: string, cursor: unknown, finishedRunStartedAt: Date | null): Promise<void>;
+  disconnect(accountId: string, error: string): Promise<void>;
+}
+
+export interface LinkedInInboundPollDeps {
+  store: LinkedInInboundPollStore;
+  source: LinkedInInboundSource;
+  inbound: LinkedInInboundDeps;
+  clock: Clock;
+}
+
 export interface LinkedInInboundDeps {
   store: LinkedInInboundStore;
   clock: Clock;

@@ -146,6 +146,15 @@ export interface AccountState {
 }
 
 /** Why an account may not act right now, or null when it may. */
+/** How often an account's inbox is read when its vendor sends no webhook for messages. */
+export const INBOUND_READ_EVERY_MINUTES = 10;
+/** Past this, a stop request may be waiting unread, so such an account sends nothing until a read finishes. */
+export const INBOUND_FRESH_MINUTES = 15;
+
+export function inboundIsStale(now: Date, readAt: Date | null): boolean {
+  return readAt === null || now.getTime() - readAt.getTime() > INBOUND_FRESH_MINUTES * 60_000;
+}
+
 export function accountBlock(now: Date, account: AccountState): AccountBlock | null {
   if (account.status !== "connected") return "not_connected";
   if (account.limitReachedUntil && account.limitReachedUntil.getTime() > now.getTime()) return "limit_reached";

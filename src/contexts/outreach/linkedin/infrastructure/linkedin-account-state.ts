@@ -7,6 +7,9 @@ import { linkedinAccounts } from "@/platform/db/schema";
  * conversations' replies both hit the same limits and the same disconnects, and both record them here.
  */
 
+/** Vendors with no webhook for messages. Their accounts' inboxes are read by a job, and a claim checks that the read is recent. */
+export const VENDORS_READ_BY_POLL = ["edges"];
+
 /** LinkedIn said the account reached a limit: it sends nothing until `until`. */
 export async function pauseLinkedInAccount(handle: DbHandle, accountId: string, until: Date): Promise<void> {
   await handle.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, accountId));
