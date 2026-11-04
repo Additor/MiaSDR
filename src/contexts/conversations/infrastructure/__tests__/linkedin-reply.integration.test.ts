@@ -208,6 +208,26 @@ describeDb("LinkedIn conversation replies", () => {
     expect(await count("messages", f.org, "direction = 'outbound'")).toBe(0);
   });
 
+  it("turns a stuck send uncertain after 30 minutes when LinkedIn cannot be checked, and counts it once", async () => {
+    const f = await fixture();
+    const begun = await store.begin({ organizationId: f.org, threadId: f.threadId, text: "Stuck offline", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
+    expect(begun.kind).toBe("started");
+    const offline = { ...f.deps, sender: { ...f.deps.sender, available: async () => false } };
+
+    await age(f, 11);
+    expect(await app.reconcileLinkedInReplies(offline)).toMatchObject({ uncertain: 0, waiting: 1 });
+    expect(await one("select status from send_attempts where organization_id = $1", [f.org])).toMatchObject({ status: "sending" });
+
+    await age(f, 20);
+    expect(await app.reconcileLinkedInReplies(offline)).toMatchObject({ uncertain: 1, waiting: 0 });
+    expect(await one("select status, error from send_attempts where organization_id = $1", [f.org])).toMatchObject({ status: "delivery_uncertain", error: "The send never reported an outcome and LinkedIn could not be checked." });
+    expect(await one("select status from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "delivery_uncertain" });
+
+    await age(f, 11);
+    expect(await app.reconcileLinkedInReplies(offline)).toMatchObject({ uncertain: 0, waiting: 1 });
+    expect(f.fake.messages).toHaveLength(0);
+  });
+
   it("settles an uncertain send a person confirms as delivered, as a LinkedIn message", async () => {
     const f = await fixture();
     f.fake.messageBehavior = () => "timeout-lost";

@@ -133,7 +133,8 @@ export const LINKEDIN_UNCERTAIN_AFTER_MS = 30 * 60_000;
 
 /**
  * Looks in the chat for replies with no recorded outcome. Found: settled as delivered. Missing after 30 minutes: it
- * becomes (or stays) `delivery_uncertain` so a person decides. Nothing is resent.
+ * becomes (or stays) `delivery_uncertain` so a person decides. The same goes when LinkedIn cannot be checked, because a
+ * `sending` attempt blocks the next send in its chat. A later check can still settle it. Nothing is resent.
  */
 export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 25): Promise<LinkedInReplyReconcileReport> {
   const now = deps.now();
@@ -141,18 +142,24 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
   for (const item of await deps.store.listUnsettled(new Date(now.getTime() - LINKEDIN_RECONCILE_AFTER_MS), limit)) {
     report.checked += 1;
     const { send } = item;
+    const overdue = item.status === "sending" && now.getTime() - item.startedAt.getTime() >= LINKEDIN_UNCERTAIN_AFTER_MS;
     let found: { messageId: string | null } | null;
     try {
       if (!(await deps.sender.available(send.organizationId))) throw new Error("LinkedIn is not connected");
       found = await deps.sender.findSent({ organizationId: send.organizationId, account: send.providerAccountId, chat: send.chat, text: send.text, since: new Date(item.startedAt.getTime() - 60_000) });
     } catch {
-      report.waiting += 1;
+      if (overdue) {
+        await deps.store.markUncertain(send, "The send never reported an outcome and LinkedIn could not be checked.");
+        report.uncertain += 1;
+      } else {
+        report.waiting += 1;
+      }
       continue;
     }
     if (found) {
       await deps.store.markSent(send, { providerMessageId: found.messageId }, now, "Found in the LinkedIn chat by its text.");
       report.found += 1;
-    } else if (item.status === "sending" && now.getTime() - item.startedAt.getTime() >= LINKEDIN_UNCERTAIN_AFTER_MS) {
+    } else if (overdue) {
       await deps.store.markUncertain(send, "The send never reported an outcome and the message is not in the LinkedIn chat.");
       report.uncertain += 1;
     } else {

@@ -328,6 +328,25 @@ describeDb("AI classification, drafts and approval", () => {
       expect(await one("select status, reconciliation_note from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "failed" });
     });
 
+    it("turns a stuck send uncertain after 30 minutes when the mailbox cannot be checked", async () => {
+      const f = await fixture();
+      const { draft } = await withDraft(f);
+      const begun = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: `tok-stuck-${f.tag}`, now: new Date() });
+      expect(begun.kind).toBe("started");
+      const before = mailbox.delivered.length;
+      const offline = { ...f.replyDeps, mailer: { findSent: () => Promise.reject(new Error("mailbox down")) } } as never;
+
+      f.state.offsetMs = 11 * 60_000;
+      expect(await mgmt.reconcileReplies(offline)).toMatchObject({ uncertain: 0 });
+      expect(await one("select status from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "sending" });
+
+      f.state.offsetMs = 31 * 60_000;
+      expect(await mgmt.reconcileReplies(offline)).toMatchObject({ uncertain: 1 });
+      expect(await one("select status, error from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "delivery_uncertain", error: "The send never reported an outcome and the mailbox could not be checked." });
+      expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "delivery_uncertain" });
+      expect(mailbox.delivered.length).toBe(before);
+    });
+
     it("turns a send stuck in sending uncertain after 30 minutes, and never sends it", async () => {
       const f = await fixture();
       const { draft } = await withDraft(f);
