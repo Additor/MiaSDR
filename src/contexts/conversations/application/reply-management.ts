@@ -381,12 +381,9 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
     report.checked += 1;
     const { send } = item;
     const overdue = item.status === "sending" && now.getTime() - item.startedAt.getTime() >= UNCERTAIN_AFTER_MS;
-    if (!send.mailbox) {
-      report.waiting += 1;
-      continue;
-    }
     let found;
     try {
+      if (!send.mailbox) throw new Error("The mailbox is gone");
       found = await deps.mailer.findSent(send.mailbox.emailAddress, send.rfcMessageId, item.startedAt, { to: send.recipient });
     } catch {
       if (overdue) {

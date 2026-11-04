@@ -171,6 +171,24 @@ describeDb("mailbox test send", () => {
     expect(f.provider.delivered).toHaveLength(1);
   });
 
+  it("stops before the provider call when a reconcile took the send", async () => {
+    const f = await fixture();
+    const reclaiming: TestSendDeps["store"] = {
+      ...store,
+      recipientBlock: async (organizationId, to) => {
+        await sql`update sends set status = 'failed', error = 'interrupted' where mailbox_id = ${f.mailbox}`;
+        return store.recipientBlock(organizationId, to);
+      },
+    };
+    const result = await app.sendTestEmail({ ...f.deps, store: reclaiming }, f.actor(), f.mailbox, { to: "dev@example.com" });
+    expect(result).toMatchObject({ status: "failed", message: "This test email took too long to start, so it was stopped. Nothing was sent." });
+    expect(f.provider.delivered).toHaveLength(0);
+    const [row] = await sql`select status, error, rfc_message_id from sends where mailbox_id = ${f.mailbox}`;
+    expect(row).toMatchObject({ status: "failed", error: "interrupted", rfc_message_id: null });
+    const [audit] = await sql`select meta from audit_log where organization_id = ${f.org}`;
+    expect(audit.meta).toMatchObject({ status: "failed" });
+  });
+
   it("settles a send the mailbox does not hold as failed after the grace period, and keeps it when inconclusive", async () => {
     const f = await fixture();
     at = new Date("2026-10-15T10:00:00Z");

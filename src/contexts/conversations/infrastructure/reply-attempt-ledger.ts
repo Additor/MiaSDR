@@ -160,7 +160,11 @@ export async function markAttemptUncertain(attempt: { id: string; draftId: strin
   });
 }
 
-/** The channel's attempts that have not settled since `olderThan`, oldest first. An attempt with no provider is email's. */
+/**
+ * The channel's attempts that have not settled since `olderThan`, oldest first. An attempt with no provider is email's.
+ * `sending` comes first: `delivery_uncertain` rows stay until a person answers, and a pile of them must not fill `limit`
+ * and keep a stuck send from turning uncertain.
+ */
 export async function listUnsettledAttempts(channel: "email" | "linkedin", olderThan: Date, limit: number): Promise<AttemptRecord[]> {
   return db
     .select()
@@ -172,6 +176,6 @@ export async function listUnsettledAttempts(channel: "email" | "linkedin", older
         sql`${sendAttempts.updatedAt} < ${olderThan.toISOString()}::timestamptz`,
       ),
     )
-    .orderBy(sendAttempts.createdAt)
+    .orderBy(sql`${sendAttempts.status} = 'sending' desc`, sendAttempts.createdAt)
     .limit(limit);
 }

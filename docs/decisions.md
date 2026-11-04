@@ -713,7 +713,7 @@ An agent sends a reply with `send_reply` over MCP. The tool calls `approveAndSen
 - A typed reply is a `drafts` row (`channel = 'linkedin'`, null subject) plus a `send_attempts` row (`provider = 'linkedin'`). Pressing Send is the approval. `POST /api/inbox/[id]/linkedin-reply` takes optional `draftId` and `revision` to send an AI draft with the person's edits.
 - The claim locks the conversation, then the target draft and the account, refuses while a reply of the chat is `sending` or `delivery_uncertain`, and applies `replyBlock`: account connected, not paused, under the daily message cap, outside the reply gap. A refusal answers 409 with `code` (`not_connected`, `paused`, `daily_cap`, `too_fast`) and writes nothing. Working hours do not apply.
 - AI drafts for LinkedIn have no subject and at most 8,000 characters (`MAX_LINKEDIN_REPLY`). The email approve route refuses a LinkedIn draft.
-- `threads.linkedin-reply-reconcile` searches the chat by text after 10 minutes; missing after 30 minutes turns uncertain. It never sends.
+- `threads.linkedin-reply-reconcile` searches the chat by text after 10 minutes; missing after 30 minutes, or LinkedIn not answering by then, turns uncertain. It never sends.
 
 ### CC
 

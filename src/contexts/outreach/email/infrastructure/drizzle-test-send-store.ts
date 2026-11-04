@@ -64,7 +64,8 @@ export const drizzleTestSendStore: TestSendStore = {
   },
 
   async recordRendered(sendId, rendered) {
-    await db.update(sends).set({ subject: rendered.subject, body: rendered.body, rfcMessageId: rendered.rfcMessageId }).where(and(eq(sends.id, sendId), TEST));
+    const moved = await db.update(sends).set({ subject: rendered.subject, body: rendered.body, rfcMessageId: rendered.rfcMessageId }).where(and(eq(sends.id, sendId), TEST, fromCall)).returning({ id: sends.id });
+    return moved.length > 0;
   },
 
   recipientBlock: (organizationId, to) => recipientBlockTx(db, organizationId, to),

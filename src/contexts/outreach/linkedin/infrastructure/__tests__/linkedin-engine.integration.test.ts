@@ -641,7 +641,6 @@ describeDb("linkedin engine", () => {
     expect(gateway.invitations).toHaveLength(0);
   });
 
-  // The sends trigger holds no cap, so these two tests are what holds it.
   it("stops before the provider call when a reconcile took the send, and leaves the row as the reconcile set it", async () => {
     const gateway = new FakeLinkedInGateway();
     const f = await fixture();
@@ -659,6 +658,7 @@ describeDb("linkedin engine", () => {
     expect(await sendRows(f.enrollmentIds[0])).toEqual([expect.objectContaining({ status: "failed", error: "interrupted", rfc_message_id: null })]);
   });
 
+  // The sends trigger holds no cap, so these two tests are what holds it.
   describe("the attempt cap", () => {
     it("is three attempts", () => {
       expect(MAX_SEND_ATTEMPTS).toBe(3);

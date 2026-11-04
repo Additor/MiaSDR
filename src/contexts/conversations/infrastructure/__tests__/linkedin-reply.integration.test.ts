@@ -228,6 +228,21 @@ describeDb("LinkedIn conversation replies", () => {
     expect(f.fake.messages).toHaveLength(0);
   });
 
+  it("lists a stuck send ahead of older uncertain ones, so they cannot fill the limit", async () => {
+    const older = await fixture();
+    older.fake.messageBehavior = () => "timeout-lost";
+    await send(older, "Older");
+    await age(older, 120);
+    const stuck = await fixture();
+    const begun = await store.begin({ organizationId: stuck.org, threadId: stuck.threadId, text: "Stuck", idempotencyKey: key(), actorUserId: stuck.user, now: new Date() });
+    expect(begun.kind).toBe("started");
+    await age(stuck, 31);
+
+    const listed = (await store.listUnsettled(new Date(), 1000)).map((item) => item.send.organizationId);
+    expect(listed).toContain(older.org);
+    expect(listed.indexOf(stuck.org)).toBeLessThan(listed.indexOf(older.org));
+  });
+
   it("settles an uncertain send a person confirms as delivered, as a LinkedIn message", async () => {
     const f = await fixture();
     f.fake.messageBehavior = () => "timeout-lost";
