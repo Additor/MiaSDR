@@ -403,6 +403,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     });
   },
 
+  async pauseAccountForLookupLimit(claim, until) {
+    await pauseLinkedInAccount(db, claim.account.id, until);
+  },
+
   async disconnectAccount(accountId, error) {
     await disconnectLinkedInAccount(db, accountId, error);
   },

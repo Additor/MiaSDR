@@ -226,6 +226,8 @@ export interface LinkedInOutreachStore {
   /** The provider rejected the credentials or the account: give the attempt back and mark the account disconnected. */
   disconnectAccount(accountId: string, error: string): Promise<void>;
 
+  /** LinkedIn refused a profile lookup for a limit: stop the account for a while. The lead keeps its retries. */
+  pauseAccountForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
   markResolved(claim: LinkedInResolveClaim, profile: ResolvedProfile, now: Date): Promise<ResolveWriteResult>;
   markResolveFailed(claim: LinkedInResolveClaim, error: string, now: Date, fatal: boolean): Promise<void>;
 

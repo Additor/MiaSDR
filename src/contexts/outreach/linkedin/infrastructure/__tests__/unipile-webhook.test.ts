@@ -32,6 +32,7 @@ describe("parseUnipilePayload", () => {
       text: "Hello",
       fromAccountOwner: false,
       counterparty: "ACo1",
+      attendees: [],
       counterpartyName: "Ada Lovelace",
       counterpartyProfileUrl: "https://www.linkedin.com/in/ada",
       sentAt: "2026-10-14T10:00:00.000Z",
