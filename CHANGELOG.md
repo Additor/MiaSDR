@@ -74,6 +74,10 @@ Nothing used these, and the database baseline drops them, so start from an empty
 
 ### Fixed
 
+- A send whose claim was lost between its checks and the provider call no longer goes out. Before, a worker that stalled for more than 10 minutes could send after a reconcile had taken the send, and a retry could send it again. This covers email and LinkedIn.
+- A reply stuck in `sending` now turns `delivery_uncertain` after 30 minutes even while Gmail or LinkedIn cannot be checked, so a person can decide. Before, it blocked the next send in that conversation until the provider came back.
+- `GET /api/linkedin` now answers only an owner or admin. Before, a member could read the DSN, webhook status, account limits and connection link errors. The Settings page already kept these from members.
+- A failed LinkedIn connection link now stores the fixed explanation, not the provider's own error text.
 - Two AI or enrichment columns can no longer read each other's output, which would have queued paid runs forever.
 - Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.
 - A reply whose own words ask to stop now shows Review stop request in Actions and on the thread before any AI pick reads it. An MCP work queue row for one has `aiPick.replyTypePickId: null`.
