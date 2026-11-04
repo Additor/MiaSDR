@@ -3,6 +3,7 @@ import type { Actor } from "@/shared/errors";
 import * as connect from "../../application/linkedin-connect";
 import * as mgmt from "../../application/linkedin-management";
 import { LinkedInGatewayError, type GatewayErrorCode } from "../../application/linkedin-ports";
+import { createUnipileVendor } from "../vendors/unipile/unipile-vendor";
 
 /*
  * Pins what people and Unipile see from the connection flows: every sentence, URL and stored credential field.
@@ -21,7 +22,7 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
     listAccounts: vi.fn(async () => []),
     registerWebhooks: vi.fn(async () => ({ registered: ["MiaSDR users", "MiaSDR messaging"], hooks: [{ name: "users:new_relation", error: null }, { name: "messaging:message_received", error: null }] as Array<{ name: string; error: unknown }> })),
     removeWebhooks: vi.fn(async () => ({ removed: 2 })),
-    createHostedAuthLink: vi.fn(async (input: unknown) => ({ url: "https://link.test", input })),
+    createConnectLink: vi.fn(async (input: unknown) => ({ url: "https://link.test", input })),
   };
   const accounts = {
     getCredentials: vi.fn(async () => (options.stored === undefined ? STORED : options.stored)),
@@ -45,7 +46,7 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
     listRecent: vi.fn(async () => []),
   };
   const audit = { record: vi.fn(async () => undefined) };
-  const deps = { accounts, gatewayFor: () => gateway, appUrl: options.appUrl ?? "https://app.test/", now: () => new Date("2026-11-04T00:00:00Z"), audit, connectLinks } as unknown as mgmt.LinkedInManagementDeps;
+  const deps = { accounts, vendor: createUnipileVendor({ gatewayFor: () => gateway as never }), appUrl: options.appUrl ?? "https://app.test/", now: () => new Date("2026-11-04T00:00:00Z"), audit, connectLinks } as unknown as mgmt.LinkedInManagementDeps;
   return { deps, gateway, accounts, connectLinks, audit };
 }
 
@@ -148,13 +149,13 @@ describe("LinkedIn connection contract", () => {
   it("keeps the connect link URLs Unipile calls and returns to", async () => {
     const f = world();
     const { linkId } = await connect.createConnectLink(f.deps, actor);
-    const input = f.gateway.createHostedAuthLink.mock.calls[0][0] as { successRedirectUrl: string; failureRedirectUrl: string; notifyUrl: string };
+    const input = f.gateway.createConnectLink.mock.calls[0][0] as { successRedirectUrl: string; failureRedirectUrl: string; notifyUrl: string };
     expect(input.successRedirectUrl).toBe(`https://app.test/settings/linkedin?unipile=success&link=${linkId}`);
     expect(input.failureRedirectUrl).toBe(`https://app.test/settings/linkedin?unipile=failure&link=${linkId}`);
     expect(input.notifyUrl).toMatch(new RegExp(`^https://app\\.test/api/webhooks/unipile-account\\?link=${linkId}&secret=[\\w-]{32}$`));
 
     const refused = world();
-    refused.gateway.createHostedAuthLink.mockRejectedValueOnce(gatewayError("auth"));
+    refused.gateway.createConnectLink.mockRejectedValueOnce(gatewayError("auth"));
     expect(await refusal(() => connect.createConnectLink(refused.deps, actor))).toBe("Unipile rejected the API key. Check the key and the DSN in your Unipile dashboard.");
   });
 

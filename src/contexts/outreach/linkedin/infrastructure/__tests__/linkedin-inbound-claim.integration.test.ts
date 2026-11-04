@@ -73,7 +73,7 @@ describeDb("LinkedIn inbound claim fence", () => {
     const { org, claim } = await delivery();
     await sql`update inbound_events set attempts = ${MAX_EVENT_ATTEMPTS} where id = ${claim.id}`;
     // The replay tick fails it first and reports it; no claim takes it.
-    const report = await inbound.replayLinkedInEvents({ store, clock: { now: () => at(1) }, parse: () => null }, 10, org);
+    const report = await inbound.replayLinkedInEvents({ store, clock: { now: () => at(1) }, parse: () => null, eventKey: () => null }, 10, org);
     expect(report).toEqual({ stopped: 1, claimed: 0, done: 0, failed: 0 });
     const dead = await row(claim.id);
     expect(dead).toMatchObject({ status: "failed", attempts: MAX_EVENT_ATTEMPTS, claim_token: null, lease_until: null });

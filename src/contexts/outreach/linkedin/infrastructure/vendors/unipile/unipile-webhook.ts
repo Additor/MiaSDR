@@ -64,3 +64,15 @@ export function unreadablePayloadEvent(payload: unknown): string | null {
   if (body.account_type !== undefined && body.account_type !== "LINKEDIN") return null;
   return parseUnipilePayload(payload) ? null : event;
 }
+
+/**
+ * Idempotency key for the ledger. A redelivery of the same fact yields the same key.
+ * `message_received` keys on the message id, `new_relation` on the member. The organization id is part
+ * of the key because `inbound_events` is unique on (provider, key) across tenants: without it, another
+ * organization could claim a key first and drop the real event. Version 2 added the organization. Replay
+ * reads the stored payload, never the key, so the old v1 rows need no translation.
+ */
+export function unipileEventKey(event: LinkedInInboundEvent, organizationId: string): string | null {
+  if (event.type === "message_received") return event.messageId ? `unipile:message_received:v2:${organizationId}:${event.account}:${event.messageId}` : null;
+  return `unipile:new_relation:v2:${organizationId}:${event.account}:${event.member}`;
+}

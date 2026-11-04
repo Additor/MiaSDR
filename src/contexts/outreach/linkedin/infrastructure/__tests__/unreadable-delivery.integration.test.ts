@@ -1,4 +1,5 @@
 import { afterAll, expect, it, vi } from "vitest";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 
 vi.mock("server-only", () => ({}));
@@ -23,7 +24,7 @@ describeDb("an unreadable Unipile delivery", () => {
     const { createDrizzleLinkedInInboundStore } = await import("../drizzle-linkedin-inbound-store");
     const { parseUnipilePayload, unreadablePayloadEvent } = await import("../vendors/unipile/unipile-webhook");
     const { inboxFiling } = await import("@/composition/inbox-filing");
-    const deps = { store: createDrizzleLinkedInInboundStore(inboxFiling), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent };
+    const deps = { store: createDrizzleLinkedInInboundStore(inboxFiling), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent, eventKey: unipileEventKey };
     const result = await receiveLinkedInWebhook(deps, { organizationId: org.organizationId, payload });
     return { result, deps, organizationId: org.organizationId, rows: await sql`select status, event_type from inbound_events where organization_id = ${org.organizationId}` };
   }

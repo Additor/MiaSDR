@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUnipilePayload, unreadablePayloadEvent } from "../unipile-webhook";
+import { parseUnipilePayload, unipileEventKey, unreadablePayloadEvent } from "../unipile-webhook";
 
 describe("parseUnipilePayload", () => {
   it("reads a new_relation as an acceptance", () => {
@@ -72,5 +72,14 @@ describe("unreadablePayloadEvent", () => {
     expect(unreadablePayloadEvent({ event: "message_reaction", account_type: "LINKEDIN", account_id: "a" })).toBeNull();
     expect(unreadablePayloadEvent({ event: "message_received", account_type: "WHATSAPP", account_id: "a" })).toBeNull();
     expect(unreadablePayloadEvent({ event: "new_relation", account_type: "LINKEDIN", account_id: "a", user_provider_id: "m" })).toBeNull();
+  });
+});
+
+describe("unipileEventKey", () => {
+  it("keys messages by id and acceptances by member", () => {
+    expect(unipileEventKey({ type: "message_received", account: "a", chat: null, messageId: "m1", text: "", fromAccountOwner: false, counterparty: "x" }, "org1")).toBe("unipile:message_received:v2:org1:a:m1");
+    expect(unipileEventKey({ type: "message_received", account: "a", chat: null, messageId: "m1", text: "", fromAccountOwner: false, counterparty: "x" }, "org2")).not.toBe("unipile:message_received:v2:org1:a:m1");
+    expect(unipileEventKey({ type: "message_received", account: "a", chat: null, messageId: null, text: "", fromAccountOwner: false, counterparty: "x" }, "org1")).toBeNull();
+    expect(unipileEventKey({ type: "connection_accepted", account: "a", member: "p", name: null, profileUrl: null }, "org1")).toBe("unipile:new_relation:v2:org1:a:p");
   });
 });

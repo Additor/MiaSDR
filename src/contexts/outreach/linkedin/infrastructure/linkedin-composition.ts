@@ -10,7 +10,7 @@ import { createLinkedInJobs } from "../application/linkedin-jobs";
 import { receiveLinkedInWebhook, type WebhookResult } from "../application/linkedin-inbound";
 import type { LinkedInOperationsDeps } from "../application/linkedin-operations";
 import type { LinkedInCampaignDeps } from "../application/linkedin-campaigns";
-import { parseDsn, type DsnPolicy, type LinkedInManagementDeps } from "../application/linkedin-management";
+import type { LinkedInManagementDeps } from "../application/linkedin-management";
 import type { LinkedInSearchBatchDeps, LinkedInSearchCapacityDeps, LinkedInSearchDeps, LinkedInSearchEngineDeps } from "../application/linkedin-search-ports";
 import type { LinkedInEngineDeps, LinkedInGateway, LinkedInGatewayProvider, LinkedInInboundDeps } from "../application/linkedin-ports";
 import type { NoticeDeps } from "../application/linkedin-enroll-notices";
@@ -30,7 +30,9 @@ import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
-import { parseUnipilePayload, unreadablePayloadEvent } from "./vendors/unipile/unipile-webhook";
+import { parseDsn, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
+import { createUnipileVendor } from "./vendors/unipile/unipile-vendor";
+import { parseUnipilePayload, unipileEventKey, unreadablePayloadEvent } from "./vendors/unipile/unipile-webhook";
 
 const globalForFake = globalThis as unknown as { __miasdrFakeLinkedIn?: FakeLinkedInGateway };
 
@@ -60,8 +62,8 @@ export function linkedinGateways(options: { allowLoopback?: boolean } = {}): Lin
       const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
       if (!credentials) return null;
       // A DSN saved under an older rule is checked again, so the key only goes to an allowed host.
-      const parsed = parseDsn(credentials.dsn, dsnPolicy(options));
-      return parsed ? new UnipileGateway({ dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey }) : null;
+      const parsed = parseDsn(credentials.dsn ?? "", dsnPolicy(options));
+      return parsed ? new UnipileGateway({ dsn: parsed.host, scheme: parsed.scheme, apiKey: credentials.apiKey ?? "" }) : null;
     },
   };
 }
@@ -69,8 +71,7 @@ export function linkedinGateways(options: { allowLoopback?: boolean } = {}): Lin
 export function linkedinManagementDeps(): LinkedInManagementDeps {
   return {
     accounts: drizzleLinkedInAccountStore,
-    dsnPolicy: dsnPolicy(),
-    gatewayFor: (credentials) => (fakeMode() ? fakeGateway() : new UnipileGateway(credentials)),
+    vendor: createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }),
     appUrl: env().APP_URL,
     now: () => new Date(),
     audit: auditSink,
@@ -108,7 +109,7 @@ function engineDeps(): LinkedInEngineDeps {
 }
 
 function inboundDeps(inbox: InboxFiling): LinkedInInboundDeps {
-  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent };
+  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent, eventKey: unipileEventKey };
 }
 
 /** LinkedIn jobs. They idle until an organization connects Unipile, so they are always registered. */

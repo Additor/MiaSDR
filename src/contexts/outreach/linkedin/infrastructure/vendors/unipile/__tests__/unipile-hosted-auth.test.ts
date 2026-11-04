@@ -17,13 +17,13 @@ describe("hosted-auth link against the local stand-in", () => {
   });
 
   it("accepts a create link and a reconnect link for a known account", async () => {
-    expect((await gateway.createHostedAuthLink(link)).url).toMatch(/^https:\/\//);
+    expect((await gateway.createConnectLink(link)).url).toMatch(/^https:\/\//);
     const account = standin.addAccount();
-    expect((await gateway.createHostedAuthLink({ ...link, notifyUrl: null, reconnectAccount: account.id })).url).toMatch(/^https:\/\//);
+    expect((await gateway.createConnectLink({ ...link, notifyUrl: null, reconnectAccount: account.id })).url).toMatch(/^https:\/\//);
     expect(standin.calls("POST /api/v1/hosted/accounts/link")).toHaveLength(2);
   });
 
   it("refuses a reconnect for an unknown account as a definite failure", async () => {
-    await expect(gateway.createHostedAuthLink({ ...link, reconnectAccount: "nope" })).rejects.toMatchObject({ kind: "definite" });
+    await expect(gateway.createConnectLink({ ...link, reconnectAccount: "nope" })).rejects.toMatchObject({ kind: "definite" });
   });
 });

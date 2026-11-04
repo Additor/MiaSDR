@@ -3,7 +3,7 @@ import { parseLinkedInProfileRef, PROVIDER_ID } from "../../../domain/linkedin-i
 import {
   LinkedInGatewayError,
   type GatewayAccount,
-  type HostedAuthLinkInput,
+  type ConnectLinkInput,
   type GatewayErrorCode,
   type GatewayProfile,
   type LinkedInGateway,
@@ -337,7 +337,7 @@ export class UnipileGateway implements LinkedInGateway {
    * The reference page for this endpoint could not be read when this was written, so the path is unverified against a live account.
    * The notify callback carries { status: "CREATION_SUCCESS" | "RECONNECTED", account_id, name } and no signature, so the caller must hide a secret in `notify_url`.
    */
-  async createHostedAuthLink(input: HostedAuthLinkInput): Promise<{ url: string }> {
+  async createConnectLink(input: ConnectLinkInput): Promise<{ url: string }> {
     const shared = {
       api_url: this.base,
       expiresOn: input.expiresAt.toISOString(),

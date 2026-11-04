@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import { LinkedInGatewayError, type LinkedInEngineDeps, type LinkedInInboundDeps, type LinkedInInboundStore } from "../../application/linkedin-ports";
 import { FakeLinkedInGateway } from "../fake-linkedin-gateway";
@@ -34,6 +35,7 @@ describeDb("linkedin engine", () => {
     store: override ? { ...inboundStore, ...override } : inboundStore,
     clock,
     parse,
+    eventKey: unipileEventKey,
   });
 
   async function fixture(options: { people?: number; dailyLimit?: number; steps?: unknown[]; hours?: unknown; premium?: boolean } = {}) {

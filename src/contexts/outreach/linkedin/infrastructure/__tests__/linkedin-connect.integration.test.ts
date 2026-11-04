@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { createUnipileVendor } from "../vendors/unipile/unipile-vendor";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 import type { Actor } from "@/shared/errors";
@@ -30,12 +32,12 @@ describeDb("linkedin hosted auth, limits and operations", () => {
     const { organizationId: id, userId } = created;
     const gateway = new FakeLinkedInGateway();
     gateway.accounts = [{ ref: "u-" + tag, linkedinId: "ACo-" + tag, name: "Ada", username: "ada-" + tag, status: "connected" }];
-    const deps: LinkedInManagementDeps = { accounts: accountStore, gatewayFor: () => gateway, appUrl: options.appUrl ?? "https://app.example.com", now: () => current, audit: auditSink, connectLinks: connectStore };
+    const deps: LinkedInManagementDeps = { accounts: accountStore, vendor: createUnipileVendor({ gatewayFor: () => gateway }), appUrl: options.appUrl ?? "https://app.example.com", now: () => current, audit: auditSink, connectLinks: connectStore };
     const actor: Actor = { userId, organizationId: id, role: "owner" };
     if (options.connected !== false) await mgmt.connectLinkedIn(deps, actor, { dsn: "api1.unipile.com:13111", apiKey: "k" });
     const opsDeps: import("../../application/linkedin-operations").LinkedInOperationsDeps = {
       store: opsStore,
-      inbound: { store: inboundStore, clock: { now: () => current }, parse },
+      inbound: { store: inboundStore, clock: { now: () => current }, parse, eventKey: unipileEventKey },
       audit: auditSink,
       now: () => current,
     };
@@ -342,7 +344,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
         user_provider_id: "ACo-lead",
         user_profile_url: "https://www.linkedin.com/in/lead",
       };
-      const deps = { store: inboundStore, clock: { now: () => current }, parse };
+      const deps = { store: inboundStore, clock: { now: () => current }, parse, eventKey: unipileEventKey };
       expect((await inboundApp.receiveLinkedInWebhook(deps, { organizationId: f.id, payload })).status).not.toBe("duplicate");
       await sql`update inbound_events set status = 'failed', attempts = 8 where organization_id = ${f.id}`;
       await ops.replayFailedLinkedInWebhooks(f.opsDeps, f.actor);

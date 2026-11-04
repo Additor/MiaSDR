@@ -1,4 +1,4 @@
-import { MAX_EVENT_ATTEMPTS, eventKey, eventRetrySeconds } from "../domain/linkedin";
+import { MAX_EVENT_ATTEMPTS, eventRetrySeconds } from "../domain/linkedin";
 import { errorText } from "@/shared/error-text";
 import type { LedgerEvent, LinkedInInboundDeps } from "./linkedin-ports";
 
@@ -17,12 +17,12 @@ export type WebhookResult =
 export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: { organizationId: string; payload: unknown }): Promise<WebhookResult> {
   const event = deps.parse(input.payload);
   if (!event) {
-    // An event we act on that we cannot read: Unipile changed its shape, and a reply may be inside. It stays on Inbound events.
+    // An event we act on that we cannot read: the vendor changed its shape, and a reply may be inside. It stays on Inbound events.
     const unreadable = deps.unreadable?.(input.payload);
     if (unreadable) await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: unreadable, payload: input.payload, now: deps.clock.now() });
     return { status: "ignored" };
   }
-  const key = eventKey(event, input.organizationId);
+  const key = deps.eventKey(event, input.organizationId);
   // No id to key it on: the same changed shape, read one field further in.
   if (!key) {
     await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: event.type, payload: input.payload, now: deps.clock.now() });
@@ -45,7 +45,7 @@ export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: {
 async function process(deps: LinkedInInboundDeps, claim: LedgerEvent, organizationId: string, payload: unknown): Promise<WebhookResult> {
   try {
     const event = deps.parse(payload);
-    if (!event || !eventKey(event, organizationId)) {
+    if (!event || !deps.eventKey(event, organizationId)) {
       // An event this app acts on: a reply may be inside, and with no id it would share one idempotency key with every other like it.
       if (event || deps.unreadable?.(payload)) {
         const error = "MiaSDR still cannot read this delivery.";

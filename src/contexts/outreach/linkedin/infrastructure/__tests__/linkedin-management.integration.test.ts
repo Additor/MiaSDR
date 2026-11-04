@@ -1,4 +1,7 @@
 import { drizzleMergeFieldSource } from "../../../infrastructure/drizzle-merge-fields";
+import { createUnipileVendor } from "../vendors/unipile/unipile-vendor";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
+import { normalizeDsn } from "../vendors/unipile/unipile-dsn";
 import { drizzleEnrollmentAdminStore } from "../../../infrastructure/drizzle-enrollment-admin";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
@@ -29,7 +32,7 @@ describeDb("linkedin connection and campaigns", () => {
     users.push(userId);
     const gateway = new FakeLinkedInGateway();
     gateway.accounts = [{ ref: "u-" + tag, linkedinId: "ACo-" + tag, name: "Ada", username: "ada-" + tag, status: "connected" }];
-    const deps: import("../../application/linkedin-management").LinkedInManagementDeps = { accounts: accountStore, gatewayFor: () => gateway, appUrl, now: () => new Date("2026-10-14T10:00:00Z"), audit: auditSink, connectLinks: connectStore };
+    const deps: import("../../application/linkedin-management").LinkedInManagementDeps = { accounts: accountStore, vendor: createUnipileVendor({ gatewayFor: () => gateway }), appUrl, now: () => new Date("2026-10-14T10:00:00Z"), audit: auditSink, connectLinks: connectStore };
     const actor: Actor = { userId, organizationId: id, role: "owner" };
     return { id, tag, gateway, deps, actor, member: { ...actor, role: "member" } as Actor, campaignDeps: { campaigns: campaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore } };
   }
@@ -49,9 +52,9 @@ describeDb("linkedin connection and campaigns", () => {
   });
 
   it("normalizes the DSN", () => {
-    expect(mgmt.normalizeDsn("https://API1.unipile.com:13111/")).toBe("api1.unipile.com:13111");
-    expect(mgmt.normalizeDsn("api1.unipile.com")).toBe("api1.unipile.com");
-    expect(mgmt.normalizeDsn("not a host")).toBeNull();
+    expect(normalizeDsn("https://API1.unipile.com:13111/")).toBe("api1.unipile.com:13111");
+    expect(normalizeDsn("api1.unipile.com")).toBe("api1.unipile.com");
+    expect(normalizeDsn("not a host")).toBeNull();
   });
 
   it("never sends the key to a host outside the allow-list and never echoes upstream text", async () => {
@@ -108,7 +111,7 @@ describeDb("linkedin connection and campaigns", () => {
     const b = await org();
     await mgmt.connectLinkedIn(a.deps, a.actor, { dsn: "api1.unipile.com:13111", apiKey: "k" });
     const account = a.gateway.accounts[0].ref;
-    const deps = { store: createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling), clock: { now: () => new Date("2026-10-14T10:00:00Z") }, parse: parseUnipilePayload };
+    const deps = { store: createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling), clock: { now: () => new Date("2026-10-14T10:00:00Z") }, parse: parseUnipilePayload, eventKey: unipileEventKey };
     const relation = { event: "new_relation", account_id: account, account_type: "LINKEDIN", user_provider_id: "ACoPoison" };
     const message = { event: "message_received", account_id: account, account_type: "LINKEDIN", account_info: { user_id: "ME" }, message_id: "m-" + a.tag, chat_id: "c1", message: "hi", sender: { attendee_provider_id: "ACoX" } };
 

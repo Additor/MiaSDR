@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createUnipileVendor } from "../unipile-vendor";
+import { unipileEventKey } from "../unipile-webhook";
 import type { Actor } from "@/shared/errors";
 import { ValidationError } from "@/shared/errors";
 import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../../../../domain/send-policy";
@@ -72,8 +74,8 @@ describeDb("unipile gateway against the local stand-in", () => {
     forOrganization: async () => new UnipileGateway({ dsn: standin.dsn, apiKey: API_KEY, timeoutMs, scheme: "http" }),
   });
   const engineDeps = (gateways: LinkedInGatewayProvider = shortProvider()): LinkedInEngineDeps => ({ store, gateways, clock, random: () => 0 });
-  const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse });
-  const mgmtDeps = () => ({ accounts: accountStore, gatewayFor: (c: { dsn: string; apiKey: string; scheme?: "http" | "https" }) => new UnipileGateway(c), dsnPolicy: { allowedHosts: [], allowLoopback: true }, appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
+  const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse, eventKey: unipileEventKey });
+  const mgmtDeps = () => ({ accounts: accountStore, vendor: createUnipileVendor({ dsnPolicy: { allowedHosts: [], allowLoopback: true } }), appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
 
   async function fixture(options: { people?: number; steps?: unknown[]; distance?: "SECOND_DEGREE" | "FIRST_DEGREE" } = {}) {
     const tag = uniqueKey();

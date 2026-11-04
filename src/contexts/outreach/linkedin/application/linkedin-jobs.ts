@@ -41,7 +41,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           } catch (error) {
             detail.failed += 1;
             try {
-              await slots.finish(claim, { status: "failed", error: syncErrorText(error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
+              await slots.finish(claim, { status: "failed", error: syncErrorText(management.vendor, error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
             } catch (finishError) {
               // The lease expires on its own. The remaining organizations still get their turn.
               console.error(`LinkedIn sync: could not close the slot for organization ${organizationId}: ${finishError instanceof Error ? finishError.name : "unknown error"}`);

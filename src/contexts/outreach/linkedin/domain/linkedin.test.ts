@@ -4,7 +4,6 @@ import {
   dailyInviteLimit,
   describeLinkedInProgress,
   DEFAULT_LINKEDIN_RULES,
-  eventKey,
   eventRetrySeconds,
   INVITE_NOTE_MAX,
   inviteBlock,
@@ -137,15 +136,6 @@ describe("linkedinSlug", () => {
     expect(linkedinSlug("https://example.com/in/jane")).toBeNull();
     expect(linkedinSlug("https://www.linkedin.com/sales/lead/ACwAAA")).toBeNull();
     expect(linkedinSlug("")).toBeNull();
-  });
-});
-
-describe("eventKey", () => {
-  it("keys messages by id and acceptances by member", () => {
-    expect(eventKey({ type: "message_received", account: "a", chat: null, messageId: "m1", text: "", fromAccountOwner: false, counterparty: "x" }, "org1")).toBe("unipile:message_received:v2:org1:a:m1");
-    expect(eventKey({ type: "message_received", account: "a", chat: null, messageId: "m1", text: "", fromAccountOwner: false, counterparty: "x" }, "org2")).not.toBe("unipile:message_received:v2:org1:a:m1");
-    expect(eventKey({ type: "message_received", account: "a", chat: null, messageId: null, text: "", fromAccountOwner: false, counterparty: "x" }, "org1")).toBeNull();
-    expect(eventKey({ type: "connection_accepted", account: "a", member: "p", name: null, profileUrl: null }, "org1")).toBe("unipile:new_relation:v2:org1:a:p");
   });
 });
 

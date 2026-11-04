@@ -45,7 +45,7 @@ export async function countMessagesToday(account: { id: string; providerAccountI
 
 function parseCredentials(plaintext: string): LinkedInCredentials | null {
   try {
-    const value = JSON.parse(plaintext) as Partial<LinkedInCredentials>;
+    const value = JSON.parse(plaintext) as Record<string, unknown>;
     return typeof value.dsn === "string" && typeof value.apiKey === "string" && typeof value.notifySecret === "string"
       ? { dsn: value.dsn, apiKey: value.apiKey, notifySecret: value.notifySecret }
       : null;

@@ -3,16 +3,13 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { LinkedInGatewayError } from "./linkedin-ports";
 import { isLocalOrigin } from "@/shared/local-origin";
-import { explain, storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
+import { storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
 
-/** How long the wizard link stays valid. Unipile expires every link at its daily restart anyway. */
+/** How long the wizard link stays valid. */
 export const CONNECT_LINK_MINUTES = 15;
-/** A callback may arrive a little after the link expired, because the person finishes the wizard before Unipile notifies us. */
+/** A callback may arrive a little after the link expired, because the person finishes the wizard before the vendor notifies us. */
 export const CONNECT_CALLBACK_GRACE_MINUTES = 30;
 export const MAX_PENDING_LINKS = 5;
-
-export const CONNECT_NOTIFY_PATH = "/api/webhooks/unipile-account";
-export const CONNECT_RETURN_PATH = "/settings/linkedin";
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -30,13 +27,13 @@ export interface ConnectLinkResult {
   /** Send the browser here with a full navigation. */
   url: string;
   expiresAt: Date;
-  /** False when Unipile cannot reach this app: the account shows up through the sync that runs when the person returns. */
+  /** False when the vendor cannot reach this app: the account shows up through the sync that runs when the person returns. */
   notify: boolean;
   linkId: string;
 }
 
 /**
- * Creates a Unipile hosted-auth link for the organization. `reconnectAccountId` is one of our LinkedIn account ids and
+ * Creates a link that connects a LinkedIn account through the vendor. `reconnectAccountId` is one of our LinkedIn account ids and
  * re-authenticates that account in place. The link row is stored before the provider call, so a callback cannot outrun it.
  */
 export async function createConnectLink(deps: LinkedInManagementDeps, actor: Actor, input: { reconnectAccountId?: string | null; ownerUserId?: string | null } = {}): Promise<ConnectLinkResult> {
@@ -45,7 +42,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const ownerUserId = input.reconnectAccountId ? null : (input.ownerUserId ?? null);
   if (ownerUserId && !(await deps.members?.isMember(actor.organizationId, ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError("Connect Unipile first.");
+  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
   const gateway = storedGateway(deps, credentials);
   const now = deps.now();
 
@@ -68,15 +65,15 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const expiresAt = new Date(now.getTime() + CONNECT_LINK_MINUTES * 60_000);
   await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId });
 
-  const base = deps.appUrl.replace(/\/$/, "");
+  const urls = deps.vendor.connectUrls({ appUrl: deps.appUrl, linkId: id, secret });
   const notify = !isLocalOrigin(deps.appUrl);
   try {
-    const { url } = await gateway.createHostedAuthLink({
+    const { url } = await gateway.createConnectLink({
       name: providerName,
       expiresAt,
-      successRedirectUrl: `${base}${CONNECT_RETURN_PATH}?unipile=success&link=${id}`,
-      failureRedirectUrl: `${base}${CONNECT_RETURN_PATH}?unipile=failure&link=${id}`,
-      notifyUrl: notify ? `${base}${CONNECT_NOTIFY_PATH}?link=${id}&secret=${encodeURIComponent(secret)}` : null,
+      successRedirectUrl: urls.success,
+      failureRedirectUrl: urls.failure,
+      notifyUrl: notify ? urls.notify : null,
       reconnectAccount,
     });
     await deps.audit.record({
@@ -89,8 +86,8 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
     });
     return { url, expiresAt, notify, linkId: id };
   } catch (error) {
-    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? explain(error) : "Could not create the link.");
-    if (error instanceof LinkedInGatewayError) throw new ConflictError(explain(error));
+    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? deps.vendor.explain(error) : "Could not create the link.");
+    if (error instanceof LinkedInGatewayError) throw new ConflictError(deps.vendor.explain(error));
     throw error;
   }
 }
@@ -98,14 +95,6 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
 export type NotifyResult =
   | { status: 200; outcome: "completed" | "duplicate" | "failed" }
   | { status: 400 | 401 | 410 | 502 };
-
-/** Unipile's body on `notify_url`: { status, account_id, name }. The docs name no signature, so the secret rides in the URL. */
-function parseNotify(payload: unknown): { status: string; accountId: string | null; name: string } | null {
-  if (!payload || typeof payload !== "object") return null;
-  const p = payload as Record<string, unknown>;
-  if (typeof p.status !== "string" || typeof p.name !== "string") return null;
-  return { status: p.status, accountId: typeof p.account_id === "string" && p.account_id !== "" ? p.account_id : null, name: p.name };
-}
 
 /**
  * The public callback. The link id picks the row and the secret in the URL must match its stored hash (constant-time).
@@ -116,33 +105,33 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
   if (!/^[0-9a-f-]{36}$/i.test(input.linkId) || input.secret === "") return { status: 401 };
   const link = await deps.connectLinks.find(input.linkId);
   if (!link || !sameHash(input.secret, link.secretHash)) return { status: 401 };
-  const body = parseNotify(input.payload);
+  const body = deps.vendor.readConnectNotify(input.payload);
   if (!body) return { status: 400 };
   if (body.name !== link.providerName) return { status: 401 };
   if (link.status === "completed") return { status: 200, outcome: "duplicate" };
 
   const now = deps.now();
   if (link.status !== "pending" || now.getTime() > link.expiresAt.getTime() + CONNECT_CALLBACK_GRACE_MINUTES * 60_000) {
-    if (link.status === "pending") await deps.connectLinks.fail(link.id, "The link expired before Unipile reported a result.");
+    if (link.status === "pending") await deps.connectLinks.fail(link.id, `The link expired before ${deps.vendor.name} reported a result.`);
     return { status: 410 };
   }
 
-  if (body.status !== "CREATION_SUCCESS" && body.status !== "RECONNECTED") {
-    await deps.connectLinks.fail(link.id, `Unipile reported ${body.status.slice(0, 60)}.`);
+  if (!body.connected) {
+    await deps.connectLinks.fail(link.id, `${deps.vendor.name} reported ${body.status.slice(0, 60)}.`);
     return { status: 200, outcome: "failed" };
   }
   if (!body.accountId) return { status: 400 };
 
   const credentials = await deps.accounts.getCredentials(link.organizationId);
   if (!credentials) {
-    await deps.connectLinks.fail(link.id, "Unipile is no longer connected.");
+    await deps.connectLinks.fail(link.id, `${deps.vendor.name} is no longer connected.`);
     return { status: 200, outcome: "failed" };
   }
   try {
     await syncWith(deps, link.organizationId, storedGateway(deps, credentials));
   } catch (error) {
-    // Unipile retries a non-200, and the link stays pending for that.
-    await deps.connectLinks.noteError(link.id, explain(error));
+    // The vendor retries a non-200, and the link stays pending for that.
+    await deps.connectLinks.noteError(link.id, deps.vendor.explain(error));
     return { status: 502 };
   }
   const done = await deps.connectLinks.complete(link.id, { providerAccountId: body.accountId, now });

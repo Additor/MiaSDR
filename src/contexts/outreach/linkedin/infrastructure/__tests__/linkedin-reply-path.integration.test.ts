@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { unipileEventKey } from "../vendors/unipile/unipile-webhook";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { Actor } from "@/shared/errors";
 import type { LinkedInInboundDeps } from "../../application/linkedin-ports";
@@ -25,7 +26,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
   const orgs: string[] = [];
   const users: string[] = [];
   const clock = { now: () => new Date("2026-10-14T12:00:00Z") };
-  const deps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse });
+  const deps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse, eventKey: unipileEventKey });
 
   async function fixture() {
     const tag = uniqueKey();

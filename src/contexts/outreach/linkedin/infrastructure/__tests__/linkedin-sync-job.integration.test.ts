@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { createUnipileVendor } from "../vendors/unipile/unipile-vendor";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { Job } from "@/platform/jobs/types";
 import { LinkedInGatewayError, type GatewayProfile } from "../../application/linkedin-ports";
@@ -70,12 +71,14 @@ describeDb("linkedin.sync-accounts job", () => {
     mgmtDeps = {
       accounts: { ...accountStore, listCredentialedOrganizations: async () => (await accountStore.listCredentialedOrganizations()).filter((id) => (only ?? orgs).includes(id)) },
       // An unknown key means a credential reached the wrong place, so the double throws.
-      gatewayFor: (credentials) => {
-        keyLog.push(credentials.apiKey);
-        const gateway = gateways.get(credentials.apiKey);
-        if (!gateway) throw new Error("unknown key " + credentials.apiKey);
-        return gateway;
-      },
+      vendor: createUnipileVendor({
+        gatewayFor: (credentials) => {
+          keyLog.push(credentials.apiKey);
+          const gateway = gateways.get(credentials.apiKey);
+          if (!gateway) throw new Error("unknown key " + credentials.apiKey);
+          return gateway;
+        },
+      }),
       appUrl: "https://app.example.com",
       now: () => clock,
       audit: drizzleAuditSink,

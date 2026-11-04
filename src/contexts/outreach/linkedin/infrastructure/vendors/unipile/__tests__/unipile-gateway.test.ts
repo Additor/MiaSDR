@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LinkedInGatewayError } from "../../../../application/linkedin-ports";
-import { normalizeDsn, parseDsn } from "../../../../application/linkedin-management";
+import { normalizeDsn, parseDsn } from "../unipile-dsn";
 import { UnipileGateway, classifyHttpError } from "../unipile-gateway";
 
 interface Call {
@@ -312,7 +312,7 @@ describe("error classification", () => {
 
   it("creates a hosted-auth link for a new LinkedIn account", async () => {
     const { gateway, calls } = mock([{ status: 201, json: { object: "HostedAuthURL", url: "https://account.unipile.com/x" } }]);
-    expect(await gateway.createHostedAuthLink(link)).toEqual({ url: "https://account.unipile.com/x" });
+    expect(await gateway.createConnectLink(link)).toEqual({ url: "https://account.unipile.com/x" });
     expect(calls[0].method).toBe("POST");
     expect(calls[0].url.pathname).toBe("/api/v1/hosted/accounts/link");
     expect(JSON.parse(calls[0].body as string)).toEqual({
@@ -329,7 +329,7 @@ describe("error classification", () => {
 
   it("creates a reconnect link without providers and omits a missing notify URL", async () => {
     const { gateway, calls } = mock([{ status: 201, json: { url: "https://account.unipile.com/y" } }]);
-    await gateway.createHostedAuthLink({ ...link, notifyUrl: null, reconnectAccount: "acct-1" });
+    await gateway.createConnectLink({ ...link, notifyUrl: null, reconnectAccount: "acct-1" });
     const sent = JSON.parse(calls[0].body as string);
     expect(sent).toMatchObject({ type: "reconnect", reconnect_account: "acct-1" });
     expect(sent).not.toHaveProperty("providers");
@@ -338,6 +338,6 @@ describe("error classification", () => {
 
   it("treats an answer without a URL as a definite failure", async () => {
     const { gateway } = mock([{ status: 201, json: {} }]);
-    await expect(gateway.createHostedAuthLink(link)).rejects.toMatchObject({ kind: "definite", code: "rejected" });
+    await expect(gateway.createConnectLink(link)).rejects.toMatchObject({ kind: "definite", code: "rejected" });
   });
 });
