@@ -142,8 +142,9 @@ describeDb("linkedin hosted auth, limits and operations", () => {
       const error = await connect.createConnectLink(f.deps, f.actor).catch((e) => e);
       expect(error).toBeInstanceOf(ConflictError);
       expect(error.message).not.toContain("secret provider text");
-      const [row] = await sql`select status from linkedin_connect_links where organization_id = ${f.id}`;
+      const [row] = await sql`select status, last_error from linkedin_connect_links where organization_id = ${f.id}`;
       expect(row.status).toBe("failed");
+      expect(row.last_error).toBe(error.message);
     });
   });
 
