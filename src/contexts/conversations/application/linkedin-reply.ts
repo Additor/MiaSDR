@@ -152,6 +152,7 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
         await deps.store.markUncertain(send, "The send never reported an outcome and LinkedIn could not be checked.");
         report.uncertain += 1;
       } else {
+        await deps.store.noteChecked(send, now);
         report.waiting += 1;
       }
       continue;
@@ -163,6 +164,7 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
       await deps.store.markUncertain(send, "The send never reported an outcome and the message is not in the LinkedIn chat.");
       report.uncertain += 1;
     } else {
+      await deps.store.noteChecked(send, now);
       report.waiting += 1;
     }
   }

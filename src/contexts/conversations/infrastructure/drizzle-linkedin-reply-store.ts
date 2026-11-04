@@ -15,7 +15,7 @@ import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
 import { lockAgentSend } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
-import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt, type LinkedInSnapshot } from "./reply-attempt-ledger";
+import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, noteAttemptChecked, settleAttemptSentTx, toAttempt, type LinkedInSnapshot } from "./reply-attempt-ledger";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
@@ -232,6 +232,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
 
   async markUncertain(send, error) {
     await markAttemptUncertain({ id: send.attempt.id, draftId: send.draftId }, error);
+  },
+
+  async noteChecked(send, now) {
+    await noteAttemptChecked(send.attempt.id, now);
   },
 
   async pauseAccount(send, until) {

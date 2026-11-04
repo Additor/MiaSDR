@@ -243,6 +243,24 @@ describeDb("LinkedIn conversation replies", () => {
     expect(listed.indexOf(stuck.org)).toBeLessThan(listed.indexOf(older.org));
   });
 
+  it("reads the uncertain send checked longest ago first, so a full batch cannot hide the rest", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    for (const f of [first, second]) {
+      f.fake.messageBehavior = () => "timeout-lost";
+      expect(await send(f, "Lost one")).toMatchObject({ status: "delivery_uncertain" });
+      await age(f, 60);
+    }
+    const order = async () => {
+      const rows = await store.listUnsettled(new Date(Date.now() + 60_000), 10_000);
+      return rows.filter((r) => r.send.organizationId === first.org || r.send.organizationId === second.org).map((r) => r.send.organizationId);
+    };
+    const [oldest] = await order();
+    const [row] = (await store.listUnsettled(new Date(Date.now() + 60_000), 10_000)).filter((r) => r.send.organizationId === oldest);
+    await store.noteChecked(row.send, new Date());
+    expect((await order())[1]).toBe(oldest);
+  });
+
   it("settles an uncertain send a person confirms as delivered, as a LinkedIn message", async () => {
     const f = await fixture();
     f.fake.messageBehavior = () => "timeout-lost";

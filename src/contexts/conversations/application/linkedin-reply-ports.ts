@@ -94,6 +94,8 @@ export interface LinkedInReplyStore {
   /** Definite refusal: the draft goes back to review with its text. */
   markFailed(send: LinkedInReplyContext, error: string): Promise<void>;
   markUncertain(send: LinkedInReplyContext, error: string): Promise<void>;
+  /** Puts an uncertain attempt behind the others after a check that could not settle it. */
+  noteChecked(send: LinkedInReplyContext, now: Date): Promise<void>;
   pauseAccount(send: LinkedInReplyContext, until: Date): Promise<void>;
   disconnectAccount(send: LinkedInReplyContext, error: string): Promise<void>;
   panel(organizationId: string, threadId: string, now: Date): Promise<LinkedInReplyPanel | null>;

@@ -390,6 +390,7 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
         await deps.store.markUncertain(send, "The send never reported an outcome and the mailbox could not be checked.");
         report.uncertain += 1;
       } else {
+        await deps.store.noteChecked(send, now);
         report.waiting += 1;
       }
       continue;
@@ -407,6 +408,7 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
       );
       report.uncertain += 1;
     } else {
+      await deps.store.noteChecked(send, now);
       report.waiting += 1;
     }
   }

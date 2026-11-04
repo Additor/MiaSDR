@@ -4,7 +4,7 @@ import { threads, drafts, events, mailboxes, messages, people, conversations, se
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
 import { ATTEMPT_FROM } from "../domain/send-attempt-status";
-import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt } from "./reply-attempt-ledger";
+import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, noteAttemptChecked, settleAttemptSentTx, toAttempt } from "./reply-attempt-ledger";
 import { type Snapshot, mailboxFor, sendContextFor, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
@@ -15,7 +15,7 @@ import { checkDraftCurrent, checkNoneInFlight, checkConversationOpen, checkReply
 const STARTED_FIRST = "Another reply in this thread started sending first. Reload the thread.";
 
 /** Sending an approved draft and settling the outcome: claim, blockers, sent, failed, uncertain, and the reconcile pass. */
-export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "listUnsettled" | "resolveUncertain"> = {
+export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "noteChecked" | "listUnsettled" | "resolveUncertain"> = {
   async beginSend(input): Promise<BeginSend> {
     const result = await db.transaction(async (tx) => {
       // Lock order as for LinkedIn: the conversation, then the draft. Ingest takes the conversation's key share with its
@@ -169,6 +169,10 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
 
   async markUncertain(send, error) {
     await markAttemptUncertain({ id: send.attempt.id, draftId: send.attempt.draftId }, error);
+  },
+
+  async noteChecked(send, now) {
+    await noteAttemptChecked(send.attempt.id, now);
   },
 
   async listUnsettled(olderThan, limit) {
