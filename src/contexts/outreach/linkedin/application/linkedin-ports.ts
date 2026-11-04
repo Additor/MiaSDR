@@ -211,8 +211,8 @@ export interface LinkedInOutreachStore {
   claimNext(options: LinkedInClaimOptions): Promise<LinkedInClaim | null>;
   checkBlockers(claim: LinkedInSendClaim): Promise<LinkedInBlockReason | null>;
   abandon(claim: LinkedInSendClaim, reason: LinkedInBlockReason, now: Date): Promise<void>;
-  /** Stores the rendered content and the marker that the provider call may start. */
-  recordRendered(claim: LinkedInSendClaim, rendered: { body: string }): Promise<void>;
+  /** Stores the rendered content and the marker that the provider call may start. False: this claim no longer owns the send, so no call may start. */
+  recordRendered(claim: LinkedInSendClaim, rendered: { body: string }): Promise<boolean>;
   markSent(claim: LinkedInSendClaim, sent: { providerMessageId: string | null; chatId: string | null }, now: Date): Promise<void>;
   /** Definite refusal. `fatal` skips the retries. */
   markFailed(claim: LinkedInSendClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number, fatal: boolean): Promise<void>;
@@ -226,6 +226,8 @@ export interface LinkedInOutreachStore {
   /** The provider rejected the credentials or the account: give the attempt back and mark the account disconnected. */
   disconnectAccount(accountId: string, error: string): Promise<void>;
 
+  /** LinkedIn refused a profile lookup for a limit: stop the account for a while. The lead keeps its retries. */
+  pauseAccountForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
   markResolved(claim: LinkedInResolveClaim, profile: ResolvedProfile, now: Date): Promise<ResolveWriteResult>;
   markResolveFailed(claim: LinkedInResolveClaim, error: string, now: Date, fatal: boolean): Promise<void>;
 

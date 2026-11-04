@@ -48,7 +48,8 @@ export interface TestSendStore {
     windowMinutes: number;
     inFlightMinutes: number;
   }): Promise<TestClaim>;
-  recordRendered(sendId: string, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<void>;
+  /** False: a reconcile already settled the send, so no provider call may start. */
+  recordRendered(sendId: string, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<boolean>;
   /** Re-checks suppression and do-not-contact right before the provider call. */
   recipientBlock(organizationId: string, to: string): Promise<"suppressed" | "do_not_contact" | null>;
   /** Releases a claim that never reached the provider. */
@@ -136,10 +137,13 @@ export async function sendTestEmail(deps: TestSendDeps, actor: Actor, mailboxId:
     random: () => 0,
   });
   const rfcMessageId = `<${randomUUID()}@${claim.mailbox.emailAddress.split("@")[1] ?? "miasdr.local"}>`;
-  await deps.store.recordRendered(claim.sendId, { subject: rendered.subject, body: rendered.bodyText, rfcMessageId });
-
   const audit = (status: string) =>
     deps.store.audit({ organizationId: claim.organizationId, actorUserId: actor.userId, sendId: claim.sendId, mailboxId: claim.mailbox.id, to: claim.to, status });
+
+  if (!(await deps.store.recordRendered(claim.sendId, { subject: rendered.subject, body: rendered.bodyText, rfcMessageId }))) {
+    await audit("failed");
+    return { status: "failed", sendId: claim.sendId, message: "This test email took too long to start, so it was stopped. Nothing was sent." };
+  }
 
   try {
     const sent = await deps.provider.send({

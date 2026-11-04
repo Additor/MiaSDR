@@ -102,6 +102,27 @@ describe("UnipileGateway requests", () => {
     expect(calls[2].url.pathname).toBe("/api/v1/users/jane-doe");
   });
 
+  it("reads every page of a sent-message check, and gives no answer when the chat is too long to finish", async () => {
+    const check = { account: "u1", chat: "c1", text: "Hi", since: new Date("2026-10-14T00:00:00Z") };
+    const paged = mock([{ json: { items: [], cursor: "next" } }, { json: { items: [{ id: "m2", is_sender: 1, text: "Hi" }] } }]);
+    expect(await paged.gateway.findSentMessage(check)).toEqual({ messageId: "m2" });
+    expect(paged.calls[1].url.searchParams.get("cursor")).toBe("next");
+    expect((await mock([{ json: { items: [] } }]).gateway.findSentMessage(check))).toBeNull();
+
+    const endless = mock(Array.from({ length: 20 }, () => ({ json: { items: [], cursor: "more" } })));
+    await expect(endless.gateway.findSentMessage(check)).rejects.toMatchObject({ kind: "unknown", code: "unavailable" });
+    expect(endless.calls).toHaveLength(20);
+  });
+
+  it("reads past five pages of sent invitations, and gives no answer when the list is too long to finish", async () => {
+    const check = { account: "u1", member: "ACo1" };
+    const later = mock([...Array.from({ length: 6 }, () => ({ json: { items: [], cursor: "more" } })), { json: { items: [{ invited_user_id: "ACo1" }] } }]);
+    expect(await later.gateway.invitationStatus(check)).toBe("pending");
+
+    const endless = mock(Array.from({ length: 20 }, () => ({ json: { items: [], cursor: "more" } })));
+    await expect(endless.gateway.invitationStatus(check)).rejects.toMatchObject({ kind: "unknown", code: "unavailable" });
+  });
+
   it("treats a success status with a body that is not JSON as an unknown outcome", async () => {
     const impl = async () => new Response("<html>proxy</html>", { status: 200 });
     const gateway = new UnipileGateway({ dsn: "api1.unipile.com:13111", apiKey: "k", fetch: impl as typeof fetch });

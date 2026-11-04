@@ -156,12 +156,13 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
       return (rows as unknown as Array<{ id: string; organizationId: string | null; payload: unknown; attempts: number; claimToken: string }>).map(toLedger);
     },
 
-    async apply(organizationId, event, now) {
+    async apply(organizationId, delivered, now) {
       const outcome = await db.transaction(async (tx): Promise<{ done: { result: InboundResult; note: string | null } } | { reply: ReplyContext }> => {
-        const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.providerAccountId, event.account)));
+        const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.providerAccountId, delivered.account)));
         // The lookup is scoped to the organization the secret belongs to, so another tenant's account never resolves.
         if (!account) return { done: { result: "skipped" as const, note: "Unknown account for this organization." } };
 
+        const event = withKnownOwner(delivered, account.linkedinId);
         if (event.type === "connection_accepted") {
           await upsertConnection(tx, organizationId, account.id, event.member, { name: event.name, profileUrl: event.profileUrl, connected: now });
           const waiting = await waitingForAcceptance(tx, organizationId, account.id, event.member);
@@ -230,12 +231,18 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
       if ("done" in outcome) return outcome.done;
 
       // After the sequence stopped: a replayed event repeats both steps, and both are idempotent.
-      return storeReply(inbox, organizationId, event as ReplyEvent, outcome.reply, now);
+      return storeReply(inbox, organizationId, delivered as ReplyEvent, outcome.reply, now);
     },
   };
 }
 
 type ReplyEvent = Extract<LinkedInInboundEvent, { type: "message_received" }>;
+
+/** A payload may not say who the account owner is. The sender matching the stored owner still marks an echo, not a lead's reply. */
+function withKnownOwner(event: LinkedInInboundEvent, ownerId: string): LinkedInInboundEvent {
+  if (event.type !== "message_received" || event.fromAccountOwner || event.counterparty !== ownerId) return event;
+  return { ...event, fromAccountOwner: true, counterparty: event.attendees?.find((id) => id !== ownerId) ?? null, counterpartyName: null, counterpartyProfileUrl: null };
+}
 
 interface ReplyContext {
   accountId: string;

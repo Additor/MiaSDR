@@ -209,7 +209,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "leads/import/sample": { handlers: { GET: ok() } },
   "leads/raw/map": { handlers: { POST: ok({ rawKey: "Region", name: "Region" }) } },
 
-  "linkedin": { handlers: { GET: ok(), POST: admin({ dsn: "api1.unipile.com:13111", apiKey: "k" }), DELETE: admin() } },
+  "linkedin": { handlers: { GET: admin(), POST: admin({ dsn: "api1.unipile.com:13111", apiKey: "k" }), DELETE: admin() } },
   "linkedin/accounts/[id]": { ids: { id: "linkedin_accounts" }, handlers: { PATCH: admin({ dailyInviteLimit: 10 }) } },
   "linkedin/accounts/hosted-auth": { handlers: { POST: { admin: true, lenientBody: true } } },
   "linkedin/campaigns": { handlers: { GET: ok(), POST: ok() } },

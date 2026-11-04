@@ -347,7 +347,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async recordRendered(claim, rendered) {
     // The marker doubles as the "provider call may have started" flag for reconciliation. Unique per send.
-    await db.update(sends).set({ body: rendered.body, rfcMessageId: `li:${claim.sendId}` }).where(ownClaim(claim));
+    const moved = await db.update(sends).set({ body: rendered.body, rfcMessageId: `li:${claim.sendId}` }).where(ownClaim(claim)).returning({ id: sends.id });
+    return moved.length > 0;
   },
 
   async markSent(claim, sent, now) {
@@ -400,6 +401,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       await giveBackAttempt(tx, claim, "limit_reached");
       await pauseLinkedInAccount(tx, claim.account.id, until);
     });
+  },
+
+  async pauseAccountForLookupLimit(claim, until) {
+    await pauseLinkedInAccount(db, claim.account.id, until);
   },
 
   async disconnectAccount(accountId, error) {

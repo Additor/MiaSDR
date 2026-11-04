@@ -28,7 +28,9 @@ export type LinkedInOutcome =
   | { kind: "blocked"; reason: string }
   | { kind: "failed"; retry: boolean }
   | { kind: "paused"; reason: "limit" | "disconnected" | "no_gateway" }
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  /** The claim was lost before the provider call (a reconcile or another worker took the send). Nothing went out. */
+  | { kind: "dropped" };
 
 const FALLBACK_ZONE = "UTC";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -136,6 +138,10 @@ async function resolve(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
       await deps.store.disconnectAccount(claim.account.id, errorText(error));
       return { kind: "paused", reason: "disconnected" };
     }
+    if (code === "rate_limited") {
+      await deps.store.pauseAccountForLookupLimit(claim, new Date(deps.clock.now().getTime() + LIMIT_PAUSE_HOURS * 3_600_000));
+      return { kind: "paused", reason: "limit" };
+    }
     // A lookup changes nothing at the provider, so every failure is safe to retry later.
     await deps.store.markResolveFailed(claim, errorText(error), deps.clock.now(), code === "not_found" || code === "invalid_recipient");
     return { kind: "resolve_failed" };
@@ -163,7 +169,7 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
   }
 
   // Stored before the provider call: a crash right after it leaves a marker, so reconciliation looks instead of guessing.
-  await deps.store.recordRendered(claim, { body: text });
+  if (!(await deps.store.recordRendered(claim, { body: text }))) return { kind: "dropped" };
 
   try {
     if (claim.kind === "invitation") {

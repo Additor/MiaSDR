@@ -49,7 +49,7 @@ export function JobsHistory({ overview }: { overview: Overview }) {
               <li key={row.id} className={cn(RULED_ROW, "flex flex-wrap items-center gap-2")}>
                 <span>{ACTION_LABEL[row.action] ?? row.action}</span>
                 <span className="text-muted-foreground">
-                  {row.actorName ?? "Unipile"}, <Time value={row.createdAt} />
+                  {row.actorName ?? "System"}, <Time value={row.createdAt} />
                 </span>
               </li>
             ))}

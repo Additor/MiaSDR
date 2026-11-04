@@ -32,7 +32,7 @@ A database built before this baseline holds the same tables under older migratio
 1. Change the context's `schema.ts`.
 2. Run `pnpm exec drizzle-kit generate --name <what_it_does>`. It writes the next numbered file and its snapshot.
 3. Edit the SQL by hand for what Drizzle cannot express (the forms listed above), and add triggers or functions there too.
-4. A migration that changes existing rows gets a test: build a scratch database at the migration before it (`folderUpTo` in `src/test-support/migration-test-kit.ts`), fill it, apply the new file and check what it did to those rows. The rules the new schema enforces belong in a schema test on the shared database.
+4. A migration that changes existing rows gets a test: build a scratch database at the migration before it (helpers in `src/test-support/migration-test-kit.ts`), fill it, apply the new file and check what it did to those rows. The rules the new schema enforces belong in a schema test on the shared database.
 
 A released migration never changes. A new index on a large table holds a `SHARE` lock that blocks writes until the build finishes, and the migrator cannot use `CONCURRENTLY`. Write such an index with `CREATE INDEX IF NOT EXISTS`, so an operator can build it first with `CREATE INDEX CONCURRENTLY` and the same name, and the migration then skips it.
 

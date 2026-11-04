@@ -245,6 +245,8 @@ export interface ReplyStore {
   /** A definite refusal: nothing was sent. The draft goes back to review (or to `failed` for a blocker). */
   markFailed(send: SendContext, error: string, draftStatus: "awaiting_review" | "failed"): Promise<void>;
   markUncertain(send: SendContext, error: string): Promise<void>;
+  /** Puts an uncertain attempt behind the others after a check that could not settle it. */
+  noteChecked(send: SendContext, now: Date): Promise<void>;
   /** Attempts with an unsettled outcome, for reconciliation. */
   listUnsettled(olderThan: Date, limit: number): Promise<Array<{ send: SendContext; status: "sending" | "delivery_uncertain"; startedAt: Date }>>;
   resolveUncertain(input: { organizationId: string; draftId: string; outcome: "delivered" | "not_delivered"; note: string; actorUserId: string; now: Date }): Promise<void>;

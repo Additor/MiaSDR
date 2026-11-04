@@ -92,13 +92,31 @@ describeDb("send status guard", () => {
     // Another worker reclaimed the row: attempt 2 is in flight with its own rendering.
     await sql`update sends set status = 'sending', attempt = 2, body = 'attempt 2', rfc_message_id = '<two@test>' where id = ${f.sendId}`;
     const stale = { sendId: f.sendId, attempt: 1, enrollmentId: f.enrollment, stepNumber: 1, nextStep: { waitDays: 2 }, mailbox: { id: f.mailbox } } as never;
-    await outreachStore.recordRendered(stale, { subject: "late", body: "attempt 1", rfcMessageId: "<one@test>" } as never);
+    expect(await outreachStore.recordRendered(stale, { subject: "late", body: "attempt 1", rfcMessageId: "<one@test>" } as never)).toBe(false);
     await outreachStore.markSent(stale, { providerMessageId: "late-pm", providerThreadId: "late-th" }, current);
     await outreachStore.markFailed(stale, "late failure", current, 5, 3);
     await outreachStore.markUnknown(stale, "late unknown");
     await outreachStore.abandon(stale, "suppressed", current);
     expect(await row(f.sendId)).toMatchObject({ status: "sending", attempt: 2, body: "attempt 2", rfc_message_id: "<two@test>", provider_message_id: null });
     expect(await enr(f.enrollment)).toMatchObject({ status: before.status, current_step: before.current_step });
+  });
+
+  it("stops before the provider call when a reconcile took the send", async () => {
+    current = start;
+    const { mailbox, enrollment } = await seedEmailEnrollment(sql, orgs);
+    const provider = new FakeMailboxProvider();
+    const reclaiming = {
+      ...outreachStore,
+      checkBlockers: async (claim: Parameters<typeof outreachStore.checkBlockers>[0]) => {
+        await sql`update sends set status = 'failed', error = 'interrupted' where id = ${claim.sendId}`;
+        return outreachStore.checkBlockers(claim);
+      },
+    };
+    const deps: EngineDeps = { store: reclaiming, provider, clock: { now: () => current }, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40) };
+    expect(await engine.sendNextEmail(deps, mailbox)).toEqual({ kind: "dropped" });
+    expect(provider.delivered).toHaveLength(0);
+    const [send] = await sql`select status, error, rfc_message_id from sends where enrollment_id = ${enrollment}`;
+    expect(send).toMatchObject({ status: "failed", error: "interrupted", rfc_message_id: null });
   });
 
   it("settles an unknown send once: reconcile after a person's answer changes nothing", async () => {

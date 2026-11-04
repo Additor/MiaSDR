@@ -371,7 +371,8 @@ export const UNCERTAIN_AFTER_MS = 30 * 60_000;
 
 /**
  * Looks in the mailbox for sends with no recorded outcome. Found: the send is settled as delivered.
- * Missing: it stays (or becomes) `delivery_uncertain` for a person to decide. Nothing is resent.
+ * Missing, or the mailbox cannot be checked: it stays (or becomes) `delivery_uncertain` for a person to decide, because a
+ * `sending` attempt blocks the next send. A later check can still settle it. Nothing is resent.
  */
 export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<ReconcileReport> {
   const now = deps.now();
@@ -379,21 +380,25 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
   for (const item of await deps.store.listUnsettled(new Date(now.getTime() - RECONCILE_AFTER_MS), limit)) {
     report.checked += 1;
     const { send } = item;
-    if (!send.mailbox) {
-      report.waiting += 1;
-      continue;
-    }
+    const overdue = item.status === "sending" && now.getTime() - item.startedAt.getTime() >= UNCERTAIN_AFTER_MS;
     let found;
     try {
+      if (!send.mailbox) throw new Error("The mailbox is gone");
       found = await deps.mailer.findSent(send.mailbox.emailAddress, send.rfcMessageId, item.startedAt, { to: send.recipient });
     } catch {
-      report.waiting += 1;
+      if (overdue) {
+        await deps.store.markUncertain(send, "The send never reported an outcome and the mailbox could not be checked.");
+        report.uncertain += 1;
+      } else {
+        await deps.store.noteChecked(send, now);
+        report.waiting += 1;
+      }
       continue;
     }
     if (found.status === "found") {
       await deps.store.markSent(send, found.sent, now, "Found in the mailbox's sent mail by its message id.");
       report.found += 1;
-    } else if (item.status === "sending" && now.getTime() - item.startedAt.getTime() >= UNCERTAIN_AFTER_MS) {
+    } else if (overdue) {
       // Uncertain only asks a person to decide, so it is safe for both answers. Nothing is resent.
       await deps.store.markUncertain(
         send,
@@ -403,6 +408,7 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
       );
       report.uncertain += 1;
     } else {
+      await deps.store.noteChecked(send, now);
       report.waiting += 1;
     }
   }

@@ -229,10 +229,12 @@ export const drizzleOutreachStore: OutreachStore = {
   },
 
   async recordRendered(claim, rendered) {
-    await db
+    const moved = await db
       .update(sends)
       .set({ subject: rendered.subject, body: rendered.body, rfcMessageId: rendered.rfcMessageId })
-      .where(ownClaim(claim));
+      .where(ownClaim(claim))
+      .returning({ id: sends.id });
+    return moved.length > 0;
   },
 
   async markSent(claim, sent, now) {

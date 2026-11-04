@@ -74,6 +74,15 @@ Nothing used these, and the database baseline drops them, so start from an empty
 
 ### Fixed
 
+- A send whose claim was lost between its checks and the provider call no longer goes out. Before, a worker that stalled for more than 10 minutes could send after a reconcile had taken the send, and a retry could send it again. This covers email, test emails and LinkedIn.
+- A reply stuck in `sending` now turns `delivery_uncertain` after 30 minutes even while Gmail or LinkedIn cannot be checked or its mailbox was removed, so a person can decide. Before, it blocked the next send in that conversation until the provider came back.
+- More than 25 unanswered uncertain replies no longer hide the newest from the provider check. Each pass reads the ones checked longest ago.
+- A LinkedIn message from the account owner is now read as the owner's own, even when the webhook payload leaves out who the owner is. Before, it sat in the unmatched inbox as a stranger's message, and an echoed invitation note did not count as the acceptance.
+- A LinkedIn limit on a profile lookup now pauses the account for 24 hours, as it does for a send. Before, the lookup used up the lead's retries and could fail the lead.
+- A check for a sent invitation or message no longer answers "not found" when the list was too long to read to the end, which could lead to a second send. It reads up to 20 pages, then tries again later.
+- The jobs page shows "System" for an audit row with no person. Before, it said "Unipile", also for a row whose admin had been removed.
+- `GET /api/linkedin` now answers only an owner or admin. Before, a member could read the DSN, webhook status, account limits and connection link errors. The Settings page already kept these from members.
+- A failed LinkedIn connection link now stores the fixed explanation, not the provider's own error text.
 - Two AI or enrichment columns can no longer read each other's output, which would have queued paid runs forever.
 - Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.
 - A reply whose own words ask to stop now shows Review stop request in Actions and on the thread before any AI pick reads it. An MCP work queue row for one has `aiPick.replyTypePickId: null`.

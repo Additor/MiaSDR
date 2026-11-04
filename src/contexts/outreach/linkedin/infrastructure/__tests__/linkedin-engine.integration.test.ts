@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
-import type { LinkedInEngineDeps, LinkedInInboundDeps, LinkedInInboundStore } from "../../application/linkedin-ports";
+import { LinkedInGatewayError, type LinkedInEngineDeps, type LinkedInInboundDeps, type LinkedInInboundStore } from "../../application/linkedin-ports";
 import { FakeLinkedInGateway } from "../fake-linkedin-gateway";
 import { MAX_SEND_ATTEMPTS } from "../../../domain/send-policy";
 
@@ -639,6 +639,48 @@ describeDb("linkedin engine", () => {
     advance(24 * 60);
     expect((await act(gateway, f)).kind).toBe("idle");
     expect(gateway.invitations).toHaveLength(0);
+  });
+
+  it("pauses the account on a limit from a profile lookup, and the lead keeps its retries", async () => {
+    const gateway = new FakeLinkedInGateway();
+    gateway.getProfile = async () => {
+      throw new LinkedInGatewayError("limit", "definite", "rate_limited");
+    };
+    const f = await fixture();
+    expect(await act(gateway, f)).toEqual({ kind: "paused", reason: "limit" });
+    expect((await accountRow(f.account)).limit_reached_until).toEqual(new Date(current.getTime() + 24 * 3_600_000));
+    expect(await details(f.enrollmentIds[0])).toMatchObject({ resolve_retry_count: 0, resolve_last_error: null });
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "pending" });
+  });
+
+  it("reads a message from the account owner as an echo when the payload leaves out who the owner is", async () => {
+    const gateway = new FakeLinkedInGateway();
+    const f = await fixture();
+    await invite(gateway, f);
+    const member = (await details(f.enrollmentIds[0])).provider_id as string;
+    const { account_info: _ownerUnknown, ...echo } = replyPayload(f, "ACo-owner-" + f.tag, "m-echo", "Our own note");
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: { ...echo, attendees: [{ attendee_provider_id: member }, { attendee_provider_id: "ACo-owner-" + f.tag }] } });
+    // Not held for review as a stranger's message, and it counts as the acceptance a note-carrying echo means.
+    const [{ held }] = await sql`select count(*)::int as held from identity_exceptions where organization_id = ${f.org}`;
+    expect(held).toBe(0);
+    expect(await details(f.enrollmentIds[0])).toMatchObject({ connection_state: "connected" });
+  });
+
+  it("stops before the provider call when a reconcile took the send, and leaves the row as the reconcile set it", async () => {
+    const gateway = new FakeLinkedInGateway();
+    const f = await fixture();
+    expect((await act(gateway, f)).kind).toBe("resolved");
+    advance(2);
+    const reclaiming = {
+      ...store,
+      checkBlockers: async (claim: Parameters<typeof store.checkBlockers>[0]) => {
+        await sql`update sends set status = 'failed', error = 'interrupted' where id = ${claim.sendId}`;
+        return store.checkBlockers(claim);
+      },
+    };
+    expect(await engine.runNextLinkedInAction({ ...deps(gateway), store: reclaiming }, f.account)).toEqual({ kind: "dropped" });
+    expect(gateway.invitations).toHaveLength(0);
+    expect(await sendRows(f.enrollmentIds[0])).toEqual([expect.objectContaining({ status: "failed", error: "interrupted", rfc_message_id: null })]);
   });
 
   // The sends trigger holds no cap, so these two tests are what holds it.

@@ -145,6 +145,11 @@ export async function failAttempt(attempt: { id: string; draftId: string }, erro
 }
 
 /** The provider took the call and gave no answer. The send may have gone out, so nothing retries it until a person or the reconcile pass knows. */
+/** An uncertain attempt the provider could not settle goes behind the others, so more than a batch of them all get their turn. */
+export async function noteAttemptChecked(attemptId: string, now: Date): Promise<void> {
+  await db.update(sendAttempts).set({ updatedAt: now }).where(and(eq(sendAttempts.id, attemptId), eq(sendAttempts.status, "delivery_uncertain")));
+}
+
 export async function markAttemptUncertain(attempt: { id: string; draftId: string }, error: string): Promise<void> {
   await db.transaction(async (tx) => {
     const moved = await tx
@@ -160,7 +165,11 @@ export async function markAttemptUncertain(attempt: { id: string; draftId: strin
   });
 }
 
-/** The channel's attempts that have not settled since `olderThan`, oldest first. An attempt with no provider is email's. */
+/**
+ * The channel's attempts that have not settled since `olderThan`. An attempt with no provider is email's.
+ * `sending` comes first: `delivery_uncertain` rows stay until a person answers, and a pile of them must not fill `limit`
+ * and keep a stuck send from turning uncertain. Among the rest, the row looked at longest ago comes first (`noteAttemptChecked`).
+ */
 export async function listUnsettledAttempts(channel: "email" | "linkedin", olderThan: Date, limit: number): Promise<AttemptRecord[]> {
   return db
     .select()
@@ -172,6 +181,6 @@ export async function listUnsettledAttempts(channel: "email" | "linkedin", older
         sql`${sendAttempts.updatedAt} < ${olderThan.toISOString()}::timestamptz`,
       ),
     )
-    .orderBy(sendAttempts.createdAt)
+    .orderBy(sql`${sendAttempts.status} = 'sending' desc`, sendAttempts.updatedAt)
     .limit(limit);
 }

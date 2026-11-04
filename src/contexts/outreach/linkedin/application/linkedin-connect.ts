@@ -89,7 +89,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
     });
     return { url, expiresAt, notify, linkId: id };
   } catch (error) {
-    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? error.message.slice(0, 300) : "Could not create the link.");
+    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? explain(error) : "Could not create the link.");
     if (error instanceof LinkedInGatewayError) throw new ConflictError(explain(error));
     throw error;
   }

@@ -211,6 +211,8 @@ export type LinkedInInboundEvent =
       fromAccountOwner: boolean;
       /** The other person in the chat. Null when it cannot be resolved. */
       counterparty: string | null;
+      /** Everyone in the chat, for a payload that does not say who the account owner is. */
+      attendees?: string[];
       /** Display name and profile URL of the sender, when the payload carries them (inbound messages only). */
       counterpartyName?: string | null;
       counterpartyProfileUrl?: string | null;

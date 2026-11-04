@@ -75,6 +75,9 @@ export function classifyHttpError(status: number, body: Json | null): LinkedInGa
   return definite("rejected");
 }
 
+/** How many pages a check that decides on a resend reads before it gives no answer. */
+const LOOKUP_MAX_PAGES = 20;
+
 export class UnipileGateway implements LinkedInGateway {
   private readonly base: string;
   private readonly doFetch: typeof fetch;
@@ -198,11 +201,13 @@ export class UnipileGateway implements LinkedInGateway {
    */
   async invitationStatus(input: { account: string; member: string }): Promise<"pending" | "accepted" | "none"> {
     let cursor: string | undefined;
-    for (let page = 0; page < 5; page++) {
+    for (let page = 0; ; page++) {
       const res = await this.call("GET", "/api/v1/users/invite/sent", { query: { account_id: input.account, limit: 100, cursor } });
       if (((res.items as Json[] | undefined) ?? []).some((i) => i.invited_user_id === input.member)) return "pending";
       cursor = str(res.cursor) ?? undefined;
       if (!cursor) break;
+      // "None" would allow a second invitation, so a list too long to finish is no answer.
+      if (page + 1 >= LOOKUP_MAX_PAGES) throw new LinkedInGatewayError("Too many sent invitations to finish the check.", "unknown", "unavailable");
     }
     const profile = await this.getProfile({ account: input.account, identifier: input.member });
     return profile.networkDistance === "first" ? "accepted" : "none";
@@ -235,10 +240,17 @@ export class UnipileGateway implements LinkedInGateway {
 
   /** Docs "List all messages from a chat": GET /api/v1/chats/{chat_id}/messages, query after (ISO), limit; items have is_sender (0 or 1) and text. */
   async findSentMessage(input: { account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null> {
-    const res = await this.call("GET", `/api/v1/chats/${encodeURIComponent(input.chat)}/messages`, { query: { after: input.since.toISOString(), limit: 50 } });
     const wanted = input.text.trim();
-    const hit = ((res.items as Json[] | undefined) ?? []).find((m) => Number(m.is_sender) === 1 && typeof m.text === "string" && m.text.trim() === wanted);
-    return hit ? { messageId: str(hit.id) } : null;
+    let cursor: string | undefined;
+    for (let page = 0; ; page++) {
+      const res = await this.call("GET", `/api/v1/chats/${encodeURIComponent(input.chat)}/messages`, { query: { after: input.since.toISOString(), limit: 50, cursor } });
+      const hit = ((res.items as Json[] | undefined) ?? []).find((m) => Number(m.is_sender) === 1 && typeof m.text === "string" && m.text.trim() === wanted);
+      if (hit) return { messageId: str(hit.id) };
+      cursor = str(res.cursor) ?? undefined;
+      if (!cursor) return null;
+      // "Not found" can lead to a resend, so a chat too long to finish is no answer.
+      if (page + 1 >= LOOKUP_MAX_PAGES) throw new LinkedInGatewayError("Too many messages to finish the check.", "unknown", "unavailable");
+    }
   }
 
   /**
