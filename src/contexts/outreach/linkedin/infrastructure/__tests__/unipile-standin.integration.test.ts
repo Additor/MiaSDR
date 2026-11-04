@@ -503,7 +503,7 @@ describeDb("unipile gateway against the local stand-in", () => {
       expect(before.status).toBe("active");
       await deliver(standin.reply(f.owner.id, member, "hello"));
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied" });
-      expect((await inbound.replayLinkedInEvents(inboundDeps())).failed).toBe(0);
+      expect((await inbound.replayLinkedInEvents(inboundDeps(), 50, f.org)).failed).toBe(0);
     });
   });
 
