@@ -170,7 +170,8 @@ export interface OutreachStore {
   /** Conversations the blocker, ends the enrollment and releases the claim without a retry. */
   abandon(claim: SendClaim, reason: BlockReason, now: Date): Promise<void>;
   /** Stores the rendered message on the claim so a crash after this point can be reconciled. */
-  recordRendered(claim: SendClaim, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<void>;
+  /** False: this claim no longer owns the send, so no provider call may start. */
+  recordRendered(claim: SendClaim, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<boolean>;
   markSent(claim: SendClaim, sent: SentEmail, now: Date): Promise<void>;
   /** The provider refused; schedule a retry or give up after the last attempt. */
   markFailed(claim: SendClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number, fatal?: boolean): Promise<void>;

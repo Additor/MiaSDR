@@ -24,7 +24,9 @@ export type SendOutcome =
   | { kind: "sent"; sendId: string }
   | { kind: "blocked"; reason: string }
   | { kind: "failed"; retry: boolean }
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  /** The claim was lost before the provider call (a reconcile or another worker took the send). Nothing went out. */
+  | { kind: "dropped" };
 
 /** Domain-friendly default zone; organizations override through their settings. */
 const FALLBACK_ZONE = "UTC";
@@ -74,7 +76,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
   const rfcMessageId = `<${randomUUID()}@${claim.mailbox.emailAddress.split("@")[1] ?? "miasdr.local"}>`;
 
   // Stored before the provider call: if we crash right after it, reconciliation can find the message by this id.
-  await deps.store.recordRendered(claim, { subject: threading.subject, body: rendered.bodyText, rfcMessageId });
+  if (!(await deps.store.recordRendered(claim, { subject: threading.subject, body: rendered.bodyText, rfcMessageId }))) return { kind: "dropped" };
 
   try {
     const sent = await deps.provider.send({

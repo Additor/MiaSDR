@@ -28,7 +28,9 @@ export type LinkedInOutcome =
   | { kind: "blocked"; reason: string }
   | { kind: "failed"; retry: boolean }
   | { kind: "paused"; reason: "limit" | "disconnected" | "no_gateway" }
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  /** The claim was lost before the provider call (a reconcile or another worker took the send). Nothing went out. */
+  | { kind: "dropped" };
 
 const FALLBACK_ZONE = "UTC";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -163,7 +165,7 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
   }
 
   // Stored before the provider call: a crash right after it leaves a marker, so reconciliation looks instead of guessing.
-  await deps.store.recordRendered(claim, { body: text });
+  if (!(await deps.store.recordRendered(claim, { body: text }))) return { kind: "dropped" };
 
   try {
     if (claim.kind === "invitation") {
