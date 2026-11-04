@@ -71,11 +71,11 @@ describeDb("unipile gateway against the local stand-in", () => {
 
   /** A provider with a short timeout so hang tests finish fast. */
   const shortProvider = (timeoutMs = 400): LinkedInGatewayProvider => ({
-    forOrganization: async () => new UnipileGateway({ dsn: standin.dsn, apiKey: API_KEY, timeoutMs, scheme: "http" }),
+    forAccount: async () => new UnipileGateway({ dsn: standin.dsn, apiKey: API_KEY, timeoutMs, scheme: "http" }),
   });
   const engineDeps = (gateways: LinkedInGatewayProvider = shortProvider()): LinkedInEngineDeps => ({ store, gateways, clock, random: () => 0 });
   const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse, eventKey: unipileEventKey });
-  const mgmtDeps = () => ({ accounts: accountStore, vendor: createUnipileVendor({ dsnPolicy: { allowedHosts: [], allowLoopback: true } }), appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
+  const mgmtDeps = () => ({ accounts: accountStore, vendors: [createUnipileVendor({ dsnPolicy: { allowedHosts: [], allowLoopback: true } })], appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
 
   async function fixture(options: { people?: number; steps?: unknown[]; distance?: "SECOND_DEGREE" | "FIRST_DEGREE" } = {}) {
     const tag = uniqueKey();
@@ -210,7 +210,7 @@ describeDb("unipile gateway against the local stand-in", () => {
 
     it("hands out a working gateway from the composition root for the stored credentials", async () => {
       const f = await fixture();
-      const gateway = await composition.linkedinGateways({ allowLoopback: true }).forOrganization(f.org);
+      const gateway = await composition.linkedinGateways({ allowLoopback: true }).forAccount({ organizationId: f.org, accountId: f.accountId });
       expect(gateway).toBeInstanceOf(UnipileGateway);
       await gateway!.verify();
       expect((await gateway!.listAccounts()).map((a) => a.ref)).toEqual([f.owner.id]);

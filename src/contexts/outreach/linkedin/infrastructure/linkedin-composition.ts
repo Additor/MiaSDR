@@ -17,7 +17,7 @@ import type { NoticeDeps } from "../application/linkedin-enroll-notices";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enrollment-admin";
 import { drizzleMergeFieldSource } from "../../infrastructure/drizzle-merge-fields";
-import { drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
+import { accountVendorOf, drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
 import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
 import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
@@ -56,23 +56,29 @@ function fakeGateway(): FakeLinkedInGateway {
   return globalForFake.__miasdrFakeLinkedIn;
 }
 
-/** The one place that decides which LinkedIn adapter is live: Unipile with the organization's stored credentials, or the demo fake. */
+/** The gateway of the org's vendor when `accountId` runs on it. An account of a vendor the org no longer connects has none. */
+async function storedGateway(organizationId: string, accountId: string, policy: DsnPolicy): Promise<LinkedInGateway | null> {
+  const [vendorKey, accountVendor] = await Promise.all([drizzleLinkedInAccountStore.connectedVendor(organizationId), accountVendorOf(organizationId, accountId)]);
+  if (!vendorKey || vendorKey !== accountVendor) return null;
+  const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
+  if (!credentials) return null;
+  if (vendorKey === "unipile") {
+    const connection = storedConnection(credentials, policy);
+    return connection ? new UnipileGateway(connection) : null;
+  }
+  return null;
+}
+
+/** The one place that decides which LinkedIn adapter is live: the account's vendor with the organization's stored credentials, or the demo fake. */
 export function linkedinGateways(options: { allowLoopback?: boolean } = {}): LinkedInGatewayProvider {
   if (fakeMode()) return fakeGateway();
-  return {
-    async forOrganization(organizationId): Promise<LinkedInGateway | null> {
-      const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
-      if (!credentials) return null;
-      const connection = storedConnection(credentials, dsnPolicy(options));
-      return connection ? new UnipileGateway(connection) : null;
-    },
-  };
+  return { forAccount: ({ organizationId, accountId }) => storedGateway(organizationId, accountId, dsnPolicy(options)) };
 }
 
 export function linkedinManagementDeps(): LinkedInManagementDeps {
   return {
     accounts: drizzleLinkedInAccountStore,
-    vendor: createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }),
+    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) })],
     appUrl: env().APP_URL,
     now: () => new Date(),
     audit: auditSink,
@@ -129,5 +135,5 @@ const sameSecret = (a: string, b: string) => a.length === b.length && timingSafe
 export async function receiveUnipileDelivery(inbox: InboxFiling, input: { organizationId: string; secret: string | null; payload: unknown }): Promise<UnipileDelivery> {
   const credentials = await drizzleLinkedInAccountStore.getCredentials(input.organizationId);
   if (!credentials || !input.secret || !sameSecret(input.secret, credentials.notifySecret)) return { status: 401 };
-  return { status: 200, result: await receiveLinkedInWebhook(inboundDeps(inbox), { organizationId: input.organizationId, payload: input.payload }) };
+  return { status: 200, result: await receiveLinkedInWebhook(inboundDeps(inbox), { organizationId: input.organizationId, provider: "unipile", payload: input.payload }) };
 }

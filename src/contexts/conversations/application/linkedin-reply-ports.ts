@@ -8,17 +8,30 @@ export class LinkedInReplyError extends Error {
     readonly kind: "definite" | "unknown",
     /** rate_limited pauses the account, auth disconnects it. */
     readonly code: "rate_limited" | "auth" | "other",
+    /** For `rate_limited`: how long the limit lasts, when LinkedIn's side says. */
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message);
   }
 }
 
+/** Where a reply goes. */
+export interface LinkedInReplyAddress {
+  organizationId: string;
+  accountId: string;
+  account: string;
+  chat: string;
+  /** The other person's member id and public slug, for a provider that addresses people rather than chats. */
+  member: string | null;
+  slug: string | null;
+}
+
 /** Looks at LinkedIn for one organization. It never sends. */
 export interface LinkedInSentFinder {
-  /** False means the organization has no LinkedIn connection. */
-  available(organizationId: string): Promise<boolean>;
+  /** False means this account's LinkedIn connection is gone. */
+  available(input: { organizationId: string; accountId: string }): Promise<boolean>;
   /** A message from the account owner in the chat with this text after `since`. Throws when LinkedIn cannot answer. */
-  findSent(input: { organizationId: string; account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
+  findSent(input: LinkedInReplyAddress & { text: string; since: Date }): Promise<{ messageId: string | null } | null>;
 }
 
 /**
@@ -26,7 +39,7 @@ export interface LinkedInSentFinder {
  * LinkedInReplyError. Only the send deps (`reply-send-composition.ts`) hold one.
  */
 export interface LinkedInReplySender extends LinkedInSentFinder {
-  send(input: { organizationId: string; account: string; chat: string; text: string }): Promise<{ messageId: string | null }>;
+  send(input: LinkedInReplyAddress & { text: string }): Promise<{ messageId: string | null }>;
 }
 
 /** What one claimed reply knows. Built from the approval snapshot stored on the ledger row. */
@@ -40,6 +53,9 @@ export interface LinkedInReplyContext {
   accountId: string;
   providerAccountId: string;
   chat: string;
+  /** Null on an attempt begun before these were kept. */
+  member: string | null;
+  slug: string | null;
   text: string;
 }
 

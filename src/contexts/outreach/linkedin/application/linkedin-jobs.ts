@@ -1,7 +1,7 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { Job, SlotPort } from "@/platform/jobs/types";
 import { replayLinkedInEvents } from "./linkedin-inbound";
-import { syncAndRecord, syncErrorText, type LinkedInManagementDeps } from "./linkedin-management";
+import { syncAndRecord, syncErrorText, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
 import type { LinkedInEngineDeps, LinkedInInboundDeps } from "./linkedin-ports";
 import type { LinkedInSearchEngineDeps } from "./linkedin-search-ports";
 import { runNextSearchPage } from "./run-linkedin-search";
@@ -29,11 +29,12 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           // Credentials that no longer decrypt read as null: nothing to sync, no slot, no error.
           const credentials = await management.accounts.getCredentials(organizationId);
           if (!credentials) continue;
+          const vendor = await vendorOf(management, organizationId);
           const claim = await slots.claim("linkedin-sync", hourKey, { organizationId, now: ctx.now(), leaseMs: SYNC_LEASE_MS });
           if (!claim) continue;
           detail.organizations += 1;
           try {
-            const result = await syncAndRecord(management, organizationId, () => management.vendor.gatewayFor(credentials));
+            const result = await syncAndRecord(management, organizationId, () => vendor.gatewayFor(credentials));
             await slots.finish(claim, { status: "succeeded" }, ctx.now());
             detail.added += result.added;
             // A new account is `added`, not a status change.
@@ -41,7 +42,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           } catch (error) {
             detail.failed += 1;
             try {
-              await slots.finish(claim, { status: "failed", error: syncErrorText(management.vendor, error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
+              await slots.finish(claim, { status: "failed", error: syncErrorText(vendor, error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
             } catch (finishError) {
               // The lease expires on its own. The remaining organizations still get their turn.
               console.error(`LinkedIn sync: could not close the slot for organization ${organizationId}: ${finishError instanceof Error ? finishError.name : "unknown error"}`);

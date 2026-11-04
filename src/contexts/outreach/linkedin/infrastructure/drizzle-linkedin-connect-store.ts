@@ -56,6 +56,10 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
     return rows.length === 1;
   },
 
+  async noteAccount(id, providerAccountId) {
+    await db.update(t).set({ providerAccountId }).where(and(eq(t.id, id), eq(t.status, "pending")));
+  },
+
   async fail(id, error) {
     const rows = await db.update(t).set({ status: "failed", lastError: error.slice(0, 500) }).where(and(eq(t.id, id), eq(t.status, "pending"))).returning({ id: t.id });
     return rows.length === 1;

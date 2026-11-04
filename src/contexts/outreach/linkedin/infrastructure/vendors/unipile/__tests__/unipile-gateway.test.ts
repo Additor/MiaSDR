@@ -103,7 +103,7 @@ describe("UnipileGateway requests", () => {
   });
 
   it("reads every page of a sent-message check, and gives no answer when the chat is too long to finish", async () => {
-    const check = { account: "u1", chat: "c1", text: "Hi", since: new Date("2026-10-14T00:00:00Z") };
+    const check = { account: "u1", to: { chat: "c1", member: null, slug: null }, text: "Hi", since: new Date("2026-10-14T00:00:00Z") };
     const paged = mock([{ json: { items: [], cursor: "next" } }, { json: { items: [{ id: "m2", is_sender: 1, text: "Hi" }] } }]);
     expect(await paged.gateway.findSentMessage(check)).toEqual({ messageId: "m2" });
     expect(paged.calls[1].url.searchParams.get("cursor")).toBe("next");
@@ -174,7 +174,7 @@ describe("UnipileGateway requests", () => {
 
   it("sends messages and starts chats as multipart forms", async () => {
     const { gateway, calls } = mock([{ json: { message_id: "m1" } }, { json: { chat_id: "c1", message_id: "m2" } }]);
-    expect(await gateway.sendMessage({ account: "u1", chat: "c/1", text: "Hello" })).toEqual({ messageId: "m1" });
+    expect(await gateway.sendMessage({ account: "u1", to: { chat: "c/1", member: null, slug: null }, text: "Hello" })).toEqual({ chat: "c/1", messageId: "m1" });
     expect(calls[0].url.pathname).toBe("/api/v1/chats/c%2F1/messages");
     expect((calls[0].body as FormData).get("text")).toBe("Hello");
     expect(calls[0].headers["content-type"]).toBeUndefined();
@@ -195,7 +195,7 @@ describe("UnipileGateway requests", () => {
 
   it("finds a sent message by its text among the account owner's messages", async () => {
     const { gateway } = mock([{ json: { items: [{ id: "a", is_sender: 0, text: "Hello" }, { id: "b", is_sender: 1, text: " Hello " }] } }]);
-    expect(await gateway.findSentMessage({ account: "u1", chat: "c", text: "Hello", since: new Date("2026-10-14T10:00:00Z") })).toEqual({ messageId: "b" });
+    expect(await gateway.findSentMessage({ account: "u1", to: { chat: "c", member: null, slug: null }, text: "Hello", since: new Date("2026-10-14T10:00:00Z") })).toEqual({ messageId: "b" });
   });
 
   it("searches with the pasted URL in the body and the cursor in the query", async () => {

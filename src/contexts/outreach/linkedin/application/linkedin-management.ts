@@ -59,17 +59,24 @@ export interface LinkedInAccountRecord {
 
 export interface LinkedInAccountStore {
   getCredentials(organizationId: string): Promise<LinkedInCredentials | null>;
-  saveCredentials(organizationId: string, credentials: LinkedInCredentials): Promise<void>;
+  saveCredentials(organizationId: string, credentials: LinkedInCredentials, vendor: Pick<LinkedInVendor, "key" | "integrationName">): Promise<void>;
+  /** The key of the vendor this organization connected, or null. */
+  connectedVendor(organizationId: string): Promise<string | null>;
+  /** The vendor's ids of this organization's accounts on that vendor. */
+  accountRefs(organizationId: string, vendorKey: string): Promise<string[]>;
+  /** Moves known accounts to their listed status and changes nothing else. A ref with no row is ignored. */
+  updateAccountStatuses(organizationId: string, vendorKey: string, accounts: GatewayAccount[]): Promise<{ added: number; updated: number; skipped: number; skippedReasons: string[]; changes: AccountStatusChange[] }>;
   /** The last stored registration result, or null when none was recorded. */
   getWebhookStatus(organizationId: string): Promise<WebhookStatus | null>;
   /** Replaces the stored registration result. A no-op when the organization has no connection row. */
   saveWebhookStatus(organizationId: string, status: WebhookStatus): Promise<void>;
-  /** Removes the credentials and marks every account disconnected. */
+  /** Removes the credentials and marks that vendor's accounts disconnected. */
   clearCredentials(organizationId: string): Promise<void>;
   /** Matches by LinkedIn id, then by username (a reconnect brings a new provider id). An account whose provider account id is already taken by another organization or another LinkedIn account is skipped with a reason and the rest still sync. Returns how many rows changed. */
   upsertAccounts(
     organizationId: string,
     accounts: Array<GatewayAccount & { isPremium: boolean | null; headline: string | null }>,
+    vendorKey: string,
   ): Promise<{ added: number; updated: number; skipped: number; skippedReasons: string[]; changes: AccountStatusChange[] }>;
   /** Organizations whose LinkedIn integration is enabled and has a credential row. Decrypting is left to `getCredentials`. */
   listCredentialedOrganizations(): Promise<string[]>;
@@ -90,7 +97,8 @@ export interface LinkedInAccountStore {
 
 export interface LinkedInManagementDeps {
   accounts: LinkedInAccountStore;
-  vendor: LinkedInVendor;
+  /** The vendors an organization can connect. The first is the one a form that names none means. */
+  vendors: readonly LinkedInVendor[];
   appUrl: string;
   now: () => Date;
   audit: AuditSink;
@@ -103,7 +111,11 @@ function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can manage LinkedIn.");
 }
 
-const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => deps.vendor.webhooks.requestUrl(deps.appUrl, organizationId);
+/** The vendor this organization connected. An organization connects one at a time. With none, the default, for its sentences. */
+export async function vendorOf(deps: LinkedInManagementDeps, organizationId: string): Promise<LinkedInVendor> {
+  const key = await deps.accounts.connectedVendor(organizationId);
+  return deps.vendors.find((vendor) => vendor.key === key) ?? deps.vendors[0];
+}
 
 /**
  * The accounts with their status, limits and use today, for an owner or admin. Members only see that LinkedIn is
@@ -117,7 +129,8 @@ export async function listLinkedInAccountStatus(deps: LinkedInManagementDeps, ac
 export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor) {
   requireAdmin(actor);
   const now = deps.now();
-  const [credentials, webhooks, sync, accounts, links] = await Promise.all([
+  const [vendor, credentials, webhooks, sync, accounts, links] = await Promise.all([
+    vendorOf(deps, actor.organizationId),
     deps.accounts.getCredentials(actor.organizationId),
     deps.accounts.getWebhookStatus(actor.organizationId),
     deps.accounts.getSyncStatus(actor.organizationId),
@@ -126,18 +139,26 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    ...deps.vendor.describe(credentials),
+    vendor: { key: vendor.key, name: vendor.name },
+    ...vendor.describe(credentials),
     webhooks,
     sync,
     accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account) })),
     links,
     limits: { invites: INVITE_LIMIT_RULE, messages: MESSAGE_LIMIT_RULE },
     defaults: { invitesPerDayPremium: DEFAULT_LINKEDIN_RULES.invitesPerDayPremium, invitesPerDayFree: DEFAULT_LINKEDIN_RULES.invitesPerDayFree },
-    webhookUrl: webhookRequestUrl(deps, actor.organizationId),
+    webhookUrl: vendor.webhooks?.requestUrl(deps.appUrl, actor.organizationId) ?? null,
   };
 }
 
 export async function syncWith(deps: LinkedInManagementDeps, organizationId: string, gateway: LinkedInGateway) {
+  const vendor = await vendorOf(deps, organizationId);
+  if (!vendor.syncAddsAccounts) {
+    // The listing may hold accounts that are not this organization's. Only the ones connected here are asked about.
+    const known = await deps.accounts.accountRefs(organizationId, vendor.key);
+    const listed = known.length > 0 ? await gateway.listAccounts(known) : [];
+    return { found: listed.length, ...(await deps.accounts.updateAccountStatuses(organizationId, vendor.key, listed)) };
+  }
   const listed = await gateway.listAccounts();
   const enriched = await Promise.all(
     listed.map(async (account) => {
@@ -150,7 +171,7 @@ export async function syncWith(deps: LinkedInManagementDeps, organizationId: str
       }
     }),
   );
-  return { found: listed.length, ...(await deps.accounts.upsertAccounts(organizationId, enriched)) };
+  return { found: listed.length, ...(await deps.accounts.upsertAccounts(organizationId, enriched, vendor.key)) };
 }
 
 /** The fixed text stored and shown after a failed sync. The upstream error text never reaches the page. */
@@ -167,7 +188,7 @@ export async function syncAndRecord(deps: LinkedInManagementDeps, organizationId
     result = await syncWith(deps, organizationId, typeof gateway === "function" ? gateway() : gateway);
   } catch (error) {
     try {
-      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(deps.vendor, error) });
+      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(await vendorOf(deps, organizationId), error) });
     } catch (saveError) {
       console.error(`LinkedIn sync: could not save the failure for organization ${organizationId}: ${saveError instanceof Error ? saveError.name : "unknown error"}`);
     }
@@ -183,25 +204,33 @@ export interface ConnectResult {
   webhooks: { status: "registered" | "skipped" | "failed"; detail: string };
 }
 
-/** Verifies the vendor credentials, saves them encrypted, pulls the LinkedIn accounts and registers webhooks. */
+/**
+ * Verifies the vendor credentials, saves them encrypted, pulls the LinkedIn accounts and registers webhooks. `input.vendor`
+ * names the vendor; without it, the default. An organization connects one vendor at a time: in-flight sends would otherwise
+ * have two places to be looked for.
+ */
 export async function connectLinkedIn(deps: LinkedInManagementDeps, actor: Actor, input: Record<string, string>): Promise<ConnectResult> {
   requireAdmin(actor);
-  const entered = deps.vendor.readConnectInput(input);
-  const gateway = deps.vendor.gatewayFor(entered);
+  const { vendor: chosen, ...fields } = input;
+  const vendor = deps.vendors.find((candidate) => candidate.key === chosen) ?? deps.vendors[0];
+  const connected = await deps.accounts.connectedVendor(actor.organizationId);
+  if (connected && connected !== vendor.key) throw new ConflictError(`Disconnect ${deps.vendors.find((candidate) => candidate.key === connected)?.name ?? connected} first. An organization connects one LinkedIn provider at a time.`);
+  const entered = vendor.readConnectInput(fields);
+  const gateway = vendor.gatewayFor(entered);
   try {
     await gateway.verify();
   } catch (error) {
-    throw new ValidationError(deps.vendor.explain(error));
+    throw new ValidationError(vendor.explain(error));
   }
   const existing = await deps.accounts.getCredentials(actor.organizationId);
   const credentials: LinkedInCredentials = { ...entered, notifySecret: existing?.notifySecret ?? randomBytes(24).toString("base64url") };
-  await deps.accounts.saveCredentials(actor.organizationId, credentials);
+  await deps.accounts.saveCredentials(actor.organizationId, credentials, vendor);
 
   const synced = await syncAndRecord(deps, actor.organizationId, gateway);
-  return { accounts: synced.found, added: synced.added, webhooks: await registerWebhooks(deps, actor.organizationId, gateway, credentials) };
+  return { accounts: synced.found, added: synced.added, webhooks: await registerWebhooks(deps, actor.organizationId, vendor, credentials) };
 }
 
-async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: string, gateway: LinkedInGateway, credentials: LinkedInCredentials): Promise<ConnectResult["webhooks"]> {
+async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: string, vendor: LinkedInVendor, credentials: LinkedInCredentials): Promise<ConnectResult["webhooks"]> {
   // A failed save must not hide what the provider answered, and must not run the catch path below.
   const persist = async (hooks: WebhookStatus["hooks"]) => {
     try {
@@ -210,58 +239,65 @@ async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: st
       console.error(`LinkedIn webhooks: could not save the registration status for organization ${organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }
   };
+  if (!vendor.webhooks) return { status: "skipped", detail: `${vendor.name} has no webhooks to register. Replies and acceptances are read from the account about every 10 minutes.` };
   if (isLocalOrigin(deps.appUrl)) {
     await persist([]);
-    return { status: "skipped", detail: `APP_URL is a local or private address, so ${deps.vendor.name} cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL.` };
+    return { status: "skipped", detail: `APP_URL is a local or private address, so ${vendor.name} cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL.` };
   }
   try {
-    const { registered, hooks } = await gateway.registerWebhooks({ requestUrl: webhookRequestUrl(deps, organizationId), secret: credentials.notifySecret, name: "MiaSDR" });
-    await persist(hooks.map((h) => (h.error === null ? { name: h.name, status: "registered" as const } : { name: h.name, status: "failed" as const, error: deps.vendor.explain(h.error) })));
+    const { registered, hooks } = await vendor.webhooks.admin(credentials).registerWebhooks({ requestUrl: vendor.webhooks.requestUrl(deps.appUrl, organizationId), secret: credentials.notifySecret, name: "MiaSDR" });
+    await persist(hooks.map((h) => (h.error === null ? { name: h.name, status: "registered" as const } : { name: h.name, status: "failed" as const, error: vendor.explain(h.error) })));
     const failed = hooks.filter((h) => h.error !== null);
     if (failed.length) {
       // The status stays failed. The text names the hooks that exist so nobody re-registers a working one.
-      const detail = registered.length ? `Registered: ${registered.join(", ")}. Failed: ${failed.map((h) => h.name).join(", ")} - ${deps.vendor.explain(failed[0].error)}` : deps.vendor.explain(failed[0].error);
+      const detail = registered.length ? `Registered: ${registered.join(", ")}. Failed: ${failed.map((h) => h.name).join(", ")} - ${vendor.explain(failed[0].error)}` : vendor.explain(failed[0].error);
       return { status: "failed", detail };
     }
     return { status: "registered", detail: registered.length ? `Registered: ${registered.join(", ")}.` : "Already registered." };
   } catch (error) {
-    await persist(deps.vendor.webhooks.hooks.map(({ name }) => ({ name, status: "failed" as const, error: deps.vendor.explain(error) })));
-    return { status: "failed", detail: deps.vendor.explain(error) };
+    await persist(vendor.webhooks.hooks.map(({ name }) => ({ name, status: "failed" as const, error: vendor.explain(error) })));
+    return { status: "failed", detail: vendor.explain(error) };
   }
 }
 
 export async function syncLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor): Promise<{ found: number; added: number; updated: number; skipped: number; skippedReasons: string[] }> {
   requireAdmin(actor);
+  const vendor = await vendorOf(deps, actor.organizationId);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  const gateway = deps.vendor.gatewayFor(credentials);
+  if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
+  const gateway = vendor.gatewayFor(credentials);
   try {
     return await syncAndRecord(deps, actor.organizationId, gateway);
   } catch (error) {
-    throw new ConflictError(deps.vendor.explain(error));
+    throw new ConflictError(vendor.explain(error));
   }
 }
 
 export async function registerLinkedInWebhooks(deps: LinkedInManagementDeps, actor: Actor): Promise<ConnectResult["webhooks"]> {
   requireAdmin(actor);
+  const vendor = await vendorOf(deps, actor.organizationId);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  return registerWebhooks(deps, actor.organizationId, deps.vendor.gatewayFor(credentials), credentials);
+  if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
+  // A DSN the policy refuses answers here, before any webhook work.
+  vendor.gatewayFor(credentials);
+  return registerWebhooks(deps, actor.organizationId, vendor, credentials);
 }
 
 /** Everything an owner or admin needs to register the webhooks by hand in the vendor's dashboard. Each call writes an audit row. */
 export async function getLinkedInWebhookSetup(deps: LinkedInManagementDeps, actor: Actor) {
   requireAdmin(actor);
+  const vendor = await vendorOf(deps, actor.organizationId);
   const [credentials, status] = await Promise.all([deps.accounts.getCredentials(actor.organizationId), deps.accounts.getWebhookStatus(actor.organizationId)]);
-  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
+  if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
+  if (!vendor.webhooks) throw new ConflictError(`${vendor.name} has no webhooks to register.`);
   // The row is written first: when it fails, the secret does not leave.
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "integration.secret_viewed", entityType: "integration", meta: { provider: deps.vendor.key } });
-  const requestUrl = webhookRequestUrl(deps, actor.organizationId);
+  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "integration.secret_viewed", entityType: "integration", meta: { provider: vendor.key } });
+  const requestUrl = vendor.webhooks.requestUrl(deps.appUrl, actor.organizationId);
   return {
     requestUrl,
-    headerName: deps.vendor.webhooks.headerName,
+    headerName: vendor.webhooks.headerName,
     secret: credentials.notifySecret,
-    webhooks: deps.vendor.webhooks.hooks.map((hook) => ({ ...hook, requestUrl })),
+    webhooks: vendor.webhooks.hooks.map((hook) => ({ ...hook, requestUrl })),
     status,
   };
 }
@@ -269,12 +305,13 @@ export async function getLinkedInWebhookSetup(deps: LinkedInManagementDeps, acto
 /** Removes this organization's webhooks at the vendor, then clears the credentials. A gateway failure is logged and never blocks the disconnect. */
 export async function disconnectLinkedIn(deps: LinkedInManagementDeps, actor: Actor): Promise<void> {
   requireAdmin(actor);
+  const vendor = await vendorOf(deps, actor.organizationId);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (credentials && !isLocalOrigin(deps.appUrl)) {
+  if (credentials && vendor.webhooks && !isLocalOrigin(deps.appUrl)) {
     try {
-      await deps.vendor.gatewayFor(credentials).removeWebhooks({ requestUrl: webhookRequestUrl(deps, actor.organizationId) });
+      await vendor.webhooks.admin(credentials).removeWebhooks({ requestUrl: vendor.webhooks.requestUrl(deps.appUrl, actor.organizationId) });
     } catch (error) {
-      console.error(`LinkedIn disconnect: could not remove ${deps.vendor.name} webhooks for organization ${actor.organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
+      console.error(`LinkedIn disconnect: could not remove ${vendor.name} webhooks for organization ${actor.organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }
   }
   await deps.accounts.clearCredentials(actor.organizationId);

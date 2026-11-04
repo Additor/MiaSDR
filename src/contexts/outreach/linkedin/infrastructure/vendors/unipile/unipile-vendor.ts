@@ -1,5 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
-import { LinkedInGatewayError, type LinkedInGateway, type LinkedInVendor } from "../../../application/linkedin-ports";
+import { LinkedInGatewayError, type LinkedInGateway, type LinkedInVendor, type LinkedInWebhookAdmin, type VendorCredentials } from "../../../application/linkedin-ports";
 import { parseDsn, storedConnection, type DsnPolicy, type DsnScheme } from "./unipile-dsn";
 import { UnipileGateway } from "./unipile-gateway";
 import { WEBHOOKS, WEBHOOK_SECRET_HEADER } from "./unipile-webhook";
@@ -28,15 +28,24 @@ export interface UnipileVendorOptions {
   /** Which DSN hosts may receive the API key. Defaults to `*.unipile.com` only. */
   dsnPolicy?: DsnPolicy;
   /** Builds the gateway for a checked DSN. Tests and the fake provider replace it. */
-  gatewayFor?: (connection: { dsn: string; scheme: DsnScheme; apiKey: string }) => LinkedInGateway;
+  gatewayFor?: (connection: { dsn: string; scheme: DsnScheme; apiKey: string }) => LinkedInGateway & LinkedInWebhookAdmin;
 }
 
 /** Everything specific to Unipile that the connection flows need: its credentials, sentences, webhook setup and callback. */
 export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedInVendor {
   const gatewayFor = options.gatewayFor ?? ((connection) => new UnipileGateway(connection));
+  const stored = (credentials: VendorCredentials) => {
+    const connection = storedConnection(credentials, options.dsnPolicy);
+    if (!connection) throw new ConflictError("The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard.");
+    return gatewayFor(connection);
+  };
   return {
     key: "unipile",
     name: NAME,
+    integrationName: "Unipile (LinkedIn)",
+    syncAddsAccounts: true,
+    connectLinkMinutes: 15,
+    connectSession: null,
 
     readConnectInput(input) {
       const parsed = parseDsn(input.dsn ?? "", options.dsnPolicy);
@@ -46,11 +55,7 @@ export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedI
       return { dsn: parsed.host, apiKey };
     },
 
-    gatewayFor(credentials) {
-      const connection = storedConnection(credentials, options.dsnPolicy);
-      if (!connection) throw new ConflictError("The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard.");
-      return gatewayFor(connection);
-    },
+    gatewayFor: stored,
 
     describe: (credentials) => ({ dsn: credentials?.dsn ?? null }),
 
@@ -65,28 +70,31 @@ export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedI
       requestUrl: (appUrl, organizationId) => `${withoutSlash(appUrl)}${WEBHOOK_PATH}?org=${organizationId}`,
       headerName: WEBHOOK_SECRET_HEADER,
       hooks: WEBHOOKS,
+      admin: stored,
     },
 
-    connectUrls({ appUrl, linkId, secret }) {
-      const base = withoutSlash(appUrl);
-      return {
-        success: `${base}${CONNECT_RETURN_PATH}?unipile=success&link=${linkId}`,
-        failure: `${base}${CONNECT_RETURN_PATH}?unipile=failure&link=${linkId}`,
-        notify: `${base}${CONNECT_NOTIFY_PATH}?link=${linkId}&secret=${encodeURIComponent(secret)}`,
-      };
-    },
+    connectCallback: {
+      urls({ appUrl, linkId, secret }) {
+        const base = withoutSlash(appUrl);
+        return {
+          success: `${base}${CONNECT_RETURN_PATH}?unipile=success&link=${linkId}`,
+          failure: `${base}${CONNECT_RETURN_PATH}?unipile=failure&link=${linkId}`,
+          notify: `${base}${CONNECT_NOTIFY_PATH}?link=${linkId}&secret=${encodeURIComponent(secret)}`,
+        };
+      },
 
-    /** Unipile's body on `notify_url`: { status, account_id, name }. The docs name no signature, so the secret rides in the URL. */
-    readConnectNotify(payload) {
-      if (!payload || typeof payload !== "object") return null;
-      const p = payload as Record<string, unknown>;
-      if (typeof p.status !== "string" || typeof p.name !== "string") return null;
-      return {
-        status: p.status,
-        connected: CONNECTED_STATUSES.has(p.status),
-        accountId: typeof p.account_id === "string" && p.account_id !== "" ? p.account_id : null,
-        name: p.name,
-      };
+      /** Unipile's body on `notify_url`: { status, account_id, name }. The docs name no signature, so the secret rides in the URL. */
+      readNotify(payload) {
+        if (!payload || typeof payload !== "object") return null;
+        const p = payload as Record<string, unknown>;
+        if (typeof p.status !== "string" || typeof p.name !== "string") return null;
+        return {
+          status: p.status,
+          connected: CONNECTED_STATUSES.has(p.status),
+          accountId: typeof p.account_id === "string" && p.account_id !== "" ? p.account_id : null,
+          name: p.name,
+        };
+      },
     },
   };
 }

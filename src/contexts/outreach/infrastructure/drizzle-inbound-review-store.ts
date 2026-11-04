@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { inboundEvents, mailboxes, users } from "@/platform/db/schema";
 import { MAX_EVENT_ATTEMPTS } from "../linkedin/domain/linkedin";
@@ -13,11 +13,11 @@ const p = inboundEvents;
 /** Classifies a row in SQL, so filters and counts agree with the labels on screen. */
 const stateExpr = sql<InboundEventState>`case
   when ${p.status} = 'failed' and ${p.provider} = 'gmail' then 'dead'
-  when ${p.status} = 'failed' and ${p.provider} = 'unipile' and ${p.attempts} >= ${MAX_EVENT_ATTEMPTS} then 'dead'
+  when ${p.status} = 'failed' and ${p.provider} <> 'gmail' and ${p.attempts} >= ${MAX_EVENT_ATTEMPTS} then 'dead'
   when ${p.status} = 'pending' and ${p.provider} = 'gmail' and ${p.attempts} = 0 then 'queued'
-  when ${p.status} = 'failed' and ${p.provider} = 'unipile' and ${p.attempts} = 0 then 'queued'
+  when ${p.status} = 'failed' and ${p.provider} <> 'gmail' and ${p.attempts} = 0 then 'queued'
   when ${p.status} = 'pending' and ${p.provider} = 'gmail' then 'retrying'
-  when ${p.status} = 'failed' and ${p.provider} = 'unipile' then 'retrying'
+  when ${p.status} = 'failed' and ${p.provider} <> 'gmail' then 'retrying'
   when ${p.status} = 'skipped' and ${p.log} @> '[{"level":"dismissed"}]'::jsonb then 'dismissed'
   else 'closed' end`;
 
@@ -59,7 +59,7 @@ export const drizzleInboundReviewStore: InboundReviewStore = {
   async list(organizationId, query) {
     const where = and(
       eq(p.organizationId, organizationId),
-      query.source === "all" ? undefined : eq(p.provider, query.source === "gmail" ? "gmail" : "unipile"),
+      query.source === "all" ? undefined : query.source === "gmail" ? eq(p.provider, "gmail") : ne(p.provider, "gmail"),
       filterSql(query.state),
     );
     const [{ n }] = await db.select({ n: count() }).from(p).where(where);

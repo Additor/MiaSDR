@@ -3,10 +3,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { LinkedInGatewayError } from "./linkedin-ports";
 import { isLocalOrigin } from "@/shared/local-origin";
-import { syncWith, type LinkedInManagementDeps } from "./linkedin-management";
+import { syncWith, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
 
-/** How long the wizard link stays valid. */
-export const CONNECT_LINK_MINUTES = 15;
 /** A callback may arrive a little after the link expired, because the person finishes the wizard before the vendor notifies us. */
 export const CONNECT_CALLBACK_GRACE_MINUTES = 30;
 export const MAX_PENDING_LINKS = 5;
@@ -41,9 +39,10 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   // A reconnect keeps the owner the account has.
   const ownerUserId = input.reconnectAccountId ? null : (input.ownerUserId ?? null);
   if (ownerUserId && !(await deps.members?.isMember(actor.organizationId, ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
+  const vendor = await vendorOf(deps, actor.organizationId);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
-  if (!credentials) throw new ConflictError(`Connect ${deps.vendor.name} first.`);
-  const gateway = deps.vendor.gatewayFor(credentials);
+  if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
+  const gateway = vendor.gatewayFor(credentials);
   const now = deps.now();
 
   let reconnectAccount: string | null = null;
@@ -62,20 +61,21 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const id = randomUUID();
   const secret = randomBytes(24).toString("base64url");
   const providerName = `mia-${randomBytes(9).toString("base64url")}`;
-  const expiresAt = new Date(now.getTime() + CONNECT_LINK_MINUTES * 60_000);
+  const expiresAt = new Date(now.getTime() + vendor.connectLinkMinutes * 60_000);
   await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId });
 
-  const urls = deps.vendor.connectUrls({ appUrl: deps.appUrl, linkId: id, secret });
-  const notify = !isLocalOrigin(deps.appUrl);
+  const urls = vendor.connectCallback?.urls({ appUrl: deps.appUrl, linkId: id, secret }) ?? null;
+  const notify = urls !== null && !isLocalOrigin(deps.appUrl);
   try {
-    const { url } = await gateway.createConnectLink({
+    const { url, account } = await gateway.createConnectLink({
       name: providerName,
       expiresAt,
-      successRedirectUrl: urls.success,
-      failureRedirectUrl: urls.failure,
-      notifyUrl: notify ? urls.notify : null,
+      successRedirectUrl: urls?.success ?? deps.appUrl,
+      failureRedirectUrl: urls?.failure ?? deps.appUrl,
+      notifyUrl: notify && urls ? urls.notify : null,
       reconnectAccount,
     });
+    if (account) await deps.connectLinks.noteAccount(id, account);
     await deps.audit.record({
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -86,8 +86,8 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
     });
     return { url, expiresAt, notify, linkId: id };
   } catch (error) {
-    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? deps.vendor.explain(error) : "Could not create the link.");
-    if (error instanceof LinkedInGatewayError) throw new ConflictError(deps.vendor.explain(error));
+    await deps.connectLinks.fail(id, error instanceof LinkedInGatewayError ? vendor.explain(error) : "Could not create the link.");
+    if (error instanceof LinkedInGatewayError) throw new ConflictError(vendor.explain(error));
     throw error;
   }
 }
@@ -105,33 +105,35 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
   if (!/^[0-9a-f-]{36}$/i.test(input.linkId) || input.secret === "") return { status: 401 };
   const link = await deps.connectLinks.find(input.linkId);
   if (!link || !sameHash(input.secret, link.secretHash)) return { status: 401 };
-  const body = deps.vendor.readConnectNotify(input.payload);
+  const vendor = await vendorOf(deps, link.organizationId);
+  if (!vendor.connectCallback) return { status: 401 };
+  const body = vendor.connectCallback.readNotify(input.payload);
   if (!body) return { status: 400 };
   if (body.name !== link.providerName) return { status: 401 };
   if (link.status === "completed") return { status: 200, outcome: "duplicate" };
 
   const now = deps.now();
   if (link.status !== "pending" || now.getTime() > link.expiresAt.getTime() + CONNECT_CALLBACK_GRACE_MINUTES * 60_000) {
-    if (link.status === "pending") await deps.connectLinks.fail(link.id, `The link expired before ${deps.vendor.name} reported a result.`);
+    if (link.status === "pending") await deps.connectLinks.fail(link.id, `The link expired before ${vendor.name} reported a result.`);
     return { status: 410 };
   }
 
   if (!body.connected) {
-    await deps.connectLinks.fail(link.id, `${deps.vendor.name} reported ${body.status.slice(0, 60)}.`);
+    await deps.connectLinks.fail(link.id, `${vendor.name} reported ${body.status.slice(0, 60)}.`);
     return { status: 200, outcome: "failed" };
   }
   if (!body.accountId) return { status: 400 };
 
   const credentials = await deps.accounts.getCredentials(link.organizationId);
   if (!credentials) {
-    await deps.connectLinks.fail(link.id, `${deps.vendor.name} is no longer connected.`);
+    await deps.connectLinks.fail(link.id, `${vendor.name} is no longer connected.`);
     return { status: 200, outcome: "failed" };
   }
   try {
-    await syncWith(deps, link.organizationId, deps.vendor.gatewayFor(credentials));
+    await syncWith(deps, link.organizationId, vendor.gatewayFor(credentials));
   } catch (error) {
     // The vendor retries a non-200, and the link stays pending for that.
-    await deps.connectLinks.noteError(link.id, deps.vendor.explain(error));
+    await deps.connectLinks.noteError(link.id, vendor.explain(error));
     return { status: 502 };
   }
   const done = await deps.connectLinks.complete(link.id, { providerAccountId: body.accountId, now });
@@ -146,4 +148,75 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
     });
   }
   return { status: 200, outcome: done ? "completed" : "duplicate" };
+}
+
+export type ConnectLinkState = { status: "pending" | "completed" | "failed"; error: string | null };
+
+const linkState = (status: "pending" | "completed" | "failed", error: string | null = null): ConnectLinkState => ({ status, error });
+
+/**
+ * Asks the vendor how a link stands, for a vendor whose link does not report back. Once it says connected, this reads who
+ * signed in and stores the account. Signing in as another person on a reconnect leaves that account disconnected:
+ * its leads and threads are someone else's.
+ */
+export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Actor, linkId: string): Promise<ConnectLinkState> {
+  requireAdmin(actor);
+  const link = await deps.connectLinks.find(linkId);
+  if (!link || link.organizationId !== actor.organizationId) throw new NotFoundError("Connection link not found");
+  if (link.status === "completed") return linkState("completed");
+  if (link.status !== "pending") return linkState("failed", link.lastError);
+  const now = deps.now();
+  const vendor = await vendorOf(deps, actor.organizationId);
+  const credentials = await deps.accounts.getCredentials(actor.organizationId);
+  if (!credentials) {
+    await deps.connectLinks.fail(link.id, `${vendor.name} is no longer connected.`);
+    return linkState("failed", `${vendor.name} is no longer connected.`);
+  }
+  if (!vendor.connectSession || !link.providerAccountId) return linkState("pending");
+  const account = link.providerAccountId;
+  try {
+    const status = await vendor.connectSession.status(credentials, account);
+    if (status === "pending") return linkState("pending");
+    if (status === "failed") {
+      const text = `${vendor.name} could not keep LinkedIn signed in. Try again.`;
+      await deps.connectLinks.fail(link.id, text);
+      return linkState("failed", text);
+    }
+    const own = await vendor.gatewayFor(credentials).getOwnProfile(account);
+    const stored = await deps.accounts.upsertAccounts(
+      actor.organizationId,
+      [{ ref: account, linkedinId: own.member, name: [own.firstName, own.lastName].filter(Boolean).join(" ") || null, username: own.publicSlug, status: "connected", isPremium: own.isPremium, headline: own.headline }],
+      vendor.key,
+    );
+    if (stored.skipped > 0) {
+      await deps.accounts.updateAccountStatuses(actor.organizationId, vendor.key, [{ ref: account, linkedinId: null, name: null, username: null, status: "disconnected" }]);
+      const text = stored.skippedReasons[0] ?? "This LinkedIn account could not be connected here.";
+      await deps.connectLinks.fail(link.id, text);
+      return linkState("failed", text);
+    }
+    if (await deps.connectLinks.complete(link.id, { providerAccountId: account, now })) {
+      await deps.audit.record({ organizationId: link.organizationId, actorUserId: actor.userId, action: "linkedin.account_connected", entityType: "linkedin_connect_link", entityId: link.id, meta: { providerAccountId: account, status: "connected" } });
+    }
+    return linkState("completed");
+  } catch (error) {
+    await deps.connectLinks.noteError(link.id, vendor.explain(error));
+    return linkState("pending");
+  }
+}
+
+/** Gives up on a link. A new account that never connected is removed at the vendor; a reconnect keeps its account. */
+export async function cancelConnectLink(deps: LinkedInManagementDeps, actor: Actor, linkId: string): Promise<void> {
+  requireAdmin(actor);
+  const link = await deps.connectLinks.find(linkId);
+  if (!link || link.organizationId !== actor.organizationId) throw new NotFoundError("Connection link not found");
+  if (link.status !== "pending") return;
+  const vendor = await vendorOf(deps, actor.organizationId);
+  const credentials = await deps.accounts.getCredentials(actor.organizationId);
+  const account = link.providerAccountId;
+  if (credentials && vendor.connectSession && account && !(await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) {
+    await vendor.connectSession.cancel(credentials, account).catch((error: unknown) => {
+      console.error(`LinkedIn connect: could not remove the unused account at ${vendor.name}: ${error instanceof Error ? error.name : "unknown error"}`);
+    });
+  }
+  await deps.connectLinks.fail(link.id, "Cancelled.");
 }

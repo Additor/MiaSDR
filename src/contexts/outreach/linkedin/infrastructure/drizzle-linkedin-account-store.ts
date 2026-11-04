@@ -10,7 +10,16 @@ import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../d
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
 
-const PROVIDER_KEY = "unipile";
+/** The vendors' rows in the integration tables, and the fields each must have stored to count as connected. */
+const VENDOR_FIELDS: Record<string, readonly string[]> = { unipile: ["dsn", "apiKey"], edges: ["apiKey"] };
+const VENDOR_KEYS = Object.keys(VENDOR_FIELDS);
+const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), inArray(integrationAccounts.key, VENDOR_KEYS));
+
+/** The one vendor row of an organization, enabled or not. */
+async function connectedKey(runner: Pick<typeof db, "select">, organizationId: string): Promise<string | null> {
+  const [row] = await runner.select({ key: integrationAccounts.key }).from(integrationAccounts).where(vendorRow(organizationId));
+  return row?.key ?? null;
+}
 
 /** Messages one account sent since the start of the UTC day: sequence messages (step 2 and later) and replies. */
 export async function countMessagesToday(account: { id: string; providerAccountId: string }, now: Date, runner: Pick<typeof db, "select"> = db): Promise<number> {
@@ -43,50 +52,77 @@ export async function countMessagesToday(account: { id: string; providerAccountI
   return n + r;
 }
 
-function parseCredentials(plaintext: string): LinkedInCredentials | null {
+function parseCredentials(key: string, plaintext: string): LinkedInCredentials | null {
   try {
     const value = JSON.parse(plaintext) as Record<string, unknown>;
-    return typeof value.dsn === "string" && typeof value.apiKey === "string" && typeof value.notifySecret === "string"
-      ? { dsn: value.dsn, apiKey: value.apiKey, notifySecret: value.notifySecret }
-      : null;
+    if (typeof value.notifySecret !== "string" || !(VENDOR_FIELDS[key] ?? []).every((field) => typeof value[field] === "string")) return null;
+    return value as LinkedInCredentials;
   } catch {
     return null;
   }
 }
 
-/** The Unipile connection lives in the shared integration tables, one row per organization, encrypted with INTEGRATION_CREDENTIALS_KEY. */
+/** The vendor connection lives in the shared integration tables, one row per organization, encrypted with INTEGRATION_CREDENTIALS_KEY. */
 export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
   async getCredentials(organizationId) {
     const [row] = await db
-      .select({ payload: integrationCredentials.encryptedPayload, enabled: integrationAccounts.enabled })
+      .select({ key: integrationAccounts.key, payload: integrationCredentials.encryptedPayload, enabled: integrationAccounts.enabled })
       .from(integrationAccounts)
       .innerJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+      .where(vendorRow(organizationId));
     if (!row || !row.enabled) return null;
     try {
-      return parseCredentials(credentialCipher.decrypt(row.payload));
+      return parseCredentials(row.key, credentialCipher.decrypt(row.payload));
     } catch {
       // A rotated key or damaged blob reads as "not connected" so the page offers a reconnect.
       return null;
     }
   },
 
-  async saveCredentials(organizationId, credentials) {
+  async saveCredentials(organizationId, credentials, vendor) {
     const encrypted = credentialCipher.encrypt(JSON.stringify(credentials));
-    await db.transaction((tx) => saveProviderCredentialTx(tx, organizationId, { kind: "platform", key: PROVIDER_KEY, name: "Unipile (LinkedIn)" }, encrypted));
+    await db.transaction((tx) => saveProviderCredentialTx(tx, organizationId, { kind: "platform", key: vendor.key, name: vendor.integrationName }, encrypted));
+  },
+
+  connectedVendor: (organizationId) => connectedKey(db, organizationId),
+
+  async accountRefs(organizationId, vendorKey) {
+    const rows = await db
+      .select({ ref: linkedinAccounts.providerAccountId })
+      .from(linkedinAccounts)
+      .where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.provider, vendorKey)));
+    return rows.map((row) => row.ref);
+  },
+
+  async updateAccountStatuses(organizationId, vendorKey, accounts) {
+    const changes: AccountStatusChange[] = [];
+    let updated = 0;
+    for (const account of accounts) {
+      const [row] = await db
+        .select({ id: linkedinAccounts.id, status: linkedinAccounts.status })
+        .from(linkedinAccounts)
+        .where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.provider, vendorKey), eq(linkedinAccounts.providerAccountId, account.ref)));
+      if (!row) continue;
+      updated += 1;
+      if (row.status === account.status) continue;
+      await db.update(linkedinAccounts).set({ status: account.status }).where(eq(linkedinAccounts.id, row.id));
+      changes.push({ ref: account.ref, from: row.status === "connected" ? "connected" : "disconnected", to: account.status });
+    }
+    return { added: 0, updated, skipped: 0, skippedReasons: [], changes };
   },
 
   async getWebhookStatus(organizationId) {
     const [row] = await db
       .select({ config: integrationAccounts.config })
       .from(integrationAccounts)
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+      .where(vendorRow(organizationId));
     const value = (row?.config as { webhooks?: unknown } | undefined)?.webhooks as Partial<WebhookStatus> | undefined;
     return value && typeof value.at === "string" && Array.isArray(value.hooks) ? { at: value.at, hooks: value.hooks } : null;
   },
 
   async saveWebhookStatus(organizationId, status) {
-    await mergeProviderConfig(db, organizationId, PROVIDER_KEY, { webhooks: status });
+    const key = await connectedKey(db, organizationId);
+    if (key) await mergeProviderConfig(db, organizationId, key, { webhooks: status });
   },
 
   async listCredentialedOrganizations() {
@@ -94,7 +130,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
       .selectDistinct({ organizationId: integrationAccounts.organizationId })
       .from(integrationAccounts)
       .innerJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-      .where(and(eq(integrationAccounts.key, PROVIDER_KEY), eq(integrationAccounts.enabled, true)));
+      .where(and(inArray(integrationAccounts.key, VENDOR_KEYS), eq(integrationAccounts.enabled, true)));
     return rows.map((row) => row.organizationId);
   },
 
@@ -102,7 +138,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
     const [row] = await db
       .select({ config: integrationAccounts.config })
       .from(integrationAccounts)
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+      .where(vendorRow(organizationId));
     const config = (row?.config ?? {}) as Partial<SyncStatus>;
     return {
       lastSyncAt: typeof config.lastSyncAt === "string" ? config.lastSyncAt : null,
@@ -112,17 +148,19 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
 
   async saveSyncStatus(organizationId, patch) {
     if (patch.lastSyncAt === undefined && patch.lastSyncError === undefined) return;
-    await mergeProviderConfig(db, organizationId, PROVIDER_KEY, patch);
+    const key = await connectedKey(db, organizationId);
+    if (key) await mergeProviderConfig(db, organizationId, key, patch);
   },
 
   async clearCredentials(organizationId) {
     await db.transaction(async (tx) => {
-      await deleteProviderAccount(tx, organizationId, PROVIDER_KEY);
-      await tx.update(linkedinAccounts).set({ status: "disconnected" }).where(eq(linkedinAccounts.organizationId, organizationId));
+      const key = await connectedKey(tx, organizationId);
+      if (key) await deleteProviderAccount(tx, organizationId, key);
+      await tx.update(linkedinAccounts).set({ status: "disconnected" }).where(and(eq(linkedinAccounts.organizationId, organizationId), key ? eq(linkedinAccounts.provider, key) : undefined));
     });
   },
 
-  async upsertAccounts(organizationId, accounts) {
+  async upsertAccounts(organizationId, accounts, vendorKey) {
     let added = 0;
     let updated = 0;
     let skipped = 0;
@@ -146,6 +184,10 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             skip(`Account ${account.ref} belongs to another organization.`);
             return;
           }
+          if (existing && existing.provider !== vendorKey) {
+            skip(`Account ${account.username ?? account.ref} is connected through another LinkedIn provider. Moving a profile between providers is not supported.`);
+            return;
+          }
           // provider_account_id is unique across all organizations, so a clash is settled before the write.
           const [byProvider] = await tx.select({ id: linkedinAccounts.id }).from(linkedinAccounts).where(eq(linkedinAccounts.providerAccountId, account.ref));
           if (byProvider && byProvider.id !== existing?.id) {
@@ -167,7 +209,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             // The status was read in this transaction, so the change list matches what the write replaced.
             if (existing.status !== status) changes.push({ ref: account.ref, from: existing.status === "connected" ? "connected" : "disconnected", to: status });
           } else {
-            await tx.insert(linkedinAccounts).values({ organizationId, ...fields, dailyInviteLimit: account.isPremium ? 30 : 5 });
+            await tx.insert(linkedinAccounts).values({ organizationId, provider: vendorKey, ...fields, dailyInviteLimit: account.isPremium ? 30 : 5 });
             added += 1;
             changes.push({ ref: account.ref, from: null, to: status });
           }
@@ -247,6 +289,12 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
     });
   },
 };
+
+/** The vendor an account runs on, or null when the organization has no such account. */
+export async function accountVendorOf(organizationId: string, accountId: string): Promise<string | null> {
+  const [row] = await db.select({ provider: linkedinAccounts.provider }).from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.id, accountId)));
+  return row?.provider ?? null;
+}
 
 /** Clears the owner of every account the member owned in the organization. */
 export async function clearLinkedInOwner(tx: DbHandle, organizationId: string, userId: string): Promise<void> {

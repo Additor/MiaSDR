@@ -26,6 +26,8 @@ export class LinkedInGatewayError extends Error {
     message: string,
     readonly kind: "definite" | "unknown",
     readonly code: GatewayErrorCode,
+    /** For `rate_limited`: how long the limit lasts, when the provider says. Without it the account stops for the full pause. */
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message);
   }
@@ -77,7 +79,8 @@ export interface SearchPage {
 export interface LinkedInGateway {
   /** Confirms the credentials work. Throws a LinkedInGatewayError a person can act on. */
   verify(): Promise<void>;
-  listAccounts(): Promise<GatewayAccount[]>;
+  /** The accounts the credentials reach. `only`: just these refs, for a vendor whose listing is not this organization's alone. */
+  listAccounts(only?: string[]): Promise<GatewayAccount[]>;
   /** Own profile of a connected account (premium flag, name). */
   getOwnProfile(account: string): Promise<GatewayProfile>;
   /** Resolves a slug or a member id to a provider member id. `linkedinApi` is set only on the retry for a Sales Navigator or Recruiter member id, after a classic lookup found nothing. */
@@ -87,22 +90,37 @@ export interface LinkedInGateway {
    * For reconciling an unknown invitation: still pending, accepted (the member is now first degree), or not found.
    * Throws when the provider cannot answer.
    */
-  invitationStatus(input: { account: string; member: string }): Promise<"pending" | "accepted" | "none">;
-  findChat(input: { account: string; member: string }): Promise<string | null>;
-  sendMessage(input: { account: string; chat: string; text: string }): Promise<{ messageId: string | null }>;
-  startChat(input: { account: string; member: string; text: string }): Promise<{ chat: string | null; messageId: string | null }>;
-  /** For reconciling an unknown message: a message from the account owner with this text after `since`. */
-  findSentMessage(input: { account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
+  invitationStatus(input: { account: string; member: string; since: Date }): Promise<"pending" | "accepted" | "none">;
+  /** Sends to whoever `to` names. Answers the chat it went into, when the provider says. Throws a definite `invalid_recipient` when `to` is not enough for this provider. */
+  sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }>;
+  /**
+   * For reconciling an unknown message: a message from the account owner with this text after `since`. Null leads to a
+   * resend, so it means the provider showed there is none. Throws when it cannot tell.
+   */
+  findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
   searchPeople(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage>;
+  /**
+   * Makes a single-use link that connects a LinkedIn account. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new one.
+   * The caller sends the person to `url` in a full page navigation. `account`: the provider account the link is for, when it exists already.
+   */
+  createConnectLink(input: ConnectLinkInput): Promise<{ url: string; account?: string | null }>;
+}
+
+/** Whom a message goes to, with all that is known. A provider uses what it can address by. */
+export interface LinkedInRecipient {
+  chat: string | null;
+  /** The provider member id (ACoAA...). */
+  member: string | null;
+  /** The public profile slug. */
+  slug: string | null;
+}
+
+/** For a vendor whose webhooks are managed through its API. */
+export interface LinkedInWebhookAdmin {
   /** Registers webhooks that call `requestUrl` and carry `secret`, in the header `LinkedInVendor.webhooks` names. Idempotent. */
   registerWebhooks(input: { requestUrl: string; secret: string; name: string }): Promise<WebhookRegistration>;
   /** Deletes every webhook whose `request_url` equals `requestUrl` (all list pages). Returns how many it deleted. */
   removeWebhooks(input: { requestUrl: string }): Promise<{ removed: number }>;
-  /**
-   * Makes a single-use link that connects a LinkedIn account. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new one.
-   * The caller sends the person to `url` in a full page navigation.
-   */
-  createConnectLink(input: ConnectLinkInput): Promise<{ url: string }>;
 }
 
 /** One entry per hook the gateway tried to create. `error` holds the gateway failure, which the caller turns into fixed text. */
@@ -132,6 +150,12 @@ export interface LinkedInVendor {
   readonly key: string;
   /** How people know this vendor, for sentences. */
   readonly name: string;
+  /** The connection's name on the integrations page. */
+  readonly integrationName: string;
+  /** Whether an account the listing shows becomes an account here. False: only one connected through this app does. */
+  readonly syncAddsAccounts: boolean;
+  /** How long a connect link stays valid. */
+  readonly connectLinkMinutes: number;
   /** Checks what a person entered and returns the credentials to store. Throws a ValidationError a person can act on. */
   readConnectInput(input: Record<string, string>): VendorCredentials;
   /** Builds the gateway for credentials. Throws a ConflictError a person can act on when they may no longer be used. */
@@ -142,20 +166,31 @@ export interface LinkedInVendor {
   explain(error: unknown): string;
   /** The same, for a sync that used stored credentials. */
   explainSyncFailure(error: unknown): string;
+  /** Null: this vendor sends nothing this app acts on by webhook. */
   readonly webhooks: {
     requestUrl(appUrl: string, organizationId: string): string;
     /** The header that carries the organization's secret. */
     headerName: string;
     hooks: ReadonlyArray<{ name: string; source: string; event: string }>;
-  };
-  connectUrls(input: { appUrl: string; linkId: string; secret: string }): { success: string; failure: string; notify: string };
-  /** Reads the vendor's connect callback. Null for a body it cannot read. */
-  readConnectNotify(payload: unknown): { status: string; connected: boolean; accountId: string | null; name: string } | null;
+    admin(credentials: VendorCredentials): LinkedInWebhookAdmin;
+  } | null;
+  /** How a connect link reports back by itself. Null: the app asks `connectSession` instead. */
+  readonly connectCallback: {
+    urls(input: { appUrl: string; linkId: string; secret: string }): { success: string; failure: string; notify: string };
+    /** Reads the vendor's connect callback. Null for a body it cannot read. */
+    readNotify(payload: unknown): { status: string; connected: boolean; accountId: string | null; name: string } | null;
+  } | null;
+  /** For a vendor whose link does not report back. */
+  readonly connectSession: {
+    status(credentials: VendorCredentials, account: string): Promise<"pending" | "connected" | "failed">;
+    /** Removes an account that never connected. */
+    cancel(credentials: VendorCredentials, account: string): Promise<void>;
+  } | null;
 }
 
-/** Hands out the gateway for an organization, or null when that organization has not connected LinkedIn. */
+/** Hands out the gateway for one LinkedIn account, or null when its vendor is not connected for that organization. */
 export interface LinkedInGatewayProvider {
-  forOrganization(organizationId: string): Promise<LinkedInGateway | null>;
+  forAccount(input: { organizationId: string; accountId: string }): Promise<LinkedInGateway | null>;
 }
 
 /** What the engine knows about a claimed unit of work. */
@@ -172,6 +207,8 @@ export interface LinkedInSendClaim {
   providerId: string;
   /** Known chat with this member, if any. */
   chatId: string | null;
+  /** The lead's public profile slug, if known. */
+  slug: string | null;
   step: { body: string; waitDays: number };
   /** The step after this one, if any, for scheduling. */
   nextStep: { waitDays: number } | null;
@@ -224,6 +261,7 @@ export interface UncertainLinkedInSend {
   rendered: boolean;
   body: string | null;
   chatId: string | null;
+  slug: string | null;
   account: { id: string; providerAccountId: string };
   providerId: string | null;
   nextStepWaitDays: number | null;
@@ -292,8 +330,8 @@ export type InboundResult = "done" | "skipped";
 export interface LinkedInInboundStore {
   /** Inserts the delivery as `processing`. Returns null when the key was seen before. */
   /** A delivery of an event this app acts on that it could not read. Stored as given up, so a person sees it. */
-  recordUnreadable(input: { organizationId: string; eventType: string; payload: unknown; now: Date }): Promise<void>;
-  begin(input: { organizationId: string; key: string; eventType: string; accountRef: string; payload: unknown; now: Date }): Promise<LedgerEvent | null>;
+  recordUnreadable(input: { organizationId: string; provider: string; eventType: string; payload: unknown; now: Date }): Promise<void>;
+  begin(input: { organizationId: string; provider: string; key: string; eventType: string; accountRef: string; payload: unknown; now: Date }): Promise<LedgerEvent | null>;
   /** Settles the claim. A worker whose lease ran out, or whose row an admin requeued and another claim took, changes nothing. */
   finish(claim: LedgerEvent, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
   fail(claim: LedgerEvent, error: string, now: Date, retryAt: Date | null): Promise<void>;
@@ -316,5 +354,5 @@ export interface LinkedInInboundDeps {
   /** The event's name when it is one this app acts on and `parse` could not read it. */
   unreadable?: (payload: unknown) => string | null;
   /** Idempotency key for the ledger. Null when the event has no id to key on. */
-  eventKey: (event: LinkedInInboundEvent, organizationId: string) => string | null;
+  eventKey: (event: LinkedInInboundEvent, organizationId: string, payload: unknown) => string | null;
 }

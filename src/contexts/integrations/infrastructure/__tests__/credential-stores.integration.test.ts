@@ -39,8 +39,8 @@ describeDb("credential stores write v2 envelopes", () => {
   it("linkedin account store: create and replace", async () => {
     const { drizzleLinkedInAccountStore } = await import("@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store");
     const creds = { dsn: "api1.unipile.com:13111", apiKey: "k", notifySecret: "s" };
-    await drizzleLinkedInAccountStore.saveCredentials(orgId, creds);
-    await drizzleLinkedInAccountStore.saveCredentials(orgId, { ...creds, apiKey: "k2" });
+    await drizzleLinkedInAccountStore.saveCredentials(orgId, creds, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
+    await drizzleLinkedInAccountStore.saveCredentials(orgId, { ...creds, apiKey: "k2" }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
     const row = await accountRow("unipile");
     expect(row.encryption_version).toBe("v2");
     expect(await drizzleLinkedInAccountStore.getCredentials(orgId)).toMatchObject({ apiKey: "k2" });

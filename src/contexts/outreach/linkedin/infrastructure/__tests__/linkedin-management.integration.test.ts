@@ -32,7 +32,7 @@ describeDb("linkedin connection and campaigns", () => {
     users.push(userId);
     const gateway = new FakeLinkedInGateway();
     gateway.accounts = [{ ref: "u-" + tag, linkedinId: "ACo-" + tag, name: "Ada", username: "ada-" + tag, status: "connected" }];
-    const deps: import("../../application/linkedin-management").LinkedInManagementDeps = { accounts: accountStore, vendor: createUnipileVendor({ gatewayFor: () => gateway }), appUrl, now: () => new Date("2026-10-14T10:00:00Z"), audit: auditSink, connectLinks: connectStore };
+    const deps: import("../../application/linkedin-management").LinkedInManagementDeps = { accounts: accountStore, vendors: [createUnipileVendor({ gatewayFor: () => gateway })], appUrl, now: () => new Date("2026-10-14T10:00:00Z"), audit: auditSink, connectLinks: connectStore };
     const actor: Actor = { userId, organizationId: id, role: "owner" };
     return { id, tag, gateway, deps, actor, member: { ...actor, role: "member" } as Actor, campaignDeps: { campaigns: campaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore } };
   }
@@ -73,7 +73,7 @@ describeDb("linkedin connection and campaigns", () => {
 
   it("re-checks a stored DSN before syncing", async () => {
     const t = await org();
-    await accountStore.saveCredentials(t.id, { dsn: "169.254.169.254", apiKey: "k", notifySecret: "s".repeat(24) });
+    await accountStore.saveCredentials(t.id, { dsn: "169.254.169.254", apiKey: "k", notifySecret: "s".repeat(24) }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
     await expect(mgmt.syncLinkedInAccounts(t.deps, t.actor)).rejects.toBeInstanceOf(ConflictError);
     await expect(mgmt.registerLinkedInWebhooks(t.deps, t.actor)).rejects.toBeInstanceOf(ConflictError);
   });
@@ -116,13 +116,13 @@ describeDb("linkedin connection and campaigns", () => {
     const message = { event: "message_received", account_id: account, account_type: "LINKEDIN", account_info: { user_id: "ME" }, message_id: "m-" + a.tag, chat_id: "c1", message: "hi", sender: { attendee_provider_id: "ACoX" } };
 
     // Org B posts both payloads first, with its own valid secret.
-    expect(await receiveLinkedInWebhook(deps, { organizationId: b.id, payload: relation })).toEqual({ status: "skipped" });
-    expect(await receiveLinkedInWebhook(deps, { organizationId: b.id, payload: message })).toEqual({ status: "skipped" });
+    expect(await receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: b.id, payload: relation })).toEqual({ status: "skipped" });
+    expect(await receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: b.id, payload: message })).toEqual({ status: "skipped" });
     // Org A's real events still go through.
-    expect((await receiveLinkedInWebhook(deps, { organizationId: a.id, payload: relation })).status).not.toBe("duplicate");
-    expect((await receiveLinkedInWebhook(deps, { organizationId: a.id, payload: message })).status).not.toBe("duplicate");
+    expect((await receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: a.id, payload: relation })).status).not.toBe("duplicate");
+    expect((await receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: a.id, payload: message })).status).not.toBe("duplicate");
     // A true redelivery to the same organization is still deduplicated.
-    expect(await receiveLinkedInWebhook(deps, { organizationId: a.id, payload: message })).toEqual({ status: "duplicate" });
+    expect(await receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: a.id, payload: message })).toEqual({ status: "duplicate" });
     const rows = await sql`select organization_id, provider_event_key from inbound_events where organization_id in (${a.id}, ${b.id})`;
     expect(rows).toHaveLength(4);
     expect(rows.every((r) => (r.provider_event_key as string).includes(":v2:" + r.organization_id))).toBe(true);

@@ -32,6 +32,8 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     accountId: snap.accountId,
     providerAccountId: snap.providerAccountId,
     chat: snap.chat,
+    member: snap.member ?? null,
+    slug: snap.slug ?? null,
     text: snap.text,
   };
 }
@@ -68,7 +70,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers. FOR UPDATE, as on
       // email, holds back an ingest's message insert (docs/database.md, "Lock modes").
       const [conv] = await tx
-        .select({ id: threads.id, conversationId: threads.conversationId, channel: threads.channel, status: threads.status, accountRef: threads.accountRef, chat: threads.providerThreadId })
+        .select({ id: threads.id, conversationId: threads.conversationId, channel: threads.channel, status: threads.status, accountRef: threads.accountRef, chat: threads.providerThreadId, member: threads.providerContactId })
         .from(threads)
         .where(and(eq(threads.id, input.threadId), eq(threads.organizationId, input.organizationId)))
         .for("update");
@@ -189,6 +191,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         channel: "linkedin",
         text,
         chat,
+        member: conv.member,
+        slug: (await tx.select({ slug: people.linkedinSlug }).from(people).where(eq(people.id, conversation.personId)))[0]?.slug ?? null,
         accountId: account.id,
         providerAccountId: account.providerAccountId,
         threadId: conv.id,

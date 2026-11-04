@@ -481,12 +481,14 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         providerAccountId: linkedinAccounts.providerAccountId,
         providerId: linkedinEnrollmentDetails.providerId,
         chatId: linkedinConnections.chatId,
+        slug: people.linkedinSlug,
         steps: campaigns.steps,
       })
       .from(sends)
       .innerJoin(linkedinAccounts, eq(linkedinAccounts.id, sends.linkedinAccountId))
       .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
       .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
+      .innerJoin(people, eq(people.id, campaignEnrollments.personId))
       .innerJoin(linkedinEnrollmentDetails, eq(linkedinEnrollmentDetails.enrollmentId, sends.enrollmentId))
       .leftJoin(
         linkedinConnections,
@@ -505,6 +507,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       rendered: r.marker !== null,
       body: r.body,
       chatId: r.chatId,
+      slug: r.slug,
       account: { id: r.accountId, providerAccountId: r.providerAccountId },
       providerId: r.providerId,
       nextStepWaitDays: r.steps[r.stepNumber as number]?.waitDays ?? null,
@@ -576,6 +579,7 @@ async function buildSendClaim(
       ...enrollmentVariableColumns,
       steps: campaigns.steps,
       providerId: linkedinEnrollmentDetails.providerId,
+      slug: people.linkedinSlug,
     })
     .from(campaignEnrollments)
     .innerJoin(people, eq(people.id, campaignEnrollments.personId))
@@ -627,6 +631,7 @@ async function buildSendClaim(
     person: { id: candidate.person_id, variables },
     providerId: row.providerId as string,
     chatId: connection?.chatId ?? null,
+    slug: row.slug,
     step: { body: step.body, waitDays: step.waitDays },
     nextStep: next ? { waitDays: next.waitDays } : null,
   };
@@ -663,6 +668,7 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
       attempt: row.attempt,
       claimedAt: row.claimedAt,
       rendered: true,
+      slug: null,
       body: null,
       chatId: null,
       account: { id: row.accountId as string, providerAccountId: "" },

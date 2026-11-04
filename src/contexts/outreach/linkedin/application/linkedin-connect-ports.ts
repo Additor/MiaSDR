@@ -25,6 +25,8 @@ export interface LinkedInConnectStore {
    * takes the owner the link names, if that person is still a member.
    */
   complete(id: string, input: { providerAccountId: string; now: Date }): Promise<boolean>;
+  /** Records the vendor's account a pending link is for, once the vendor names it. */
+  noteAccount(id: string, providerAccountId: string): Promise<void>;
   fail(id: string, error: string): Promise<boolean>;
   /** Conversations a retryable problem (the sync failed) and leaves the link pending. */
   noteError(id: string, error: string): Promise<void>;

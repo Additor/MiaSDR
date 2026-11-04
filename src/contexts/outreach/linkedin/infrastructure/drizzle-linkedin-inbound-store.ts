@@ -73,12 +73,12 @@ async function upsertConnection(tx: Tx, organizationId: string, accountId: strin
 /** The LinkedIn inbound store. `inbox` files each reply and message. */
 export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInInboundStore {
   return {
-    async begin({ organizationId, key, eventType, accountRef, payload, now }) {
+    async begin({ organizationId, provider, key, eventType, accountRef, payload, now }) {
       const [row] = await db
         .insert(inboundEvents)
         .values({
           organizationId,
-          provider: "unipile",
+          provider,
           providerEventKey: key,
           eventType,
           accountRef,
@@ -94,10 +94,10 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
       return row ? toLedger(row) : null;
     },
 
-    async recordUnreadable({ organizationId, eventType, payload, now }) {
+    async recordUnreadable({ organizationId, provider, eventType, payload, now }) {
       await db.insert(inboundEvents).values({
         organizationId,
-        provider: "unipile",
+        provider,
         eventType,
         payload,
         status: "failed",
@@ -128,7 +128,7 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
         update inbound_events
            set status = 'failed', lease_until = null, claim_token = null, next_attempt_at = ${nowIso}::timestamptz,
                log = log || ${JSON.stringify([{ ts: nowIso, level: "error", message: "The worker stopped during the last attempt." }])}::jsonb
-         where provider = 'unipile' and status = 'processing' and lease_until < ${nowIso}::timestamptz and attempts >= ${MAX_EVENT_ATTEMPTS}
+         where provider <> 'gmail' and status = 'processing' and lease_until < ${nowIso}::timestamptz and attempts >= ${MAX_EVENT_ATTEMPTS}
            ${organizationId ? sql`and organization_id = ${organizationId}` : sql``}
         returning id`);
       return (rows as unknown as unknown[]).length;
@@ -143,7 +143,7 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
                claim_token = ${NEW_CLAIM_TOKEN}
          where ev.id in (
            select id from inbound_events
-            where provider = 'unipile' and attempts < ${MAX_EVENT_ATTEMPTS}
+            where provider <> 'gmail' and attempts < ${MAX_EVENT_ATTEMPTS}
               ${scope}
               and ((status = 'failed' and next_attempt_at <= ${nowIso}::timestamptz)
                 or (status = 'processing' and lease_until < ${nowIso}::timestamptz))

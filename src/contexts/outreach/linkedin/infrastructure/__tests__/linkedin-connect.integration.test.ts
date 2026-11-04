@@ -32,7 +32,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
     const { organizationId: id, userId } = created;
     const gateway = new FakeLinkedInGateway();
     gateway.accounts = [{ ref: "u-" + tag, linkedinId: "ACo-" + tag, name: "Ada", username: "ada-" + tag, status: "connected" }];
-    const deps: LinkedInManagementDeps = { accounts: accountStore, vendor: createUnipileVendor({ gatewayFor: () => gateway }), appUrl: options.appUrl ?? "https://app.example.com", now: () => current, audit: auditSink, connectLinks: connectStore };
+    const deps: LinkedInManagementDeps = { accounts: accountStore, vendors: [createUnipileVendor({ gatewayFor: () => gateway })], appUrl: options.appUrl ?? "https://app.example.com", now: () => current, audit: auditSink, connectLinks: connectStore };
     const actor: Actor = { userId, organizationId: id, role: "owner" };
     if (options.connected !== false) await mgmt.connectLinkedIn(deps, actor, { dsn: "api1.unipile.com:13111", apiKey: "k" });
     const opsDeps: import("../../application/linkedin-operations").LinkedInOperationsDeps = {
@@ -345,10 +345,10 @@ describeDb("linkedin hosted auth, limits and operations", () => {
         user_profile_url: "https://www.linkedin.com/in/lead",
       };
       const deps = { store: inboundStore, clock: { now: () => current }, parse, eventKey: unipileEventKey };
-      expect((await inboundApp.receiveLinkedInWebhook(deps, { organizationId: f.id, payload })).status).not.toBe("duplicate");
+      expect((await inboundApp.receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: f.id, payload })).status).not.toBe("duplicate");
       await sql`update inbound_events set status = 'failed', attempts = 8 where organization_id = ${f.id}`;
       await ops.replayFailedLinkedInWebhooks(f.opsDeps, f.actor);
-      expect((await inboundApp.receiveLinkedInWebhook(deps, { organizationId: f.id, payload })).status).toBe("duplicate");
+      expect((await inboundApp.receiveLinkedInWebhook(deps, { provider: "unipile", organizationId: f.id, payload })).status).toBe("duplicate");
       const [{ n }] = await sql`select count(*)::int as n from inbound_events where organization_id = ${f.id}`;
       expect(n).toBe(1);
     });
