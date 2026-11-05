@@ -2,6 +2,7 @@
  * Status filters, page sizes and URL parameters of the campaign lead tables (email and LinkedIn). The filters use the lead
  * status vocabulary scoped to the campaign (`campaign-lead-status.ts`), plus All and Removed.
  */
+import { parsePageParam } from "@/shared/page-param";
 import { campaignLeadState } from "./campaign-lead-status";
 import { LEAD_STATE_LABELS, type LeadState } from "./lead-status";
 import { STOPPED_ENROLLMENT_STATUSES, type EnrollmentStatus } from "./enrollment-status";
@@ -120,7 +121,7 @@ export function parseEnrollmentListQuery(params: Record<string, string | string[
   const tab = enrollmentTabOf(first(params.tab)) ?? "all";
   const size = Number(first(params.size));
   const pageSize = ENROLLMENT_PAGE_SIZES.find((s) => s === size) ?? DEFAULT_ENROLLMENT_PAGE_SIZE;
-  const page = Math.max(1, Math.floor(Number(first(params.page))) || 1);
+  const page = parsePageParam(first(params.page));
   const search = (first(params.q) ?? "").trim().slice(0, MAX_ENROLLMENT_SEARCH);
   return { tab, search, page, pageSize };
 }

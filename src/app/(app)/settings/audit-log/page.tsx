@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { parsePageParam } from "@/shared/page-param";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -31,7 +32,7 @@ async function AuditLog({ searchParams }: { searchParams: PageProps<"/settings/a
   if (!isOwnerOrAdmin(ctx.role)) return <AdminNotice action="read the audit log" replacesPage />;
   const params = await searchParams;
   const area = AUDIT_AREAS.find((a) => a === first(params.area)) ?? "all";
-  const page = Math.max(Number(first(params.page)) || 1, 1);
+  const page = parsePageParam(first(params.page));
   const result = await listAuditLog(auditLogStore, toActor(ctx), { area: area === "all" ? null : area, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });
   return <AuditLogPanel rows={JSON.parse(JSON.stringify(result.rows))} total={result.total} page={page} pageSize={PAGE_SIZE} area={area} />;
 }

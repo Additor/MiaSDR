@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { parsePageParam } from "@/shared/page-param";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -29,7 +30,7 @@ async function Suppression({ searchParams }: { searchParams: PageProps<"/setting
   const ctx = await requireOrgContext();
   const params = await searchParams;
   const q = (first(params.q) ?? "").trim().slice(0, 320);
-  const page = Math.max(Number(first(params.page)) || 1, 1);
+  const page = parsePageParam(first(params.page));
   const result = await listSuppressions(suppressions(), toActor(ctx), { q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });
   return <SuppressionPanel rows={JSON.parse(JSON.stringify(result.rows))} total={result.total} page={page} pageSize={PAGE_SIZE} q={q} canManage={isOwnerOrAdmin(ctx.role)} />;
 }

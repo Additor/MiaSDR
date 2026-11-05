@@ -3,6 +3,7 @@
  * application layer and the SQL share one definition. A date filter reads its days in the organization's time zone, the
  * zone the list's day dividers and clock times use. Without a zone the days are UTC.
  */
+import { parsePageParam } from "@/shared/page-param";
 import { calendarDayInZone, shiftDay, startOfDayInZone } from "@/shared/time-zone";
 
 
@@ -121,7 +122,7 @@ export function parseInboxParams(raw: Raw): InboxParams {
   return {
     view: INBOX_VIEWS.find((v) => v === one("view")) ?? "all",
     query: (Array.isArray(raw.q) ? raw.q[0] : raw.q)?.trim().slice(0, 200) ?? "",
-    page: Math.max(1, Math.floor(Number(one("page"))) || 1),
+    page: parsePageParam(one("page")),
     leadIds: lead.filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     leadQuery: (lead.find((v) => !UUID.test(v)) ?? "").slice(0, 200),
     campaignIds: all(raw.campaign).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),

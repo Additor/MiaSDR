@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { parsePageParam } from "@/shared/page-param";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -37,7 +38,7 @@ async function InboundEvents({ searchParams }: { searchParams: PageProps<"/setti
   const params = await searchParams;
   const state = STATES.find((s) => s === first(params.state)) ?? "open";
   const source = SOURCES.find((s) => s === first(params.source)) ?? "all";
-  const page = Math.max(Number(first(params.page)) || 1, 1);
+  const page = parsePageParam(first(params.page));
   const actor = toActor(ctx);
   const [result, backlog] = await Promise.all([
     listInboundEvents(inboundReviewDeps(), actor, { state, source, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
