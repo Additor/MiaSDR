@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ValidationError } from "@/shared/errors";
+import { ConflictError, ValidationError } from "@/shared/errors";
 import { BRAIN_FIELDS, brainFieldRows, parseBrainFields, renderBrainContent } from "./brain-fields";
-import { createBrainItem, isLegacyBrainItem, reviseBrainItem, type BrainItemState } from "./brain-item";
+import { createBrainItem, isLegacyBrainItem, isRestoreBlocked, reviseBrainItem, type BrainItemState } from "./brain-item";
 import { BRAIN_GROUPS, BRAIN_ITEM_KINDS, BRAIN_KINDS } from "./brain-kinds";
 
-const product = (over: Partial<BrainItemState> = {}): BrainItemState => ({ kind: "product", title: "Mia", structuredData: { productName: "Mia", overview: "An AI SDR" }, ...over });
-const legacy = (over: Partial<BrainItemState> = {}): BrainItemState => ({ kind: "unsorted", title: "Old FAQ", structuredData: null, ...over });
+const state = { description: null, tags: [], alwaysInclude: false, active: true, revision: 1 };
+const product = (over: Partial<BrainItemState> = {}): BrainItemState => ({ ...state, kind: "product", title: "Mia", structuredData: { productName: "Mia", overview: "An AI SDR" }, ...over });
+const legacy = (over: Partial<BrainItemState> = {}): BrainItemState => ({ ...state, kind: "unsorted", title: "Old FAQ", structuredData: null, ...over });
 
 describe("the kinds", () => {
   it("defines fields and a group for every kind a person can create", () => {
@@ -24,6 +25,9 @@ describe("parseBrainFields", () => {
   it("refuses an unknown field, also a nested one", () => {
     expect(() => parseBrainFields("product", { productName: "Mia", pricing: "1" })).toThrow(/Unknown field: pricing/);
     expect(() => parseBrainFields("price_book", { entryName: "Pro", pricing: { model: "seat" } })).toThrow(/Unknown field: pricing.model/);
+  });
+  it("refuses a flat dotted key, which no field reads, instead of dropping its value", () => {
+    expect(() => parseBrainFields("price_book", { entryName: "Pro", "pricing.currency": "USD" })).toThrow(/Unknown field: "pricing.currency"/);
   });
   it("names a missing required field", () => {
     expect(() => parseBrainFields("case_study", { customerName: "Acme", challenge: "a", solution: "b" })).toThrow("Results is required.");
@@ -111,13 +115,13 @@ describe("createBrainItem", () => {
 
 describe("reviseBrainItem", () => {
   it("replaces all the fields and adds a version when they change", () => {
-    const change = reviseBrainItem(product(), { fields: { productName: "Mia 2" } });
+    const change = reviseBrainItem(product(), { revision: 1, fields: { productName: "Mia 2" } });
     expect(change).toEqual({ title: "Mia 2", version: { structuredData: { productName: "Mia 2" }, content: "Product name: Mia 2" } });
   });
   it("adds no version when the fields only come back in another key order", () => {
-    expect(reviseBrainItem(product(), { fields: { overview: "An AI SDR", productName: "Mia" } }).version).toBeUndefined();
+    expect(reviseBrainItem(product(), { revision: 1, fields: { overview: "An AI SDR", productName: "Mia" } }).version).toBeUndefined();
     const stored = product({ kind: "price_book", title: "Pro", structuredData: { monthlyPrice: 1, pricing: { currency: "USD" }, entryName: "Pro" } });
-    expect(reviseBrainItem(stored, { fields: { entryName: "Pro", pricing: { currency: "USD" }, monthlyPrice: 1 } }).version).toBeUndefined();
+    expect(reviseBrainItem(stored, { revision: 1, fields: { entryName: "Pro", pricing: { currency: "USD" }, monthlyPrice: 1 } }).version).toBeUndefined();
   });
   it("changes only what the patch names", () => {
     expect(reviseBrainItem(product(), { active: false })).toEqual({ active: false });
@@ -125,31 +129,56 @@ describe("reviseBrainItem", () => {
   });
   it("refuses a title on a kind with a name field, alone or with fields", () => {
     expect(() => reviseBrainItem(product(), { title: "Other" })).toThrow(/name field/);
-    expect(() => reviseBrainItem(product(), { title: "Other", fields: { productName: "Mia" } })).toThrow(/name field/);
+    expect(() => reviseBrainItem(product(), { revision: 1, title: "Other", fields: { productName: "Mia" } })).toThrow(/name field/);
   });
   it("lets a person rename a kind without a name field", () => {
-    const state = product({ kind: "qualification", title: "Rules", structuredData: { disqualificationSignals: "x" } });
-    expect(reviseBrainItem(state, { title: "New" })).toEqual({ title: "New" });
-    expect(reviseBrainItem(state, { title: "New", fields: { disqualificationSignals: "x" } })).toEqual({ title: "New" });
+    const rules = product({ kind: "qualification", title: "Rules", structuredData: { disqualificationSignals: "x" } });
+    expect(reviseBrainItem(rules, { title: "New" })).toEqual({ title: "New" });
+    expect(reviseBrainItem(rules, { revision: 1, title: "New", fields: { disqualificationSignals: "x" } })).toEqual({ title: "New" });
   });
   it("refuses a new kind on an item that has fields", () => {
-    expect(() => reviseBrainItem(product(), { kind: "icp", fields: { icpName: "x" } })).toThrow(/keeps its kind/);
+    expect(() => reviseBrainItem(product(), { revision: 1, kind: "icp", fields: { icpName: "x" } })).toThrow(/keeps its kind/);
   });
   it("sorts a legacy document into a kind, with a new version even when nothing else differs", () => {
     expect(isLegacyBrainItem(legacy())).toBe(true);
-    const change = reviseBrainItem(legacy(), { kind: "product", fields: { productName: "Mia" } });
+    const change = reviseBrainItem(legacy(), { revision: 1, kind: "product", fields: { productName: "Mia" } });
     expect(change).toMatchObject({ kind: "product", title: "Mia", version: { structuredData: { productName: "Mia" } } });
-    expect(reviseBrainItem(legacy({ kind: "product", title: "Mia" }), { fields: { productName: "Mia" } }).version).toBeTruthy();
+    expect(reviseBrainItem(legacy({ kind: "product", title: "Mia" }), { revision: 1, fields: { productName: "Mia" } }).version).toBeTruthy();
   });
   it("keeps a legacy title when the new kind has no name field and none was written", () => {
-    expect(reviseBrainItem(legacy(), { kind: "qualification", fields: { disqualificationSignals: "x" } })).toMatchObject({ kind: "qualification", title: "Old FAQ" });
+    expect(reviseBrainItem(legacy(), { revision: 1, kind: "qualification", fields: { disqualificationSignals: "x" } })).toEqual({ kind: "qualification", version: { structuredData: { disqualificationSignals: "x" }, content: "Who to leave out: x" } });
   });
   it("refuses sorting into unsorted, fields on an unsorted document without a kind, and a kind without fields", () => {
-    expect(() => reviseBrainItem(legacy(), { kind: "unsorted", fields: {} })).toThrow(/Choose a kind/);
-    expect(() => reviseBrainItem(legacy(), { fields: { productName: "Mia" } })).toThrow(/Choose a kind/);
+    expect(() => reviseBrainItem(legacy(), { revision: 1, kind: "unsorted", fields: {} })).toThrow(/Choose a kind/);
+    expect(() => reviseBrainItem(legacy(), { revision: 1, fields: { productName: "Mia" } })).toThrow(/Choose a kind/);
     expect(() => reviseBrainItem(legacy(), { kind: "product" })).toThrow(/Fill in the fields/);
   });
   it("lets a person archive, tag and rename an unsorted document without sorting it", () => {
     expect(reviseBrainItem(legacy(), { active: false, tags: ["x"], title: "FAQ" })).toEqual({ active: false, tags: ["x"], title: "FAQ" });
+  });
+  it("refuses a stale revision, and fields without one", () => {
+    expect(() => reviseBrainItem(product({ revision: 4 }), { revision: 3, fields: { productName: "Mia" } })).toThrow(ConflictError);
+    expect(() => reviseBrainItem(product({ revision: 4 }), { revision: 3, tags: ["x"] })).toThrow(ConflictError);
+    expect(() => reviseBrainItem(product(), { fields: { productName: "Mia" } })).toThrow(/revision/);
+    expect(reviseBrainItem(product({ revision: 4 }), { revision: 4, tags: ["x"] })).toEqual({ tags: ["x"] });
+    expect(reviseBrainItem(product({ revision: 4 }), { active: false })).toEqual({ active: false });
+  });
+  it("returns nothing for values that are already so", () => {
+    const item = product({ description: "d", tags: ["a"], alwaysInclude: true });
+    expect(reviseBrainItem(item, { revision: 1, fields: { productName: "Mia", overview: "An AI SDR" }, description: " d ", tags: ["A"], alwaysInclude: true, active: true })).toEqual({});
+    expect(reviseBrainItem(legacy({ active: false }), { active: false, title: "Old FAQ" })).toEqual({});
+  });
+  it("takes a valid edit on an item stored under older rules, and sees it as a change", () => {
+    const old = product({ structuredData: { productName: "x".repeat(300), retired: "gone" } });
+    expect(reviseBrainItem(old, { revision: 1, fields: { productName: "Mia" } })).toMatchObject({ version: { structuredData: { productName: "Mia" } } });
+  });
+});
+
+describe("isRestoreBlocked", () => {
+  it("holds only an archived company profile, and only beside an active one", () => {
+    expect(isRestoreBlocked({ kind: "company_profile", active: false }, true)).toBe(true);
+    expect(isRestoreBlocked({ kind: "company_profile", active: false }, false)).toBe(false);
+    expect(isRestoreBlocked({ kind: "company_profile", active: true }, true)).toBe(false);
+    expect(isRestoreBlocked({ kind: "product", active: false }, true)).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ describeDb("the migration to Brain kinds", () => {
   const { admin, scratch } = adminAndScratchUrls(TEST_DATABASE_URL ?? "postgres://x@localhost/x", name);
   const adminSql = postgres(admin, { max: 1, onnotice: () => undefined });
   const sql = postgres(scratch, { max: 1, onnotice: () => undefined });
-  const dir = mkdtempSync(path.join(tmpdir(), "brain-kinds-"));
+  let dir = "";
 
   /** The migrations up to, and without, this one. */
   function folderBefore(): string {
@@ -40,6 +40,7 @@ describeDb("the migration to Brain kinds", () => {
   let b: string;
 
   beforeAll(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), "brain-kinds-"));
     await adminSql.unsafe(`create database ${name}`);
     const db = drizzle(sql);
     await migrate(db, { migrationsFolder: folderBefore() });
@@ -65,7 +66,7 @@ describeDb("the migration to Brain kinds", () => {
     await sql.end();
     await adminSql.unsafe(`drop database if exists ${name} with (force)`);
     await adminSql.end();
-    rmSync(dir, { recursive: true, force: true });
+    if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
   it("is the migration this test names", () => {
@@ -96,8 +97,8 @@ describeDb("the migration to Brain kinds", () => {
   });
 
   it("changes nothing else on a document, and leaves its versions without fields", async () => {
-    const [row] = await sql`select active, always_include, latest_version, updated_at::date::text as day from knowledge_documents where title = 'Other'`;
-    expect(row).toMatchObject({ active: false, always_include: true, latest_version: 1 });
+    const [row] = await sql`select active, always_include, latest_version, revision, updated_at::date::text as day from knowledge_documents where title = 'Other'`;
+    expect(row).toMatchObject({ active: false, always_include: true, latest_version: 1, revision: 1 });
     expect(row.day).toBe("2026-01-01");
     const versions = await sql`select content, structured_data from knowledge_document_versions where document_id in (select id from knowledge_documents where title = 'Other')`;
     expect(versions).toEqual([{ content: "Other text", structured_data: null }]);

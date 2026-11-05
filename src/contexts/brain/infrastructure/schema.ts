@@ -23,6 +23,8 @@ export const knowledgeDocuments = pgTable(
     alwaysInclude: boolean("always_include").notNull().default(false),
     active: boolean("active").notNull().default(true),
     latestVersion: integer("latest_version").notNull().default(1),
+    /** Rises with every change to the item, so an edit from a stale form is refused. A version counts only field changes. */
+    revision: integer("revision").notNull().default(1),
     /** Who created the item. Null on a document from before the column, or once that user is gone. */
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
@@ -32,6 +34,7 @@ export const knowledgeDocuments = pgTable(
     unique("knowledge_documents_id_org_uq").on(t.id, t.organizationId),
     check("knowledge_documents_kind_ck", inList(t.kind, BRAIN_KINDS)),
     check("knowledge_documents_version_ck", sql`${t.latestVersion} > 0`),
+    check("knowledge_documents_revision_ck", sql`${t.revision} > 0`),
     check("knowledge_documents_description_ck", sql`${t.description} is null or length(${t.description}) <= 1000`),
     index("knowledge_documents_org_active_idx").on(t.organizationId, t.active, t.kind),
     index("knowledge_documents_created_by_idx").on(t.createdBy).where(sql`${t.createdBy} is not null`),

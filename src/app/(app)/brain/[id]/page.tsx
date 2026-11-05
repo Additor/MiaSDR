@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { toActor } from "@/app/_lib/api";
 import { brainHasActiveCompanyProfile, getBrainItem } from "@/contexts/brain/application/brain-items";
 import { brainFieldRows } from "@/contexts/brain/domain/brain-fields";
-import { BRAIN_KIND_LABELS, SINGLE_ITEM_KIND, isBrainItemKind } from "@/contexts/brain/domain/brain-kinds";
+import { isRestoreBlocked } from "@/contexts/brain/domain/brain-item";
+import { BRAIN_KIND_LABELS, isBrainItemKind } from "@/contexts/brain/domain/brain-kinds";
 import { brainStore } from "@/contexts/brain/infrastructure/composition";
 import { isPromptKind } from "@/contexts/conversations/ai/domain/knowledge";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -48,12 +49,13 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
   await connection();
   const actor = toActor(await requireOrgContext());
   const { id } = await params;
-  const item = await getBrainItem(brainStore, actor, id).catch((error: unknown) => {
-    if (error instanceof NotFoundError) notFound();
-    throw error;
-  });
-  const hasCompanyProfile = await brainHasActiveCompanyProfile(brainStore, actor);
-  const restoreBlocked = !item.active && item.kind === SINGLE_ITEM_KIND && hasCompanyProfile;
+  const [item, hasCompanyProfile] = await Promise.all([
+    getBrainItem(brainStore, actor, id).catch((error: unknown) => {
+      if (error instanceof NotFoundError) notFound();
+      throw error;
+    }),
+    brainHasActiveCompanyProfile(brainStore, actor),
+  ]);
   const rows = item.structuredData && isBrainItemKind(item.kind) ? brainFieldRows(item.kind, item.structuredData) : [];
   const dialogItem = {
     id: item.id,
@@ -62,6 +64,7 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
     description: item.description,
     tags: item.tags,
     alwaysInclude: item.alwaysInclude,
+    revision: item.revision,
     legacyText: item.legacy ? item.content : null,
     structuredData: item.structuredData,
   };
@@ -72,7 +75,7 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
         title={item.title}
         titleAs="p"
         back={{ href: "/brain", label: "Brain" }}
-        actions={<BrainItemActions item={dialogItem} active={item.active} restoreBlocked={restoreBlocked} hasCompanyProfile={hasCompanyProfile} />}
+        actions={<BrainItemActions item={dialogItem} active={item.active} hasCompanyProfile={hasCompanyProfile} />}
       />
       <div className="page stack-section max-w-3xl">
         <div className="stack-field">
@@ -86,7 +89,7 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
             {BRAIN_KIND_LABELS[item.kind]} · Version {item.version} · Updated <Time value={item.updatedAt} />
           </p>
           {item.description && <p className="text-sm">{item.description}</p>}
-          {restoreBlocked && <p className="text-sm text-muted-foreground">Another company profile is active. Archive it before you restore this one.</p>}
+          {isRestoreBlocked(item, hasCompanyProfile) && <p className="text-sm text-muted-foreground">Another company profile is active. Archive it before you restore this one.</p>}
           {!isPromptKind(item.kind) && <p className="text-sm text-muted-foreground">AI drafts don&apos;t use this kind yet.</p>}
         </div>
 

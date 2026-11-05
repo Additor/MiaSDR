@@ -26,6 +26,7 @@ export interface BrainDialogItem {
   description: string | null;
   tags: string[];
   alwaysInclude: boolean;
+  revision: number;
   /** The pasted text of a document from before the kinds existed, which this edit sorts into a kind. */
   legacyText: string | null;
   structuredData: BrainFields | null;
@@ -39,6 +40,8 @@ interface Draft {
   description: string;
   tags: string;
   always: boolean;
+  /** The revision when the form opened. A refresh under an open form leaves it, so a stale save is still refused. */
+  revision: number | null;
   values: BrainFormValues;
 }
 
@@ -50,6 +53,7 @@ function draftOf(item: BrainDialogItem | null, startKind: BrainItemKind): Draft 
     description: item?.description ?? "",
     tags: (item?.tags ?? []).join(", "),
     always: item?.alwaysInclude ?? false,
+    revision: item?.revision ?? null,
     values: formValuesOf(kind, item?.structuredData ?? null),
   };
 }
@@ -73,7 +77,8 @@ function FieldInput({ field, id, value, onChange }: { field: BrainField; id: str
     );
   }
   if (field.type === "list") return <Textarea id={id} className="min-h-24" value={value} onChange={(e) => onChange(e.target.value)} />;
-  if (field.type === "number") return <Input id={id} type="number" min={0} step="any" value={value} onChange={(e) => onChange(e.target.value)} />;
+  // A text input: a number input hands over "" for text it cannot read, and the price would be dropped without a word.
+  if (field.type === "number") return <Input id={id} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} />;
   if (field.type === "currency") return <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} maxLength={3} placeholder="USD" />;
   if (field.type === "url") return <Input id={id} type="url" value={value} onChange={(e) => onChange(e.target.value)} maxLength={field.max} placeholder="https://" />;
   if ((field.max ?? 0) > MAX_TITLE) return <Textarea id={id} className="min-h-24" value={value} onChange={(e) => onChange(e.target.value)} maxLength={field.max} required={field.required} />;
@@ -110,11 +115,12 @@ export function BrainItemDialog({ open, onOpenChange, item, hasCompanyProfile }:
       fields: fieldsOf(draft.kind, draft.values),
       description: draft.description,
       ...(needsTitle ? { title: draft.title } : {}),
-      ...(promptKind ? { tags: splitTagInput(draft.tags), alwaysInclude: draft.always } : {}),
+      // A kind prompts do not read shows neither control, so it holds no value someone could not see or clear.
+      ...(promptKind ? { tags: splitTagInput(draft.tags), alwaysInclude: draft.always } : { tags: [], alwaysInclude: false }),
     };
     const refresh = () => router.refresh();
     if (item === null) orThrow(await runApiAction(callApi("/api/brain", "POST", { ...body, kind: draft.kind }), { refresh }));
-    else orThrow(await runApiAction(callApi(`/api/brain/${item.id}`, "PATCH", { ...body, ...(sorting ? { kind: draft.kind } : {}) }), { refresh }));
+    else orThrow(await runApiAction(callApi(`/api/brain/${item.id}`, "PATCH", { ...body, revision: draft.revision, ...(sorting ? { kind: draft.kind } : {}) }), { refresh }));
     toast.success(item === null ? `${BRAIN_KIND_LABELS[draft.kind]} added.` : `${BRAIN_KIND_LABELS[draft.kind]} saved.`);
   }
 

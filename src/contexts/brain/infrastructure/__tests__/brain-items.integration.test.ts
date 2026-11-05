@@ -1,7 +1,7 @@
 import { afterAll, expect, it } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
-import { addBrainItem, changeBrainItem, getBrainItem, listBrainItems } from "../../application/brain-items";
+import { addBrainItem, brainHasActiveCompanyProfile, changeBrainItem, getBrainItem, listBrainItems } from "../../application/brain-items";
 import { drizzleBrainStore as store } from "../drizzle-brain-store";
 
 describeDb("Brain items", () => {
@@ -46,7 +46,7 @@ describeDb("Brain items", () => {
     const [row] = await sql`select created_by from knowledge_documents where id = ${id}`;
     expect(row.created_by).toBe(actor.userId);
 
-    await changeBrainItem(store, actor, id, { fields: { productName: "Mia 2" } });
+    await changeBrainItem(store, actor, id, { revision: 1, fields: { productName: "Mia 2" } });
     expect(await getBrainItem(store, actor, id)).toMatchObject({ title: "Mia 2", version: 2, content: "Product name: Mia 2", tags: ["sales"] });
     const old = await sql`select content, structured_data from knowledge_document_versions where document_id = ${id} and version = 1`;
     expect(old[0]).toMatchObject({ content: "Product name: Mia\nOverview: An AI SDR", structured_data: { productName: "Mia", overview: "An AI SDR" } });
@@ -62,7 +62,7 @@ describeDb("Brain items", () => {
     const fields = { entryName: "Pro", pricing: { currency: "USD" }, monthlyPrice: 99, annualPrice: 990, features: ["SSO"], notes: "n" };
     const { id } = await addBrainItem(store, actor, { kind: "price_book", fields });
     const stored = (await getBrainItem(store, actor, id)).structuredData!;
-    await changeBrainItem(store, actor, id, { fields: stored });
+    await changeBrainItem(store, actor, id, { revision: 1, fields: stored });
     expect((await getBrainItem(store, actor, id)).version).toBe(1);
   });
 
@@ -71,10 +71,10 @@ describeDb("Brain items", () => {
     const fields = { companyName: "Acme" };
     const first = await addBrainItem(store, actor, { kind: "company_profile", fields });
     await expect(addBrainItem(store, actor, { kind: "company_profile", fields })).rejects.toBeInstanceOf(ConflictError);
-    expect((await listBrainItems(store, actor, { view: "all" })).hasCompanyProfile).toBe(true);
+    expect(await brainHasActiveCompanyProfile(store, actor)).toBe(true);
 
     await changeBrainItem(store, actor, first.id, { active: false });
-    expect((await listBrainItems(store, actor, { view: "all" })).hasCompanyProfile).toBe(false);
+    expect(await brainHasActiveCompanyProfile(store, actor)).toBe(false);
     await addBrainItem(store, actor, { kind: "company_profile", fields: { companyName: "Acme 2" } });
     await expect(changeBrainItem(store, actor, first.id, { active: true })).rejects.toBeInstanceOf(ConflictError);
     expect((await audits(actor.organizationId)).map((a) => a.action)).toEqual(["brain.item_created", "brain.item_archived", "brain.item_created"]);
@@ -83,7 +83,7 @@ describeDb("Brain items", () => {
   it("rolls the whole change back when the fields are refused", async () => {
     const actor = await fixture();
     const { id } = await addBrainItem(store, actor, { kind: "product", fields: { productName: "Mia" } });
-    await expect(changeBrainItem(store, actor, id, { tags: ["x"], fields: {} })).rejects.toBeInstanceOf(ValidationError);
+    await expect(changeBrainItem(store, actor, id, { revision: 1, tags: ["x"], fields: {} })).rejects.toBeInstanceOf(ValidationError);
     expect((await getBrainItem(store, actor, id)).tags).toEqual([]);
     expect(await audits(actor.organizationId)).toHaveLength(1);
   });
@@ -92,11 +92,11 @@ describeDb("Brain items", () => {
     const actor = await fixture();
     const id = await legacy(actor.organizationId, "Old FAQ", "unsorted", true);
     expect(await getBrainItem(store, actor, id)).toMatchObject({ legacy: true, structuredData: null, content: "Pasted text" });
-    await expect(changeBrainItem(store, actor, id, { kind: "unsorted", fields: {} })).rejects.toBeInstanceOf(ValidationError);
-    await changeBrainItem(store, actor, id, { kind: "product", fields: { productName: "Mia" } });
+    await expect(changeBrainItem(store, actor, id, { revision: 1, kind: "unsorted", fields: {} })).rejects.toBeInstanceOf(ValidationError);
+    await changeBrainItem(store, actor, id, { revision: 1, kind: "product", fields: { productName: "Mia" } });
     expect(await getBrainItem(store, actor, id)).toMatchObject({ kind: "product", title: "Mia", legacy: false, version: 2, alwaysInclude: true });
     expect((await sql`select content from knowledge_document_versions where document_id = ${id} and version = 1`)[0].content).toBe("Pasted text");
-    await expect(changeBrainItem(store, actor, id, { kind: "icp", fields: { icpName: "x" } })).rejects.toBeInstanceOf(ValidationError);
+    await expect(changeBrainItem(store, actor, id, { revision: 2, kind: "icp", fields: { icpName: "x" } })).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("lists by view, title search and archived state, without the text, and counts what needs sorting", async () => {
@@ -121,6 +121,13 @@ describeDb("Brain items", () => {
     const listed = await listBrainItems(store, actor, { view: "all" });
     expect(listed).toMatchObject({ total: 4, needsSorting: 2, page: 1 });
     expect(listed.rows[0]).not.toHaveProperty("content");
+    // The count follows the status the list shows.
+    expect((await listBrainItems(store, actor, { view: "all", archived: true })).needsSorting).toBe(0);
+    const archivedOld = await legacy(org, "Archived paste");
+    await changeBrainItem(store, actor, archivedOld, { active: false });
+    expect(await titles({ view: "needs_sorting", archived: true })).toEqual(["Archived paste"]);
+    expect((await listBrainItems(store, actor, { view: "needs_sorting", archived: true })).needsSorting).toBe(1);
+    expect((await listBrainItems(store, actor, { view: "needs_sorting" })).needsSorting).toBe(2);
   });
 
   it("answers not found for another organization's item and a malformed id", async () => {
@@ -135,9 +142,47 @@ describeDb("Brain items", () => {
 
   it("keeps an item when its creator is deleted", async () => {
     const actor = await fixture();
+    const [creator] = await sql`insert into users (name, email, email_verified) values ('Gone', ${`gone-${actor.organizationId}@brain.test`}, true) returning id`;
+    await sql`insert into members (organization_id, user_id, role) values (${actor.organizationId}, ${creator.id}, 'member')`;
+    const { id } = await addBrainItem(store, { ...actor, userId: creator.id }, { kind: "product", fields: { productName: "Mia" } });
+    await sql`delete from members where user_id = ${creator.id}`;
+    await sql`delete from users where id = ${creator.id}`;
+    const [row] = await sql`select title, created_by from knowledge_documents where id = ${id}`;
+    expect(row).toMatchObject({ title: "Mia", created_by: null });
+    expect((await audits(actor.organizationId))[0]).toMatchObject({ action: "brain.item_created", actor_user_id: null });
+  });
+
+  it("refuses an edit from a form opened before another member's change", async () => {
+    const actor = await fixture();
+    const { id } = await addBrainItem(store, actor, { kind: "product", fields: { productName: "Mia", overview: "First" } });
+    await changeBrainItem(store, actor, id, { revision: 1, fields: { productName: "Mia", overview: "Second" } });
+    await expect(changeBrainItem(store, actor, id, { revision: 1, fields: { productName: "Mia", overview: "First", useCases: "Stale" } })).rejects.toMatchObject({ details: { code: "stale_version", revision: 2 } });
+    await expect(changeBrainItem(store, actor, id, { revision: 1, fields: { productName: "Mia" } })).rejects.toBeInstanceOf(ConflictError);
+    expect(await getBrainItem(store, actor, id)).toMatchObject({ version: 2, revision: 2, structuredData: { productName: "Mia", overview: "Second" } });
+    // A tag change raises the revision without a version, and still outdates an open form.
+    await changeBrainItem(store, actor, id, { revision: 2, tags: ["x"] });
+    expect(await getBrainItem(store, actor, id)).toMatchObject({ version: 2, revision: 3 });
+    await expect(changeBrainItem(store, actor, id, { revision: 2, fields: { productName: "Mia" } })).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("writes nothing for a save that changes nothing or a repeated archive", async () => {
+    const actor = await fixture();
+    const { id } = await addBrainItem(store, actor, { kind: "product", fields: { productName: "Mia" }, tags: ["a"] });
+    const before = await getBrainItem(store, actor, id);
+    await changeBrainItem(store, actor, id, { revision: 1, fields: before.structuredData!, tags: ["a"], description: "", alwaysInclude: false });
+    expect(await getBrainItem(store, actor, id)).toMatchObject({ revision: 1, version: 1, updatedAt: before.updatedAt });
+    await changeBrainItem(store, actor, id, { active: false });
+    await changeBrainItem(store, actor, id, { active: false });
+    expect((await audits(actor.organizationId)).map((a) => a.action)).toEqual(["brain.item_created", "brain.item_archived"]);
+  });
+
+  it("says in the audit row what an edit changed", async () => {
+    const actor = await fixture();
     const { id } = await addBrainItem(store, actor, { kind: "product", fields: { productName: "Mia" } });
-    const [{ fk }] = await sql`select confdeltype as fk from pg_constraint where conname = 'knowledge_documents_created_by_users_id_fk'`;
-    expect(fk).toBe("n");
-    expect((await getBrainItem(store, actor, id)).title).toBe("Mia");
+    await changeBrainItem(store, actor, id, { alwaysInclude: true, tags: ["a"] });
+    await changeBrainItem(store, actor, id, { revision: 2, fields: { productName: "Mia 2" } });
+    const [, flag, rename] = await audits(actor.organizationId);
+    expect(flag.meta).toMatchObject({ changed: "tags, alwaysInclude", alwaysInclude: true, version: 1 });
+    expect(rename.meta).toMatchObject({ changed: "title, fields", from: "Mia", to: "Mia 2", version: 2 });
   });
 });

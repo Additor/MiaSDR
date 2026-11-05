@@ -6,6 +6,7 @@ import { withActor } from "@/app/_lib/api";
 const PATCH_ITEM = z.object({
   kind: z.string().optional(),
   fields: z.record(z.string(), z.unknown()).optional(),
+  revision: z.number().int().optional(),
   title: z.string().optional(),
   description: z.string().nullable().optional(),
   alwaysInclude: z.boolean().optional(),

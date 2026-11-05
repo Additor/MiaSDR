@@ -1,5 +1,5 @@
 {
-  "id": "ce3f1f6d-cb8f-4005-a229-7f6abb6342f7",
+  "id": "7fc7b23e-0921-4489-83f3-e24140111d8e",
   "prevId": "2bc0b90b-f8a5-4656-bfa1-db9da6a0ead7",
   "version": "7",
   "dialect": "postgresql",
@@ -2609,6 +2609,13 @@
           "notNull": true,
           "default": 1
         },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -2739,6 +2746,10 @@
         "knowledge_documents_version_ck": {
           "name": "knowledge_documents_version_ck",
           "value": "\"knowledge_documents\".\"latest_version\" > 0"
+        },
+        "knowledge_documents_revision_ck": {
+          "name": "knowledge_documents_revision_ck",
+          "value": "\"knowledge_documents\".\"revision\" > 0"
         },
         "knowledge_documents_description_ck": {
           "name": "knowledge_documents_description_ck",

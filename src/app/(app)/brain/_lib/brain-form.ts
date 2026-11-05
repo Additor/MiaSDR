@@ -1,4 +1,4 @@
-import { BRAIN_FIELDS, brainFieldValue, type BrainField, type BrainFields } from "@/contexts/brain/domain/brain-fields";
+import { BRAIN_FIELDS, brainFieldValue, writeBrainField, type BrainField, type BrainFields } from "@/contexts/brain/domain/brain-fields";
 import type { BrainItemKind } from "@/contexts/brain/domain/brain-kinds";
 
 /** The Brain form's values as the inputs hold them: text, with a list as one item per line. */
@@ -27,12 +27,7 @@ function valueOf(field: BrainField, text: string): unknown {
 /** The body's `fields`. A dotted key is a nested object, as `structured_data` stores it. */
 export function fieldsOf(kind: BrainItemKind, values: BrainFormValues): BrainFields {
   const fields: BrainFields = {};
-  for (const field of BRAIN_FIELDS[kind].fields) {
-    const parts = field.key.split(".");
-    let at = fields;
-    for (const part of parts.slice(0, -1)) at = (at[part] ??= {}) as BrainFields;
-    at[parts[parts.length - 1]] = valueOf(field, values[field.key] ?? "");
-  }
+  for (const field of BRAIN_FIELDS[kind].fields) writeBrainField(fields, field.key, valueOf(field, values[field.key] ?? ""));
   return fields;
 }
 

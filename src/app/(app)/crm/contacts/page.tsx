@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { parsePageParam } from "@/shared/page-param";
 import { countOf } from "@/shared/format-number";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
@@ -110,7 +111,7 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
   const q = first(params.q)?.trim().slice(0, 100) ?? "";
   const asked = first(params.sort) as ContactSort | undefined;
   const sort: ContactSort = asked && SORTS.includes(asked) ? asked : "converted";
-  const page = Math.max(1, Math.trunc(Number(first(params.page))) || 1);
+  const page = parsePageParam(first(params.page));
   const askedOwner = ownerParam(first(params.owner)?.trim());
   const owner = askedOwner === actor.userId ? "me" : askedOwner;
   const askedStage = first(params.stage)?.trim();

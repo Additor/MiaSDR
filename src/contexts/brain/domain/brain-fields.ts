@@ -146,16 +146,20 @@ export const BRAIN_FIELDS: Record<BrainItemKind, BrainKindDefinition> = {
 
 const readPath = (data: BrainFields, key: string): unknown => key.split(".").reduce<unknown>((value, part) => (value && typeof value === "object" ? (value as BrainFields)[part] : undefined), data);
 
-function writePath(data: BrainFields, key: string, value: unknown): void {
+/** Stores `value` under a key of the field list, which a dotted key nests. */
+export function writeBrainField(data: BrainFields, key: string, value: unknown): void {
   const parts = key.split(".");
   let at = data;
   for (const part of parts.slice(0, -1)) at = (at[part] ??= {}) as BrainFields;
   at[parts[parts.length - 1]] = value;
 }
 
-/** Every leaf key of `raw`, dotted, so a stray nested key is seen. */
+/** Every leaf key of `raw`, dotted, so a stray nested key is seen. A key that holds a dot itself is never one a field reads, so it is marked as unknown. */
 function leafKeys(raw: BrainFields, prefix = ""): string[] {
-  return Object.entries(raw).flatMap(([key, value]) => (value && typeof value === "object" && !Array.isArray(value) ? leafKeys(value as BrainFields, `${prefix}${key}.`) : [`${prefix}${key}`]));
+  return Object.entries(raw).flatMap(([key, value]) => {
+    if (key.includes(".")) return [`"${prefix}${key}"`];
+    return value && typeof value === "object" && !Array.isArray(value) ? leafKeys(value as BrainFields, `${prefix}${key}.`) : [`${prefix}${key}`];
+  });
 }
 
 function parseValue(field: BrainField, raw: unknown): unknown {
@@ -206,7 +210,7 @@ function checkKindRules(kind: BrainItemKind, out: BrainFields): void {
 
 /**
  * The fields of one item, trimmed and in the list's order, or a `ValidationError` naming what is wrong. An empty value
- * means no value, so it is not stored. Postgres reorders `jsonb` keys, so comparing two values means parsing both first.
+ * means no value, so it is not stored.
  */
 export function parseBrainFields(kind: BrainItemKind, raw: BrainFields): BrainFields {
   const { fields } = BRAIN_FIELDS[kind];
@@ -218,7 +222,7 @@ export function parseBrainFields(kind: BrainItemKind, raw: BrainFields): BrainFi
     if (value === undefined) {
       if (field.required) throw new ValidationError(`${field.label} is required.`);
     } else {
-      writePath(out, field.key, value);
+      writeBrainField(out, field.key, value);
     }
   }
   checkKindRules(kind, out);
@@ -226,6 +230,18 @@ export function parseBrainFields(kind: BrainItemKind, raw: BrainFields): BrainFi
 }
 
 export const brainFieldValue = readPath;
+
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, inner]) => [key, sortedKeys(inner)]));
+  return value;
+}
+
+/**
+ * Whether two field values are the same. Postgres reorders `jsonb` keys, so the order does not count. It does not check the
+ * rules: an item stored under older limits must still take a valid edit.
+ */
+export const sameBrainFields = (a: BrainFields, b: BrainFields): boolean => JSON.stringify(sortedKeys(a)) === JSON.stringify(sortedKeys(b));
 
 /** The value as a person reads it: a list on one line, a price with its currency. */
 function displayValue(field: BrainField, value: unknown, data: BrainFields): string {

@@ -23,6 +23,8 @@ export interface BrainItemRow {
   alwaysInclude: boolean;
   active: boolean;
   version: number;
+  /** Rises with every change. An edit of the fields sends the one it started from. */
+  revision: number;
   /** A document from before the kinds existed. */
   legacy: boolean;
   updatedAt: Date;
@@ -44,12 +46,12 @@ export interface BrainListFilter {
 
 export interface BrainStore {
   list(organizationId: string, filter: BrainListFilter): Promise<{ rows: BrainItemRow[]; total: number }>;
-  /** Active documents a person still has to sort. */
-  countLegacy(organizationId: string): Promise<number>;
+  /** Documents a person still has to sort, active or archived. */
+  countLegacy(organizationId: string, active: boolean): Promise<number>;
   hasActiveCompanyProfile(organizationId: string): Promise<boolean>;
   get(organizationId: string, id: string): Promise<BrainItemDetail | null>;
   create(organizationId: string, actorUserId: string, item: NewBrainItem): Promise<{ id: string }>;
-  /** Locks the item and saves what `decide` returns. False when the item is not in the organization. */
+  /** Locks the item and saves what `decide` returns, writing nothing when it changes nothing. False when the item is not in the organization. */
   update(organizationId: string, actorUserId: string, id: string, decide: (current: BrainItemState) => BrainItemChange): Promise<boolean>;
 }
 
@@ -70,8 +72,8 @@ export async function listBrainItems(store: BrainStore, actor: Actor, query: Bra
     limit: BRAIN_PAGE_SIZE,
     offset: (page - 1) * BRAIN_PAGE_SIZE,
   };
-  const [{ rows, total }, needsSorting, hasCompanyProfile] = await Promise.all([store.list(actor.organizationId, filter), store.countLegacy(actor.organizationId), store.hasActiveCompanyProfile(actor.organizationId)]);
-  return { rows, total, page, pageSize: BRAIN_PAGE_SIZE, needsSorting, hasCompanyProfile };
+  const [{ rows, total }, needsSorting] = await Promise.all([store.list(actor.organizationId, filter), store.countLegacy(actor.organizationId, filter.active)]);
+  return { rows, total, page, pageSize: BRAIN_PAGE_SIZE, needsSorting };
 }
 
 export async function getBrainItem(store: BrainStore, actor: Actor, id: string): Promise<BrainItemDetail> {

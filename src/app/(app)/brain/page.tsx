@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { ListPager, pageCountOf } from "@/components/shell/list-pager";
@@ -19,6 +19,7 @@ import { brainHasActiveCompanyProfile, listBrainItems, type BrainView } from "@/
 import { BRAIN_GROUP_LABELS, BRAIN_KIND_LABELS, type BrainGroup } from "@/contexts/brain/domain/brain-kinds";
 import { brainStore } from "@/contexts/brain/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { parsePageParam } from "@/shared/page-param";
 import { AddBrainItemButton } from "./_components/brain-buttons";
 
 export const metadata: Metadata = { title: "Brain" };
@@ -43,15 +44,25 @@ export default function BrainPage({ searchParams }: PageProps<"/brain">) {
   );
 }
 
+/** The header and the list's empty state both ask, so one request reads it once. */
+const hasCompanyProfileNow = cache(async () => brainHasActiveCompanyProfile(brainStore, toActor(await requireOrgContext())));
+
 async function HeaderAdd() {
   await connection();
-  const actor = toActor(await requireOrgContext());
-  return <AddBrainItemButton hasCompanyProfile={await brainHasActiveCompanyProfile(brainStore, actor)} />;
+  return <AddBrainItemButton hasCompanyProfile={await hasCompanyProfileNow()} />;
 }
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 const GROUPS = Object.keys(BRAIN_GROUP_LABELS) as BrainGroup[];
 const VIEWS: readonly BrainView[] = ["all", ...GROUPS, "needs_sorting"];
+
+const EMPTY_DESCRIPTIONS: Record<BrainView, string> = {
+  all: "Add your company, products and pricing. Reply drafts draw on them.",
+  company: "Add your company, products and pricing. Reply drafts draw on them.",
+  market: "Add your ICPs, competitors, case studies and testimonials. Reply drafts draw on case studies so far.",
+  skills: "Add the objections you hear and who you qualify. Reply drafts draw on objections so far.",
+  needs_sorting: "Documents from before Brain had kinds wait here. There are none left.",
+};
 
 function brainHref(state: { view: BrainView; archived: boolean; q: string; page?: number }): string {
   const params = new URLSearchParams();
@@ -71,8 +82,7 @@ async function BrainList({ searchParams }: { searchParams: PageProps<"/brain">["
   const view: BrainView = asked && VIEWS.includes(asked) ? asked : "all";
   const archived = first(params.status) === "archived";
   const q = first(params.q)?.trim().slice(0, 100) ?? "";
-  const requested = Math.max(1, Math.trunc(Number(first(params.page))) || 1);
-  const { rows, total, page, pageSize, needsSorting, hasCompanyProfile } = await listBrainItems(brainStore, actor, { view, q, archived, page: requested });
+  const [{ rows, total, page, pageSize, needsSorting }, hasCompanyProfile] = await Promise.all([listBrainItems(brainStore, actor, { view, q, archived, page: parsePageParam(first(params.page)) }), hasCompanyProfileNow()]);
   const pageCount = pageCountOf(total, pageSize);
   const now = new Date().toISOString();
 
@@ -111,7 +121,7 @@ async function BrainList({ searchParams }: { searchParams: PageProps<"/brain">["
         ) : (
           <EmptyState
             title={view === "all" ? "Brain is empty" : "Nothing here yet"}
-            description="Add your company, products, pricing and customers. Reply drafts draw on them, and your agents can too."
+            description={EMPTY_DESCRIPTIONS[view]}
             action={<AddBrainItemButton hasCompanyProfile={hasCompanyProfile} variant="outline" />}
           />
         )

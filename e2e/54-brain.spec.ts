@@ -117,6 +117,24 @@ test.describe("Brain", () => {
     await expect(page.getByText("Another company profile is active.", { exact: false })).toBeVisible();
   });
 
+  test("refuses a price it cannot read instead of dropping it", async ({ page, watch }) => {
+    watch.tolerate(/response 4\d\d: POST .*\/api\/brain/, /Failed to load resource.*4\d\d/);
+    await signInAdmin(page);
+    await page.goto("/brain");
+    await page.getByRole("button", { name: "Add to Brain" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Kind").click();
+    await page.getByRole("option", { name: "Pricing" }).click();
+    await dialog.getByLabel("Plan name").fill(`Pro ${Date.now()}`);
+    await dialog.getByLabel("Currency").fill("USD");
+    await dialog.getByLabel("Monthly price").fill("49 USD");
+    await dialog.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(dialog.getByText("Monthly price must be a number", { exact: false })).toBeVisible();
+    await dialog.getByLabel("Monthly price").fill("49");
+    await dialog.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  });
+
   test("clears an optional topic and shows no page for an unknown item", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/brain");

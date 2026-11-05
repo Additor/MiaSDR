@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { useApiAction } from "@/app/_lib/use-api-action";
+import { isRestoreBlocked } from "@/contexts/brain/domain/brain-item";
 import { BrainItemDialog, type BrainDialogItem } from "./brain-item-dialog";
 
 export function AddBrainItemButton({ hasCompanyProfile, variant = "default" }: { hasCompanyProfile: boolean; variant?: "default" | "outline" }) {
@@ -22,7 +23,7 @@ export function AddBrainItemButton({ hasCompanyProfile, variant = "default" }: {
 }
 
 /** Edit and Archive or Restore on an item's page. Only one company profile can be active, so another active one holds Restore. */
-export function BrainItemActions({ item, active, restoreBlocked, hasCompanyProfile }: { item: BrainDialogItem; active: boolean; restoreBlocked: boolean; hasCompanyProfile: boolean }) {
+export function BrainItemActions({ item, active, hasCompanyProfile }: { item: BrainDialogItem; active: boolean; hasCompanyProfile: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function BrainItemActions({ item, active, restoreBlocked, hasCompanyProfi
       <Button variant="outline" onClick={() => setEditing(true)}>
         {item.legacyText !== null ? "Sort" : "Edit"}
       </Button>
-      <Button variant="ghost" disabled={isBusy(item.id) || (!active && restoreBlocked)} onClick={() => void toggle()}>
+      <Button variant="ghost" disabled={isBusy(item.id) || isRestoreBlocked({ kind: item.kind, active }, hasCompanyProfile)} onClick={() => void toggle()}>
         {isBusy(item.id) ? (active ? "Archiving…" : "Restoring…") : active ? "Archive" : "Restore"}
       </Button>
       <BrainItemDialog open={editing} onOpenChange={setEditing} item={item} hasCompanyProfile={hasCompanyProfile} />
