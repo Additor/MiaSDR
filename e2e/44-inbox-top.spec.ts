@@ -73,7 +73,9 @@ test.describe("the top of the Inbox is about conversations", () => {
     const waiting = page.getByTestId("waiting-in-actions");
     await expect(waiting).toHaveText(/^\d+ waiting in Actions$/);
     // The number is the one the sidebar shows beside Actions.
-    await expect(page.getByTestId("actions-pending")).toHaveText(new RegExp(`^${(await waiting.innerText()).split(" ")[0]}\\b`));
+    // innerText puts a line break after the number once this flex link is rendered, and a space while it waits in the hidden stream.
+    const count = (await waiting.innerText()).match(/^\d+/)?.[0];
+    await expect(page.getByTestId("actions-pending")).toHaveText(new RegExp(`^${count}\\b`));
     await waiting.click();
     await expect(page).toHaveURL(/\/actions$/);
   });
