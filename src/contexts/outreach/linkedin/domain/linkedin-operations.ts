@@ -47,8 +47,8 @@ export function asyncSearchLimit(input: { maxResults: number; found: number; quo
   return Math.max(0, Math.min(input.maxResults - input.found, input.quotaLeft));
 }
 
-/** The note on a search the day's allowance cut short. Null when the read was not cut. */
+/** The note on a search one read cut short. Null when it was not cut. */
 export function allowanceCutNote(input: { wanted: number; limit: number; received: number }): string | null {
   if (input.limit >= input.wanted || input.received < input.limit) return null;
-  return `Read ${input.received} people, this account's search allowance for today. A higher allowance, or narrower search URLs, reach the rest.`;
+  return `Read ${input.received} people, as many as one read takes or this account's allowance leaves today. Narrower search URLs, or a higher allowance, reach the rest.`;
 }

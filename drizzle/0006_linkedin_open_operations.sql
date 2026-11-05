@@ -20,6 +20,7 @@ ALTER TABLE "linkedin_accounts" ADD COLUMN "inbox_gap_until" timestamp with time
 ALTER TABLE "linkedin_connect_links" ADD COLUMN "reconnect_account_id" uuid;--> statement-breakpoint
 ALTER TABLE "linkedin_enrollment_details" ADD COLUMN "member_urn" text;--> statement-breakpoint
 ALTER TABLE "linkedin_enrollment_details" ADD COLUMN "resolve_next_api" text;--> statement-breakpoint
+ALTER TABLE "linkedin_enrollment_details" ADD COLUMN "resolve_next_account" uuid;--> statement-breakpoint
 ALTER TABLE "linkedin_enrollment_details" ADD COLUMN "reply_checked_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "send_attempts" ADD COLUMN "provider_operation_id" text;--> statement-breakpoint
 ALTER TABLE "send_attempts" ADD COLUMN "provider_operation_account" text;--> statement-breakpoint

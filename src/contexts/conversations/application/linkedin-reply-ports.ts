@@ -34,13 +34,13 @@ export interface LinkedInSentFinder {
   findSent(input: LinkedInReplyAddress & { text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | null>;
   /** How a send the vendor took stands. A throw means the read failed, never that the send was refused. */
   progress(input: { organizationId: string; accountId: string; account: string; operation: string }): Promise<LinkedInReplyProgress>;
-  /** `cancelled`: it will not run. `already_finished`: `progress` has the outcome. A throw leaves it as it was. */
+  /** `cancelled`: it stops where it is, and what it did stays done. `already_finished`: `progress` has the outcome. A throw leaves it as it was. */
   cancel(input: { organizationId: string; accountId: string; account: string; operation: string }): Promise<"cancelled" | "already_finished">;
 }
 
 export type LinkedInReplyProgress =
-  /** `held`: the vendor holds it for its working hours, so nothing has started. */
-  | { state: "waiting"; held: boolean }
+  /** `held`: the vendor holds it for its working hours. `started`: it is running, so a cancel may come after it went out. */
+  | { state: "waiting"; held: boolean; started: boolean }
   | { state: "finished"; messageId: string | null }
   | { state: "failed"; error: LinkedInReplyError };
 

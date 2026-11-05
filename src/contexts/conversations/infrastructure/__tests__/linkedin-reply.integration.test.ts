@@ -517,6 +517,55 @@ describeDb("LinkedIn conversation replies", () => {
       expect((await one("select limit_reached_until from linkedin_accounts where id = $1", [f.account])).limit_reached_until).not.toBeNull();
     });
 
+    it("leaves a person to decide when the send was running as it was stopped", async () => {
+      const { f } = await submitted();
+      f.fake.startOperations();
+      await sql`insert into contact_policies (person_id, organization_id, do_not_contact, reason, source, set_at) values (${f.personId}, ${f.org}, true, 'asked', 'human', now())`;
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("delivery_uncertain");
+      expect((await draft(f)).status).toBe("delivery_uncertain");
+    });
+
+    it("does not hold the chat for good when a vendor says too late and still running", async () => {
+      const { f } = await submitted();
+      f.fake.cancelAnswer = () => "already_finished";
+      await age(f, 120);
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("sending");
+      await age(f, 24 * 60);
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("delivery_uncertain");
+    });
+
+    it("does not let one failing reply stop the reconcile every vendor needs", async () => {
+      const stuck = await submitted();
+      await stuck.f.fake.finishOperations();
+      const plain = await fixture();
+      plain.fake.messageBehavior = () => "timeout-after-accept";
+      await send(plain);
+      await age(plain, 15);
+      const finder = plain.deps.sender;
+      const throwing = {
+        ...store,
+        listSubmitted: async () => [{ send: { ...(await store.listSubmitted(25))[0].send }, startedAt: new Date() }],
+        markSent: async (send: Parameters<typeof store.markSent>[0], ...rest: [Parameters<typeof store.markSent>[1], Date, string?]) => {
+          if (rest[2] === undefined) throw new Error("boom");
+          return store.markSent(send, ...rest);
+        },
+      };
+      const sender = { ...finder, progress: async () => ({ state: "finished" as const, messageId: "m" }) };
+      const report = await app.reconcileLinkedInReplies({ store: throwing, sender, now: () => new Date() });
+      expect(report.found).toBeGreaterThanOrEqual(1);
+      expect((await attempt(plain)).status).toBe("reconciled");
+    });
+
+    it("stops reading a vendor at its share of the tick", async () => {
+      const { f } = await submitted();
+      await f.fake.finishOperations();
+      await app.reconcileLinkedInReplies(f.deps, 25, Date.now() - 1);
+      expect((await attempt(f)).status).toBe("sending");
+    });
+
     it("stops a send to someone just marked do not contact", async () => {
       const { f } = await submitted();
       await sql`insert into contact_policies (person_id, organization_id, do_not_contact, reason, source, set_at) values (${f.personId}, ${f.org}, true, 'asked', 'human', now())`;

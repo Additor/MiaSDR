@@ -71,31 +71,56 @@ async function settleOne(deps: LinkedInSettleDeps, operation: OpenLinkedInOperat
 
   const step = nextOperationStep({ submittedAt: operation.submittedAt, now, read: read ? { held: read.held } : null, subjectLive: await subjectLive(deps, operation) });
   if (step === "wait") return false;
-  if (step === "give_up") return (await deps.operations.close(operation.id)) && (await afterTimeout(deps, operation), true);
+  if (step === "give_up") return closeAfterTimeout(deps, operation);
 
   let answer: "cancelled" | "already_finished";
   try {
     answer = await (gateway as LinkedInGateway).operations!.cancel({ account: operation.providerAccountRef, operation: operation.operation });
   } catch {
     // Not confirmed, so it may still run. It stays open, and after a day it closes by its kind.
-    if (!operationGone(operation.submittedAt, now)) return false;
-    return (await deps.operations.close(operation.id)) && (await afterTimeout(deps, operation), true);
+    return operationGone(operation.submittedAt, now) ? closeAfterTimeout(deps, operation) : false;
   }
   if (answer === "already_finished") {
     const last = await readProgress(gateway?.operations, operation);
-    return last && last.state !== "waiting" ? finish(deps, gateway as LinkedInGateway, operation, last) : false;
+    if (last && last.state !== "waiting") return finish(deps, gateway as LinkedInGateway, operation, last);
+    // A vendor that says "too late" and "still running" forever must not hold the account forever.
+    return operationGone(operation.submittedAt, now) ? closeAfterTimeout(deps, operation) : false;
   }
   if (!(await deps.operations.close(operation.id))) return false;
-  if (step === "cancel_stopped") await afterStopped(deps, operation);
+  if (step === "cancel_stopped") await afterStopped(deps, operation, read?.state === "waiting" && read.started);
   else if (step === "cancel_held") await afterHeld(deps, operation);
   else await afterTimeout(deps, operation);
   return true;
 }
 
+async function closeAfterTimeout(deps: LinkedInSettleDeps, operation: OpenLinkedInOperation): Promise<boolean> {
+  if (!(await deps.operations.close(operation.id))) return false;
+  await afterTimeout(deps, operation);
+  return true;
+}
+
+/**
+ * Work that must finish before the row closes, because nothing else would pick it up, is tried again each tick. After a day it
+ * gives up by the action's kind, so it cannot hold the account for good.
+ */
+async function retryWhileOpen<T>(deps: LinkedInSettleDeps, operation: OpenLinkedInOperation, work: () => Promise<T>): Promise<{ done: T } | { closed: boolean }> {
+  try {
+    return { done: await work() };
+  } catch (error) {
+    if (!operationGone(operation.submittedAt, deps.engine.clock.now())) throw error;
+    return { closed: await closeAfterTimeout(deps, operation) };
+  }
+}
+
 /** The row closes before the outcome is written. A crash between the two leaves the subject to reconciling, which never sends on a guess. */
 async function finish(deps: LinkedInSettleDeps, gateway: LinkedInGateway, operation: OpenLinkedInOperation, read: Exclude<Read, { state: "waiting" }>): Promise<boolean> {
-  // A look at a thread reads the thread before it closes, so a failed read of it is asked again.
-  const deliveries = operation.kind === "reply_check" && read.state === "finished" && operation.subject ? await gateway.operations!.readThread({ account: operation.providerAccountRef, to: operation.subject.to, since: operation.subject.since }) : [];
+  if (operation.kind === "search" && read.state === "finished" && operation.subject) {
+    // Its results exist nowhere else, so the row closes in the transaction that stores them.
+    const { subject, rowLimit, id } = operation;
+    const written = await retryWhileOpen(deps, operation, () => recordSearchRead(deps.search, subject, read.value as SearchPage, rowLimit, id));
+    return "done" in written || written.closed;
+  }
+  if (operation.kind === "reply_check" && read.state === "finished" && operation.subject) return finishReplyCheck(deps, gateway, operation);
   if (!(await deps.operations.close(operation.id))) return false;
   if (!operation.subject) return true;
   const { engine } = deps;
@@ -116,26 +141,36 @@ async function finish(deps: LinkedInSettleDeps, gateway: LinkedInGateway, operat
       return true;
     case "search": {
       const claim = operation.subject;
-      if (read.state === "finished") {
-        await recordSearchRead(deps.search, claim, read.value as SearchPage, operation.rowLimit);
-        return true;
-      }
+      const { error } = read as { error: LinkedInGatewayError };
       // A refusal read nobody. Anything else may have read, so the allowance stays charged.
-      if (read.error.kind === "definite") await deps.search.store.returnAllowance(claim, operation.rowLimit, engine.clock.now());
-      await handleSearchError(deps.search, claim, read.error);
+      if (error.kind === "definite") await deps.search.store.returnAllowance(claim, operation.rowLimit, engine.clock.now());
+      await handleSearchError(deps.search, claim, error);
       return true;
     }
-    case "reply_check": {
-      const claim = operation.subject;
-      if (read.state === "failed") {
-        await handleReplyCheckError(engine, claim, read.error);
-        return true;
-      }
-      for (const payload of deliveries) await receiveLinkedInWebhook(deps.inbound, { organizationId: claim.organizationId, provider: operation.provider, payload });
-      await engine.store.markReplyChecked(claim.enrollmentId, engine.clock.now());
+    case "reply_check":
+      await handleReplyCheckError(engine, operation.subject, (read as { error: LinkedInGatewayError }).error);
       return true;
-    }
   }
+}
+
+/**
+ * Files what the person wrote before the row closes, so a thread that cannot be read yet is asked again. A reply that could not be
+ * filed must not count as checked: the lead would stay live and get the next message. It waits, and the replay or a person takes it.
+ */
+async function finishReplyCheck(deps: LinkedInSettleDeps, gateway: LinkedInGateway, operation: Extract<OpenLinkedInOperation, { kind: "reply_check" }>): Promise<boolean> {
+  const { engine } = deps;
+  const claim = operation.subject as NonNullable<typeof operation.subject>;
+  const filed = await retryWhileOpen(deps, operation, async () => {
+    const deliveries = await gateway.operations!.readThread({ account: operation.providerAccountRef, to: claim.to, since: claim.since });
+    const results = [];
+    for (const payload of deliveries) results.push(await receiveLinkedInWebhook(deps.inbound, { organizationId: claim.organizationId, provider: operation.provider, payload }));
+    return results.every((result) => result.status === "done" || result.status === "skipped" || result.status === "duplicate");
+  });
+  if (!("done" in filed)) return filed.closed;
+  if (!(await deps.operations.close(operation.id))) return false;
+  if (filed.done) await engine.store.markReplyChecked(claim.enrollmentId, operation.submittedAt);
+  else await engine.store.deferReplyCheck(claim.enrollmentId, new Date(engine.clock.now().getTime() + REPLY_CHECK_RETRY_MINUTES * 60_000));
+  return true;
 }
 
 async function finishLookup(deps: LinkedInSettleDeps, operation: Extract<OpenLinkedInOperation, { kind: "lookup" }>, read: Exclude<OperationProgress<"lookup">, { state: "waiting" }>): Promise<void> {
@@ -159,14 +194,20 @@ async function finishLookup(deps: LinkedInSettleDeps, operation: Extract<OpenLin
   await handleLookupError(engine, claim, read.error);
 }
 
-/** A confirmed cancel of something nobody wants any more. A read stays charged: the account did start it. */
-async function afterStopped(deps: LinkedInSettleDeps, operation: OpenLinkedInOperation): Promise<void> {
+/**
+ * A confirmed cancel of something nobody wants any more. One that had started may have done its work: a message then waits for a
+ * person, because giving it back could send it again, and a read stays charged. An invitation goes back, since LinkedIn answers a repeat as a duplicate.
+ */
+async function afterStopped(deps: LinkedInSettleDeps, operation: OpenLinkedInOperation, started: boolean): Promise<void> {
   if (!operation.subject) return;
   const { engine } = deps;
-  if (operation.kind === "invitation" || operation.kind === "message") {
+  if (operation.kind === "message" && started) {
+    await engine.store.markUnknown(operation.subject, "This message was stopped while it was going out, so it may have gone. Check the chat and settle it.");
+  } else if (operation.kind === "invitation" || operation.kind === "message") {
     const reason = await engine.store.checkBlockers(operation.subject);
     await engine.store.abandon(operation.subject, reason ?? "enrollment_stopped", engine.clock.now());
   } else if (operation.kind === "search") {
+    if (!started) await deps.search.store.returnAllowance(operation.subject, operation.rowLimit, engine.clock.now());
     await deps.search.store.release(operation.subject, { error: null, retryAt: null, unknownFailure: false });
   }
 }

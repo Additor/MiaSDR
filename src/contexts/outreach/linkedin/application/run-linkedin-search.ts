@@ -18,6 +18,8 @@ export type SearchOutcome =
   | { kind: "paused"; reason: "limit" | "disconnected" | "no_gateway" };
 
 const NO_GATEWAY_RETRY_MINUTES = 5;
+/** Another account may only be busy, so this looks again soon. A look costs no call to the provider. */
+const ALLOWANCE_RETRY_MINUTES = 15;
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -40,7 +42,7 @@ export async function runNextSearchPage(deps: LinkedInSearchEngineDeps): Promise
   const wanted = claim.maxResults - claim.found;
   const limit = Math.min(asyncSearchLimit({ maxResults: claim.maxResults, found: claim.found, quotaLeft: claim.quotaLeft }), gateway.operations?.maxSearchRead(claim.url) ?? Number.POSITIVE_INFINITY);
   if (gateway.operations && limit < MIN_ASYNC_SEARCH_READ && limit < wanted) {
-    await deps.store.release(claim, { error: "The account's search allowance for today is nearly used. The search continues tomorrow.", retryAt: nextUtcDay(now), unknownFailure: false });
+    await deps.store.release(claim, { error: "The search allowance for today is nearly used. The search continues when an account has room.", retryAt: new Date(now.getTime() + ALLOWANCE_RETRY_MINUTES * 60_000), unknownFailure: false });
     return { kind: "paused", reason: "limit" };
   }
 
@@ -79,10 +81,8 @@ export async function runNextSearchPage(deps: LinkedInSearchEngineDeps): Promise
   return recorded ? { kind: "page", kept: kept.length, done, skippedContact } : { kind: "dropped" };
 }
 
-const nextUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-
 /** Stores a read a vendor ran in one action. There is no next page, so the search ends here, and the allowance keeps what it read. */
-export async function recordSearchRead(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, page: SearchPage, reserved: number): Promise<SearchOutcome> {
+export async function recordSearchRead(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, page: SearchPage, reserved: number, openOperation: string): Promise<SearchOutcome> {
   const kept = page.items.slice(0, itemsToKeep({ pageSize: page.items.length, maxResults: claim.maxResults, alreadyFound: claim.found }));
   let skippedContact = 0;
   const recorded = await deps.store.recordPage(
@@ -95,6 +95,7 @@ export async function recordSearchRead(deps: LinkedInSearchEngineDeps, claim: Se
       },
       received: page.items.length,
       reserved,
+      openOperation,
       note: allowanceCutNote({ wanted: claim.maxResults - claim.found, limit: reserved, received: page.items.length }),
       nextCursor: null,
       totalEstimate: page.totalEstimate,

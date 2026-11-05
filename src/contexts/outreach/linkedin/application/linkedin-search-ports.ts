@@ -102,8 +102,11 @@ export interface LinkedInSearchEngineStore {
    */
   recordPage(
     claim: SearchPageClaim,
-    /** `reserved`: what the account's allowance already holds for this read. `note`: stays on the finished search for a person. */
-    page: { results: (tx: DbHandle) => Promise<FoundResult[]>; received: number; reserved?: number; note?: string | null; nextCursor: string | null; totalEstimate: number | null; done: boolean },
+    /**
+     * `reserved`: what the account's allowance already holds for this read. `note`: stays on the finished search for a person.
+     * `openOperation`: the action this read came from. It closes in this transaction, so a failure leaves it to be read again, and a repeat writes nothing.
+     */
+    page: { results: (tx: DbHandle) => Promise<FoundResult[]>; received: number; reserved?: number; note?: string | null; openOperation?: string; nextCursor: string | null; totalEstimate: number | null; done: boolean },
     now: Date,
     gapSeconds: number,
   ): Promise<RecordedPage | null>;

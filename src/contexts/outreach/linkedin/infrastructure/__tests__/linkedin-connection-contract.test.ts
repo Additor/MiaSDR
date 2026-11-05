@@ -39,8 +39,7 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
   };
   const connectLinks = {
     expireDue: vi.fn(async () => []),
-    countPending: vi.fn(async () => 0),
-    create: vi.fn(async () => undefined),
+    create: vi.fn(async () => true),
     fail: vi.fn(async () => undefined),
     noteError: vi.fn(async () => undefined),
     complete: vi.fn(async () => true),

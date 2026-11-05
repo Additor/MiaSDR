@@ -110,8 +110,8 @@ export interface OperationValues {
 }
 
 export type OperationProgress<K extends OpenOperationKind> =
-  /** `held`: the vendor is holding it for its working hours, so nothing has started. */
-  | { state: "waiting"; held: boolean }
+  /** `held`: the vendor is holding it for its working hours. `started`: it is running, so a cancel may come after it did its work. */
+  | { state: "waiting"; held: boolean; started: boolean }
   | { state: "finished"; value: OperationValues[K] }
   /** The vendor says the action failed. `error.kind` says whether a write may have gone out. */
   | { state: "failed"; error: LinkedInGatewayError };
@@ -122,7 +122,7 @@ export type OperationProgress<K extends OpenOperationKind> =
  */
 export interface LinkedInGatewayOperations {
   progress<K extends OpenOperationKind>(input: { account: string; operation: string; kind: K }): Promise<OperationProgress<K>>;
-  /** `already_finished`: too late to stop, so `progress` has the outcome. Only `cancelled` means it will not run. */
+  /** `already_finished`: too late to stop, so `progress` has the outcome. `cancelled`: it stops where it is, and what it already did stays done. */
   cancel(input: { account: string; operation: string }): Promise<"cancelled" | "already_finished">;
   /** The most people one search action reads on this URL. */
   maxSearchRead(searchUrl: string): number;
@@ -253,10 +253,10 @@ export interface LinkedInVendor {
   /** For a vendor whose link does not report back. */
   readonly connectSession: {
     /**
-     * How the link stands. `link.ref` is what `createConnectLink` named. `account`: the account that signed in, when it is not
-     * `link.ref`. `error`: a sentence for a failed link, when the vendor said why.
+     * How the link stands. `link.ref` is what `createConnectLink` named. `knownAccounts`: this vendor's accounts here already, which a
+     * new sign-in is not. `account`: the account that signed in, when it is not `link.ref`. `error`: a sentence for a failed link, when the vendor said why.
      */
-    status(credentials: VendorCredentials, link: { ref: string; createdAt: Date; reconnectAccount: string | null }): Promise<{ state: "pending" | "connected" | "failed"; account?: string; error?: string }>;
+    status(credentials: VendorCredentials, link: { ref: string; createdAt: Date; reconnectAccount: { ref: string; username: string | null } | null; knownAccounts: readonly string[] }): Promise<{ state: "pending" | "connected" | "failed"; account?: string; error?: string }>;
     /** Removes what `createConnectLink` named at the vendor. The caller checks that no row here uses it. */
     cancel(credentials: VendorCredentials, ref: string): Promise<void>;
     /** True: two open links could not be told apart, so only one may be open. */

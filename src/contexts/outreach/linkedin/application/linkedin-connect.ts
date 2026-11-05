@@ -73,15 +73,15 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   }
 
   await expireConnectLinks(deps, actor.organizationId, vendor, credentials, now);
-  if ((await deps.connectLinks.countPending(actor.organizationId, now)) >= (vendor.connectSession?.oneLinkAtATime ? 1 : MAX_PENDING_LINKS)) {
-    throw new ConflictError(vendor.connectSession ? "Several connection links are still open. Finish or cancel one." : "Several connection links are still open. Finish one or wait a few minutes.");
-  }
-
   const id = randomUUID();
   const secret = randomBytes(24).toString("base64url");
   const providerName = `mia-${randomBytes(9).toString("base64url")}`;
   const expiresAt = new Date(now.getTime() + vendor.connectLinkMinutes * 60_000);
-  await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId, reconnectAccountId: input.reconnectAccountId ?? null });
+  const stored = await deps.connectLinks.create(
+    { id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId, reconnectAccountId: input.reconnectAccountId ?? null },
+    { maxPending: vendor.connectSession?.oneLinkAtATime ? 1 : MAX_PENDING_LINKS, now },
+  );
+  if (!stored) throw new ConflictError(vendor.connectSession?.oneLinkAtATime ? "A connection link is still open. Finish or cancel it." : vendor.connectSession ? "Several connection links are still open. Finish or cancel one." : "Several connection links are still open. Finish one or wait a few minutes.");
 
   const urls = vendor.connectCallback?.urls({ appUrl: deps.appUrl, linkId: id, secret }) ?? null;
   const notify = urls !== null && !isLocalOrigin(deps.appUrl);
@@ -196,7 +196,12 @@ export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Acto
   const ref = link.providerAccountId;
   try {
     const reconnecting = link.reconnectAccountId ? (await deps.accounts.list(actor.organizationId, now)).find((a) => a.id === link.reconnectAccountId) : undefined;
-    const session = await vendor.connectSession.status(credentials, { ref, createdAt: link.createdAt, reconnectAccount: reconnecting?.providerAccountId ?? null });
+    const session = await vendor.connectSession.status(credentials, {
+      ref,
+      createdAt: link.createdAt,
+      reconnectAccount: reconnecting ? { ref: reconnecting.providerAccountId, username: reconnecting.username } : null,
+      knownAccounts: await deps.accounts.accountRefs(actor.organizationId, vendor.key),
+    });
     if (session.state === "pending") return linkState("pending");
     if (session.state === "failed") {
       // A reconnect starts from a sign-in the vendor already calls failed, so until the person signs in again this says nothing. Cancel or the expiry ends the link.

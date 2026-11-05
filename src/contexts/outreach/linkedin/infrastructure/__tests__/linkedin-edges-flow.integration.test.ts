@@ -382,6 +382,15 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       });
     });
 
+    it("lets only one of two links at once through when the vendor allows one", async () => {
+      const f = await org();
+      const { drizzleLinkedInConnectStore: store } = await import("../drizzle-linkedin-connect-store");
+      const now = new Date();
+      const link = () => ({ id: crypto.randomUUID(), organizationId: f.id, providerName: `mia-${uniqueKey()}`, secretHash: "a".repeat(64), expiresAt: new Date(now.getTime() + 3_600_000), createdBy: null as unknown as string, ownerUserId: null, reconnectAccountId: null });
+      const answers = await Promise.all([store.create(link(), { maxPending: 1, now }), store.create(link(), { maxPending: 1, now })]);
+      expect(answers.filter(Boolean)).toHaveLength(1);
+    });
+
     it("keeps the link for 48 hours, and names no callback", async () => {
       const t = await setup("pending", { member: "ACoAAx", slug: "x" });
       expect(t.link.notify).toBe(false);

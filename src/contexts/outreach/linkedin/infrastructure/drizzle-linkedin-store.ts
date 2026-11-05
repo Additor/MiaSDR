@@ -214,7 +214,9 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         }
       }
 
-      const message = messageCapReached ? null : await claimSend("message", pickMinutes(rules.messageGapMinutes, options.random), dueMessages);
+      // A row another worker held above was skipped there, so this query keeps the same rule rather than take it unread.
+      const readSinceGap = account.inboxGapUntil ? sql`and d.reply_checked_at >= ${account.inboxGapUntil.toISOString()}::timestamptz` : sql``;
+      const message = messageCapReached ? null : await claimSend("message", pickMinutes(rules.messageGapMinutes, options.random), (exclude) => dueMessages(sql`${readSinceGap} ${exclude}`));
       if (message) return message;
 
       // 2. An invitation, inside the daily and weekly limits (claims in flight and unknown outcomes count).
@@ -279,6 +281,9 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           and (e.linkedin_account_id is null or e.linkedin_account_id = ${account.id})
           and ${senderListed(account.id)}
           and not exists (select 1 from linkedin_open_operations o where o.kind = 'lookup' and o.subject_id = e.id)
+          -- A fallback stays on the account whose classic lookup led to it, while that account can still run it.
+          and (d.resolve_next_account is null or d.resolve_next_account = ${account.id}
+            or not exists (select 1 from linkedin_accounts next_a where next_a.id = d.resolve_next_account and next_a.status = 'connected'))
         order by c.created_at asc, e.created_at asc
         limit 1
         for update of e skip locked
@@ -413,7 +418,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   },
 
   async moveResolveToApi(claim, api, now) {
-    await db.update(linkedinEnrollmentDetails).set({ resolveNextApi: api, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
+    await db.update(linkedinEnrollmentDetails).set({ resolveNextApi: api, resolveNextAccount: claim.account.id, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
   },
 
   async resolveBySlug(claim, slug, now) {
@@ -425,7 +430,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         await failForSlugCollision(tx, claim.enrollmentId, now);
         return;
       }
-      await tx.update(linkedinEnrollmentDetails).set({ resolveNextApi: null, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
+      await tx.update(linkedinEnrollmentDetails).set({ resolveNextApi: null, resolveNextAccount: null, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
     });
   },
 
@@ -460,6 +465,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           resolveRetryCount: 0,
           resolveNextAttemptAt: null,
           resolveNextApi: null,
+          resolveNextAccount: null,
           resolveLastError: null,
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
@@ -481,6 +487,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           resolveLastError: error.slice(0, 500),
           resolveNextAttemptAt: nextAttemptAt,
           resolveNextApi: null,
+          resolveNextAccount: null,
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       if (exhausted) {
@@ -593,7 +600,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 async function failForSlugCollision(tx: Tx, enrollmentId: string, now: Date) {
   await tx
     .update(linkedinEnrollmentDetails)
-    .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveNextApi: null, resolveLastError: SLUG_COLLISION_REASON })
+    .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveNextApi: null, resolveNextAccount: null, resolveLastError: SLUG_COLLISION_REASON })
     .where(eq(linkedinEnrollmentDetails.enrollmentId, enrollmentId));
   await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("profile_lookup_failed", SLUG_COLLISION_REASON), now);
 }

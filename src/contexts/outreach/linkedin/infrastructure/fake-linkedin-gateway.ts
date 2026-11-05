@@ -31,6 +31,7 @@ interface FakeOperation {
   run: () => Promise<unknown>;
   outcome: { value: unknown } | { error: LinkedInGatewayError } | null;
   held: boolean;
+  started: boolean;
 }
 
 export type FakeProfileFailure = "auth" | "insufficient_privileges" | "not_found" | "rejected" | "invalid_recipient" | "transient";
@@ -113,7 +114,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
       if (this.progressOutage) throw this.progressOutage;
       const open = this.openOperations.get(input.operation);
       if (!open) throw new LinkedInGatewayError("Fake: no such operation", "unknown", "unavailable");
-      if (!open.outcome) return { state: "waiting", held: open.held };
+      if (!open.outcome) return { state: "waiting", held: open.held, started: open.started };
       return "error" in open.outcome ? { state: "failed", error: open.outcome.error } : ({ state: "finished", value: open.outcome.value } as OperationProgress<K>);
     },
     cancel: async ({ operation }) => {
@@ -141,7 +142,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
 
   private submit(kind: string, account: string, run: () => Promise<unknown>): SubmittedOperation {
     const operation = this.next("op");
-    this.openOperations.set(operation, { kind, account, run, outcome: null, held: false });
+    this.openOperations.set(operation, { kind, account, run, outcome: null, held: false, started: false });
     return { operation };
   }
 
@@ -155,6 +156,11 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
         open.outcome = { error: error as LinkedInGatewayError };
       }
     }
+  }
+
+  /** The vendor's queue has reached every open action, and it is running. */
+  startOperations(): void {
+    for (const open of this.openOperations.values()) open.started = true;
   }
 
   /** The vendor holds every open action for its working hours. */

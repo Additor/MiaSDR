@@ -1,5 +1,5 @@
 {
-  "id": "eee9b463-133a-4b33-831a-4b66d95b416c",
+  "id": "afb4a799-fd3e-47a8-8668-6f9686fbc703",
   "prevId": "7fc7b23e-0921-4489-83f3-e24140111d8e",
   "version": "7",
   "dialect": "postgresql",
@@ -5523,6 +5523,12 @@
         "resolve_next_api": {
           "name": "resolve_next_api",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolve_next_account": {
+          "name": "resolve_next_account",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

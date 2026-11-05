@@ -3,7 +3,6 @@ import { db, type DbTx } from "@/platform/db/client";
 import { campaigns, channelSettings, linkedinAccounts, linkedinOpenOperations, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
 import type { LinkedInSearchEngineStore, LinkedInSearchRecord, LinkedInSearchStore, SearchPageClaim } from "../application/linkedin-search-ports";
 import { linkedinRules } from "../domain/linkedin";
-import { OPERATION_GONE_HOURS } from "../domain/linkedin-operations";
 import { SEARCH_LEASE_SECONDS, allowedFrom, searchDay, searchQuotaLeft, statusAfter, type SearchStatus } from "../domain/linkedin-search";
 import { insertOpenOperation } from "./drizzle-linkedin-open-operations-store";
 
@@ -99,6 +98,9 @@ const selectRecords = () =>
     .leftJoin(campaigns, eq(campaigns.id, q.targetCampaignId))
     .leftJoin(linkedinAccounts, eq(linkedinAccounts.id, q.currentAccountId));
 
+/** Over the search row being updated: a vendor is still running its read. */
+export const searchReadOpen = sql`exists (select 1 from linkedin_open_operations o where o.kind = 'search' and o.subject_id = ${q.id})`;
+
 export const drizzleLinkedInSearchStore: LinkedInSearchStore = {
   async create(organizationId, input) {
     return db.transaction(async (tx) => {
@@ -150,9 +152,10 @@ export const drizzleLinkedInSearchStore: LinkedInSearchStore = {
     const rows = await db
       .update(q)
       .set({
-        status: statusAfter(action),
+        // A read still open at a vendor goes on, or settling would throw away what the person just asked for.
+        status: resume ? sql`case when ${searchReadOpen} then 'running' else ${statusAfter(action)} end` : statusAfter(action),
         // A resume starts clean: no lease, no backoff, no old error. The cursor stays, so it continues where it stopped.
-        ...(resume ? { leaseUntil: null, nextPageAt: null, failures: 0, lastError: null, completedAt: null } : {}),
+        ...(resume ? { leaseUntil: sql`case when ${searchReadOpen} then ${q.leaseUntil} end`, nextPageAt: null, failures: 0, lastError: null, completedAt: null } : {}),
         ...(action === "cancel" ? { completedAt: new Date() } : {}),
       })
       .where(and(eq(q.organizationId, organizationId), eq(q.id, id), inArray(q.status, allowedFrom(action))))
@@ -307,6 +310,10 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
     return db.transaction(async (tx) => {
       const gapUntil = secondsFrom(now, gapSeconds);
       const day = searchDay(now);
+      if (page.openOperation) {
+        const closed = await tx.delete(linkedinOpenOperations).where(eq(linkedinOpenOperations.id, page.openOperation)).returning({ id: linkedinOpenOperations.id });
+        if (closed.length === 0) return null;
+      }
       // The account was read whether or not the search still wants the page, so the allowance counts either way.
       await tx
         .update(linkedinAccounts)
@@ -381,8 +388,6 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
         .update(linkedinAccounts)
         .set({ searchLeadsToday: sql`(case when ${linkedinAccounts.searchDay} = ${day} then ${linkedinAccounts.searchLeadsToday} else 0 end) + ${limit}`, searchDay: day })
         .where(eq(linkedinAccounts.id, claim.account.id));
-      // The row holds the account from here. The lease only fences the settle's writes, so it outlasts every way the action ends.
-      await tx.update(q).set({ leaseUntil: secondsFrom(now, (OPERATION_GONE_HOURS + 1) * 3600) }).where(and(eq(q.id, claim.searchId), eq(q.leaseUntil, claim.leaseUntil)));
     });
   },
 
@@ -420,7 +425,7 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
 
   async pauseAccountForLimit(claim, until) {
     await db.transaction(async (tx) => {
-      await tx.update(linkedinAccounts).set({ limitReachedUntil: until, searchLeaseUntil: null }).where(eq(linkedinAccounts.id, claim.account.id));
+      await tx.update(linkedinAccounts).set({ limitReachedUntil: sql`greatest(${linkedinAccounts.limitReachedUntil}, ${until.toISOString()}::timestamptz)`, searchLeaseUntil: null }).where(eq(linkedinAccounts.id, claim.account.id));
       await restartElsewhere(tx, claim, "LinkedIn limited this account. The search continues on another account, or when the pause ends.");
     });
   },

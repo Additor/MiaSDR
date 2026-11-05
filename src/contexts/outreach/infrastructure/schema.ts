@@ -296,6 +296,8 @@ export const linkedinEnrollmentDetails = pgTable(
     memberUrn: text("member_urn"),
     /** The product the next lookup uses after a vendor's lookup finished without a person. Null: start with the classic lookup. */
     resolveNextApi: text("resolve_next_api"),
+    /** The account whose lookup led to `resolve_next_api`, which runs it while it stays connected. */
+    resolveNextAccount: uuid("resolve_next_account"),
     /** When this lead's thread was last read after the account's inbox gap. */
     replyCheckedAt: tstz("reply_checked_at"),
   },

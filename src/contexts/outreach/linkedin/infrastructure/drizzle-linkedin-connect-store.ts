@@ -20,8 +20,18 @@ const toLink = (r: typeof t.$inferSelect): ConnectLink => ({
 });
 
 export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
-  async create(link) {
-    await db.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy, ownerUserId: link.ownerUserId, reconnectAccountId: link.reconnectAccountId });
+  async create(link, { maxPending, now }) {
+    return db.transaction(async (tx) => {
+      // Two requests at once must not both find room, because a vendor may tell only one open link apart.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"linkedin-connect-link:" + link.organizationId}, 0))`);
+      const [{ n }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(t)
+        .where(and(eq(t.organizationId, link.organizationId), eq(t.status, "pending"), sql`${t.expiresAt} > ${now.toISOString()}::timestamptz`));
+      if (n >= maxPending) return false;
+      await tx.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy, ownerUserId: link.ownerUserId, reconnectAccountId: link.reconnectAccountId });
+      return true;
+    });
   },
 
   async find(id) {
@@ -77,14 +87,6 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
       .where(and(eq(t.organizationId, organizationId), eq(t.status, "pending"), lte(t.expiresAt, now)))
       .returning({ account: t.providerAccountId });
     return rows.map((row) => row.account);
-  },
-
-  async countPending(organizationId, now) {
-    const [{ n }] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(t)
-      .where(and(eq(t.organizationId, organizationId), eq(t.status, "pending"), sql`${t.expiresAt} > ${now.toISOString()}::timestamptz`));
-    return n;
   },
 
   async listRecent(organizationId, limit, now) {

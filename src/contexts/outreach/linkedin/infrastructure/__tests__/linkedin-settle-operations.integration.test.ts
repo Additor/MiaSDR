@@ -219,6 +219,30 @@ describeDb("LinkedIn actions a vendor runs later", () => {
       expect((await send(l.enrollment)).status).toBe("sent");
     });
 
+    it("does not hold the account for good when a vendor says too late and still running", async () => {
+      const { gateway, a, l, sendId } = await submitted();
+      gateway.cancelAnswer = () => "already_finished";
+      await age(120);
+      await runSettle(gateway);
+      expect(await row("invitation", sendId)).toBeDefined();
+      await age(24 * 60);
+      await runSettle(gateway);
+      expect(await row("invitation", sendId)).toBeUndefined();
+      expect(await send(l.enrollment)).toMatchObject({ status: "failed", attempt: 1 });
+      await pass(a.id);
+      await sql`update campaign_enrollments set next_send_at = null where id = ${l.enrollment}`;
+      expect((await engine.runNextLinkedInAction(deps(gateway), a.id)).kind).toBe("submitted");
+    });
+
+    it("does not cut a longer pause short when the vendor holds it", async () => {
+      const { gateway, a } = await submitted();
+      const later = new Date(Date.now() + 20 * 3_600_000);
+      await sql`update linkedin_accounts set limit_reached_until = ${later} where id = ${a.id}`;
+      gateway.holdOperations();
+      await runSettle(gateway);
+      expect((await accountOf(a.id)).limit_reached_until.getTime()).toBe(later.getTime());
+    });
+
     it("closes by its kind after a day of failed reads", async () => {
       const { gateway, l, sendId } = await submitted();
       gateway.progressOutage = new LinkedInGatewayError("Gone.", "unknown", "unavailable");
@@ -257,6 +281,19 @@ describeDb("LinkedIn actions a vendor runs later", () => {
       await runSettle(gateway);
       expect((await send(l.enrollment, 2)).status).toBe("unknown");
       expect(await row("message", sendId)).toBeUndefined();
+    });
+
+    it("waits for a person when a lead stops while it is going out, and goes back when it had not started", async () => {
+      const running = await submitted();
+      running.gateway.startOperations();
+      await sql`update campaign_enrollments set status = 'replied' where id = ${running.l.enrollment}`;
+      await runSettle(running.gateway);
+      expect((await send(running.l.enrollment, 2)).status).toBe("unknown");
+
+      const queued = await submitted();
+      await sql`update campaign_enrollments set status = 'replied' where id = ${queued.l.enrollment}`;
+      await runSettle(queued.gateway);
+      expect(await send(queued.l.enrollment, 2)).toMatchObject({ status: "failed", attempt: 0 });
     });
 
     it("settles when the step was edited away since the submit", async () => {
@@ -370,6 +407,21 @@ describeDb("LinkedIn actions a vendor runs later", () => {
       expect(gateway.profileCalls.at(-1)).toMatchObject({ identifier: slug, linkedinApi: null });
     });
 
+    it("keeps a fallback on the account whose lookup led to it, while that account can run it", async () => {
+      const gateway = asyncGateway();
+      gateway.autoProfiles = false;
+      const { organization, a, l } = await submitted(gateway, SALES_NAV);
+      await sql`update campaign_enrollments set linkedin_account_id = null where id = ${l.enrollment}`;
+      const other = await account(organization);
+      await gateway.finishOperations();
+      await runSettle(gateway);
+      expect((await engine.runNextLinkedInAction(deps(gateway), other.id)).kind).toBe("idle");
+
+      await sql`update linkedin_accounts set status = 'disconnected' where id = ${a.id}`;
+      await pass(other.id);
+      expect((await engine.runNextLinkedInAction(deps(gateway), other.id)).kind).toBe("submitted");
+    });
+
     it("counts a failure after the time limit, so the retries end it", async () => {
       const { gateway, l } = await submitted();
       await age(60);
@@ -435,7 +487,8 @@ describeDb("LinkedIn actions a vendor runs later", () => {
       expect(gateway.searchLimits).toHaveLength(0);
       const waiting = await queryOf(s.id);
       expect(waiting.next_page_at.getTime()).toBeGreaterThan(Date.now());
-      expect(waiting.last_error).toContain("tomorrow");
+      expect(waiting.next_page_at.getTime()).toBeLessThan(Date.now() + 3_600_000);
+      expect(waiting.last_error).toContain("nearly used");
     });
 
     it("gives an account with an open action nothing else, and many waiting searches do not block the rest", async () => {
@@ -470,6 +523,7 @@ describeDb("LinkedIn actions a vendor runs later", () => {
 
     it("cancels a paused search, keeps it charged, and refuses to remove it while the read is open", async () => {
       const { gateway, a, s } = await submitted();
+      gateway.startOperations();
       await sql`update linkedin_search_queries set status = 'paused' where id = ${s.id}`;
       const actor = { actorUserId: null as unknown as string };
       await sql`update linkedin_open_operations set checked_at = null`;
@@ -484,13 +538,105 @@ describeDb("LinkedIn actions a vendor runs later", () => {
     });
   });
 
+  describe("a search while its read is open", () => {
+    const found = (n: number) => ({
+      items: Array.from({ length: n }, (_, i) => {
+        const slug = `open-${uniqueKey()}-${i}`;
+        return { identifier: slug, profileUrl: `https://www.linkedin.com/in/${slug}`, name: "N", headline: null, location: null, networkDistance: null, raw: {} };
+      }),
+      nextCursor: null,
+      totalEstimate: null,
+    });
+    beforeEach(() => sql`delete from linkedin_search_queries where organization_id = any(${orgs})`);
+
+    async function open(gateway = asyncGateway()) {
+      const organization = await org();
+      const a = await account(organization);
+      const s = await openSearch(organization);
+      expect((await search.runNextSearchPage(searchDeps(gateway))).kind).toBe("submitted");
+      return { gateway, organization, a, s };
+    }
+
+    it("gives back the allowance when a read that never started is paused", async () => {
+      const { gateway, a, s } = await open();
+      gateway.holdOperations();
+      await sql`update linkedin_search_queries set status = 'paused' where id = ${s.id}`;
+      await runSettle(gateway);
+      expect(gateway.cancelled).toHaveLength(1);
+      expect((await accountOf(a.id)).search_leads_today).toBe(0);
+    });
+
+    it("keeps what it read when a person resumes it meanwhile", async () => {
+      const gateway = asyncGateway();
+      gateway.searchPages = [found(3)];
+      const { organization, a, s } = await open(gateway);
+      const { drizzleLinkedInSearchStore } = await import("../drizzle-linkedin-search-store");
+      await sql`update linkedin_search_queries set status = 'paused' where id = ${s.id}`;
+      expect(await drizzleLinkedInSearchStore.apply(organization, s.id, "resume")).toBe(true);
+      expect((await queryOf(s.id)).status).toBe("running");
+      await gateway.finishOperations();
+      await runSettle(gateway);
+      expect(gateway.cancelled).toHaveLength(0);
+      expect(await queryOf(s.id)).toMatchObject({ status: "completed", leads_fetched: 3 });
+      expect((await accountOf(a.id)).search_leads_today).toBe(3);
+    });
+
+    it("runs now without dropping it", async () => {
+      const gateway = asyncGateway();
+      gateway.searchPages = [found(2)];
+      const { organization, s } = await open(gateway);
+      await sql`update linkedin_search_queries set status = 'paused' where id = ${s.id}`;
+      await batches.runNow(organization, s.batch, [s.id]);
+      await gateway.finishOperations();
+      await runSettle(gateway);
+      expect(await queryOf(s.id)).toMatchObject({ status: "completed", leads_fetched: 2 });
+    });
+
+    it("keeps the read open when storing it fails, and writes it once", async () => {
+      const gateway = asyncGateway();
+      gateway.searchPages = [found(4)];
+      const { a, s } = await open(gateway);
+      await gateway.finishOperations();
+      const broken: LinkedInSettleDeps = { ...settleDeps(gateway), search: { ...searchDeps(gateway), sink: { importPeople: async () => { throw new Error("boom"); } } } };
+      expect((await settle.settleLinkedInOperations(broken, Date.now() + 30_000)).failed).toBe(1);
+      expect(await row("search", s.id)).toBeDefined();
+      expect((await accountOf(a.id)).search_leads_today).toBe(100);
+
+      await runSettle(gateway);
+      expect(await row("search", s.id)).toBeUndefined();
+      expect(await queryOf(s.id)).toMatchObject({ status: "completed", leads_fetched: 4 });
+      expect((await accountOf(a.id)).search_leads_today).toBe(4);
+    });
+
+    it("gives up on a read it could not store for a day", async () => {
+      const gateway = asyncGateway();
+      gateway.searchPages = [found(4)];
+      const { s } = await open(gateway);
+      await gateway.finishOperations();
+      await age(24 * 60);
+      const broken: LinkedInSettleDeps = { ...settleDeps(gateway), search: { ...searchDeps(gateway), sink: { importPeople: async () => { throw new Error("boom"); } } } };
+      await settle.settleLinkedInOperations(broken, Date.now() + 30_000);
+      expect(await row("search", s.id)).toBeUndefined();
+      expect((await queryOf(s.id)).failures).toBe(1);
+    });
+
+    it("can be claimed again soon after a crash closed its row and wrote nothing", async () => {
+      const gateway = asyncGateway();
+      const { s } = await open(gateway);
+      await sql`delete from linkedin_open_operations where subject_id = ${s.id}`;
+      await sql`update linkedin_search_queries set lease_until = now() - interval '1 second' where id = ${s.id}`;
+      await sql`update linkedin_accounts set search_lease_until = null where organization_id = (select organization_id from linkedin_search_queries where id = ${s.id})`;
+      expect((await search.runNextSearchPage(searchDeps(gateway))).kind).toBe("submitted");
+    });
+  });
+
   describe("after a reconnect", () => {
     async function gapped() {
       const gateway = asyncGateway();
       const organization = await org();
       const a = await account(organization);
       const l = await lead(organization, a.id, "message");
-      await sql`update linkedin_accounts set inbox_gap_until = now() where id = ${a.id}`;
+      await sql`update linkedin_accounts set inbox_gap_until = now() - interval '1 minute' where id = ${a.id}`;
       return { gateway, organization, a, l };
     }
 
@@ -521,6 +667,33 @@ describeDb("LinkedIn actions a vendor runs later", () => {
       expect((await engine.runNextLinkedInAction(deps(gateway), a.id)).kind).toBe("idle");
       expect(gateway.messages).toHaveLength(0);
       expect(organization).toBeTruthy();
+    });
+
+    it("does not call a thread checked when a reply in it could not be filed", async () => {
+      const { gateway, a, l } = await gapped();
+      gateway.threadDeliveries = [{ type: "message_received", account: a.ref, chat: "chat-1", messageId: null, text: "No thanks", fromAccountOwner: false, counterparty: l.member, sentAt: new Date().toISOString() }];
+      await engine.runNextLinkedInAction(deps(gateway), a.id);
+      await gateway.finishOperations();
+      await runSettle(gateway);
+      expect((await detailsOf(l.enrollment)).reply_checked_at).toBeNull();
+      expect((await enrollmentOf(l.enrollment)).next_send_at.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
+      await pass(a.id);
+      expect((await engine.runNextLinkedInAction(deps(gateway), a.id)).kind).toBe("idle");
+      expect(await send(l.enrollment, 2)).toBeUndefined();
+    });
+
+    it("gives up on a thread it cannot read for a day, and sends nothing unread", async () => {
+      const { gateway, a, l } = await gapped();
+      await engine.runNextLinkedInAction(deps(gateway), a.id);
+      await gateway.finishOperations();
+      gateway.operations!.readThread = async () => {
+        throw new Error("no answer");
+      };
+      await age(24 * 60);
+      await runSettle(gateway);
+      expect((await sql`select count(*)::int as n from linkedin_open_operations where linkedin_account_id = ${a.id}`)[0].n).toBe(0);
+      expect((await detailsOf(l.enrollment)).reply_checked_at).toBeNull();
+      expect(await send(l.enrollment, 2)).toBeUndefined();
     });
 
     it("holds the lead when a look cannot finish, so others go first and nothing goes out unread", async () => {

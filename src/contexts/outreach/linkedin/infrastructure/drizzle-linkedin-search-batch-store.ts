@@ -6,6 +6,7 @@ import type { DbHandle } from "@/platform/db/client";
 import type { LinkedInSearchBatchStore, SearchBatchDetail, SearchBatchSummary, SearchResultExportRow } from "../application/linkedin-search-ports";
 import { ACTIVE_SEARCH_STATUSES, RERUNNABLE_STATUS } from "../domain/linkedin-search-batch";
 import { DEFAULT_MAX_RESULTS, type SearchStatus } from "../domain/linkedin-search";
+import { searchReadOpen } from "./drizzle-linkedin-search-store";
 
 const q = linkedinSearchQueries;
 const b = linkedinSearchBatches;
@@ -282,7 +283,7 @@ export const drizzleLinkedInSearchBatchStore: LinkedInSearchBatchStore = {
       // A resume starts clean, like the Resume button: no lease, no backoff, no old error. The cursor stays.
       const resumed = await tx
         .update(q)
-        .set({ status: "queued", leaseUntil: null, nextPageAt: null, failures: 0, lastError: null, completedAt: null })
+        .set({ status: sql`case when ${searchReadOpen} then 'running' else 'queued' end`, leaseUntil: sql`case when ${searchReadOpen} then ${q.leaseUntil} end`, nextPageAt: null, failures: 0, lastError: null, completedAt: null })
         .where(and(scope, eq(q.status, "paused")))
         .returning({ id: q.id });
       const due = await tx
