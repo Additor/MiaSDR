@@ -15,7 +15,7 @@ export type FakeLinkedInBehavior =
   /** The action succeeds. */
   | "ok"
   /** The provider refuses; nothing happened. */
-  | { refuse: "rate_limited" | "auth" | "insufficient_privileges" | "already_connected" | "already_invited" | "invalid_recipient" | "rejected" }
+  | { refuse: "rate_limited" | "auth" | "insufficient_privileges" | "already_connected" | "already_invited" | "invalid_recipient" | "not_found" | "not_first_degree" | "rejected" }
   /** The call times out, but the provider did perform it. */
   | "timeout-after-accept"
   /** The call times out and nothing happened. */
@@ -181,6 +181,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
   }
 
   async sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
+    if (!input.to.chat && !input.to.member && !input.to.slug) throw new LinkedInGatewayError("No chat or member to send this message to.", "definite", "invalid_recipient");
     if (this.readOutage && !input.to.chat) this.outage();
     const mode = this.gate(this.messageBehavior(input.text));
     if (mode === "skip-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
@@ -195,7 +196,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     if (this.readOutage) this.outage();
     const chat = input.to.chat ?? this.chatWith(input.account, input.to.member);
     if (!chat) return null;
-    const hit = this.messages.find((m) => m.account === input.account && m.chat === chat && m.text.trim() === input.text.trim());
+    const hit = this.messages.find((m) => m.account === input.account && m.chat === chat && m.at >= input.since && m.text.trim() === input.text.trim());
     return hit ? { messageId: hit.id } : null;
   }
 
