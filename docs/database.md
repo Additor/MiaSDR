@@ -46,7 +46,7 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 
 ## Claims and drafts in flight
 
-`ai_jobs`, `follow_up_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason.
+`ai_jobs`, `follow_up_step_runs`, `inbound_events` and `mia_runs` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it with `heldBy` (`src/platform/db/claim.ts`), so a worker that lost its claim changes nothing. A settle, a stop, a pause and the expiry sweep clear the token. The writes that take no claim (a stop, a pause, a resume, a skip, the reconcile of drafts, the expiry sweep) sit in `FENCE_EXEMPT` in `src/architecture/claim-fences.test.ts` with their reason.
 
 `drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505.
 
@@ -181,6 +181,7 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `ai_jobs`, `notes`, `tasks`
 - conversations, follow-ups (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
 - deals: `deal_stages`, `deals`
+- mia: `mia_runs`, `mia_suggestions`, `mia_usage_daily`
 - grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`
 - integrations: `integration_accounts`, `integration_credentials`
 - shared jobs (`src/platform/jobs/schema.ts`): `job_runs`

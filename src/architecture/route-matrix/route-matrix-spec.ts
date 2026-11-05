@@ -193,6 +193,13 @@ export const ROUTES: Record<string, RouteSpec> = {
   "brain": { handlers: { POST: ok({ kind: "product", fields: { productName: "Route matrix" } }) } },
   "brain/[id]": { ids: { id: "knowledge_documents" }, handlers: { PATCH: ok({ tags: ["route-matrix"] }) } },
 
+  // The body starts no job: an address that is not https answers 422 before anything runs.
+  "mia/runs": { handlers: { POST: { valid: { capability: "brain_fill_url", url: "http://not-https.example" } } } },
+  "mia/runs/[id]/cancel": { ids: { id: { table: "mia_runs", force: { capability: "brain_sort", input: {}, status: "queued" } } }, handlers: { POST: ok() } },
+  "mia/suggestions/[id]/accept": { ids: { id: { table: "mia_suggestions", force: { type: "new_item", step_count: 1, ordinal: 0, kind: "product", title: "Route matrix", payload: { fields: {}, sorting: false } } } }, handlers: { POST: ok({ fields: { productName: "Route matrix" } }) } },
+  "mia/suggestions/[id]/dismiss": { ids: { id: { table: "mia_suggestions", force: { type: "new_item", step_count: 1, ordinal: 0, kind: "product", title: "Route matrix", payload: { fields: {}, sorting: false } } } }, handlers: { POST: ok() } },
+  "settings/mia": { handlers: { GET: ok(), PATCH: admin({ enabled: true }) } },
+
   "leads/[id]": { ids: { id: "people" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "leads/[id]/convert": { ids: { id: "people" }, handlers: { POST: ok() } },
   "leads/[id]/make-contact": { ids: { id: "people" }, handlers: { POST: ok() } },

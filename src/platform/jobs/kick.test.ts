@@ -18,6 +18,24 @@ describe("kickJob", () => {
 
   const job = (name: string, onRun: () => Promise<{ processed: number; more: boolean }>): Job => ({ name, failureKeys: [], run: onRun });
 
+  it("runs a job on its own lane beside a pass that is still going", async () => {
+    let release = () => {};
+    const slowDone = new Promise<void>((resolve) => (release = resolve));
+    const ran: string[] = [];
+    setKickRunner(async (names) => {
+      ran.push(...names);
+      if (names.includes("mia.run")) await slowDone;
+      return { again: [] };
+    });
+    kickJob("mia.run", "mia");
+    await vi.advanceTimersByTimeAsync(KICK_DELAY_MS + 1);
+    kickJob("grid.run");
+    await vi.advanceTimersByTimeAsync(KICK_DELAY_MS + 1);
+    expect(ran).toEqual(["mia.run", "grid.run"]);
+    release();
+    await vi.advanceTimersByTimeAsync(1);
+  });
+
   it("starts a pass between the enqueue and the tick, without waiting for the tick", async () => {
     const ranAt: number[] = [];
     const grid = job("grid.run", async () => {

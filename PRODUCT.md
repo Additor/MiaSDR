@@ -61,6 +61,8 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Brain:** what an organization knows about itself and its market: its company profile, products, pricing, ICPs, competitors, case studies, testimonials, objections and qualification rules. It has its own place in the sidebar, and every member can change it. The code calls it `brain` and its tables `knowledge_documents` and `knowledge_document_versions`.
 - **Brain item:** one entry in Brain, such as one product or one plan. Its kind decides its fields.
 - **Needs sorting:** the Brain view of documents from before the kinds existed. AI drafts still read them until a person sorts each into a kind.
+- **Mia:** the AI inside MiaSDR that a person gives a job. Today it reads a website, pasted text or a document in Needs sorting and offers Suggestions for Brain. "Agent" still means an AI connected over MCP. The code calls it `mia` (`src/contexts/mia`, `/api/mia`, `mia_*` tables).
+- **Suggestion:** what Mia offers for Brain: a new item or a change to one, each value with the sentence it came from. Nothing reaches Brain until a person saves it. A number or address its sentence does not contain needs a person's tick or edit first.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
 - **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
 - **Table:** one tab of a workbook, with typed columns and rows.
@@ -81,6 +83,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - AI picks a reply type for each reply and drafts responses; a person approves before sending, unless an owner or admin turned on agent sending for MCP agents. A follow-up flow only writes drafts.
 - LinkedIn outreach is built and tested against a local stand-in. Profile lookups ran once against a real Unipile account; a full campaign has not.
 - WhatsApp, calls, domain qualification and teams are out of scope for the MVP.
+- Mia writes nothing to Brain and sends nothing. A person starts each job and saves each Suggestion.
 - `docs/decisions.md` records scope and design choices.
 
 ## Brand Commitments

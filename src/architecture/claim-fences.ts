@@ -14,6 +14,7 @@ export const FENCED_TABLES = [
   { drizzle: "aiJobs", raw: "ai_jobs" },
   { drizzle: "inboundEvents", raw: "inbound_events" },
   { drizzle: "followUpStepRuns", raw: "follow_up_step_runs" },
+  { drizzle: "miaRuns", raw: "mia_runs" },
 ];
 
 export interface Source {

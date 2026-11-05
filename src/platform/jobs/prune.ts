@@ -20,9 +20,10 @@ export interface RetentionDays {
   inboundFailed: number;
   aiJobs: number;
   mcpToolCalls: number;
+  miaRuns: number;
 }
 
-export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30, mcpToolCalls: 90 };
+export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30, mcpToolCalls: 90, miaRuns: 30 };
 
 export function retentionFromEnv(): RetentionDays {
   const e = env();
@@ -32,6 +33,7 @@ export function retentionFromEnv(): RetentionDays {
     inboundFailed: e.RETENTION_INBOUND_FAILED_DAYS,
     aiJobs: e.RETENTION_AI_JOBS_DAYS,
     mcpToolCalls: e.RETENTION_MCP_TOOL_CALLS_DAYS,
+    miaRuns: e.RETENTION_MIA_RUNS_DAYS,
   };
 }
 
@@ -90,6 +92,9 @@ export async function pruneHistory(options: PruneOptions): Promise<PruneResult> 
     ["ai_jobs", sql`status = 'succeeded' and completed_at < ${before(retention.aiJobs)}::timestamptz`],
     ["mcp_tool_calls", sql`created_at < ${before(retention.mcpToolCalls)}::timestamptz`],
     ["mcp_agent_usage", sql`day < ${before(AGENT_USAGE_DAYS)}::date`],
+    ["mia_runs", sql`status in ('succeeded', 'failed', 'cancelled') and finished_at < ${before(retention.miaRuns)}::timestamptz`],
+    ["mia_suggestions", sql`status in ('accepted', 'dismissed') and decided_at < ${before(retention.miaRuns)}::timestamptz`],
+    ["mia_usage_daily", sql`day < ${before(AGENT_USAGE_DAYS)}::date`],
     ["sessions", sql`expires_at < ${authCutoff}::timestamptz`],
     ["verifications", sql`expires_at < ${authCutoff}::timestamptz`],
     ["oauth_refresh_tokens", sql`expires_at < ${authCutoff}::timestamptz`],

@@ -55,6 +55,8 @@ const schema = z.object({
   RUN_MIGRATIONS: flagSchema(true),
   /** Runs the job tick inside the server process. Set false when an external scheduler calls `/api/jobs/tick`. Default true. */
   EMBEDDED_SCHEDULER: flagSchema(true),
+  /** `false` turns Mia off for the whole install. Each organization also has its own switch. */
+  MIA_ENABLED: flagSchema(true),
   /** Emergency brake: while true, automated sequence sends (email and LinkedIn) and test sends are held. Approved replies still send. A lenient string here: `src/shared/outbound-pause.ts` is the only parser and treats an unreadable value as paused. Default false. */
   PAUSE_OUTBOUND: z.string().optional(),
   /** Serves the MCP endpoint at `/api/mcp`. Each organization still turns MCP on for itself. Set false to turn it off for the whole install. Default true. */
@@ -114,6 +116,8 @@ const schema = z.object({
   RETENTION_INBOUND_FAILED_DAYS: z.coerce.number().int().min(1).default(90),
   RETENTION_AI_JOBS_DAYS: z.coerce.number().int().min(1).default(30),
   RETENTION_MCP_TOOL_CALLS_DAYS: z.coerce.number().int().min(1).default(90),
+  /** Finished Mia runs, and suggestions a person already decided. */
+  RETENTION_MIA_RUNS_DAYS: z.coerce.number().int().min(1).default(30),
 
   /** Comma list of email domains an organization may connect as mailboxes. Unset allows any address. */
   MAILBOX_ALLOWED_DOMAINS: z.string().optional(),

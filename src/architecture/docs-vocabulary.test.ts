@@ -93,7 +93,7 @@ describe("retired words in src/contexts/conversations", () => {
 const RETIRED_EVERYWHERE: ReadonlyArray<{ name: string; pattern: RegExp; except?: RegExp }> = [
   { name: "unclassified", pattern: /\bunclassified\b/i },
   { name: "subcategory", pattern: /sub-?categor(y|ies)/i, except: /^e2e\/46-reply-handling-settings\.spec\.ts$/ },
-  { name: "category", pattern: /\bcategor(y|ies)\b/i, except: /unipile-standin\.ts$|^e2e\/46-reply-handling-settings\.spec\.ts$|^src\/contexts\/brain\/domain\/brain-(fields\.ts|item\.test\.ts)$/ },
+  { name: "category", pattern: /\bcategor(y|ies)\b/i, except: /unipile-standin\.ts$|^e2e\/46-reply-handling-settings\.spec\.ts$|^src\/contexts\/brain\/domain\/brain-(fields\.ts|item\.test\.ts)$|^src\/contexts\/mia\/domain\/__tests__\/suggestion\.test\.ts$/ },
   { name: "sequence event token", pattern: /["'`]sequence\.[a-z_]+/ },
   { name: "scheduled kind sequence", pattern: /kind: "sequence"|'sequence'::text/ },
   { name: "follow-up as a sequence", pattern: /follow-up sequence|sequence runs?\b|sequence_changed/i },

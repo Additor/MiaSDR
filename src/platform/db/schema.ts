@@ -11,3 +11,4 @@ export * from "@/contexts/conversations/infrastructure/schema";
 export * from "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema";
 export * from "@/contexts/grid/infrastructure/schema";
 export * from "@/contexts/deals/infrastructure/schema";
+export * from "@/contexts/mia/infrastructure/schema";

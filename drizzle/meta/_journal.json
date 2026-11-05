@@ -50,6 +50,13 @@
       "when": 1793879883333,
       "tag": "0006_linkedin_open_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793887047840,
+      "tag": "0007_mia_runs_and_suggestions",
+      "breakpoints": true
     }
   ]
 }

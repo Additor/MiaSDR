@@ -67,7 +67,7 @@ test.describe("Brain", () => {
     const id = await pastedDocument(title, "We sell to SaaS teams.");
     await page.goto("/brain?view=needs_sorting");
     await page.getByRole("link", { name: title }).click();
-    await page.getByRole("button", { name: "Sort" }).click();
+    await page.getByRole("button", { name: "Sort", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByTestId("brain-legacy-text")).toHaveText("We sell to SaaS teams.");
     await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();

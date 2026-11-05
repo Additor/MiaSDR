@@ -2,7 +2,7 @@
 
 Every setting is an environment variable. Copy `.env.example` to `.env`, replace each `CHANGEME`, and restart the app after a change. `src/shared/env.ts` validates the values on first use and names the variable that failed. Empty values count as unset.
 
-Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED` or `MCP_IRREVERSIBLE_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
+Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MIA_ENABLED`, `PAUSE_OUTBOUND`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MIA_ENABLED`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED` or `MCP_IRREVERSIBLE_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
 
 A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and the schema in step: a variable in one of them and not in the others fails CI.
 
@@ -48,6 +48,7 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | --- | --- | --- |
 | `LINKEDIN_PROVIDER` | none | `unipile` (default behavior) or `fake` for demos. Each organization chooses Unipile, Edges, gtm-api or Linked API and saves its own credentials in Settings, LinkedIn. |
 | `LINKEDIN_DSN_ALLOWED_HOSTS` | none | Extra Unipile hosts besides `*.unipile.com`, comma list (`host`, `host:port` or `*.domain`). |
+| `MIA_ENABLED` | `true` | `false` turns Mia off for the whole install. Each organization also has its own switch under Settings, Organization. |
 | `AI_PROVIDER` | none | `fake` answers with a keyword classifier and template drafts (demos only). |
 | `AI_MODEL` | `claude-sonnet-5-5` | Model on a direct Anthropic connection when an organization has not picked one. Vercel AI Gateway and OpenRouter have no default: the organization picks a model. An owner or admin picks the model in Settings, Integrations, AI model; the pick is checked against the live model list of the saved key and wins over this variable. |
 | `GRID_PROVIDER` | none | `fake` enables the deterministic enrichment provider (demos only). It offers Find email and the four shared actions. An address with `invalid`, `catchall`, `unknown` or `disposable` in it gets that verdict, and `nohit` finds nothing. |
@@ -78,6 +79,7 @@ Only logs are pruned. Sends, messages, enrollments and suppression are kept.
 | `RETENTION_INBOUND_FAILED_DAYS` | `90` | Days to keep dead-lettered provider events. |
 | `RETENTION_AI_JOBS_DAYS` | `30` | Days to keep finished AI jobs. |
 | `RETENTION_MCP_TOOL_CALLS_DAYS` | `90` | Days to keep the MCP agent activity log. |
+| `RETENTION_MIA_RUNS_DAYS` | `30` | Days to keep finished Mia jobs and the suggestions a person decided. |
 
 ## Compose-only variables
 
