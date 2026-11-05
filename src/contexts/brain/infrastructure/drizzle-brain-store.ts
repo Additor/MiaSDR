@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { knowledgeDocuments, knowledgeDocumentVersions } from "@/platform/db/schema";
-import type { KnowledgeStore } from "../application/knowledge";
+import type { KnowledgeStore } from "../application/brain-items";
 
 export const drizzleKnowledgeStore: KnowledgeStore = {
   async list(organizationId) {

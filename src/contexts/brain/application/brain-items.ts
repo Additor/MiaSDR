@@ -1,4 +1,5 @@
-import { KNOWLEDGE_KINDS, parseTags } from "../domain/knowledge";
+import { BRAIN_KINDS } from "../domain/brain-kinds";
+import { parseTags } from "../domain/brain-tags";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
@@ -45,7 +46,7 @@ function clean(input: Partial<KnowledgeInput>) {
     out.title = title;
   }
   if (input.kind !== undefined) {
-    if (!(KNOWLEDGE_KINDS as readonly string[]).includes(input.kind)) throw new ValidationError("Unknown document kind.");
+    if (!(BRAIN_KINDS as readonly string[]).includes(input.kind)) throw new ValidationError("Unknown document kind.");
     out.kind = input.kind;
   }
   if (input.content !== undefined) {

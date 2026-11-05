@@ -11,9 +11,6 @@ import { drizzleInboxStore } from "./drizzle-inbox-store";
 import { drizzleLinkedInThreadStore } from "./drizzle-linkedin-thread-store";
 import { organizationTimeZone } from "./org-time-zone";
 
-/** The knowledge base store. The knowledge use cases take it directly. */
-export { drizzleKnowledgeStore as knowledgeStore } from "../ai/infrastructure/drizzle-knowledge-store";
-
 /** The unread badge counts store. `unreadCounts` takes it directly. */
 export { drizzleUnreadStore as unreadStore } from "./drizzle-unread-store";
 

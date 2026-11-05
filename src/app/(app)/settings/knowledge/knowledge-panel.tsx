@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { useApiAction } from "@/app/_lib/use-api-action";
-import { splitTagInput } from "@/contexts/conversations/ai/domain/knowledge";
+import { splitTagInput } from "@/contexts/brain/domain/brain-tags";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -71,14 +71,14 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
   async function save() {
     const editing = dialog?.editing ?? null;
     const body = { title: draft.title, kind: draft.kind, content: draft.content, alwaysInclude: draft.always, tags: splitTagInput(draft.tags) };
-    orThrow(await runApiAction(editing ? callApi(`/api/knowledge/${editing.id}`, "PATCH", body) : callApi("/api/knowledge", "POST", body), { refresh }));
+    orThrow(await runApiAction(editing ? callApi(`/api/brain/${editing.id}`, "PATCH", body) : callApi("/api/brain", "POST", body), { refresh }));
     toast.success(editing ? `${draft.title} saved.` : `${draft.title} added.`);
   }
 
   const toggle = (doc: Doc) =>
     run(doc.id, async () => {
       setToggleError(null);
-      const result = await runApiAction(callApi(`/api/knowledge/${doc.id}`, "PATCH", { active: !doc.active }), { refresh });
+      const result = await runApiAction(callApi(`/api/brain/${doc.id}`, "PATCH", { active: !doc.active }), { refresh });
       if (!result.ok) return setToggleError(result.error);
       toast.success(doc.active ? `${doc.title} archived.` : `${doc.title} restored.`);
     });

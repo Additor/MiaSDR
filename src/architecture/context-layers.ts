@@ -8,6 +8,7 @@ export const LAYERS: readonly (readonly string[])[] = [
   ["agent-access"],
   ["integrations"],
   ["ai"],
+  ["brain"],
   ["people"],
   ["outreach"],
   ["conversations"],

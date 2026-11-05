@@ -17,7 +17,8 @@ import {
 } from "@/platform/db/schema";
 import type { DraftContext } from "../application/reply-ports";
 import type { AiPersonContext, ReplyTypeChange, ThreadEntry } from "../ai/domain/ai-contract";
-import { KNOWLEDGE_BUDGET_CHARS, normalizeTags, selectKnowledge } from "../ai/domain/knowledge";
+import { normalizeTags } from "@/contexts/brain/domain/brain-tags";
+import { KNOWLEDGE_BUDGET_CHARS, selectKnowledge } from "../ai/domain/knowledge";
 import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";

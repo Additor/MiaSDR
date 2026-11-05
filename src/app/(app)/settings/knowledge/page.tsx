@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
-import { listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
-import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
+import { listKnowledge } from "@/contexts/brain/application/brain-items";
+import { brainStore } from "@/contexts/brain/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
@@ -24,6 +24,6 @@ export default function KnowledgePage() {
 async function Knowledge() {
   await connection();
   const ctx = await requireOrgContext();
-  const docs = await listKnowledge(knowledgeStore, toActor(ctx));
+  const docs = await listKnowledge(brainStore, toActor(ctx));
   return <KnowledgePanel docs={JSON.parse(JSON.stringify(docs))} canManage={isOwnerOrAdmin(ctx.role)} />;
 }

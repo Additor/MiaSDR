@@ -536,48 +536,6 @@ export const sendAttempts = pgTable(
   ],
 );
 
-export const KNOWLEDGE_KINDS = ["company", "product", "pricing", "faq", "case_study", "objection", "scheduling", "custom"] as const;
-
-export const knowledgeDocuments = pgTable(
-  "knowledge_documents",
-  {
-    id: pk(),
-    organizationId: orgId(),
-    title: text("title").notNull(),
-    kind: text("kind").notNull(),
-    tags: text("tags").array().default(sql`'{}'::text[]`).notNull(),
-    alwaysInclude: boolean("always_include").notNull().default(false),
-    active: boolean("active").notNull().default(true),
-    latestVersion: integer("latest_version").notNull().default(1),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    unique("knowledge_documents_id_org_uq").on(t.id, t.organizationId),
-    check("knowledge_documents_kind_ck", inList(t.kind, KNOWLEDGE_KINDS)),
-    check("knowledge_documents_version_ck", sql`${t.latestVersion} > 0`),
-    index("knowledge_documents_org_active_idx").on(t.organizationId, t.active, t.kind),
-  ],
-);
-
-export const knowledgeDocumentVersions = pgTable(
-  "knowledge_document_versions",
-  {
-    id: pk(),
-    organizationId: orgId(),
-    documentId: uuid("document_id").notNull(),
-    version: integer("version").notNull(),
-    content: text("content").notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    foreignKey({ columns: [t.documentId, t.organizationId], foreignColumns: [knowledgeDocuments.id, knowledgeDocuments.organizationId] }).onDelete("cascade"),
-    unique("knowledge_versions_doc_version_uq").on(t.documentId, t.version),
-    unique("knowledge_versions_id_org_uq").on(t.id, t.organizationId),
-    check("knowledge_versions_ck", sql`${t.version} > 0 and length(btrim(${t.content})) > 0`),
-  ],
-);
-
 export const AI_JOB_KINDS = ["classification", "initial_draft"] as const;
 
 /** Durable AI work queue. Workers claim with FOR UPDATE SKIP LOCKED and a lease. */

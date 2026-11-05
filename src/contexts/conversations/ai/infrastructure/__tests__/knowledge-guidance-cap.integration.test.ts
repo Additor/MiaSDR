@@ -10,8 +10,8 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");
-  let knowledgeApp: typeof import("../../application/knowledge");
-  let knowledgeStore: typeof import("../drizzle-knowledge-store").drizzleKnowledgeStore;
+  let knowledgeApp: typeof import("@/contexts/brain/application/brain-items");
+  let knowledgeStore: typeof import("@/contexts/brain/infrastructure/drizzle-brain-store").drizzleKnowledgeStore;
   let engine: typeof import("../../../after-reply/infrastructure/drizzle-follow-up-engine").drizzleFollowUpEngine;
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let jobStore: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
@@ -70,8 +70,8 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
 
   beforeAll(async () => {
     composition = await import("../../../infrastructure/composition");
-    knowledgeApp = await import("../../application/knowledge");
-    knowledgeStore = (await import("../drizzle-knowledge-store")).drizzleKnowledgeStore;
+    knowledgeApp = await import("@/contexts/brain/application/brain-items");
+    knowledgeStore = (await import("@/contexts/brain/infrastructure/drizzle-brain-store")).drizzleKnowledgeStore;
     engine = (await import("../../../after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine;
     aiJobsApp = await import("../../application/ai-jobs");
     jobStore = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;

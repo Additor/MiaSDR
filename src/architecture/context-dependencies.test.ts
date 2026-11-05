@@ -90,6 +90,7 @@ const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
   // The schema barrel: the Drizzle client and migrations see every table through it.
   "src/platform/db/schema.ts": [
     "@/contexts/agent-access/infrastructure/schema",
+    "@/contexts/brain/infrastructure/schema",
     "@/contexts/conversations/after-reply/infrastructure/follow-ups-schema",
     "@/contexts/conversations/infrastructure/schema",
     "@/contexts/deals/infrastructure/schema",
