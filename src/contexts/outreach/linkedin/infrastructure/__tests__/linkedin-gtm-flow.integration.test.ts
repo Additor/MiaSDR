@@ -317,6 +317,17 @@ describeDb("LinkedIn accounts on gtm-api", () => {
       expect((await sql`select provider, daily_invite_limit from linkedin_accounts where provider_account_id = ${ref}`)[0]).toMatchObject({ provider: "gtmapi", daily_invite_limit: 20 });
     });
 
+    it("files a sync under the vendor it started with, though a disconnect removed the credentials meanwhile", async () => {
+      const id = await org();
+      const { syncWith } = await import("../../application/linkedin-management");
+      const { createGtmVendor } = await import("../vendors/gtmapi/gtm-vendor");
+      const member = `ACoAArace${uniqueKey().replaceAll("-", "")}`;
+      const listed = { ref: `ln_ac_${uniqueKey()}`, linkedinId: member, name: "Sam", username: null, status: "connected" as const };
+      const gateway = { listAccounts: async () => [listed], getOwnProfile: async () => ({ isPremium: false, headline: null }) };
+      await syncWith(composition.linkedinManagementDeps(), id, createGtmVendor(), gateway as never);
+      expect(await sql`select provider from linkedin_accounts where organization_id = ${id}`).toEqual([{ provider: "gtmapi" }]);
+    });
+
     it("offers an account's own vendor in the form after a disconnect", async () => {
       const id = await org();
       await account(id);

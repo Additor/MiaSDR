@@ -1,5 +1,5 @@
 import { LinkedInGatewayError, type LinkedInInboundRead } from "../../../application/linkedin-ports";
-import type { LinkedInInboundEvent } from "../../../domain/linkedin";
+import { profileUrlFor, type LinkedInInboundEvent } from "../../../domain/linkedin";
 import { gatewayErrorFrom } from "./gtm-errors";
 import type { GtmClient } from "./gtm-http";
 import { accountReadiness, itemsOf, memberIdOf, obj, str, type Row } from "./gtm-rows";
@@ -141,7 +141,7 @@ async function readAcceptances(client: GtmClient, account: string, cursor: GtmCu
 
 const profileUrl = (nickname: unknown) => {
   const slug = str(nickname);
-  return slug ? `https://www.linkedin.com/in/${slug}` : null;
+  return slug ? profileUrlFor(slug) : null;
 };
 
 /** A polled row as the event the store acts on. Null when it does not name the person by member id, which every match needs. */

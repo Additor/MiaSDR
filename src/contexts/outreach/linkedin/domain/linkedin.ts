@@ -179,6 +179,27 @@ export function inviteBlock(counts: { today: number; week: number }, dailyLimit:
 /** When a limit error stops an account: until the next rollover is unknowable, so wait a day. */
 export const LIMIT_PAUSE_HOURS = 24;
 
+/** A limit that stops invitations alone holds lookups too: a lookup only leads to an invitation. */
+export function invitationsHeld(account: { invitesPausedUntil: Date | null }, now: Date): boolean {
+  return account.invitesPausedUntil !== null && account.invitesPausedUntil.getTime() > now.getTime();
+}
+
+/** Enough resolved people already wait for invitation quota, so no more profiles are looked up for now. */
+export function lookupBacklogFull(backlog: number, dailyInviteLimit: number): boolean {
+  return backlog >= Math.max(10, dailyInviteLimit * 2);
+}
+
+/** After a lookup failed: give up, or when to try again. */
+export function afterResolveFailure(failures: number, fatal: boolean, now: Date): { exhausted: boolean; nextAttemptAt: Date | null } {
+  const exhausted = fatal || failures >= MAX_RESOLVE_ATTEMPTS;
+  return { exhausted, nextAttemptAt: exhausted ? null : new Date(now.getTime() + resolveRetryMinutes(failures) * 60_000) };
+}
+
+/** After a step went out or an invitation was accepted: finish when no step follows, else schedule the next one. */
+export function afterStep(nextWaitDays: number | null, now: Date): { status: "completed" | "active"; nextSendAt: Date | null } {
+  return nextWaitDays === null ? { status: "completed", nextSendAt: null } : { status: "active", nextSendAt: new Date(now.getTime() + nextWaitDays * 86_400_000) };
+}
+
 /** Resolution retry delay: 60 minutes, then 120 (spec 2.4). */
 export function resolveRetryMinutes(failures: number): number {
   return Math.min(60 * 2 ** (failures - 1), 1440);
@@ -232,6 +253,12 @@ export type LinkedInInboundEvent =
       /** When the provider says the message was sent (ISO 8601). */
       sentAt?: string | null;
     };
+
+/** A payload may not say who the account owner is. The sender matching the stored owner still marks an echo, not a lead's reply. */
+export function withKnownOwner(event: LinkedInInboundEvent, ownerId: string): LinkedInInboundEvent {
+  if (event.type !== "message_received" || event.fromAccountOwner || event.counterparty !== ownerId) return event;
+  return { ...event, fromAccountOwner: true, counterparty: event.attendees?.find((id) => id !== ownerId) ?? null, counterpartyName: null, counterpartyProfileUrl: null };
+}
 
 export const MAX_EVENT_ATTEMPTS = 8;
 /** Backoff after a failed attempt to process an event: 5 s doubling, capped at 15 minutes. */

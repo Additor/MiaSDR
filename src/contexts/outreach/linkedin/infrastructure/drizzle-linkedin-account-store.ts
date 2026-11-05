@@ -4,13 +4,14 @@ import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
 import { db, type DbHandle } from "@/platform/db/client";
-import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
+import { integrationAccounts, integrationCredentials, linkedinAccounts, sends } from "@/platform/db/schema";
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
 import type { GatewayAccount } from "../application/linkedin-ports";
 import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
+import { countMessagesToday } from "./linkedin-account-state";
 import { credentialFieldsOf, inviteLimitCapOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), inArray(integrationAccounts.key, VENDOR_KEYS));
@@ -19,37 +20,6 @@ const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organiz
 async function connectedKey(runner: Pick<typeof db, "select">, organizationId: string): Promise<string | null> {
   const [row] = await runner.select({ key: integrationAccounts.key }).from(integrationAccounts).where(vendorRow(organizationId));
   return row?.key ?? null;
-}
-
-/** Messages one account sent since the start of the UTC day: sequence messages (step 2 and later) and replies. */
-export async function countMessagesToday(account: { id: string; providerAccountId: string }, now: Date, runner: Pick<typeof db, "select"> = db): Promise<number> {
-  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-  const [{ n }] = await runner
-    .select({ n: sql<number>`count(*)::int` })
-    .from(sends)
-    .where(
-      and(
-        eq(sends.linkedinAccountId, account.id),
-        eq(sends.channel, "linkedin"),
-        sql`${sends.stepNumber} > 1`,
-        inArray(sends.status, SEND_COUNTED),
-        sql`${sends.claimedAt} >= ${dayStart}::timestamptz`,
-      ),
-    );
-  const [{ r }] = await runner
-    .select({ r: sql<number>`count(*)::int` })
-    .from(sendAttempts)
-    .innerJoin(drafts, and(eq(drafts.id, sendAttempts.draftId), eq(drafts.organizationId, sendAttempts.organizationId)))
-    .where(
-      and(
-        eq(drafts.channel, "linkedin"),
-        inArray(sendAttempts.accountRef, [account.providerAccountId, account.id]),
-        // ATTEMPT_COUNTED of conversations' send-attempt-status: outreach sits below conversations and cannot import it.
-        inArray(sendAttempts.status, ["sending", "sent", "delivery_uncertain", "reconciled"]),
-        sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`,
-      ),
-    );
-  return n + r;
 }
 
 function parseCredentials(key: string, plaintext: string): LinkedInCredentials | null {

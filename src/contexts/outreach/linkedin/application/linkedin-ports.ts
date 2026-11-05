@@ -285,6 +285,9 @@ export interface UncertainLinkedInSend {
   nextStepWaitDays: number | null;
 }
 
+/** What settling a send whose outcome was unknown needs. A person settling one by hand knows no more than this. */
+export type SettledLinkedInSend = Pick<UncertainLinkedInSend, "sendId" | "enrollmentId" | "stepNumber" | "attempt" | "nextStepWaitDays"> & { account: { id: string } };
+
 /** Port for LinkedIn outreach persistence. Each method is one atomic step. */
 export interface LinkedInOutreachStore {
   /** Connected accounts whose gap has passed, oldest first. */
@@ -325,8 +328,8 @@ export interface LinkedInOutreachStore {
 
   deferUncertain(sendId: string, until: Date): Promise<void>;
   listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainLinkedInSend[]>;
-  resolveUncertainAsSent(send: UncertainLinkedInSend, sent: { providerMessageId: string | null; accepted: boolean }, now: Date): Promise<void>;
-  resolveUncertainAsNotSent(send: UncertainLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
+  resolveUncertainAsSent(send: SettledLinkedInSend, sent: { providerMessageId: string | null; accepted: boolean }, now: Date): Promise<void>;
+  resolveUncertainAsNotSent(send: SettledLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
   /** Invitations nobody accepted after the expiry: end the sequence. Returns how many. */
   expireUnacceptedInvitations(before: Date, now: Date): Promise<number>;
 }

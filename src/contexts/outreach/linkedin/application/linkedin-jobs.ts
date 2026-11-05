@@ -37,7 +37,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           if (!claim) continue;
           detail.organizations += 1;
           try {
-            const result = await syncAndRecord(management, organizationId, () => vendor.gatewayFor(credentials));
+            const result = await syncAndRecord(management, organizationId, vendor, () => vendor.gatewayFor(credentials));
             // A link nobody finished holds an account at this vendor, which costs a seat, whether or not anyone makes another link.
             if (vendor.connectSession) await expireConnectLinks(management, organizationId, vendor, credentials, ctx.now());
             await slots.finish(claim, { status: "succeeded" }, ctx.now());

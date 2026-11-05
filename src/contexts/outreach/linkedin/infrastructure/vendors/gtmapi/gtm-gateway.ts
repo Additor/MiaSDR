@@ -1,5 +1,5 @@
 import { LinkedInGatewayError, type GatewayAccount, type GatewayProfile, type LinkedInGateway, type LinkedInRecipient, type NetworkDistance, type SearchItem, type SearchPage } from "../../../application/linkedin-ports";
-import { linkedinSlug } from "../../../domain/linkedin";
+import { linkedinSlug, profileUrlFor } from "../../../domain/linkedin";
 import { isBareProviderId, normalizePublicSlug } from "../../../domain/linkedin-identity";
 import { gatewayErrorFrom, type GtmErrorContext } from "./gtm-errors";
 import { GtmClient, GtmRequestError, type GtmClientOptions } from "./gtm-http";
@@ -193,7 +193,7 @@ function searchItemFrom(row: Row): SearchItem | null {
   if (!identifier) return null;
   return {
     identifier,
-    profileUrl: slug ? `https://www.linkedin.com/in/${slug}` : null,
+    profileUrl: slug ? profileUrlFor(slug) : null,
     name: str(row.full_name),
     headline: str(row.headline),
     location: str(row.location),

@@ -18,19 +18,23 @@ import type {
   LinkedInOutreachStore,
   LinkedInResolveClaim,
   LinkedInSendClaim,
+  SettledLinkedInSend,
   UncertainLinkedInSend,
   LinkedInEngineDeps,
 } from "../application/linkedin-ports";
 import {
   MAX_RESOLVE_ATTEMPTS,
   accountBlock,
+  afterResolveFailure,
   dailyInviteLimit,
   inboundIsStale,
+  invitationsHeld,
   inviteBlock,
   linkedinRules,
+  lookupBacklogFull,
   nextRunAfter,
   pickMinutes,
-  resolveRetryMinutes,
+  profileUrlFor,
 } from "../domain/linkedin";
 import { sqlValues } from "@/platform/db/sql-values";
 import { INTERRUPTED_BEFORE_PROVIDER } from "../../domain/send-policy";
@@ -42,14 +46,14 @@ import type { ContactStop } from "../../application/inbound-ports";
 import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
-import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, isLiveEnrollment, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
-import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
+import { countMessagesToday, disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
+import { advanceAfterInvitation, advanceAfterMessage, applyAcceptance } from "./linkedin-enrollment-progress";
 import { VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 type Tx = DbTx;
@@ -79,26 +83,6 @@ async function channelValues(tx: Tx, organizationId: string, channel: string): P
   return row?.values ?? null;
 }
 
-/** Applies the acceptance of one enrollment: connected, and the first message scheduled. Idempotent. Used by the engine and the inbound handler. */
-export async function applyAcceptance(tx: Tx, enrollmentId: string, step2WaitDays: number | null, now: Date): Promise<boolean> {
-  const changed = await tx
-    .update(linkedinEnrollmentDetails)
-    .set({ connectionState: "connected", acceptedAt: now })
-    .where(and(eq(linkedinEnrollmentDetails.enrollmentId, enrollmentId), sql`${linkedinEnrollmentDetails.connectionState} <> 'connected'`))
-    .returning({ id: linkedinEnrollmentDetails.enrollmentId });
-  if (changed.length === 0) return false;
-  await tx
-    .update(campaignEnrollments)
-    .set({
-      status: step2WaitDays === null ? "completed" : "active",
-      currentStep: sql`greatest(${campaignEnrollments.currentStep}, 1)`,
-      nextSendAt: step2WaitDays === null ? null : new Date(now.getTime() + step2WaitDays * DAY_MS),
-      updatedAt: now,
-    })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])));
-  return true;
-}
-
 async function rememberChat(tx: Tx, organizationId: string, accountId: string, providerId: string, chatId: string | null) {
   if (!chatId) return;
   await tx
@@ -108,34 +92,6 @@ async function rememberChat(tx: Tx, organizationId: string, accountId: string, p
       target: [linkedinConnections.providerId, linkedinConnections.linkedinAccountId],
       set: { chatId: sql`coalesce(${linkedinConnections.chatId}, excluded.chat_id)` },
     });
-}
-
-/** After a delivered message step: advance, or finish when it was the last one. Never moves backwards. */
-async function advanceAfterMessage(tx: Tx, enrollmentId: string, stepNumber: number, nextWaitDays: number | null, now: Date) {
-  await tx
-    .update(campaignEnrollments)
-    .set({
-      currentStep: stepNumber,
-      lastSentAt: now,
-      status: nextWaitDays === null ? "completed" : "active",
-      nextSendAt: nextWaitDays === null ? null : new Date(now.getTime() + nextWaitDays * DAY_MS),
-      updatedAt: now,
-    })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < ${stepNumber}`, inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])));
-}
-
-/** After an invitation went out. Does nothing to the enrollment when the acceptance arrived first. */
-async function advanceAfterInvitation(tx: Tx, enrollmentId: string, accountId: string, now: Date) {
-  const moved = await tx
-    .update(linkedinEnrollmentDetails)
-    .set({ connectionState: "request_sent", requestSentAt: now })
-    .where(and(eq(linkedinEnrollmentDetails.enrollmentId, enrollmentId), eq(linkedinEnrollmentDetails.connectionState, "none")))
-    .returning({ id: linkedinEnrollmentDetails.enrollmentId });
-  if (moved.length === 0) return;
-  await tx
-    .update(campaignEnrollments)
-    .set({ status: "active", currentStep: 1, lastSentAt: now, nextSendAt: null, linkedinAccountId: accountId, updatedAt: now })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < 1`, inArray(campaignEnrollments.status, LIVE)));
 }
 
 /** A campaign with no assigned senders is open to every account; otherwise only the listed accounts may send for it. */
@@ -249,8 +205,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       if (message) return message;
 
       // 2. An invitation, inside the daily and weekly limits (claims in flight and unknown outcomes count).
-      // A limit that stops invitations alone holds lookups too: a lookup only leads to an invitation.
-      if (account.invitesPausedUntil && account.invitesPausedUntil.getTime() > options.now.getTime()) return null;
+      if (invitationsHeld(account, options.now)) return null;
       const startOfDay = startOfLocalDay(options.now, workingHours.timeZone).toISOString();
       const weekAgo = new Date(options.now.getTime() - 7 * DAY_MS).toISOString();
       const [{ today, week }] = await tx
@@ -295,7 +250,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
             sql`${linkedinEnrollmentDetails.providerId} is not null`,
           ),
         );
-      if (backlog >= Math.max(10, limit * 2)) return null;
+      if (lookupBacklogFull(backlog, limit)) return null;
 
       const resolvable = (await tx.execute(sql`
         select e.id, p.linkedin_slug, d.profile_url, d.resolve_retry_count
@@ -458,7 +413,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .update(linkedinEnrollmentDetails)
         .set({
           providerId: profile.providerId,
-          ...(slug ? { profileUrl: `https://www.linkedin.com/in/${slug}` } : {}),
+          ...(slug ? { profileUrl: profileUrlFor(slug) } : {}),
           resolveRetryCount: 0,
           resolveNextAttemptAt: null,
           resolveLastError: null,
@@ -474,13 +429,13 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   async markResolveFailed(claim, error, now, fatal) {
     await db.transaction(async (tx) => {
       const failures = claim.failures + 1;
-      const exhausted = fatal || failures >= MAX_RESOLVE_ATTEMPTS;
+      const { exhausted, nextAttemptAt } = afterResolveFailure(failures, fatal, now);
       await tx
         .update(linkedinEnrollmentDetails)
         .set({
           resolveRetryCount: failures,
           resolveLastError: error.slice(0, 500),
-          resolveNextAttemptAt: exhausted ? null : new Date(now.getTime() + resolveRetryMinutes(failures) * 60_000),
+          resolveNextAttemptAt: nextAttemptAt,
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       if (exhausted) {
@@ -688,7 +643,6 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
         enrollmentId: sends.enrollmentId,
         stepNumber: sends.stepNumber,
         attempt: sends.attempt,
-        claimedAt: sends.claimedAt,
         accountId: sends.linkedinAccountId,
         steps: campaigns.steps,
       })
@@ -699,19 +653,12 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
     if (!row) return "not_found";
     if (row.status !== "unknown") return "not_unknown";
     const stepNumber = row.stepNumber as number;
-    const send: UncertainLinkedInSend = {
+    const send: SettledLinkedInSend = {
       sendId: input.sendId,
-      organizationId: input.organizationId,
       enrollmentId: row.enrollmentId as string,
       stepNumber,
       attempt: row.attempt,
-      claimedAt: row.claimedAt,
-      rendered: true,
-      slug: null,
-      body: null,
-      chatId: null,
-      account: { id: row.accountId as string, providerAccountId: "" },
-      providerId: null,
+      account: { id: row.accountId as string },
       nextStepWaitDays: (row.steps as Array<{ waitDays?: number }>)[stepNumber]?.waitDays ?? null,
     };
     if (input.outcome === "delivered") await drizzleLinkedInStore.resolveUncertainAsSent(send, { providerMessageId: null, accepted: false }, input.now);

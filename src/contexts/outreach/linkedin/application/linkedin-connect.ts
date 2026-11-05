@@ -150,7 +150,7 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
     return { status: 200, outcome: "failed" };
   }
   try {
-    await syncWith(deps, link.organizationId, vendor.gatewayFor(credentials));
+    await syncWith(deps, link.organizationId, vendor, vendor.gatewayFor(credentials));
   } catch (error) {
     // The vendor retries a non-200, and the link stays pending for that.
     await deps.connectLinks.noteError(link.id, vendor.explain(error));

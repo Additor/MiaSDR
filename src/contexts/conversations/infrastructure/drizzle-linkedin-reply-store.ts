@@ -1,17 +1,14 @@
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts, sends } from "@/platform/db/schema";
+import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
-import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
-import { utcDayStart } from "@/shared/utc-day";
 import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
-import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
-import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
+import { countMessagesToday, disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { isUuid } from "@/shared/uuid";
 import { lockAgentSend } from "@/contexts/agent-access/infrastructure/mcp-policy-reader";
 import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
@@ -50,22 +47,14 @@ async function draftWrittenMoment(tx: Tx, draft: typeof drafts.$inferSelect): Pr
   return (first?.request as LinkedInSnapshot | undefined)?.draftWrittenAt ?? draft.updatedAt.toISOString();
 }
 
-async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
-  const dayStart = utcDayStart(now).toISOString();
-  const [replies] = await tx
-    .select({ n: sql<number>`count(*)::int`, last: sql<Date | null>`max(${sendAttempts.createdAt})` })
-    .from(sendAttempts)
-    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId), inArray(sendAttempts.status, ATTEMPT_COUNTED), sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`));
-  const [sequence] = await tx
-    .select({ n: sql<number>`count(*)::int` })
-    .from(sends)
-    .where(and(eq(sends.linkedinAccountId, accountId), eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), sql`${sends.stepNumber} > 1`, inArray(sends.status, SEND_COUNTED), gte(sends.claimedAt, new Date(dayStart))));
+async function usage(tx: Tx | typeof db, account: { id: string; providerAccountId: string }, now: Date) {
+  const usedToday = await countMessagesToday(account, now, tx);
   // Gap: the newest attempt of any size, including one that failed, so a burst of retries does not get through.
   const [latest] = await tx
     .select({ last: sql<Date | null>`max(${sendAttempts.createdAt})` })
     .from(sendAttempts)
-    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId)));
-  return { usedToday: replies.n + sequence.n, lastAttemptAt: latest.last ? new Date(latest.last) : null };
+    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, account.id)));
+  return { usedToday, lastAttemptAt: latest.last ? new Date(latest.last) : null };
 }
 
 async function gapFor(tx: Tx | typeof db, organizationId: string): Promise<number> {
@@ -138,7 +127,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (input.via) await lockAgentSend(tx, input.organizationId);
       const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, conv.accountRef), eq(linkedinAccounts.organizationId, input.organizationId))).for("update");
       if (!account) throw replyRefusal("no_account", "linkedin");
-      const used = await usage(tx, account.id, input.now);
+      const used = await usage(tx, account, input.now);
       checkAccountReady(replyBlock(input.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: await gapFor(tx, input.organizationId) }));
       if (input.via) {
         await checkAgentReply(tx, {
@@ -287,7 +276,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
 
     const [account] = isUuid(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
     const dnc = await isDoNotContact(db, organizationId, head.personId);
-    const used = account ? await usage(db, account.id, now) : { usedToday: 0, lastAttemptAt: null };
+    const used = account ? await usage(db, account, now) : { usedToday: 0, lastAttemptAt: null };
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: 0 }) : null;
     // The gap is a few seconds and clears by itself, so the panel does not show it.
     const issue = !account
