@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
@@ -33,6 +33,7 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     slug: snap.slug ?? null,
     text: snap.text,
     draftWrittenAt: snap.draftWrittenAt ? new Date(snap.draftWrittenAt) : null,
+    operation: attempt.providerOperationId && attempt.providerOperationAccount ? { id: attempt.providerOperationId, account: attempt.providerOperationAccount } : null,
   };
 }
 
@@ -242,6 +243,27 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     await markAttemptUncertain({ id: send.attempt.id, draftId: send.draftId }, error);
   },
 
+  async markSubmitted(send, operation) {
+    await db.update(sendAttempts).set({ providerOperationId: operation, providerOperationAccount: send.providerAccountId }).where(and(eq(sendAttempts.id, send.attempt.id), eq(sendAttempts.status, "sending")));
+  },
+
+  async listSubmitted(limit) {
+    const rows = await db
+      .select()
+      .from(sendAttempts)
+      .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.status, "sending"), isNotNull(sendAttempts.providerOperationId)))
+      .orderBy(sendAttempts.updatedAt)
+      .limit(limit);
+    return rows.map((a) => {
+      const send = contextFor(a);
+      return { send: { ...send, operation: send.operation as { id: string; account: string } }, startedAt: a.createdAt };
+    });
+  },
+
+  async noteRead(send, now) {
+    await db.update(sendAttempts).set({ updatedAt: now }).where(and(eq(sendAttempts.id, send.attempt.id), eq(sendAttempts.status, "sending")));
+  },
+
   async noteChecked(send, now) {
     await noteAttemptChecked(send.attempt.id, now);
   },
@@ -299,6 +321,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       .limit(1);
     const draft = newest && ["awaiting_review", "sending", "delivery_uncertain", "stale"].includes(newest.status) ? newest : null;
     // The agent's token, named as the email panel names it, until a person edits the text.
+    const [running] = draft?.status === "sending" ? await db.select({ id: sendAttempts.id }).from(sendAttempts).where(and(eq(sendAttempts.draftId, draft.id), eq(sendAttempts.status, "sending"), isNotNull(sendAttempts.providerOperationId))).limit(1) : [];
     const [token] = draft?.writtenViaTokenId
       ? await db.select({ name: mcpTokens.name }).from(mcpTokens).where(and(eq(mcpTokens.id, draft.writtenViaTokenId), eq(mcpTokens.organizationId, organizationId)))
       : [];
@@ -312,7 +335,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft
-        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: typedDraft(draft.request) ? "manual" : "ai", writtenVia: token?.name ?? null }
+        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: typedDraft(draft.request) ? "manual" : "ai", writtenVia: token?.name ?? null, awaitingVendor: running !== undefined }
         : null,
     };
   },

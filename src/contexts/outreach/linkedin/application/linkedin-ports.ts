@@ -1,7 +1,9 @@
 import type { NotSentCause } from "../../domain/send-policy";
 import type { WorkingHours } from "../../domain/working-hours";
 import type { LinkedInInboundEvent } from "../domain/linkedin";
+import type { OpenOperationKind } from "../domain/linkedin-operations";
 import type { Clock } from "../../application/clock";
+import type { SearchPageClaim } from "./linkedin-search-ports";
 
 /**
  * Why a gateway call failed. `kind` carries the outcome discipline of the email path:
@@ -62,7 +64,10 @@ export interface GatewayProfile {
   location: string | null;
   pictureUrl: string | null;
   networkDistance: NetworkDistance;
-  isPremium: boolean;
+  /** Null: this vendor does not say, so a sync leaves the account's setting as it is. */
+  isPremium: boolean | null;
+  /** The LinkedIn member URN, for a vendor whose acceptance events name people by it. */
+  memberUrn?: string | null;
 }
 
 export interface SearchItem {
@@ -82,6 +87,51 @@ export interface SearchPage {
   totalEstimate: number | null;
 }
 
+/** A vendor took the action and will run it later. It settles through `LinkedInGateway.operations`. */
+export interface SubmittedOperation {
+  operation: string;
+}
+
+export const isSubmitted = (answer: object): answer is SubmittedOperation => "operation" in answer;
+
+export type SentInvitation = { invitationId: string | null };
+export type SentMessage = { chat: string | null; messageId: string | null };
+
+/** A lookup that found the person only by a public slug: a classic lookup of that slug names them. */
+export type LookAgain = { lookAgain: string };
+
+/** What each kind of action answers once it finished. */
+export interface OperationValues {
+  invitation: SentInvitation;
+  message: SentMessage;
+  lookup: GatewayProfile | LookAgain;
+  search: SearchPage;
+  reply_check: null;
+}
+
+export type OperationProgress<K extends OpenOperationKind> =
+  /** `held`: the vendor is holding it for its working hours. `started`: it is running, so a cancel may come after it did its work. */
+  | { state: "waiting"; held: boolean; started: boolean }
+  | { state: "finished"; value: OperationValues[K] }
+  /** The vendor says the action failed. `error.kind` says whether a write may have gone out. */
+  | { state: "failed"; error: LinkedInGatewayError };
+
+/**
+ * For a vendor that runs actions after it answered.
+ * A throw from any of these means the read failed. It never means the action was refused: a refusal read that way would send twice.
+ */
+export interface LinkedInGatewayOperations {
+  progress<K extends OpenOperationKind>(input: { account: string; operation: string; kind: K }): Promise<OperationProgress<K>>;
+  /** `already_finished`: too late to stop, so `progress` has the outcome. `cancelled`: it stops where it is, and what it already did stays done. */
+  cancel(input: { account: string; operation: string }): Promise<"cancelled" | "already_finished">;
+  /** The most people one search action reads on this URL. */
+  maxSearchRead(searchUrl: string): number;
+  /** Asks the vendor to read a thread into what it can answer about. */
+  checkThread(input: { account: string; to: LinkedInRecipient; since: Date }): Promise<SubmittedOperation>;
+  /** Raw deliveries for the same ledger an inbox read goes through: what the person wrote in the thread since `since`. */
+  readThread(input: { account: string; to: LinkedInRecipient; since: Date }): Promise<unknown[]>;
+}
+
 /** Port for LinkedIn. One instance serves one set of provider credentials. Adapters live in `infrastructure/vendors`. */
 export interface LinkedInGateway {
   /** Confirms the credentials work. Throws a LinkedInGatewayError a person can act on. */
@@ -90,10 +140,12 @@ export interface LinkedInGateway {
   listAccounts(only?: string[]): Promise<GatewayAccount[]>;
   /** Own profile of a connected account (premium flag, name). */
   getOwnProfile(account: string): Promise<GatewayProfile>;
+  /** Absent on a vendor that answers each call with its outcome. Where it is present, a call below may answer `SubmittedOperation`. */
+  operations?: LinkedInGatewayOperations;
   /** Resolves a slug or a member id to a provider member id. `linkedinApi` is set only on the retry for a Sales Navigator or Recruiter member id, after a classic lookup found nothing. */
-  getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile>;
+  getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile | SubmittedOperation>;
   /** `sendKey` names this send across its retries, for a vendor that answers a repeat instead of sending again. Others ignore it. */
-  sendInvitation(input: { account: string; member: string; note: string | null; sendKey: string }): Promise<{ invitationId: string | null }>;
+  sendInvitation(input: { account: string; member: string; note: string | null; sendKey: string }): Promise<SentInvitation | SubmittedOperation>;
   /**
    * For reconciling an unknown invitation: still pending, accepted (the member is now first degree), or not found.
    * Throws when the provider cannot answer.
@@ -103,13 +155,15 @@ export interface LinkedInGateway {
    * Sends to whoever `to` names. Answers the chat it went into, when the provider says. Throws a definite `invalid_recipient` when `to` is not enough for this provider.
    * `unlessRepliedAfter`: best effort. A vendor that can read the thread first throws a definite `replied` when the person wrote after this moment. Others ignore it.
    */
-  sendMessage(input: { account: string; to: LinkedInRecipient; text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<{ chat: string | null; messageId: string | null }>;
+  sendMessage(input: { account: string; to: LinkedInRecipient; text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<SentMessage | SubmittedOperation>;
   /**
    * For reconciling an unknown message: a message from the account owner with this text after `since`. Null leads to a
-   * resend, so it means the provider showed there is none. Throws when it cannot tell.
+   * resend, so it means the provider showed there is none. Throws when it cannot tell. `ask_a_person`: not found, and this vendor
+   * cannot rule it out however long it waits, so nothing resends it and a person settles it.
    */
-  findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | null>;
-  searchPeople(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage>;
+  findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | "ask_a_person" | null>;
+  /** `limit`: the most people this call may read, for a vendor that reads a whole search in one action. Others read one page. */
+  searchPeople(input: { account: string; searchUrl: string; cursor: string | null; limit: number }): Promise<SearchPage | SubmittedOperation>;
   /**
    * Makes a single-use link that connects a LinkedIn account. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new one.
    * The caller sends the person to `url` in a full page navigation. `account`: the provider account the link is for, when it exists already.
@@ -198,9 +252,15 @@ export interface LinkedInVendor {
   } | null;
   /** For a vendor whose link does not report back. */
   readonly connectSession: {
-    status(credentials: VendorCredentials, account: string): Promise<"pending" | "connected" | "failed">;
-    /** Removes an account at the vendor. The caller checks that no row here uses it. */
-    cancel(credentials: VendorCredentials, account: string): Promise<void>;
+    /**
+     * How the link stands. `link.ref` is what `createConnectLink` named. `knownAccounts`: this vendor's accounts here already, which a
+     * new sign-in is not. `account`: the account that signed in, when it is not `link.ref`. `error`: a sentence for a failed link, when the vendor said why.
+     */
+    status(credentials: VendorCredentials, link: { ref: string; createdAt: Date; reconnectAccount: { ref: string; username: string | null } | null; knownAccounts: readonly string[] }): Promise<{ state: "pending" | "connected" | "failed"; account?: string; error?: string }>;
+    /** Removes what `createConnectLink` named at the vendor. The caller checks that no row here uses it. */
+    cancel(credentials: VendorCredentials, ref: string): Promise<void>;
+    /** True: two open links could not be told apart, so only one may be open. */
+    oneLinkAtATime?: boolean;
   } | null;
 }
 
@@ -240,9 +300,27 @@ export interface LinkedInResolveClaim {
   /** Slug on the person, else the enrollment's profile URL: a profile URL, a Sales Navigator or Recruiter URL, or a bare member id. */
   identifier: string;
   failures: number;
+  /** The product a vendor's earlier lookup moved this one on to. Null: start with the classic lookup. */
+  nextApi: "sales_navigator" | "recruiter" | null;
 }
 
-export type LinkedInClaim = LinkedInSendClaim | LinkedInResolveClaim;
+/** Before a campaign message on an account that came back from a reconnect: replies written while it was gone were never read. */
+export interface LinkedInReplyCheckClaim {
+  kind: "reply_check";
+  organizationId: string;
+  enrollmentId: string;
+  account: { id: string; providerAccountId: string };
+  to: LinkedInRecipient;
+  since: Date;
+}
+
+export type LinkedInClaim = LinkedInSendClaim | LinkedInResolveClaim | LinkedInReplyCheckClaim;
+
+/** What settling a send needs, when the step it was claimed for may be gone. Every engine write takes this much. */
+export type LinkedInSettleClaim = Pick<LinkedInSendClaim, "kind" | "sendId" | "organizationId" | "attempt" | "stepNumber" | "enrollmentId" | "campaignId" | "providerId" | "nextStep"> & {
+  account: { id: string };
+  person: { id: string };
+};
 
 /** `enrollment_stopped`: the enrollment is no longer pending or active (replied, suppressed, removed). */
 export type LinkedInBlockReason = "campaign_inactive" | "suppressed" | "do_not_contact" | "enrollment_stopped";
@@ -263,10 +341,14 @@ export interface ResolvedProfile {
   pictureUrl: string | null;
   /** Member id the lookup started from (Sales Navigator, Recruiter or bare provider id). Absent for a slug lookup. */
   memberId?: string;
+  memberUrn?: string | null;
 }
 
-/** `slug_collision`: the resolved slug already belongs to another lead of the organization, so the enrollment failed. */
-export type ResolveWriteResult = "resolved" | "slug_collision";
+/**
+ * `slug_collision`: the resolved slug already belongs to another lead of the organization, so the enrollment failed.
+ * `stopped`: the lead stopped while the lookup ran, so nothing was written and it stays unpinned.
+ */
+export type ResolveWriteResult = "resolved" | "slug_collision" | "stopped";
 
 export interface UncertainLinkedInSend {
   sendId: string;
@@ -298,33 +380,44 @@ export interface LinkedInOutreachStore {
    * and place the gap. A message or invitation is a `sends` row, so it cannot be claimed twice.
    */
   claimNext(options: LinkedInClaimOptions): Promise<LinkedInClaim | null>;
-  checkBlockers(claim: LinkedInSendClaim): Promise<LinkedInBlockReason | null>;
-  abandon(claim: LinkedInSendClaim, reason: LinkedInBlockReason, now: Date): Promise<void>;
+  checkBlockers(claim: LinkedInSettleClaim): Promise<LinkedInBlockReason | null>;
+  abandon(claim: LinkedInSettleClaim, reason: LinkedInBlockReason, now: Date): Promise<void>;
   /** Stores the rendered content and the marker that the provider call may start. False: this claim no longer owns the send, so no call may start. */
   recordRendered(claim: LinkedInSendClaim, rendered: { body: string }): Promise<boolean>;
-  markSent(claim: LinkedInSendClaim, sent: { providerMessageId: string | null; chatId: string | null }, now: Date): Promise<void>;
+  markSent(claim: LinkedInSettleClaim, sent: { providerMessageId: string | null; chatId: string | null }, now: Date): Promise<void>;
   /** Definite refusal. `fatal` skips the retries. */
-  markFailed(claim: LinkedInSendClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number, fatal: boolean): Promise<void>;
-  markUnknown(claim: LinkedInSendClaim, error: string): Promise<void>;
+  markFailed(claim: LinkedInSettleClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number, fatal: boolean): Promise<void>;
+  markUnknown(claim: { sendId: string; attempt: number }, error: string): Promise<void>;
   /** Gives the claim back without using an attempt (nothing reached the provider, or the account must stop). */
-  release(claim: LinkedInSendClaim): Promise<void>;
+  release(claim: LinkedInSettleClaim): Promise<void>;
   /** The provider says we are already connected: skip the invitation and go on with the messages. */
-  markAlreadyConnected(claim: LinkedInSendClaim, now: Date): Promise<void>;
+  markAlreadyConnected(claim: LinkedInSettleClaim, now: Date): Promise<void>;
   /** LinkedIn refused for a limit: give the attempt back and stop the account for a while. */
-  pauseAccountForLimit(claim: LinkedInSendClaim, until: Date): Promise<void>;
+  pauseAccountForLimit(claim: LinkedInSettleClaim, until: Date): Promise<void>;
   /** LinkedIn refused an invitation for a limit that stops invitations alone: give the attempt back and hold invitations and lookups for a while. */
-  pauseInvitationsForLimit(claim: LinkedInSendClaim, until: Date): Promise<void>;
+  pauseInvitationsForLimit(claim: LinkedInSettleClaim, until: Date): Promise<void>;
   /** LinkedIn refused a profile lookup for a limit that stops invitations alone. The lead keeps its retries. */
   pauseInvitationsForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
   /** The vendor refused a send for a reason about this person's thread: give the attempt back and try this lead again at `until`. The account goes on. */
-  holdRecipient(claim: LinkedInSendClaim, until: Date, error: string, now: Date): Promise<void>;
+  holdRecipient(claim: LinkedInSettleClaim, until: Date, error: string, now: Date): Promise<void>;
   /** The provider rejected the credentials or the account: give the attempt back and mark the account disconnected. */
   disconnectAccount(accountId: string, error: string): Promise<void>;
 
   /** LinkedIn refused a profile lookup for a limit: stop the account for a while. The lead keeps its retries. */
-  pauseAccountForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
+  pauseAccountForLookupLimit(claim: { account: { id: string } }, until: Date): Promise<void>;
   markResolved(claim: LinkedInResolveClaim, profile: ResolvedProfile, now: Date): Promise<ResolveWriteResult>;
   markResolveFailed(claim: LinkedInResolveClaim, error: string, now: Date, fatal: boolean): Promise<void>;
+
+  /** The vendor took the action and will run it later. The row exists before the claim's work can be settled, and closes the account's gate. */
+  noteSubmitted(input: { kind: OpenOperationKind; subjectId: string; organizationId: string; account: { id: string; providerAccountId: string }; operation: string; api?: string | null; rowLimit?: number | null; now: Date }): Promise<void>;
+  /** After a classic lookup found nobody: the next lookup uses this product. */
+  moveResolveToApi(claim: LinkedInResolveClaim, api: "sales_navigator" | "recruiter", now: Date): Promise<void>;
+  /** A lookup named only a public slug. The person takes it, so the next lookup is a classic one. A slug another lead holds fails the enrollment. */
+  resolveBySlug(claim: LinkedInResolveClaim, slug: string, now: Date): Promise<void>;
+  /** The lead's thread was read at `now`: nothing older than this stops it from here. */
+  markReplyChecked(enrollmentId: string, now: Date): Promise<void>;
+  /** A look at the lead's thread could not finish. It waits, and the account's other leads go first. */
+  deferReplyCheck(enrollmentId: string, until: Date): Promise<void>;
 
   deferUncertain(sendId: string, until: Date): Promise<void>;
   listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainLinkedInSend[]>;
@@ -334,10 +427,37 @@ export interface LinkedInOutreachStore {
   expireUnacceptedInvitations(before: Date, now: Date): Promise<number>;
 }
 
+/** One action a vendor has not finished, with what settling it needs. `subject` is null when its send, lead or search was purged. */
+export type OpenLinkedInOperation = {
+  id: string;
+  organizationId: string;
+  accountId: string;
+  /** The vendor's stored key, for the ledger. */
+  provider: string;
+  /** The account id it was submitted as. */
+  providerAccountRef: string;
+  operation: string;
+  submittedAt: Date;
+} & (
+  | { kind: "invitation" | "message"; subject: LinkedInSettleClaim | null }
+  | { kind: "lookup"; api: "sales_navigator" | "recruiter" | null; subject: (LinkedInResolveClaim & { live: boolean }) | null }
+  | { kind: "reply_check"; subject: (LinkedInReplyCheckClaim & { live: boolean }) | null }
+  | { kind: "search"; rowLimit: number; subject: (SearchPageClaim & { live: boolean }) | null }
+);
+
+/** Persistence for the settle job. `close` is the fence: only the worker it answers true to writes the outcome. */
+export interface LinkedInOpenOperationStore {
+  /** Open actions, the ones looked at longest ago first. */
+  listOpen(limit: number): Promise<OpenLinkedInOperation[]>;
+  noteChecked(id: string, now: Date): Promise<void>;
+  /** Removes the row. A crash right after this leaves its subject to the reconcile path, which never sends on a guess. */
+  close(id: string): Promise<boolean>;
+}
+
 export interface LinkedInEngineDeps {
   store: LinkedInOutreachStore;
   /** The vendor read the thread and the person wrote, so nothing went out. Stops outreach to the person as a filed reply does, and gives the attempt back. The inbox read files the message later. */
-  stopForReply(claim: LinkedInSendClaim, now: Date): Promise<void>;
+  stopForReply(claim: LinkedInSettleClaim, now: Date): Promise<void>;
   gateways: LinkedInGatewayProvider;
   clock: Clock;
   random: () => number;

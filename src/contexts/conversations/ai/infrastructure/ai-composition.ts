@@ -24,6 +24,8 @@ const globalForAi = globalThis as unknown as { __miasdrFakeAi?: FakeReplyAi };
  * AI_PROVIDER=fake (demos and tests) answers for every organization with the keyword classifier and template drafts.
  * Otherwise the organization's configured language model runs the prompts; no model means null: AI is not configured.
  */
+const REPLY_SETTLE_BUDGET_MS = 15_000;
+
 export const replyAiResolver: ReplyAiResolver = {
   async forOrganization(organizationId): Promise<ReplyAi | null> {
     if (aiFakeMode()) return (globalForAi.__miasdrFakeAi ??= new FakeReplyAi());
@@ -79,8 +81,9 @@ export function conversationJobs(): Job[] {
   jobs.push({
     name: "conversations.linkedin-reply-reconcile",
     failureKeys: [],
-    async run() {
-      const report = await reconcileLinkedInReplies(linkedinReplyDeps());
+    async run(ctx) {
+      // A vendor's outage must not use up the tick that every later job shares.
+      const report = await reconcileLinkedInReplies(linkedinReplyDeps(), 25, Math.min(ctx.deadline, Date.now() + REPLY_SETTLE_BUDGET_MS));
       return { processed: report.found, more: report.checked >= 25, detail: { checked: report.checked, uncertain: report.uncertain, waiting: report.waiting } };
     },
   });

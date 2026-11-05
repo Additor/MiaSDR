@@ -9,7 +9,10 @@ export interface ConnectLink {
   secretHash: string;
   status: ConnectLinkStatus;
   expiresAt: Date;
+  /** What the vendor named for this link: its account, or until a sign-in names one, its session. */
   providerAccountId: string | null;
+  /** The account a reconnect link is for. Null on a link for a new account. */
+  reconnectAccountId: string | null;
   lastError: string | null;
   createdAt: Date;
   completedAt: Date | null;
@@ -17,7 +20,7 @@ export interface ConnectLink {
 
 /** Pending hosted-auth links (`linkedin_connect_links`). */
 export interface LinkedInConnectStore {
-  create(link: { id: string; organizationId: string; providerName: string; secretHash: string; expiresAt: Date; createdBy: string; ownerUserId: string | null }): Promise<void>;
+  create(link: { id: string; organizationId: string; providerName: string; secretHash: string; expiresAt: Date; createdBy: string; ownerUserId: string | null; reconnectAccountId: string | null }, room: { maxPending: number; now: Date }): Promise<boolean>;
   /** By id only: the public callback does not know the organization until the secret has matched. */
   find(id: string): Promise<ConnectLink | null>;
   /**
@@ -32,6 +35,5 @@ export interface LinkedInConnectStore {
   noteError(id: string, error: string): Promise<void>;
   /** Marks this organization's pending links past their expiry as expired. Answers the vendor's account of each, where it named one. */
   expireDue(organizationId: string, now: Date): Promise<Array<string | null>>;
-  countPending(organizationId: string, now: Date): Promise<number>;
   listRecent(organizationId: string, limit: number, now: Date): Promise<Array<Pick<ConnectLink, "id" | "status" | "expiresAt" | "createdAt" | "completedAt" | "lastError">>>;
 }

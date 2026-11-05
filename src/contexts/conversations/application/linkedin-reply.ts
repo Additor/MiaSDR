@@ -2,7 +2,7 @@ import { aiIsOn, aiOffMessage, type AiStatus } from "@/contexts/integrations/dom
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
-import { REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
+import { REPLY_HELD_PAUSE_MINUTES, REPLY_OPERATION_GONE_HOURS, REPLY_OPERATION_TIMEOUT_MINUTES, REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
 import { LinkedInReplyError, type LinkedInReplyAddress, type LinkedInReplyBlocker, type LinkedInReplyContext, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore, type LinkedInSentFinder } from "./linkedin-reply-ports";
 import type { AttemptRow } from "./reply-ports";
 
@@ -33,7 +33,7 @@ export type LinkedInReplyResult =
   | { status: "delivery_uncertain"; attemptId: string; replayed: boolean; error: string | null }
   | { status: "failed"; attemptId: string; replayed: boolean; error: string }
   | { status: "blocked"; attemptId: string; replayed: false; error: string; reason: LinkedInReplyBlocker }
-  | { status: "in_progress"; attemptId: string; replayed: true };
+  | { status: "in_progress"; attemptId: string; replayed: boolean };
 
 function replay(attempt: AttemptRow): LinkedInReplyResult {
   switch (attempt.status) {
@@ -106,19 +106,27 @@ export async function sendLinkedInReply(
 
   try {
     const sent = await deps.sender.send({ ...addressOf(send), text: send.text, sendKey: send.attempt.id, unlessRepliedAfter: send.draftWrittenAt });
+    if ("operation" in sent) {
+      await deps.store.markSubmitted(send, sent.operation);
+      return { status: "in_progress", attemptId: send.attempt.id, replayed: false };
+    }
     await deps.store.markSent(send, { providerMessageId: sent.messageId }, deps.now());
     return { status: "sent", attemptId: send.attempt.id, replayed: false };
   } catch (error) {
     if (error instanceof LinkedInReplyError && error.kind === "definite") {
-      if (error.code === "rate_limited") await deps.store.pauseAccount(send, new Date(deps.now().getTime() + (error.retryAfterMs ?? REPLY_PAUSE_HOURS * 3_600_000)));
-      if (error.code === "auth") await deps.store.disconnectAccount(send, error.message);
-      await deps.store.markFailed(send, error.message);
+      await applyRefusal(deps, send, error);
       return { status: "failed", attemptId: send.attempt.id, replayed: false, error: error.message };
     }
     // Timeout, dropped connection, 5xx or anything unexpected: it may have gone out. Never retried on a guess.
     await deps.store.markUncertain(send, message(error));
     return { status: "delivery_uncertain", attemptId: send.attempt.id, replayed: false, error: message(error) };
   }
+}
+
+async function applyRefusal(deps: LinkedInReplyDeps, send: LinkedInReplyContext, error: LinkedInReplyError): Promise<void> {
+  if (error.code === "rate_limited") await deps.store.pauseAccount(send, new Date(deps.now().getTime() + (error.retryAfterMs ?? REPLY_PAUSE_HOURS * 3_600_000)));
+  if (error.code === "auth") await deps.store.disconnectAccount(send, error.message);
+  await deps.store.markFailed(send, error.message);
 }
 
 const addressOf = (send: LinkedInReplyContext): LinkedInReplyAddress => ({
@@ -145,9 +153,10 @@ export const LINKEDIN_UNCERTAIN_AFTER_MS = 30 * 60_000;
  * becomes (or stays) `delivery_uncertain` so a person decides. The same goes when LinkedIn cannot be checked, because a
  * `sending` attempt blocks the next send in its chat. A later check can still settle it. Nothing is resent.
  */
-export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 25): Promise<LinkedInReplyReconcileReport> {
+export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 25, settleDeadline = Number.POSITIVE_INFINITY): Promise<LinkedInReplyReconcileReport> {
   const now = deps.now();
   const report: LinkedInReplyReconcileReport = { checked: 0, found: 0, uncertain: 0, waiting: 0 };
+  await settleSubmittedReplies(deps, report, limit, now, settleDeadline);
   for (const item of await deps.store.listUnsettled(new Date(now.getTime() - LINKEDIN_RECONCILE_AFTER_MS), limit)) {
     report.checked += 1;
     const { send } = item;
@@ -178,4 +187,72 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
     }
   }
   return report;
+}
+
+/**
+ * Replies a vendor took and runs later. A finished read settles one the way a live answer would. Only a cancel of something that had
+ * not started lets a draft go back, and a failed read waits: it says nothing about the send, and the person may be reading this draft.
+ * One row that throws stays for the next tick, so it cannot hold back the other rows or the reconcile below, which every vendor needs.
+ */
+async function settleSubmittedReplies(deps: LinkedInReplyDeps, report: LinkedInReplyReconcileReport, limit: number, now: Date, deadline: number): Promise<void> {
+  for (const item of await deps.store.listSubmitted(limit)) {
+    if (Date.now() >= deadline) return;
+    report.checked += 1;
+    try {
+      await settleSubmittedReply(deps, report, item, now);
+    } catch (error) {
+      console.error(`LinkedIn reply settle: attempt ${item.send.attempt.id} failed: ${error instanceof Error ? error.name : "unknown error"}`);
+    }
+  }
+}
+
+const MAY_HAVE_GONE = "The LinkedIn provider did not finish this send in time, and it may have gone out.";
+
+async function settleSubmittedReply(deps: LinkedInReplyDeps, report: LinkedInReplyReconcileReport, { send, startedAt }: Awaited<ReturnType<LinkedInReplyStore["listSubmitted"]>>[number], now: Date): Promise<void> {
+  const where = { organizationId: send.organizationId, accountId: send.accountId, account: send.operation.account, operation: send.operation.id };
+  const ageMinutes = (now.getTime() - startedAt.getTime()) / 60_000;
+  const gone = ageMinutes >= REPLY_OPERATION_GONE_HOURS * 60;
+  await deps.store.noteRead(send, now);
+  const read = await deps.sender.progress(where).catch(() => null);
+  if (read?.state === "finished") {
+    await deps.store.markSent(send, { providerMessageId: read.messageId }, now);
+    report.found += 1;
+    return;
+  }
+  if (read?.state === "failed") {
+    if (read.error.kind === "definite") await applyRefusal(deps, send, read.error);
+    else await deps.store.markUncertain(send, read.error.message);
+    return;
+  }
+  const giveUp = async () => {
+    await deps.store.markUncertain(send, MAY_HAVE_GONE);
+    report.uncertain += 1;
+  };
+  if (!read) {
+    if (gone) await giveUp();
+    else report.waiting += 1;
+    return;
+  }
+  const blocker = await deps.store.checkBlockers(send, now);
+  // Only the person's own block stops a send already on its way. A pause or a lost connection is the vendor's to report.
+  const blocked = blocker && blocker.reason !== "not_connected" && blocker.reason !== "paused" ? blocker.message : null;
+  const overdue = ageMinutes >= REPLY_OPERATION_TIMEOUT_MINUTES;
+  if (!blocked && !read.held && !overdue) {
+    report.waiting += 1;
+    return;
+  }
+  const answer = await deps.sender.cancel(where).catch(() => null);
+  if (answer !== "cancelled") {
+    // Still running, or too late to stop: the next read has the outcome. A vendor that never finishes must not hold the chat for good.
+    if (gone) await giveUp();
+    else report.waiting += 1;
+    return;
+  }
+  // A cancel keeps what the action already did, so only one that had not started can say the reply did not go out.
+  if (read.started || (!blocked && !read.held)) {
+    await giveUp();
+    return;
+  }
+  if (read.held) await deps.store.pauseAccount(send, new Date(now.getTime() + REPLY_HELD_PAUSE_MINUTES * 60_000));
+  await deps.store.markFailed(send, blocked ?? "The LinkedIn provider held this reply for the account's working hours, so it was stopped. The reply was not sent.");
 }

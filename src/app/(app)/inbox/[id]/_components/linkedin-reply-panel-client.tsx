@@ -19,7 +19,7 @@ import { SendingLine } from "./sending-line";
 import { UncertainBox } from "./uncertain-box";
 import { useDraftActions, useSendKey } from "./use-draft-actions";
 
-type SendResult = { status: string; error?: string | null };
+type SendResult = { status: string; error?: string | null; replayed?: boolean };
 
 /**
  * Composer for a LinkedIn chat. An AI draft fills the box; the person edits it and presses Send, which is the approval.
@@ -64,7 +64,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
         return;
       }
       const data = result.data;
-      if (data?.status === "sent" || data?.status === "delivery_uncertain") setText("");
+      if (data?.status === "sent" || data?.status === "delivery_uncertain" || (data?.status === "in_progress" && !data.replayed)) setText("");
       else setError(data?.error ?? (data?.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
       refresh();
     });
@@ -106,7 +106,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
           />
         ) : draft?.status === "sending" ? (
           <div role="status" className="text-sm">
-            <SendingLine stopped="A reply is being sent. Reload in a moment to see the result." />
+            <SendingLine stopped="A reply is being sent. Reload in a moment to see the result." awaitingVendor={draft?.awaitingVendor ?? false} />
           </div>
         ) : (
           <div className="stack-group">

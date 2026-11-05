@@ -73,15 +73,15 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   }
 
   await expireConnectLinks(deps, actor.organizationId, vendor, credentials, now);
-  if ((await deps.connectLinks.countPending(actor.organizationId, now)) >= MAX_PENDING_LINKS) {
-    throw new ConflictError(vendor.connectSession ? "Several connection links are still open. Finish or cancel one." : "Several connection links are still open. Finish one or wait a few minutes.");
-  }
-
   const id = randomUUID();
   const secret = randomBytes(24).toString("base64url");
   const providerName = `mia-${randomBytes(9).toString("base64url")}`;
   const expiresAt = new Date(now.getTime() + vendor.connectLinkMinutes * 60_000);
-  await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId });
+  const stored = await deps.connectLinks.create(
+    { id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId, reconnectAccountId: input.reconnectAccountId ?? null },
+    { maxPending: vendor.connectSession?.oneLinkAtATime ? 1 : MAX_PENDING_LINKS, now },
+  );
+  if (!stored) throw new ConflictError(vendor.connectSession?.oneLinkAtATime ? "A connection link is still open. Finish or cancel it." : vendor.connectSession ? "Several connection links are still open. Finish or cancel one." : "Several connection links are still open. Finish one or wait a few minutes.");
 
   const urls = vendor.connectCallback?.urls({ appUrl: deps.appUrl, linkId: id, secret }) ?? null;
   const notify = urls !== null && !isLocalOrigin(deps.appUrl);
@@ -193,25 +193,44 @@ export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Acto
     return linkState("failed", `${vendor.name} is no longer connected.`);
   }
   if (!vendor.connectSession || !link.providerAccountId) return linkState("pending");
-  const account = link.providerAccountId;
+  const ref = link.providerAccountId;
   try {
-    const status = await vendor.connectSession.status(credentials, account);
-    if (status === "pending") return linkState("pending");
-    if (status === "failed") {
+    const reconnecting = link.reconnectAccountId ? (await deps.accounts.list(actor.organizationId, now)).find((a) => a.id === link.reconnectAccountId) : undefined;
+    const session = await vendor.connectSession.status(credentials, {
+      ref,
+      createdAt: link.createdAt,
+      reconnectAccount: reconnecting ? { ref: reconnecting.providerAccountId, username: reconnecting.username } : null,
+      knownAccounts: await deps.accounts.accountRefs(actor.organizationId, vendor.key),
+    });
+    if (session.state === "pending") return linkState("pending");
+    if (session.state === "failed") {
       // A reconnect starts from a sign-in the vendor already calls failed, so until the person signs in again this says nothing. Cancel or the expiry ends the link.
-      if ((await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) return linkState("pending");
-      await removeUnusedAccount(vendor, credentials, account);
-      const text = `${vendor.name} could not keep LinkedIn signed in. Try again.`;
+      if ((await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(ref)) return linkState("pending");
+      await removeUnusedAccount(vendor, credentials, ref);
+      const text = session.error ?? `${vendor.name} could not keep LinkedIn signed in. Try again.`;
       await deps.connectLinks.fail(link.id, text);
       return linkState("failed", text);
     }
+    // A vendor whose link is a session names the account here. The session is finished, so nothing is left to remove on a refusal.
+    const account = session.account ?? ref;
+    const namedByVendor = session.account !== undefined;
     const own = await vendor.gatewayFor(credentials).getOwnProfile(account);
+    if (namedByVendor && reconnecting?.username && own.publicSlug !== reconnecting.username) {
+      const text = "Someone else is signed in to this account. Sign in with its own LinkedIn.";
+      await deps.connectLinks.noteError(link.id, text);
+      return linkState("pending", text);
+    }
     const stored = await deps.accounts.upsertAccounts(
       actor.organizationId,
       [{ ref: account, linkedinId: own.member, name: [own.firstName, own.lastName].filter(Boolean).join(" ") || null, username: own.publicSlug, status: "connected", isPremium: own.isPremium, headline: own.headline }],
       vendor.key,
     );
     if (stored.skipped > 0) {
+      if (namedByVendor) {
+        const text = stored.skippedReasons[0] ?? "This LinkedIn account could not be connected here.";
+        await deps.connectLinks.fail(link.id, text);
+        return linkState("failed", text);
+      }
       if ((await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) {
         await deps.accounts.updateAccountStatuses(actor.organizationId, vendor.key, [{ ref: account, linkedinId: null, name: null, username: null, status: "disconnected" }]);
         const text = "Someone else is signed in to this account. Sign in with its own LinkedIn.";

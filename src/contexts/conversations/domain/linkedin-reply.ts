@@ -56,3 +56,10 @@ export function replyBlock(
   }
   return null;
 }
+
+/** A reply a vendor still runs after this is stopped, and a person decides. A search can hold the account's queue about as long. */
+export const REPLY_OPERATION_TIMEOUT_MINUTES = 60;
+/** A vendor that cannot answer about a send for this long has lost it, or the account. */
+export const REPLY_OPERATION_GONE_HOURS = 24;
+/** How long a reply the vendor held for its working hours stops the account. */
+export const REPLY_HELD_PAUSE_MINUTES = 60;

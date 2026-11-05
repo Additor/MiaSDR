@@ -1,5 +1,5 @@
 /** What the stores must know about each LinkedIn vendor, so they name no vendor themselves. */
-const VENDOR_FACTS: Record<string, { credentialFields: readonly string[]; readByPoll: boolean; inviteLimitCap?: number }> = {
+const VENDOR_FACTS: Record<string, { credentialFields: readonly string[]; readByPoll: boolean; inviteLimitCap?: number; capturesOnlyLaterEvents?: boolean }> = {
   unipile: { credentialFields: ["dsn", "apiKey"], readByPoll: false },
   edges: { credentialFields: ["apiKey"], readByPoll: true },
   // gtm-api's own daily budget for invitations is 25 on a paid account, and each refusal holds invitations until it refills.
@@ -14,6 +14,9 @@ export const credentialFieldsOf = (key: string): readonly string[] => VENDOR_FAC
 
 /** Vendors with no webhook for messages. A job reads their accounts' inboxes, and a claim checks that the read is recent. */
 export const VENDORS_READ_BY_POLL = VENDOR_KEYS.filter((key) => VENDOR_FACTS[key].readByPoll);
+
+/** A vendor that starts capturing an account's events again only after a reconnect, so what happened during it is lost to a read. */
+export const capturesOnlyLaterEvents = (key: string): boolean => VENDOR_FACTS[key]?.capturesOnlyLaterEvents === true;
 
 /** The most invitations a day a new account of this vendor starts with. */
 export const inviteLimitCapOf = (key: string): number => VENDOR_FACTS[key]?.inviteLimitCap ?? Number.POSITIVE_INFINITY;

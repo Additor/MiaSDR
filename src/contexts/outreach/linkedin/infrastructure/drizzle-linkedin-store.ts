@@ -10,12 +10,14 @@ import {
   linkedinAccounts,
   linkedinConnections,
   linkedinEnrollmentDetails,
+  linkedinOpenOperations,
   people,
   sends,
 } from "@/platform/db/schema";
 import type {
   LinkedInClaim,
   LinkedInOutreachStore,
+  LinkedInReplyCheckClaim,
   LinkedInResolveClaim,
   LinkedInSendClaim,
   SettledLinkedInSend,
@@ -54,6 +56,7 @@ import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/peopl
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
 import { countMessagesToday, disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
 import { advanceAfterInvitation, advanceAfterMessage, applyAcceptance } from "./linkedin-enrollment-progress";
+import { accountHasOpenOperation, insertOpenOperation, replyCheckSince } from "./drizzle-linkedin-open-operations-store";
 import { VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 type Tx = DbTx;
@@ -128,6 +131,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       if (accountBlock(options.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, nextAllowedRunAt: account.nextAllowedRunAt, workingHours })) return null;
       // A vendor with no webhook for messages: a stop request may be unread, or the read may be failing. Nothing goes out on old news.
       if (VENDORS_READ_BY_POLL.includes(account.provider) && inboundIsStale(options.now, account.inboundReadAt)) return null;
+      // The vendor runs one action at a time, so another would only wait behind this one, and a stop could not reach it.
+      if (await accountHasOpenOperation(tx, account.id)) return null;
 
       const rules = linkedinRules(await channelValues(tx, account.organizationId, "linkedin"));
       const nowIso = options.now.toISOString();
@@ -182,9 +187,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
       // 1. A message that is due. Messages cost no invitation quota, so they go first, inside the account's daily message cap.
       const messageCapReached = messageBlock(await countMessagesToday({ id: account.id, providerAccountId: account.providerAccountId }, options.now, tx), account.dailyMessageLimit) !== null;
-      const message = messageCapReached
-        ? null
-        : await claimSend("message", pickMinutes(rules.messageGapMinutes, options.random), async (exclude) =>
+      const dueMessages = async (only: ReturnType<typeof sql>) =>
         (await tx.execute(sql`
           select e.id, e.organization_id, e.campaign_id, e.person_id, e.current_step
           from campaign_enrollments e
@@ -196,12 +199,24 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
             and ${senderListed(account.id)}
             and e.next_send_at is not null and e.next_send_at <= ${nowIso}::timestamptz
             and not ${stepTaken(sql`e.current_step + 1`)}
-            ${exclude}
+            ${only}
           order by e.next_send_at asc
           limit 1
           for update of e skip locked
-        `)) as unknown as CandidateRow[],
-      );
+        `)) as unknown as CandidateRow[];
+
+      // A reply written while this account was gone was never read, so the lead's thread is read before the message that would answer past it.
+      if (account.inboxGapUntil && !messageCapReached) {
+        const [unread] = await dueMessages(sql`and (d.reply_checked_at is null or d.reply_checked_at < ${account.inboxGapUntil.toISOString()}::timestamptz)`);
+        if (unread) {
+          await tx.update(linkedinAccounts).set({ nextAllowedRunAt: nextRunAfter(options.now, pickMinutes(rules.messageGapMinutes, options.random)) }).where(eq(linkedinAccounts.id, account.id));
+          return replyCheckClaim(tx, unread, account, options.now);
+        }
+      }
+
+      // A row another worker held above was skipped there, so this query keeps the same rule rather than take it unread.
+      const readSinceGap = account.inboxGapUntil ? sql`and d.reply_checked_at >= ${account.inboxGapUntil.toISOString()}::timestamptz` : sql``;
+      const message = messageCapReached ? null : await claimSend("message", pickMinutes(rules.messageGapMinutes, options.random), (exclude) => dueMessages(sql`${readSinceGap} ${exclude}`));
       if (message) return message;
 
       // 2. An invitation, inside the daily and weekly limits (claims in flight and unknown outcomes count).
@@ -253,7 +268,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       if (lookupBacklogFull(backlog, limit)) return null;
 
       const resolvable = (await tx.execute(sql`
-        select e.id, p.linkedin_slug, d.profile_url, d.resolve_retry_count
+        select e.id, p.linkedin_slug, d.profile_url, d.resolve_retry_count, d.resolve_next_api
         from campaign_enrollments e
         join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
         join people p on p.id = e.person_id and p.organization_id = e.organization_id
@@ -265,10 +280,14 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           and c.status = 'active'
           and (e.linkedin_account_id is null or e.linkedin_account_id = ${account.id})
           and ${senderListed(account.id)}
+          and not exists (select 1 from linkedin_open_operations o where o.kind = 'lookup' and o.subject_id = e.id)
+          -- A fallback stays on the account whose classic lookup led to it, while that account can still run it.
+          and (d.resolve_next_account is null or d.resolve_next_account = ${account.id}
+            or not exists (select 1 from linkedin_accounts next_a where next_a.id = d.resolve_next_account and next_a.status = 'connected'))
         order by c.created_at asc, e.created_at asc
         limit 1
         for update of e skip locked
-      `)) as unknown as Array<{ id: string; linkedin_slug: string | null; profile_url: string | null; resolve_retry_count: number }>;
+      `)) as unknown as Array<{ id: string; linkedin_slug: string | null; profile_url: string | null; resolve_retry_count: number; resolve_next_api: "sales_navigator" | "recruiter" | null }>;
       const target = resolvable[0];
       if (!target) return null;
 
@@ -284,6 +303,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         account: { id: account.id, providerAccountId: account.providerAccountId },
         identifier: (target.linkedin_slug ?? target.profile_url) as string,
         failures: target.resolve_retry_count,
+        nextApi: target.resolve_next_api,
       } satisfies LinkedInResolveClaim;
     });
   },
@@ -393,19 +413,46 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     await disconnectLinkedInAccount(db, accountId, error);
   },
 
+  async noteSubmitted(input) {
+    await insertOpenOperation(db, input);
+  },
+
+  async moveResolveToApi(claim, api, now) {
+    await db.update(linkedinEnrollmentDetails).set({ resolveNextApi: api, resolveNextAccount: claim.account.id, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
+  },
+
+  async resolveBySlug(claim, slug, now) {
+    await db.transaction(async (tx) => {
+      const [owner] = await tx.select({ personId: campaignEnrollments.personId, status: campaignEnrollments.status }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
+      if (!owner || !isLiveEnrollment(owner.status)) return;
+      const normalized = normalizePublicSlug(slug);
+      if (normalized && (await writeLinkedInSlugTx(tx, claim.organizationId, owner.personId, normalized)) === "collision") {
+        await failForSlugCollision(tx, claim.enrollmentId, now);
+        return;
+      }
+      await tx.update(linkedinEnrollmentDetails).set({ resolveNextApi: null, resolveNextAccount: null, resolveNextAttemptAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
+    });
+  },
+
+  async markReplyChecked(enrollmentId, now) {
+    await db.update(linkedinEnrollmentDetails).set({ replyCheckedAt: now }).where(eq(linkedinEnrollmentDetails.enrollmentId, enrollmentId));
+  },
+
+  async deferReplyCheck(enrollmentId, until) {
+    await db.update(campaignEnrollments).set({ nextSendAt: until }).where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+  },
+
   async markResolved(claim, profile, now) {
     return db.transaction(async (tx) => {
-      const [owner] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
+      const [owner] = await tx.select({ personId: campaignEnrollments.personId, status: campaignEnrollments.status }).from(campaignEnrollments).where(eq(campaignEnrollments.id, claim.enrollmentId));
+      // A lead that stopped while the lookup ran stays as it stopped, not pinned to this account.
+      if (!owner || !isLiveEnrollment(owner.status)) return "stopped" as const;
 
       // A resolved public slug goes back to the person, so a Sales Navigator lead becomes a classic lead. A slug that
       // another lead of the organization already holds fails the enrollment and changes neither person (D6).
       const slug = normalizePublicSlug(profile.slug);
       if (slug && (await writeLinkedInSlugTx(tx, claim.organizationId, owner.personId, slug)) === "collision") {
-        await tx
-          .update(linkedinEnrollmentDetails)
-          .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveLastError: SLUG_COLLISION_REASON })
-          .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
-        await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), failedOutcome("profile_lookup_failed", SLUG_COLLISION_REASON), now);
+        await failForSlugCollision(tx, claim.enrollmentId, now);
         return "slug_collision" as const;
       }
 
@@ -414,8 +461,11 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .set({
           providerId: profile.providerId,
           ...(slug ? { profileUrl: profileUrlFor(slug) } : {}),
+          ...(profile.memberUrn ? { memberUrn: profile.memberUrn } : {}),
           resolveRetryCount: 0,
           resolveNextAttemptAt: null,
+          resolveNextApi: null,
+          resolveNextAccount: null,
           resolveLastError: null,
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
@@ -436,6 +486,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           resolveRetryCount: failures,
           resolveLastError: error.slice(0, 500),
           resolveNextAttemptAt: nextAttemptAt,
+          resolveNextApi: null,
+          resolveNextAccount: null,
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       if (exhausted) {
@@ -476,7 +528,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         linkedinConnections,
         and(eq(linkedinConnections.linkedinAccountId, sends.linkedinAccountId), eq(linkedinConnections.providerId, linkedinEnrollmentDetails.providerId)),
       )
-      .where(and(eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan), uncertainDue(now)))
+      .where(and(eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan), uncertainDue(now), notAwaitingVendor))
       .orderBy(uncertainOrder)
       .limit(limit);
     return rows.map((r) => ({
@@ -543,6 +595,38 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     return expired.length;
   },
 };
+
+/** A slug another lead of the organization holds fails the enrollment and changes neither person (D6). */
+async function failForSlugCollision(tx: Tx, enrollmentId: string, now: Date) {
+  await tx
+    .update(linkedinEnrollmentDetails)
+    .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveNextApi: null, resolveNextAccount: null, resolveLastError: SLUG_COLLISION_REASON })
+    .where(eq(linkedinEnrollmentDetails.enrollmentId, enrollmentId));
+  await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("profile_lookup_failed", SLUG_COLLISION_REASON), now);
+}
+
+/** A vendor still runs this send, so there is nothing to look for yet. The settle job has it. */
+const notAwaitingVendor = sql`not (${sends.status} = 'sending' and exists (select 1 from linkedin_open_operations o where o.subject_id = ${sends.id} and o.kind in ('invitation', 'message')))`;
+
+async function replyCheckClaim(tx: Tx, candidate: CandidateRow, account: typeof linkedinAccounts.$inferSelect, now: Date): Promise<LinkedInReplyCheckClaim> {
+  const [row] = await tx
+    .select({ providerId: linkedinEnrollmentDetails.providerId, acceptedAt: linkedinEnrollmentDetails.acceptedAt, slug: people.linkedinSlug, started: sql<Date | null>`(select min(s.claimed_at) from sends s where s.enrollment_id = ${candidate.id})` })
+    .from(linkedinEnrollmentDetails)
+    .innerJoin(people, eq(people.id, sql`${candidate.person_id}::uuid`))
+    .where(eq(linkedinEnrollmentDetails.enrollmentId, candidate.id));
+  const [connection] = await tx
+    .select({ chatId: linkedinConnections.chatId })
+    .from(linkedinConnections)
+    .where(and(eq(linkedinConnections.linkedinAccountId, account.id), eq(linkedinConnections.providerId, row.providerId as string)));
+  return {
+    kind: "reply_check",
+    organizationId: candidate.organization_id,
+    enrollmentId: candidate.id,
+    account: { id: account.id, providerAccountId: account.providerAccountId },
+    to: { chat: connection?.chatId ?? null, member: row.providerId, slug: row.slug },
+    since: replyCheckSince(row.started ? new Date(row.started) : row.acceptedAt, now),
+  };
+}
 
 async function buildSendClaim(
   tx: Tx,
@@ -652,6 +736,8 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
       .where(and(eq(sends.id, input.sendId), eq(sends.organizationId, input.organizationId), eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), eq(campaignEnrollments.campaignId, input.campaignId)));
     if (!row) return "not_found";
     if (row.status !== "unknown") return "not_unknown";
+    const [open] = await db.select({ id: linkedinOpenOperations.id }).from(linkedinOpenOperations).where(eq(linkedinOpenOperations.subjectId, input.sendId));
+    if (open) return "not_unknown";
     const stepNumber = row.stepNumber as number;
     const send: SettledLinkedInSend = {
       sendId: input.sendId,

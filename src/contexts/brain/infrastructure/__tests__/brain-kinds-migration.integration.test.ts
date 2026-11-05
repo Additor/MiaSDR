@@ -23,7 +23,7 @@ describeDb("the migration to Brain kinds", () => {
     const before = path.join(dir, "before");
     cpSync(path.join(process.cwd(), "drizzle"), before, { recursive: true });
     const journal = readJournal();
-    writeFileSync(path.join(before, "meta/_journal.json"), JSON.stringify({ ...journal, entries: journal.entries.filter((e) => e.tag !== MIGRATION) }));
+    writeFileSync(path.join(before, "meta/_journal.json"), JSON.stringify({ ...journal, entries: journal.entries.slice(0, journal.entries.findIndex((e) => e.tag === MIGRATION)) }));
     return before;
   }
 

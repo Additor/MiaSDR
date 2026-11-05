@@ -21,6 +21,7 @@ import type { BouncePause } from "../domain/bounce-pause";
 import type { CampaignStatus } from "../domain/campaign";
 import { SEND_STATUSES, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
 import { SEARCH_STATUSES, type SearchStatus } from "../linkedin/domain/linkedin-search";
+import { OPEN_OPERATION_KINDS, type OpenOperationKind } from "../linkedin/domain/linkedin-operations";
 import { inList } from "@/platform/db/sql-values";
 import type { MailboxStatus } from "../domain/mailbox-status";
 
@@ -108,6 +109,11 @@ export const linkedinAccounts = pgTable(
     /** A limit stopped invitations and lookups alone, until this moment. Messages and replies go on. */
     invitesPausedUntil: tstz("invites_paused_until"),
     /**
+     * For a vendor that captures only later events: when this account came back from a reconnect. Replies written before this
+     * were never read, so a lead whose `reply_checked_at` is older gets a look at the thread before the next campaign message.
+     */
+    inboxGapUntil: tstz("inbox_gap_until"),
+    /**
      * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
      * sync or before owners existed, until an admin picks one. An agent's search uses only accounts its token's person
      * owns and accounts with no owner.
@@ -119,7 +125,7 @@ export const linkedinAccounts = pgTable(
   (t) => [
     unique("linkedin_accounts_id_org_uq").on(t.id, t.organizationId),
     check("linkedin_accounts_status_ck", sql`${t.status} in ('connected', 'disconnected')`),
-    check("linkedin_accounts_provider_ck", sql`${t.provider} in ('unipile', 'edges', 'gtmapi')`),
+    check("linkedin_accounts_provider_ck", sql`${t.provider} in ('unipile', 'edges', 'gtmapi', 'linkedapi')`),
     check("linkedin_accounts_invite_limit_ck", sql`${t.dailyInviteLimit} between 1 and 100`),
     check("linkedin_accounts_message_limit_ck", sql`${t.dailyMessageLimit} between 1 and 200`),
   ],
@@ -145,6 +151,8 @@ export const linkedinConnectLinks = pgTable(
     /** The vendor's account id, once the link's vendor or a callback names it. */
     providerAccountId: text("provider_account_id"),
     linkedinAccountId: uuid("linkedin_account_id"),
+    /** The account a reconnect link is for. Null on a link for a new account. */
+    reconnectAccountId: uuid("reconnect_account_id"),
     lastError: text("last_error"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     /** The member the person connecting named as the new account's owner, or null for none. */
@@ -284,11 +292,55 @@ export const linkedinEnrollmentDetails = pgTable(
     resolveRetryCount: integer("resolve_retry_count").notNull().default(0),
     resolveNextAttemptAt: tstz("resolve_next_attempt_at"),
     resolveLastError: text("resolve_last_error"),
+    /** The LinkedIn member URN, where a vendor names people by it. */
+    memberUrn: text("member_urn"),
+    /** The product the next lookup uses after a vendor's lookup finished without a person. Null: start with the classic lookup. */
+    resolveNextApi: text("resolve_next_api"),
+    /** The account whose lookup led to `resolve_next_api`, which runs it while it stays connected. */
+    resolveNextAccount: uuid("resolve_next_account"),
+    /** When this lead's thread was last read after the account's inbox gap. */
+    replyCheckedAt: tstz("reply_checked_at"),
   },
   (t) => [
     foreignKey({ columns: [t.enrollmentId, t.organizationId], foreignColumns: [campaignEnrollments.id, campaignEnrollments.organizationId] }).onDelete("cascade"),
     check("linkedin_details_state_ck", sql`${t.connectionState} in ('none', 'request_sent', 'connected')`),
     index("linkedin_details_resolve_idx").on(t.resolveNextAttemptAt),
+    index("linkedin_details_member_urn_idx").on(t.memberUrn),
+  ],
+);
+
+/**
+ * A LinkedIn action a vendor accepted and has not finished. Only open work lives here: the row goes when the action settles, and
+ * the subject keeps its own status (a send stays `sending`). No foreign key to the subject, because a purge must leave the row
+ * for the settle job, which cancels the action at the vendor and closes it.
+ */
+export const linkedinOpenOperations = pgTable(
+  "linkedin_open_operations",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    linkedinAccountId: uuid("linkedin_account_id").notNull(),
+    /** The account id it was submitted as. A reconnect can bring a new id, and the action still answers to the old one. */
+    providerAccountRef: text("provider_account_ref").notNull(),
+    kind: text("kind").$type<OpenOperationKind>().notNull(),
+    /** The send, enrollment or search it acts for. */
+    subjectId: uuid("subject_id").notNull(),
+    operation: text("operation").notNull(),
+    /** The product a lookup ran on. Null: classic. */
+    api: text("api"),
+    /** How many people a search asked for, which its account's allowance holds until it finishes. */
+    rowLimit: integer("row_limit"),
+    submittedAt: tstz("submitted_at").notNull(),
+    /** When the settle job last read it, so one slow vendor does not hold the rest back. */
+    checkedAt: tstz("checked_at"),
+  },
+  (t) => [
+    foreignKey({ columns: [t.linkedinAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }).onDelete("cascade"),
+    unique("linkedin_open_operations_subject_uq").on(t.kind, t.subjectId),
+    check("linkedin_open_operations_kind_ck", inList(t.kind, OPEN_OPERATION_KINDS)),
+    index("linkedin_open_operations_org_idx").on(t.organizationId),
+    index("linkedin_open_operations_account_idx").on(t.linkedinAccountId),
+    index("linkedin_open_operations_checked_idx").on(t.checkedAt),
   ],
 );
 
@@ -514,7 +566,7 @@ export const inboundEvents = pgTable(
     id: pk(),
     /** Resolved from the account or mailbox at ingest. Null until resolved. */
     organizationId: uuid("organization_id"),
-    /** gmail | unipile | edges | gtmapi */
+    /** gmail | unipile | edges | gtmapi | linkedapi */
     provider: text("provider").notNull(),
     /** Idempotency key from the provider. */
     providerEventKey: text("provider_event_key"),
@@ -542,7 +594,7 @@ export const inboundEvents = pgTable(
     index("inbound_events_claim_idx").on(t.status, t.nextAttemptAt),
     index("inbound_events_org_status_idx").on(t.organizationId, t.provider, t.status, t.createdAt),
     check("inbound_events_replay_ck", sql`${t.replayCount} >= 0`),
-    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile', 'edges', 'gtmapi')`),
+    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile', 'edges', 'gtmapi', 'linkedapi')`),
     check("inbound_events_status_ck", sql`${t.status} in ('pending', 'processing', 'done', 'failed', 'skipped')`),
   ],
 );

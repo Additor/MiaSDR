@@ -102,12 +102,20 @@ export interface LinkedInSearchEngineStore {
    */
   recordPage(
     claim: SearchPageClaim,
-    page: { results: (tx: DbHandle) => Promise<FoundResult[]>; received: number; nextCursor: string | null; totalEstimate: number | null; done: boolean },
+    /**
+     * `reserved`: what the account's allowance already holds for this read. `note`: stays on the finished search for a person.
+     * `openOperation`: the action this read came from. It closes in this transaction, so a failure leaves it to be read again, and a repeat writes nothing.
+     */
+    page: { results: (tx: DbHandle) => Promise<FoundResult[]>; received: number; reserved?: number; note?: string | null; openOperation?: string; nextCursor: string | null; totalEstimate: number | null; done: boolean },
     now: Date,
     gapSeconds: number,
   ): Promise<RecordedPage | null>;
   /** Gives the claim back without moving the cursor. `retryAt` delays the next try. `unknownFailure` counts toward the failure limit. */
   release(claim: SearchPageClaim, input: { error: string | null; retryAt: Date | null; unknownFailure: boolean }): Promise<void>;
+  /** The vendor took the search and reads it later: the search and its account stay held, and its allowance holds `limit` people until it finishes. */
+  markSubmitted(claim: SearchPageClaim, input: { operation: string; limit: number; now: Date }): Promise<void>;
+  /** A held read turned out not to read anyone, so the allowance takes back what it held. */
+  returnAllowance(claim: SearchPageClaim, reserved: number, now: Date): Promise<void>;
   fail(claim: SearchPageClaim, error: string, now: Date): Promise<void>;
   /** The provider refused for a limit: stop the account for a while and send the search to another one from page 1. */
   pauseAccountForLimit(claim: SearchPageClaim, until: Date): Promise<void>;

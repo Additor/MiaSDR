@@ -32,7 +32,17 @@ export interface LinkedInSentFinder {
   available(input: { organizationId: string; accountId: string }): Promise<boolean>;
   /** A message from the account owner in the chat with this text after `since`. Throws when LinkedIn cannot answer. */
   findSent(input: LinkedInReplyAddress & { text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | null>;
+  /** How a send the vendor took stands. A throw means the read failed, never that the send was refused. */
+  progress(input: { organizationId: string; accountId: string; account: string; operation: string }): Promise<LinkedInReplyProgress>;
+  /** `cancelled`: it stops where it is, and what it did stays done. `already_finished`: `progress` has the outcome. A throw leaves it as it was. */
+  cancel(input: { organizationId: string; accountId: string; account: string; operation: string }): Promise<"cancelled" | "already_finished">;
 }
+
+export type LinkedInReplyProgress =
+  /** `held`: the vendor holds it for its working hours. `started`: it is running, so a cancel may come after it went out. */
+  | { state: "waiting"; held: boolean; started: boolean }
+  | { state: "finished"; messageId: string | null }
+  | { state: "failed"; error: LinkedInReplyError };
 
 /**
  * Port to LinkedIn that also sends. The adapter lives in infrastructure and maps provider errors to
@@ -40,7 +50,7 @@ export interface LinkedInSentFinder {
  */
 export interface LinkedInReplySender extends LinkedInSentFinder {
   /** `unlessRepliedAfter`: refused with a definite error when the person wrote after this moment, where the vendor can read the thread first. */
-  send(input: LinkedInReplyAddress & { text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<{ messageId: string | null }>;
+  send(input: LinkedInReplyAddress & { text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<{ messageId: string | null } | { operation: string }>;
 }
 
 /** What one claimed reply knows. Built from the approval snapshot stored on the ledger row. */
@@ -60,6 +70,8 @@ export interface LinkedInReplyContext {
   text: string;
   /** When an agent's draft was last written. Null: a person is sending what they read and typed. */
   draftWrittenAt: Date | null;
+  /** The vendor's id for the send and the account id it went as, once a vendor that runs it later took it. */
+  operation: { id: string; account: string } | null;
 }
 
 export type BeginLinkedInReply = { kind: "replay"; attempt: AttemptRow } | { kind: "started"; send: LinkedInReplyContext };
@@ -90,6 +102,8 @@ export interface LinkedInReplyPanel {
     source: "ai" | "manual";
     /** The name of the MCP token whose agent wrote the current text or asked for it, or null. */
     writtenVia: string | null;
+    /** A vendor took the send and runs it later, so "Sending" can last a while. */
+    awaitingVendor: boolean;
   } | null;
 }
 
@@ -113,6 +127,12 @@ export interface LinkedInReplyStore {
   /** Definite refusal: the draft goes back to review with its text. */
   markFailed(send: LinkedInReplyContext, error: string): Promise<void>;
   markUncertain(send: LinkedInReplyContext, error: string): Promise<void>;
+  /** The vendor took the send and runs it later. The attempt stays `sending`, so the chat's next reply waits. */
+  markSubmitted(send: LinkedInReplyContext, operation: string): Promise<void>;
+  /** `sending` attempts a vendor is running, looked at longest ago first. */
+  listSubmitted(limit: number): Promise<Array<{ send: LinkedInReplyContext & { operation: { id: string; account: string } }; startedAt: Date }>>;
+  /** Puts a running attempt behind the others. */
+  noteRead(send: LinkedInReplyContext, now: Date): Promise<void>;
   /** Puts an uncertain attempt behind the others after a check that could not settle it. */
   noteChecked(send: LinkedInReplyContext, now: Date): Promise<void>;
   pauseAccount(send: LinkedInReplyContext, until: Date): Promise<void>;

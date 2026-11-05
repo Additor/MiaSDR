@@ -281,7 +281,7 @@ describeDb("linkedin.sync-accounts job", () => {
   it("the registered jobs and the tick report list the job", async () => {
     const { registeredJobs } = await import("@/composition/job-registry");
     const names = registeredJobs().map((j) => j.name);
-    expect(names.filter((n) => n.startsWith("linkedin."))).toEqual(["linkedin.sync-accounts", "linkedin.replay-events", "linkedin.reconcile", "linkedin.poll-inbound", "linkedin.search", "linkedin.run"]);
+    expect(names.filter((n) => n.startsWith("linkedin."))).toEqual(["linkedin.sync-accounts", "linkedin.replay-events", "linkedin.reconcile", "linkedin.settle-operations", "linkedin.poll-inbound", "linkedin.search", "linkedin.run"]);
     const { runTick } = await import("@/platform/jobs/tick");
     const report = await runTick([job], 10_000);
     expect(report.jobs.map((j) => j.name)).toEqual(["linkedin.sync-accounts"]);

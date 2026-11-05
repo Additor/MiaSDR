@@ -47,7 +47,7 @@ export function createEdgesVendor(): LinkedInVendor {
     connectCallback: null,
 
     connectSession: {
-      status: (credentials, account) => stored(credentials).integrationStatus(account),
+      status: async (credentials, link) => ({ state: await stored(credentials).integrationStatus(link.ref) }),
       cancel: (credentials, account) => stored(credentials).removeUnusedIdentity(account),
     },
   };

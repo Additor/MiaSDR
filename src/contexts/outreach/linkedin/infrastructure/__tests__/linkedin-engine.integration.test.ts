@@ -496,7 +496,7 @@ describeDb("linkedin engine", () => {
       ...store,
       markSent: async (...a: Parameters<typeof store.markSent>) => { await store.markSent(...a); await late(a[0]); },
       markFailed: async (...a: Parameters<typeof store.markFailed>) => { await store.markFailed(...a); await late(a[0]); },
-      markUnknown: async (...a: Parameters<typeof store.markUnknown>) => { await store.markUnknown(...a); await late(a[0]); },
+      markUnknown: async (...a: Parameters<typeof store.markUnknown>) => { await store.markUnknown(...a); await late(a[0] as Parameters<typeof store.markFailed>[0]); },
     } as typeof store;
     expect((await engine.runNextLinkedInAction({ ...deps(gateway), store: guarded }, f.account)).kind).toBe("resolved");
     advance(2);

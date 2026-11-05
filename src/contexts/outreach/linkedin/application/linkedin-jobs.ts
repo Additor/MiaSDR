@@ -8,16 +8,18 @@ import { pollLinkedInInbound } from "./poll-linkedin-inbound";
 import type { LinkedInSearchEngineDeps } from "./linkedin-search-ports";
 import { runNextSearchPage } from "./run-linkedin-search";
 import { reconcileLinkedInSends, runNextLinkedInAction } from "./send-next-linkedin";
+import { settleLinkedInOperations, type LinkedInSettleDeps } from "./settle-linkedin-operations";
 
 const SYNC_LEASE_MS = 120_000;
 const SYNC_RETRY_MS = 10 * 60_000;
 const POLL_BUDGET_MS = 15_000;
+const SETTLE_BUDGET_MS = 15_000;
 
 /**
  * Per tick: replay failed webhook events (so a reply stops its sequence before sends are claimed),
- * reconcile unknown outcomes, read inboxes that have no webhook, read search pages, then give every due account one unit of work.
+ * reconcile unknown outcomes, settle what a vendor finished since the last tick, read inboxes that have no webhook, read search pages, then give every due account one unit of work.
  */
-export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort, poll?: LinkedInInboundPollDeps): Job[] {
+export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort, poll?: LinkedInInboundPollDeps, settle?: LinkedInSettleDeps): Job[] {
   return [
     {
       // One sync per organization per UTC hour, so a disconnected account shows up without anyone pressing Sync.
@@ -73,6 +75,19 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
         return { processed: report.foundSent + report.retryable + report.expired, more: report.checked >= 25, detail: { waiting: report.stillWaiting } };
       },
     },
+    ...(settle
+      ? [
+          {
+            // Before the search and the sends: an open action closes its account's gate, and this is what opens it. A share of the tick, because every job shares one deadline.
+            name: "linkedin.settle-operations",
+            failureKeys: ["failed"],
+            async run(ctx: TickContext) {
+              const report = await settleLinkedInOperations(settle, Math.min(ctx.deadline, Date.now() + SETTLE_BUDGET_MS));
+              return { processed: report.settled, more: false, detail: { checked: report.checked, failed: report.failed } };
+            },
+          } satisfies Job,
+        ]
+      : []),
     ...(poll
       ? [
           {

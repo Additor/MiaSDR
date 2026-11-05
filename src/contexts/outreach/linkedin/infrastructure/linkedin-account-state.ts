@@ -40,9 +40,9 @@ export async function countMessagesToday(account: { id: string; providerAccountI
   return n + r;
 }
 
-/** LinkedIn said the account reached a limit: it sends nothing until `until`. */
+/** LinkedIn said the account reached a limit: it sends nothing until `until`. A short pause never cuts a longer one. */
 export async function pauseLinkedInAccount(handle: DbHandle, accountId: string, until: Date): Promise<void> {
-  await handle.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, accountId));
+  await handle.update(linkedinAccounts).set({ limitReachedUntil: sql`greatest(${linkedinAccounts.limitReachedUntil}, ${until.toISOString()}::timestamptz)` }).where(eq(linkedinAccounts.id, accountId));
 }
 
 /** The provider no longer holds a session for the account. The error stays in its profile data for the Accounts page. */

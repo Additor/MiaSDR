@@ -43,6 +43,13 @@
       "when": 1793865921261,
       "tag": "0005_knowledge_structured_items",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793879883333,
+      "tag": "0006_linkedin_open_operations",
+      "breakpoints": true
     }
   ]
 }
