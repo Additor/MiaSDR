@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { parsePageParam } from "@/shared/page-param";
 import { countOf } from "@/shared/format-number";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
@@ -62,7 +63,7 @@ async function Companies({ searchParams }: { searchParams: PageProps<"/crm/compa
   const q = first(params.q)?.trim().slice(0, 100) ?? "";
   const asked = first(params.sort) as CompanySort | undefined;
   const sort: CompanySort = asked && SORTS.includes(asked) ? asked : "name";
-  const page = Math.max(1, Math.trunc(Number(first(params.page))) || 1);
+  const page = parsePageParam(first(params.page));
   const { rows, total, pageSize } = await listCompanies(dealsDeps(), actor, { q, sort, page });
   const pageCount = pageCountOf(total, pageSize);
   const now = new Date().toISOString();

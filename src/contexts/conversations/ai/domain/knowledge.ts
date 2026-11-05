@@ -1,32 +1,13 @@
-export const KNOWLEDGE_KINDS = ["company", "product", "pricing", "faq", "case_study", "objection", "scheduling", "custom"] as const;
-
-export const MAX_TAGS = 50;
-export const MAX_TAG_LENGTH = 80;
+import type { BrainKind } from "@/contexts/brain/domain/brain-kinds";
+import { normalizeTags } from "@/contexts/brain/domain/brain-tags";
 
 /**
- * Lowercases, trims, drops empty entries and repeats (first spelling wins the position). Never throws: matching
- * uses this on step tags that were stored before the limits existed.
+ * The Brain kinds a reply prompt may read. An ICP or a qualification is internal, and a competitor's weaknesses or a quote need
+ * rules of their own before a model writes from them to a customer. Until those rules exist, the other kinds stay out.
  */
-export function normalizeTags(raw: readonly string[]): string[] {
-  const seen = new Set<string>();
-  for (const entry of raw) {
-    const tag = entry.trim().toLowerCase().replace(/\s+/g, " ");
-    if (tag !== "") seen.add(tag);
-  }
-  return [...seen];
-}
+export const PROMPT_KINDS = ["company_profile", "product", "price_book", "case_study", "objection_handling", "unsorted"] as const satisfies readonly BrainKind[];
 
-/** Input check for a document's tags: normalized tags or the reason they are refused. */
-export function parseTags(raw: readonly string[]): { tags: string[]; problem: null } | { tags: null; problem: string } {
-  const tags = normalizeTags(raw);
-  const tooLong = tags.find((t) => t.length > MAX_TAG_LENGTH);
-  if (tooLong !== undefined) return { tags: null, problem: `Each tag must be at most ${MAX_TAG_LENGTH} characters.` };
-  if (tags.length > MAX_TAGS) return { tags: null, problem: `A document can have at most ${MAX_TAGS} tags.` };
-  return { tags, problem: null };
-}
-
-/** Splits "pricing, onboarding" from a form field. */
-export const splitTagInput = (text: string): string[] => text.split(",");
+export const isPromptKind = (kind: BrainKind): boolean => (PROMPT_KINDS as readonly BrainKind[]).includes(kind);
 
 /** Prompt budget for knowledge: 2,000 tokens at 4 characters. */
 export const KNOWLEDGE_BUDGET_CHARS = 8000;

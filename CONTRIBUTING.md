@@ -27,7 +27,7 @@ Open `http://localhost:3000`. The first visit asks you to create the owner accou
 
 ```
 src/app/            routes and screens; route handlers stay thin; _lib/api.ts holds the route wrappers, _lib/api-client.ts the browser caller
-src/contexts/<ctx>/ one bounded context: ai (every model call), people (leads, contacts, companies), outreach, conversations, deals, grid, identity, tenancy, agent-access (MCP tokens, limits, activity), integrations, analytics
+src/contexts/<ctx>/ one bounded context: ai (every model call), brain (what an organization knows, shown as Brain), people (leads, contacts, companies), outreach, conversations, deals, grid, identity, tenancy, agent-access (MCP tokens, limits, activity), integrations, analytics
   domain/           pure rules with unit tests; imports no framework, database or other layer
   application/      use cases and ports; checks permissions; never imports infrastructure
   infrastructure/   Drizzle stores, read models and adapters (Gmail, Unipile, Anthropic, OpenRouter)

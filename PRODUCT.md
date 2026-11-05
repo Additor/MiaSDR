@@ -18,7 +18,7 @@ MiaSDR is a self-hosted AI SDR. It imports leads, runs email sequences from the 
 Self-hosted (Docker Compose is the supported path). One install serves one organization, which uses its own mailboxes and its own AI provider key (Anthropic, Vercel AI Gateway or OpenRouter). Email, LinkedIn, campaigns with AI follow-ups after a reply, an Inbox, analytics and enrichment tables live in one app, together with a minimal CRM: a Pipeline of deals, Contacts and Companies. A person enters the CRM as a contact: Add contact creates one, and a lead becomes one when you create a deal from it or make it a contact.
 
 ## Operating Context
-Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/actions`, `/crm/pipeline`, `/crm/contacts`, `/crm/companies`, `/analytics`, `/tables`, `/onboarding` and `/settings/*`. Gmail is polled every minute for replies and bounces. LinkedIn runs through Unipile. Sends respect working hours, daily limits and a randomized gap between messages, and a send pause exists.
+Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/actions`, `/crm/pipeline`, `/crm/contacts`, `/crm/companies`, `/analytics`, `/brain`, `/tables`, `/onboarding` and `/settings/*`. Gmail is polled every minute for replies and bounces. LinkedIn runs through Unipile. Sends respect working hours, daily limits and a randomized gap between messages, and a send pause exists.
 
 ## Terminology
 - **Campaign:** the container for Leads, a Sequence and Settings.
@@ -58,12 +58,16 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Waiting since:** the time of the last message from the person. An Actions row reads it as "Waiting 2 d", and Actions lists the longest wait first. The code calls it `waitingSince`.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
 - **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `conversation` (`conversations` table); a `threads` row is one channel's thread inside it.
+- **Brain:** what an organization knows about itself and its market: its company profile, products, pricing, ICPs, competitors, case studies, testimonials, objections and qualification rules. It has its own place in the sidebar, and every member can change it. The code calls it `brain` and its tables `knowledge_documents` and `knowledge_document_versions`.
+- **Brain item:** one entry in Brain, such as one product or one plan. Its kind decides its fields.
+- **Needs sorting:** the Brain view of documents from before the kinds existed. AI drafts still read them until a person sorts each into a kind.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
 - **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
 - **Table:** one tab of a workbook, with typed columns and rows.
 - **Enrichment column:** a table column that asks a provider for each row, such as Find work emails or Verify emails. A column that tries several providers in order is a `waterfall` in the code; the UI says "tried in order". The code calls the lookup a provider offers an action (`actionKey`).
 - **Enrichment provider:** a data vendor an organization connects with its own key in Settings > Integrations. The AI provider is a separate connection on the same page.
 - **Code names:** names that stay different in code and tables, so a reader can map them:
+  - Brain's tables keep the name `knowledge_*`, a follow-up step's tags the name `knowledgeTags` and a draft's stored request the key `knowledge`.
   - The AI job kind `classification` is the job that picks a reply type. The columns `reply_types.classification_guidance` and `reply_handling_settings.classification_instructions` feed that job.
   - The model output field `replyTypeKey` names the picked type.
   - The stored run reasons `type_changed`, `type_corrected` and `pick_undone` mean a person changed the reply type, corrected an AI pick or undid one.

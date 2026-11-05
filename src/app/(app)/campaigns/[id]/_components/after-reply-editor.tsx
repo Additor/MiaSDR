@@ -289,7 +289,7 @@ export function AfterReplyEditor({
                   <p className="text-xs text-muted-foreground">The instruction the AI follows when it writes this message.</p>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor={`ar-tags-${index}`}>Knowledge tags (comma separated, optional)</FieldLabel>
+                  <FieldLabel htmlFor={`ar-tags-${index}`}>Brain tags (comma separated, optional)</FieldLabel>
                   <Input id={`ar-tags-${index}`} value={tagText[index] ?? ""} disabled={pending} placeholder="pricing, faq" onChange={(e) => setTags(index, e.target.value)} />
                 </Field>
                 {index > 0 && (

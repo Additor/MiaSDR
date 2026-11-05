@@ -2,6 +2,7 @@
 export * from "@/contexts/identity/infrastructure/schema";
 export * from "@/contexts/tenancy/infrastructure/schema";
 export * from "@/contexts/agent-access/infrastructure/schema";
+export * from "@/contexts/brain/infrastructure/schema";
 export * from "@/contexts/people/infrastructure/schema";
 export * from "@/contexts/integrations/infrastructure/schema";
 export * from "@/contexts/outreach/infrastructure/schema";

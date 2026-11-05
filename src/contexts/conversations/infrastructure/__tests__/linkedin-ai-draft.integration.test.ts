@@ -16,12 +16,12 @@ describeDb("AI drafts for LinkedIn threads", () => {
   let mgmt: typeof import("../../application/reply-management");
   let aiJobsApp: typeof import("../../ai/application/ai-jobs");
   let replyHandlingApp: typeof import("../../application/reply-handling");
-  let knowledgeApp: typeof import("../../ai/application/knowledge");
+  let knowledgeApp: typeof import("@/contexts/brain/application/brain-items");
   let stores: {
     jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
     replies: typeof import("../drizzle-reply-store").drizzleReplyStore;
     li: typeof import("../drizzle-linkedin-reply-store").drizzleLinkedInReplyStore;
-    knowledge: typeof import("../../ai/infrastructure/drizzle-knowledge-store").drizzleKnowledgeStore;
+    knowledge: typeof import("@/contexts/brain/infrastructure/drizzle-brain-store").drizzleBrainStore;
     crm: typeof import("../drizzle-reply-handling-store").drizzleReplyHandlingStore;
   };
   let FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
@@ -89,12 +89,12 @@ describeDb("AI drafts for LinkedIn threads", () => {
     mgmt = await import("../../application/reply-management");
     aiJobsApp = await import("../../ai/application/ai-jobs");
     replyHandlingApp = await import("../../application/reply-handling");
-    knowledgeApp = await import("../../ai/application/knowledge");
+    knowledgeApp = await import("@/contexts/brain/application/brain-items");
     stores = {
       jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
       replies: (await import("../drizzle-reply-store")).drizzleReplyStore,
       li: (await import("../drizzle-linkedin-reply-store")).drizzleLinkedInReplyStore,
-      knowledge: (await import("../../ai/infrastructure/drizzle-knowledge-store")).drizzleKnowledgeStore,
+      knowledge: (await import("@/contexts/brain/infrastructure/drizzle-brain-store")).drizzleBrainStore,
       crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
     FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
@@ -153,7 +153,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
 
     it("puts the type change note and the matching knowledge in the prompt", async () => {
       const f = await drafted();
-      await knowledgeApp.createKnowledge(stores.knowledge, { ...f.actor, role: "admin" }, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
+      await knowledgeApp.addBrainItem(stores.knowledge, f.actor, { kind: "product", fields: { productName: "Demo process", overview: "Demos run 30 minutes on Zoom." }, alwaysInclude: true });
       const conversation = await one("select id, context_version from conversations where organization_id = $1", [f.org]);
       const target = await one("select id, group_key from reply_types where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
       await replyHandlingApp.changeReplyType(f.replyHandlingDeps, f.actor, conversation.id, { groupKey: target.group_key, replyTypeId: target.id, expectedContextVersion: Number(conversation.context_version), note: "We met on a call, send the contract" });
