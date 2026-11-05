@@ -98,7 +98,7 @@ describe("LinkedIn connection contract", () => {
     const texts = async (error: unknown) => {
       const f = world();
       f.gateway.listAccounts.mockRejectedValueOnce(error);
-      await expect(mgmt.syncAndRecord(f.deps, ORG, f.gateway as never)).rejects.toBe(error);
+      await expect(mgmt.syncAndRecord(f.deps, ORG, f.deps.vendors[0], f.gateway as never)).rejects.toBe(error);
       return (f.accounts.saveSyncStatus.mock.calls[0] as unknown[])[1];
     };
     expect(await texts(gatewayError("auth"))).toEqual({ lastSyncError: "Unipile rejected the saved key. Connect again with a new key." });

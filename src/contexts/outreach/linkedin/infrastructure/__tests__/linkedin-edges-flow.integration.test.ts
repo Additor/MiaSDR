@@ -178,7 +178,7 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const asked: string[][] = [];
       const gateway = { listAccounts: async (only?: string[]) => (asked.push(only ?? []), [{ ref: known.ref, linkedinId: null, name: null, username: null, status: "disconnected" as const }]) };
       const deps = { accounts, vendors: [unipileVendor.createUnipileVendor(), edgesVendor.createEdgesVendor()], appUrl: "https://app.test", now: () => new Date() } as never;
-      expect(await mgmt.syncWith(deps, f.id, gateway as never)).toMatchObject({ added: 0, updated: 1, changes: [{ ref: known.ref, to: "disconnected" }] });
+      expect(await mgmt.syncWith(deps, f.id, edgesVendor.createEdgesVendor(), gateway as never)).toMatchObject({ added: 0, updated: 1, changes: [{ ref: known.ref, to: "disconnected" }] });
       expect(asked).toEqual([[known.ref]]);
       const rows = await sql`select provider, status from linkedin_accounts where organization_id = ${f.id} order by provider`;
       expect(rows).toEqual([{ provider: "edges", status: "disconnected" }, { provider: "unipile", status: "connected" }]);
@@ -194,13 +194,13 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const signedInAs = (who: string | null) => ({ listAccounts: async () => [{ ref: known.ref, linkedinId: null, name: null, username: who, status: "connected" as const }] }) as never;
       const statusNow = async () => (await sql`select status from linkedin_accounts where id = ${known.id}`)[0].status;
 
-      await mgmt.syncWith(deps, f.id, signedInAs("someone-else"));
+      await mgmt.syncWith(deps, f.id, edgesVendor.createEdgesVendor(), signedInAs("someone-else"));
       expect(await statusNow()).toBe("disconnected");
-      await mgmt.syncWith(deps, f.id, signedInAs(null));
+      await mgmt.syncWith(deps, f.id, edgesVendor.createEdgesVendor(), signedInAs(null));
       expect(await statusNow()).toBe("disconnected");
-      await mgmt.syncWith(deps, f.id, signedInAs(username));
+      await mgmt.syncWith(deps, f.id, edgesVendor.createEdgesVendor(), signedInAs(username));
       expect(await statusNow()).toBe("connected");
-      await mgmt.syncWith(deps, f.id, signedInAs("someone-else"));
+      await mgmt.syncWith(deps, f.id, edgesVendor.createEdgesVendor(), signedInAs("someone-else"));
       expect(await statusNow()).toBe("disconnected");
     });
   });

@@ -168,8 +168,8 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   };
 }
 
-export async function syncWith(deps: LinkedInManagementDeps, organizationId: string, gateway: LinkedInGateway) {
-  const vendor = await vendorOf(deps, organizationId);
+/** `vendor` comes from the caller, which chose it with the credentials: a disconnect during this call must not change whose accounts these are. */
+export async function syncWith(deps: LinkedInManagementDeps, organizationId: string, vendor: LinkedInVendor, gateway: LinkedInGateway) {
   if (!vendor.syncAddsAccounts) {
     // The listing may hold accounts that are not this organization's. Only the ones connected here are asked about.
     const known = await deps.accounts.accountRefs(organizationId, vendor.key);
@@ -198,14 +198,14 @@ export function syncErrorText(vendor: LinkedInVendor, error: unknown): string {
 }
 
 /** `syncWith`, then the result goes on the integration row. A failed sync keeps `lastSyncAt` and rethrows the original error. */
-export async function syncAndRecord(deps: LinkedInManagementDeps, organizationId: string, gateway: LinkedInGateway | (() => LinkedInGateway)) {
+export async function syncAndRecord(deps: LinkedInManagementDeps, organizationId: string, vendor: LinkedInVendor, gateway: LinkedInGateway | (() => LinkedInGateway)) {
   let result: Awaited<ReturnType<typeof syncWith>>;
   try {
     // A factory runs inside the try, so a DSN the policy rejects is recorded like any other failure.
-    result = await syncWith(deps, organizationId, typeof gateway === "function" ? gateway() : gateway);
+    result = await syncWith(deps, organizationId, vendor, typeof gateway === "function" ? gateway() : gateway);
   } catch (error) {
     try {
-      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(await vendorOf(deps, organizationId), error) });
+      await deps.accounts.saveSyncStatus(organizationId, { lastSyncError: syncErrorText(vendor, error) });
     } catch (saveError) {
       console.error(`LinkedIn sync: could not save the failure for organization ${organizationId}: ${saveError instanceof Error ? saveError.name : "unknown error"}`);
     }
@@ -243,7 +243,7 @@ export async function connectLinkedIn(deps: LinkedInManagementDeps, actor: Actor
   const credentials: LinkedInCredentials = { ...entered, notifySecret: existing?.notifySecret ?? randomBytes(24).toString("base64url") };
   await deps.accounts.saveCredentials(actor.organizationId, credentials, vendor);
 
-  const synced = await syncAndRecord(deps, actor.organizationId, gateway);
+  const synced = await syncAndRecord(deps, actor.organizationId, vendor, gateway);
   return { accounts: synced.found, added: synced.added, webhooks: await registerWebhooks(deps, actor.organizationId, vendor, credentials) };
 }
 
@@ -284,7 +284,7 @@ export async function syncLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
   const gateway = vendor.gatewayFor(credentials);
   try {
-    return await syncAndRecord(deps, actor.organizationId, gateway);
+    return await syncAndRecord(deps, actor.organizationId, vendor, gateway);
   } catch (error) {
     throw new ConflictError(vendor.explain(error));
   }
