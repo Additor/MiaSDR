@@ -835,6 +835,62 @@ describeDb("linkedin engine", () => {
     expect(gateway.invitations).toHaveLength(0);
   });
 
+  it("counts an invitation LinkedIn already holds as sent, with nothing new at the vendor", async () => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    gateway.inviteBehavior = () => ({ refuse: "already_invited" });
+    expect(await invite(gateway, f)).toMatchObject({ kind: "sent", what: "invitation" });
+    expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sent", provider_message_id: null });
+    expect(gateway.invitations).toHaveLength(0);
+  });
+
+  it.each(["invalid_recipient", "not_found"] as const)("fails the lead at once when an invitation answers %s", async (refuse) => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    gateway.inviteBehavior = () => ({ refuse });
+    expect(await invite(gateway, f)).toMatchObject({ kind: "failed", retry: false });
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+  });
+
+  /** A lead past the invitation, with its message due. */
+  async function messageDue(gateway: FakeLinkedInGateway, f: Awaited<ReturnType<typeof fixture>>) {
+    await invite(gateway, f);
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    current = new Date("2026-10-16T10:00:00Z");
+  }
+
+  it.each(["invalid_recipient", "not_found", "not_first_degree"] as const)("fails the lead at once when a message answers %s", async (refuse) => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    await messageDue(gateway, f);
+    gateway.messageBehavior = () => ({ refuse });
+    expect(await act(gateway, f)).toMatchObject({ kind: "failed", retry: false });
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+    expect(gateway.messages).toHaveLength(0);
+  });
+
+  it("fails a lead whose message renders empty, and calls nobody", async () => {
+    const f = await fixture({ steps: [STEPS[0], { stepNumber: 2, kind: "message", body: "", waitDays: 1 }] });
+    const gateway = new FakeLinkedInGateway();
+    await messageDue(gateway, f);
+    expect(await act(gateway, f)).toMatchObject({ kind: "failed", retry: false });
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+    expect(gateway.messages).toHaveLength(0);
+  });
+
+  it("gives the attempt back when LinkedIn was disconnected between the claim and the call", async () => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    expect((await act(gateway, f)).kind).toBe("resolved");
+    advance(2);
+    const noGateway = { ...deps(gateway), gateways: { forAccount: async () => null } };
+    expect(await engine.runNextLinkedInAction(noGateway, f.account)).toMatchObject({ kind: "paused", reason: "no_gateway" });
+    expect(await accountRow(f.account)).toMatchObject({ status: "disconnected" });
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "pending", current_step: 0 });
+    expect((await sendRows(f.enrollmentIds[0])).filter((send) => send.status === "sent")).toHaveLength(0);
+    expect(gateway.invitations).toHaveLength(0);
+  });
+
   it("fails the lead when the rendered note exceeds 300 characters", async () => {
     const f = await fixture({ steps: [{ stepNumber: 1, kind: "invitation", body: "{{firstName}} " + "x".repeat(299), waitDays: 0 }] });
     const gateway = new FakeLinkedInGateway();
