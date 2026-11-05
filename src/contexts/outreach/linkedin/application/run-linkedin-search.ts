@@ -27,7 +27,7 @@ export async function runNextSearchPage(deps: LinkedInSearchEngineDeps): Promise
   const claim = await deps.store.claimPage({ now, random: deps.random });
   if (!claim) return { kind: "idle" };
 
-  const gateway = await deps.gateways.forOrganization(claim.organizationId);
+  const gateway = await deps.gateways.forAccount({ organizationId: claim.organizationId, accountId: claim.account.id });
   if (!gateway) {
     await deps.store.release(claim, { error: "LinkedIn is not connected for this organization.", retryAt: new Date(now.getTime() + NO_GATEWAY_RETRY_MINUTES * 60_000), unknownFailure: false });
     return { kind: "paused", reason: "no_gateway" };
@@ -97,7 +97,7 @@ async function handleError(deps: LinkedInSearchEngineDeps, claim: SearchPageClai
   const message = errorText(error);
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {
     if (error.code === "rate_limited") {
-      await deps.store.pauseAccountForLimit(claim, new Date(now.getTime() + LIMIT_PAUSE_HOURS * 3_600_000));
+      await deps.store.pauseAccountForLimit(claim, new Date(now.getTime() + (error.retryAfterMs ?? LIMIT_PAUSE_HOURS * 3_600_000)));
       return { kind: "paused", reason: "limit" };
     }
     if (error.code === "auth") {

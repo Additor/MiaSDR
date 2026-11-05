@@ -31,7 +31,7 @@ describeDb("LinkedIn inbound claim fence", () => {
     const created = await createTestOrg(sql, "Inbound claim", "admin");
     orgs.push(created);
     const org = created.organizationId;
-    const claim = await store.begin({ organizationId: org, key: `unipile:message_received:v1:${uniqueKey()}`, eventType: "message_received", accountRef: "acc-1", payload: { text: "hi" }, now: at(0) });
+    const claim = await store.begin({ provider: "unipile", organizationId: org, key: `unipile:message_received:v1:${uniqueKey()}`, eventType: "message_received", accountRef: "acc-1", payload: { text: "hi" }, now: at(0) });
     if (!claim) throw new Error("begin found a duplicate");
     return { org, claim };
   }

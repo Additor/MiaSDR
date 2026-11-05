@@ -49,7 +49,7 @@ describeDb("linkedin.sync-accounts job", () => {
       return list();
     };
     gateways.set("key-" + tag, gateway);
-    if (options.credentials !== false) await accountStore.saveCredentials(id, { dsn: "api1.unipile.com:13111", apiKey: "key-" + tag, notifySecret: "s".repeat(32) });
+    if (options.credentials !== false) await accountStore.saveCredentials(id, { dsn: "api1.unipile.com:13111", apiKey: "key-" + tag, notifySecret: "s".repeat(32) }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
     return { id, tag, gateway };
   }
 
@@ -71,14 +71,14 @@ describeDb("linkedin.sync-accounts job", () => {
     mgmtDeps = {
       accounts: { ...accountStore, listCredentialedOrganizations: async () => (await accountStore.listCredentialedOrganizations()).filter((id) => (only ?? orgs).includes(id)) },
       // An unknown key means a credential reached the wrong place, so the double throws.
-      vendor: createUnipileVendor({
+      vendors: [createUnipileVendor({
         gatewayFor: (credentials) => {
           keyLog.push(credentials.apiKey);
           const gateway = gateways.get(credentials.apiKey);
           if (!gateway) throw new Error("unknown key " + credentials.apiKey);
           return gateway;
         },
-      }),
+      })],
       appUrl: "https://app.example.com",
       now: () => clock,
       audit: drizzleAuditSink,
@@ -227,7 +227,7 @@ describeDb("linkedin.sync-accounts job", () => {
     const before = await bRow();
     expect(before).toHaveLength(1);
     const stolen = { ref: "stolen-" + a.tag, linkedinId: before[0].linkedin_id as string, name: "Hijack", username: "hijack-" + a.tag, status: "disconnected" as const, isPremium: null, headline: null };
-    const result = await accountStore.upsertAccounts(a.id, [stolen]);
+    const result = await accountStore.upsertAccounts(a.id, [stolen], "unipile");
     expect(result).toMatchObject({ added: 0, updated: 0, skipped: 1 });
     expect(result.skippedReasons[0]).toMatch(/another organization/);
     // The same listing through the job.
@@ -247,7 +247,7 @@ describeDb("linkedin.sync-accounts job", () => {
   it("a saved DSN the policy rejects records lastSyncError, fails the slot and does not stop the next organization", async () => {
     const bad = await org();
     const good = await org();
-    await accountStore.saveCredentials(bad.id, { dsn: "evil.example.com:443", apiKey: "key-" + bad.tag, notifySecret: "s".repeat(32) });
+    await accountStore.saveCredentials(bad.id, { dsn: "evil.example.com:443", apiKey: "key-" + bad.tag, notifySecret: "s".repeat(32) }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
     const result = await run(at("10:00"), undefined, [bad.id, good.id]);
     expect(result.detail).toMatchObject({ organizations: 2, failed: 1, added: 1 });
     expect(await syncStatus(bad.id)).toEqual({ lastSyncAt: null, lastSyncError: "The saved Unipile DSN is not allowed. Reconnect with the DSN from your Unipile dashboard." });
@@ -281,7 +281,7 @@ describeDb("linkedin.sync-accounts job", () => {
   it("the registered jobs and the tick report list the job", async () => {
     const { registeredJobs } = await import("@/composition/job-registry");
     const names = registeredJobs().map((j) => j.name);
-    expect(names.filter((n) => n.startsWith("linkedin."))).toEqual(["linkedin.sync-accounts", "linkedin.replay-events", "linkedin.reconcile", "linkedin.search", "linkedin.run"]);
+    expect(names.filter((n) => n.startsWith("linkedin."))).toEqual(["linkedin.sync-accounts", "linkedin.replay-events", "linkedin.reconcile", "linkedin.poll-inbound", "linkedin.search", "linkedin.run"]);
     const { runTick } = await import("@/platform/jobs/tick");
     const report = await runTick([job], 10_000);
     expect(report.jobs.map((j) => j.name)).toEqual(["linkedin.sync-accounts"]);

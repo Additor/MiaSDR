@@ -1,5 +1,5 @@
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
-import { and, desc, eq, inArray, notLike, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notLike, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { auditLog, inboundEvents, jobRuns, linkedinAccounts, users } from "@/platform/db/schema";
 import { TICK_FAILURE_PREFIX } from "@/platform/jobs/failure-log";
@@ -39,7 +39,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
         queued: sql<number>`(count(*) filter (where ${p.attempts} = 0))::int`,
       })
       .from(p)
-      .where(and(eq(p.organizationId, organizationId), eq(p.provider, "unipile"), eq(p.status, "failed")));
+      .where(and(eq(p.organizationId, organizationId), ne(p.provider, "gmail"), eq(p.status, "failed")));
     return { dead: row?.dead ?? 0, retrying: row?.retrying ?? 0, queued: row?.queued ?? 0 };
   },
 
@@ -51,7 +51,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
              log = ev.log || ${entry("Replay requested.", now)}::jsonb
        where ev.id in (
          select id from inbound_events
-          where organization_id = ${organizationId} and provider = 'unipile' and status = 'failed' and attempts > 0
+          where organization_id = ${organizationId} and provider <> 'gmail' and status = 'failed' and attempts > 0
           order by created_at asc
           limit ${limit}
           for update skip locked

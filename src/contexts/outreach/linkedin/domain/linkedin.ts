@@ -145,6 +145,19 @@ export interface AccountState {
   workingHours: WorkingHours;
 }
 
+/** How often an account's inbox is read when its vendor sends no webhook for messages. */
+export const INBOUND_READ_EVERY_MINUTES = 10;
+/** Past this, a stop request may be waiting unread, so such an account sends nothing until a read finishes. */
+export const INBOUND_FRESH_MINUTES = 15;
+/** How long a read holds its account: longer than the job's share of a tick plus one slow call. */
+export const INBOUND_LEASE_MINUTES = 2;
+/** How long a failed read waits, so an account that keeps failing does not use up every tick. Short enough to retry before the read goes stale. */
+export const INBOUND_RETRY_MINUTES = 3;
+
+export function inboundIsStale(now: Date, readAt: Date | null): boolean {
+  return readAt === null || now.getTime() - readAt.getTime() > INBOUND_FRESH_MINUTES * 60_000;
+}
+
 /** Why an account may not act right now, or null when it may. */
 export function accountBlock(now: Date, account: AccountState): AccountBlock | null {
   if (account.status !== "connected") return "not_connected";

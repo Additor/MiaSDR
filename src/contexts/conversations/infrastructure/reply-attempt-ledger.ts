@@ -19,6 +19,9 @@ export interface LinkedInSnapshot {
   channel: "linkedin";
   text: string;
   chat: string;
+  /** Absent on an attempt begun before these were kept. */
+  member?: string | null;
+  slug?: string | null;
   accountId: string;
   providerAccountId: string;
   threadId: string;

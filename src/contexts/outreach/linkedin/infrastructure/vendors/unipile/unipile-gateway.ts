@@ -7,6 +7,8 @@ import {
   type GatewayErrorCode,
   type GatewayProfile,
   type LinkedInGateway,
+  type LinkedInRecipient,
+  type LinkedInWebhookAdmin,
   type NetworkDistance,
   type SearchPage,
   type WebhookRegistration,
@@ -79,7 +81,7 @@ export function classifyHttpError(status: number, body: Json | null): LinkedInGa
 /** How many pages a check that decides on a resend reads before it gives no answer. */
 const LOOKUP_MAX_PAGES = 20;
 
-export class UnipileGateway implements LinkedInGateway {
+export class UnipileGateway implements LinkedInGateway, LinkedInWebhookAdmin {
   private readonly base: string;
   private readonly doFetch: typeof fetch;
   private readonly timeoutMs: number;
@@ -200,7 +202,7 @@ export class UnipileGateway implements LinkedInGateway {
    * Docs "List all invitations sent": GET /api/v1/users/invite/sent, query account_id, cursor, limit (1 to 100).
    * Items carry invited_user_id. An accepted invitation leaves that list, so a miss falls back to the profile's network_distance.
    */
-  async invitationStatus(input: { account: string; member: string }): Promise<"pending" | "accepted" | "none"> {
+  async invitationStatus(input: { account: string; member: string; since?: Date }): Promise<"pending" | "accepted" | "none"> {
     let cursor: string | undefined;
     for (let page = 0; ; page++) {
       const res = await this.call("GET", "/api/v1/users/invite/sent", { query: { account_id: input.account, limit: 100, cursor } });
@@ -221,12 +223,24 @@ export class UnipileGateway implements LinkedInGateway {
   }
 
   /** Docs "Send a message in a chat": POST /api/v1/chats/{chat_id}/messages, multipart text and account_id, 201 { message_id }. */
-  async sendMessage(input: { account: string; chat: string; text: string }): Promise<{ messageId: string | null }> {
+  private async sendInChat(input: { account: string; chat: string; text: string }): Promise<{ messageId: string | null }> {
     const form = new FormData();
     form.set("text", input.text);
     form.set("account_id", input.account);
     const res = await this.call("POST", `/api/v1/chats/${encodeURIComponent(input.chat)}/messages`, { form });
     return { messageId: str(res.message_id) };
+  }
+
+  /** The known chat, else the member's. A chat exists for a member already in touch; otherwise this send starts one. Looking it up sends nothing. */
+  async sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
+    const { account, to, text } = input;
+    const chat = to.chat ?? (to.member ? await this.findChat({ account, member: to.member }) : null);
+    if (chat) {
+      const sent = await this.sendInChat({ account, chat, text });
+      return { chat, messageId: sent.messageId };
+    }
+    if (!to.member) throw new LinkedInGatewayError("No chat or member to send this message to.", "definite", "invalid_recipient");
+    return this.startChat({ account, member: to.member, text });
   }
 
   /** Docs "Start a new chat": POST /api/v1/chats, multipart account_id, attendees_ids, text, 201 { chat_id, message_id }. LinkedIn needs a first-degree relation. */
@@ -240,11 +254,13 @@ export class UnipileGateway implements LinkedInGateway {
   }
 
   /** Docs "List all messages from a chat": GET /api/v1/chats/{chat_id}/messages, query after (ISO), limit; items have is_sender (0 or 1) and text. */
-  async findSentMessage(input: { account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null> {
+  async findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date }): Promise<{ messageId: string | null } | null> {
+    const chat = input.to.chat ?? (input.to.member ? await this.findChat({ account: input.account, member: input.to.member }) : null);
+    if (!chat) return null;
     const wanted = input.text.trim();
     let cursor: string | undefined;
     for (let page = 0; ; page++) {
-      const res = await this.call("GET", `/api/v1/chats/${encodeURIComponent(input.chat)}/messages`, { query: { after: input.since.toISOString(), limit: 50, cursor } });
+      const res = await this.call("GET", `/api/v1/chats/${encodeURIComponent(chat)}/messages`, { query: { after: input.since.toISOString(), limit: 50, cursor } });
       const hit = ((res.items as Json[] | undefined) ?? []).find((m) => Number(m.is_sender) === 1 && typeof m.text === "string" && m.text.trim() === wanted);
       if (hit) return { messageId: str(hit.id) };
       cursor = str(res.cursor) ?? undefined;

@@ -540,7 +540,7 @@ describeDb("linkedin search queue", () => {
   it("does not read for an organization without a LinkedIn gateway, and tries again later", async () => {
     const f = await fixture();
     const id = await create(f);
-    const none = { ...f.deps, gateways: { forOrganization: async () => null } };
+    const none = { ...f.deps, gateways: { forAccount: async () => null } };
     expect(await engine.runNextSearchPage(none)).toEqual({ kind: "paused", reason: "no_gateway" });
     expect((await row(id)).last_error).toMatch(/not connected/);
     expect((await engine.runNextSearchPage(f.deps)).kind).toBe("idle");

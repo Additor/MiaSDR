@@ -14,8 +14,16 @@ function filesIn(dir: string): string[] {
 
 /** What a vendor names, sends or expects lives in `infrastructure/vendors/<vendor>`, behind `LinkedInGateway` and `LinkedInVendor`. */
 describe("LinkedIn vendor boundary", () => {
-  it("keeps Unipile out of the LinkedIn application and domain layers", () => {
-    const leaks = LAYERS.flatMap((layer) => filesIn(join(ROOT, layer))).filter((file) => /unipile/i.test(readFileSync(file, "utf8")));
+  it("keeps vendors out of the LinkedIn application and domain layers", () => {
+    const leaks = LAYERS.flatMap((layer) => filesIn(join(ROOT, layer))).filter((file) => /unipile|\bedges\b/i.test(readFileSync(file, "utf8")));
     expect(leaks).toEqual([]);
+  });
+
+  it("keeps one vendor's adapter from importing another's", () => {
+    const vendors = readdirSync(join(ROOT, "infrastructure/vendors"));
+    const crossing = vendors.flatMap((vendor) =>
+      filesIn(join(ROOT, "infrastructure/vendors", vendor)).filter((file) => vendors.some((other) => other !== vendor && new RegExp(`/${other}/`).test(readFileSync(file, "utf8").match(/from "[^"]+"/g)?.join("\n") ?? ""))),
+    );
+    expect(crossing).toEqual([]);
   });
 });

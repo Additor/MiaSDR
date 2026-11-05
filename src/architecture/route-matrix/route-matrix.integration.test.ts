@@ -336,7 +336,7 @@ describeDb("route matrix", () => {
     expect(refused.headers.get("cache-control")).toBe("no-store");
     expect(await audits()).toBe(before);
 
-    await drizzleLinkedInAccountStore.saveCredentials(world.orgA.id, { dsn: "api1.unipile.com:13111", apiKey: "matrix-api-key", notifySecret: secret });
+    await drizzleLinkedInAccountStore.saveCredentials(world.orgA.id, { dsn: "api1.unipile.com:13111", apiKey: "matrix-api-key", notifySecret: secret }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
     try {
       // GET has no handler, so Next answers 405 and no code runs: no reveal, no audit row.
       expect(Object.keys(await loadRoute(file))).toEqual(["POST"]);

@@ -83,7 +83,7 @@ describeDb("a reply on a LinkedIn campaign", () => {
 
   const receive = (f: Fixture, member: string, messageId: string, text: string, chat = "chat-" + member, profileUrl?: string) =>
     inbound.receiveLinkedInWebhook(deps(), {
-      organizationId: f.org,
+      provider: "unipile", organizationId: f.org,
       payload: {
         event: "message_received",
         account_id: f.providerAccount,

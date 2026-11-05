@@ -12,12 +12,12 @@ import type { LinkedInOperationsDeps } from "../application/linkedin-operations"
 import type { LinkedInCampaignDeps } from "../application/linkedin-campaigns";
 import type { LinkedInManagementDeps } from "../application/linkedin-management";
 import type { LinkedInSearchBatchDeps, LinkedInSearchCapacityDeps, LinkedInSearchDeps, LinkedInSearchEngineDeps } from "../application/linkedin-search-ports";
-import type { LinkedInEngineDeps, LinkedInGateway, LinkedInGatewayProvider, LinkedInInboundDeps } from "../application/linkedin-ports";
+import { LinkedInGatewayError, type LinkedInEngineDeps, type LinkedInGateway, type LinkedInGatewayProvider, type LinkedInInboundDeps, type LinkedInInboundPollDeps } from "../application/linkedin-ports";
 import type { NoticeDeps } from "../application/linkedin-enroll-notices";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enrollment-admin";
 import { drizzleMergeFieldSource } from "../../infrastructure/drizzle-merge-fields";
-import { drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
+import { accountVendorOf, drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
 import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
 import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
@@ -29,6 +29,11 @@ import { drizzleLinkedInSearchEngineStore, drizzleLinkedInSearchStore } from "./
 import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
+import { drizzleLinkedInInboundPollStore } from "./drizzle-linkedin-inbound-read-store";
+import { EdgesGateway } from "./vendors/edges/edges-gateway";
+import { EdgesClient } from "./vendors/edges/edges-http";
+import { edgesEventKey, isEdgesDelivery, parseEdgesDelivery, readEdgesInbound, unreadableEdgesDelivery } from "./vendors/edges/edges-inbound";
+import { createEdgesVendor } from "./vendors/edges/edges-vendor";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
 import { storedConnection, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
 import { createUnipileVendor } from "./vendors/unipile/unipile-vendor";
@@ -56,23 +61,27 @@ function fakeGateway(): FakeLinkedInGateway {
   return globalForFake.__miasdrFakeLinkedIn;
 }
 
-/** The one place that decides which LinkedIn adapter is live: Unipile with the organization's stored credentials, or the demo fake. */
+/** The gateway of the org's vendor when `accountId` runs on it. An account of a vendor the org no longer connects has none. */
+async function storedGateway(organizationId: string, accountId: string, policy: DsnPolicy): Promise<LinkedInGateway | null> {
+  const [vendorKey, accountVendor] = await Promise.all([drizzleLinkedInAccountStore.connectedVendor(organizationId), accountVendorOf(organizationId, accountId)]);
+  if (!vendorKey || vendorKey !== accountVendor) return null;
+  const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
+  if (!credentials) return null;
+  if (vendorKey === "edges") return new EdgesGateway({ apiKey: credentials.apiKey ?? "" });
+  const connection = storedConnection(credentials, policy);
+  return connection ? new UnipileGateway(connection) : null;
+}
+
+/** The one place that decides which LinkedIn adapter is live: the account's vendor with the organization's stored credentials, or the demo fake. */
 export function linkedinGateways(options: { allowLoopback?: boolean } = {}): LinkedInGatewayProvider {
   if (fakeMode()) return fakeGateway();
-  return {
-    async forOrganization(organizationId): Promise<LinkedInGateway | null> {
-      const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
-      if (!credentials) return null;
-      const connection = storedConnection(credentials, dsnPolicy(options));
-      return connection ? new UnipileGateway(connection) : null;
-    },
-  };
+  return { forAccount: ({ organizationId, accountId }) => storedGateway(organizationId, accountId, dsnPolicy(options)) };
 }
 
 export function linkedinManagementDeps(): LinkedInManagementDeps {
   return {
     accounts: drizzleLinkedInAccountStore,
-    vendor: createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }),
+    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }), ...(fakeMode() ? [] : [createEdgesVendor()])],
     appUrl: env().APP_URL,
     now: () => new Date(),
     audit: auditSink,
@@ -109,13 +118,28 @@ function engineDeps(): LinkedInEngineDeps {
   return { store: drizzleLinkedInStore, gateways: linkedinGateways(), clock: { now: () => new Date() }, random: Math.random };
 }
 
+/** A delivery says which vendor's it is: polled ones carry Edges' tag, and webhook ones are Unipile's. */
+const parseLinkedInPayload = (payload: unknown) => (isEdgesDelivery(payload) ? parseEdgesDelivery(payload) : parseUnipilePayload(payload));
+const unreadableLinkedInPayload = (payload: unknown) => (isEdgesDelivery(payload) ? unreadableEdgesDelivery(payload) : unreadablePayloadEvent(payload));
+const linkedInEventKey: LinkedInInboundDeps["eventKey"] = (event, organizationId, payload) => (isEdgesDelivery(payload) ? edgesEventKey(event, organizationId) : unipileEventKey(event, organizationId));
+
 function inboundDeps(inbox: InboxFiling): LinkedInInboundDeps {
-  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseUnipilePayload, unreadable: unreadablePayloadEvent, eventKey: unipileEventKey };
+  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseLinkedInPayload, unreadable: unreadableLinkedInPayload, eventKey: linkedInEventKey };
 }
 
-/** LinkedIn jobs. They idle until an organization connects Unipile, so they are always registered. */
+/** Edges is the one vendor read by polling. */
+const edgesInboundSource: LinkedInInboundPollDeps["source"] = {
+  async read({ organizationId, account, cursor, now }) {
+    const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
+    if (!credentials?.apiKey) throw new LinkedInGatewayError("Edges is not connected.", "definite", "unavailable");
+    return readEdgesInbound(new EdgesClient({ apiKey: credentials.apiKey }), account, cursor, now);
+  },
+};
+
+/** LinkedIn jobs. They idle until an organization connects LinkedIn, so they are always registered. */
 export function linkedinJobs(inbox: InboxFiling): Job[] {
-  return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot });
+  const poll: LinkedInInboundPollDeps = { store: drizzleLinkedInInboundPollStore, source: edgesInboundSource, inbound: inboundDeps(inbox), clock: { now: () => new Date() } };
+  return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll);
 }
 
 export type UnipileDelivery = { status: 401 } | { status: 200; result: WebhookResult };
@@ -129,5 +153,5 @@ const sameSecret = (a: string, b: string) => a.length === b.length && timingSafe
 export async function receiveUnipileDelivery(inbox: InboxFiling, input: { organizationId: string; secret: string | null; payload: unknown }): Promise<UnipileDelivery> {
   const credentials = await drizzleLinkedInAccountStore.getCredentials(input.organizationId);
   if (!credentials || !input.secret || !sameSecret(input.secret, credentials.notifySecret)) return { status: 401 };
-  return { status: 200, result: await receiveLinkedInWebhook(inboundDeps(inbox), { organizationId: input.organizationId, payload: input.payload }) };
+  return { status: 200, result: await receiveLinkedInWebhook(inboundDeps(inbox), { organizationId: input.organizationId, provider: "unipile", payload: input.payload }) };
 }

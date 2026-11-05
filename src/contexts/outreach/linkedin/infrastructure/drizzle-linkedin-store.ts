@@ -24,6 +24,7 @@ import {
   MAX_RESOLVE_ATTEMPTS,
   accountBlock,
   dailyInviteLimit,
+  inboundIsStale,
   inviteBlock,
   linkedinRules,
   nextRunAfter,
@@ -46,7 +47,7 @@ import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
-import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
+import { disconnectLinkedInAccount, pauseLinkedInAccount, VENDORS_READ_BY_POLL } from "./linkedin-account-state";
 
 type Tx = DbTx;
 
@@ -166,6 +167,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const zoneValue = general?.timeZone;
       const workingHours: WorkingHours = (account.workingHours as WorkingHours | null) ?? options.defaultWorkingHours(typeof zoneValue === "string" ? zoneValue : null);
       if (accountBlock(options.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, nextAllowedRunAt: account.nextAllowedRunAt, workingHours })) return null;
+      // A vendor with no webhook for messages: a stop request may be unread, or the read may be failing. Nothing goes out on old news.
+      if (VENDORS_READ_BY_POLL.includes(account.provider) && inboundIsStale(options.now, account.inboundReadAt)) return null;
 
       const rules = linkedinRules(await channelValues(tx, account.organizationId, "linkedin"));
       const nowIso = options.now.toISOString();
@@ -481,12 +484,14 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         providerAccountId: linkedinAccounts.providerAccountId,
         providerId: linkedinEnrollmentDetails.providerId,
         chatId: linkedinConnections.chatId,
+        slug: people.linkedinSlug,
         steps: campaigns.steps,
       })
       .from(sends)
       .innerJoin(linkedinAccounts, eq(linkedinAccounts.id, sends.linkedinAccountId))
       .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
       .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
+      .innerJoin(people, eq(people.id, campaignEnrollments.personId))
       .innerJoin(linkedinEnrollmentDetails, eq(linkedinEnrollmentDetails.enrollmentId, sends.enrollmentId))
       .leftJoin(
         linkedinConnections,
@@ -505,6 +510,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       rendered: r.marker !== null,
       body: r.body,
       chatId: r.chatId,
+      slug: r.slug,
       account: { id: r.accountId, providerAccountId: r.providerAccountId },
       providerId: r.providerId,
       nextStepWaitDays: r.steps[r.stepNumber as number]?.waitDays ?? null,
@@ -576,6 +582,7 @@ async function buildSendClaim(
       ...enrollmentVariableColumns,
       steps: campaigns.steps,
       providerId: linkedinEnrollmentDetails.providerId,
+      slug: people.linkedinSlug,
     })
     .from(campaignEnrollments)
     .innerJoin(people, eq(people.id, campaignEnrollments.personId))
@@ -627,6 +634,7 @@ async function buildSendClaim(
     person: { id: candidate.person_id, variables },
     providerId: row.providerId as string,
     chatId: connection?.chatId ?? null,
+    slug: row.slug,
     step: { body: step.body, waitDays: step.waitDays },
     nextStep: next ? { waitDays: next.waitDays } : null,
   };
@@ -663,6 +671,7 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
       attempt: row.attempt,
       claimedAt: row.claimedAt,
       rendered: true,
+      slug: null,
       body: null,
       chatId: null,
       account: { id: row.accountId as string, providerAccountId: "" },

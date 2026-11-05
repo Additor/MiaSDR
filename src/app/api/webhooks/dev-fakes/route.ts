@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (!allowed(request)) return new NextResponse(null, { status: 404 });
   const body = (await request.json()) as Record<string, unknown>;
   const mail = mailboxProvider() as FakeMailboxProvider;
-  const li = (await linkedinGateways().forOrganization("")) as FakeLinkedInGateway;
+  const li = (await linkedinGateways().forAccount({ organizationId: "", accountId: "" })) as FakeLinkedInGateway;
   switch (body.action) {
     case "deliverInbound":
       return NextResponse.json(mail.deliverInbound(String(body.mailbox), (body.email ?? {}) as never));

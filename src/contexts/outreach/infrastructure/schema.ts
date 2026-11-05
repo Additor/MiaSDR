@@ -73,7 +73,9 @@ export const linkedinAccounts = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    /** The Unipile account id used for API calls. */
+    /** Which vendor runs this account. Set when the row is created and never changed. */
+    provider: text("provider").notNull().default("unipile"),
+    /** The vendor's account id used for API calls. */
     providerAccountId: text("provider_account_id").notNull().unique(),
     /** The LinkedIn member id. Globally unique: webhooks resolve the organization through it. */
     linkedinId: text("linkedin_id").notNull().unique(),
@@ -95,6 +97,12 @@ export const linkedinAccounts = pgTable(
     searchLeaseUntil: tstz("search_lease_until"),
     workingHours: jsonb("working_hours").$type<WorkingHours>(),
     nextAllowedRunAt: tstz("next_allowed_run_at"),
+    /** Where reading this account's inbox has got to, for a vendor that has no webhook for messages. Its shape belongs to the vendor's adapter. */
+    inboundCursor: jsonb("inbound_cursor"),
+    /** When a full read of the inbox last started. A claim refuses such an account when this is old: a stop request may be waiting unread. */
+    inboundReadAt: tstz("inbound_read_at"),
+    /** No read of this inbox starts before this: a worker holds it, or its last read failed and waits its turn. */
+    inboundLeaseUntil: tstz("inbound_lease_until"),
     /**
      * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
      * sync or before owners existed, until an admin picks one. An agent's search uses only accounts its token's person
@@ -107,13 +115,14 @@ export const linkedinAccounts = pgTable(
   (t) => [
     unique("linkedin_accounts_id_org_uq").on(t.id, t.organizationId),
     check("linkedin_accounts_status_ck", sql`${t.status} in ('connected', 'disconnected')`),
+    check("linkedin_accounts_provider_ck", sql`${t.provider} in ('unipile', 'edges')`),
     check("linkedin_accounts_invite_limit_ck", sql`${t.dailyInviteLimit} between 1 and 100`),
     check("linkedin_accounts_message_limit_ck", sql`${t.dailyMessageLimit} between 1 and 200`),
   ],
 );
 
 /**
- * A pending Unipile hosted-auth connection. The notify callback carries the
+ * A pending connection through a vendor's link. A notify callback carries the
  * link id and a secret; only the SHA-256 of the secret is stored. The row
  * ties the callback to the organization that asked for it.
  */
@@ -122,14 +131,14 @@ export const linkedinConnectLinks = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    /** Unipile `name` field sent with the link; echoed back in the callback to find this row. */
+    /** The `name` sent with the link; a callback echoes it back to find this row. */
     providerName: text("provider_name").notNull().unique(),
     /** hex SHA-256 of the notify secret. */
     secretHash: text("secret_hash").notNull(),
     url: text("url"),
     status: text("status").notNull().default("pending"),
     expiresAt: tstz("expires_at").notNull(),
-    /** Unipile account id reported by the callback or by a sync. */
+    /** The vendor's account id, once the link's vendor or a callback names it. */
     providerAccountId: text("provider_account_id"),
     linkedinAccountId: uuid("linkedin_account_id"),
     lastError: text("last_error"),
@@ -501,7 +510,7 @@ export const inboundEvents = pgTable(
     id: pk(),
     /** Resolved from the account or mailbox at ingest. Null until resolved. */
     organizationId: uuid("organization_id"),
-    /** gmail | unipile */
+    /** gmail | unipile | edges */
     provider: text("provider").notNull(),
     /** Idempotency key from the provider. */
     providerEventKey: text("provider_event_key"),
@@ -529,7 +538,7 @@ export const inboundEvents = pgTable(
     index("inbound_events_claim_idx").on(t.status, t.nextAttemptAt),
     index("inbound_events_org_status_idx").on(t.organizationId, t.provider, t.status, t.createdAt),
     check("inbound_events_replay_ck", sql`${t.replayCount} >= 0`),
-    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile')`),
+    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile', 'edges')`),
     check("inbound_events_status_ck", sql`${t.status} in ('pending', 'processing', 'done', 'failed', 'skipped')`),
   ],
 );

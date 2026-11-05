@@ -95,7 +95,7 @@ describeDb("time zone aliases at every write point", () => {
     const t = await org();
     const gateway = new FakeLinkedInGateway();
     gateway.accounts = [{ ref: "u-" + t.tag, linkedinId: "ACo-" + t.tag, name: "Ada", username: "ada-" + t.tag, status: "connected" }];
-    const deps: import("../../linkedin/application/linkedin-management").LinkedInManagementDeps = { accounts: m.accounts.drizzleLinkedInAccountStore, vendor: createUnipileVendor({ gatewayFor: () => gateway }), appUrl: "https://app.example.com", now: () => new Date("2026-10-14T10:00:00Z"), audit: drizzleAuditSink, connectLinks: m.connect.drizzleLinkedInConnectStore };
+    const deps: import("../../linkedin/application/linkedin-management").LinkedInManagementDeps = { accounts: m.accounts.drizzleLinkedInAccountStore, vendors: [createUnipileVendor({ gatewayFor: () => gateway })], appUrl: "https://app.example.com", now: () => new Date("2026-10-14T10:00:00Z"), audit: drizzleAuditSink, connectLinks: m.connect.drizzleLinkedInConnectStore };
     await m.linkedin.connectLinkedIn(deps, t.actor, { dsn: "api1.unipile.com:13111", apiKey: "k" });
     const [account] = (await m.linkedin.listLinkedInAccounts(deps, t.actor)).accounts;
     await m.linkedin.updateLinkedInAccount(deps, t.actor, account.id, { workingHours: { timeZone: "Asia/Rangoon", days: { "1": [{ start: "09:00", end: "17:00" }] } } });

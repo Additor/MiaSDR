@@ -25,11 +25,13 @@ export interface LinkedInConnectStore {
    * takes the owner the link names, if that person is still a member.
    */
   complete(id: string, input: { providerAccountId: string; now: Date }): Promise<boolean>;
+  /** Records the vendor's account a pending link is for, once the vendor names it. */
+  noteAccount(id: string, providerAccountId: string): Promise<void>;
   fail(id: string, error: string): Promise<boolean>;
   /** Conversations a retryable problem (the sync failed) and leaves the link pending. */
   noteError(id: string, error: string): Promise<void>;
-  /** Marks this organization's pending links past their expiry as expired. */
-  expireDue(organizationId: string, now: Date): Promise<number>;
+  /** Marks this organization's pending links past their expiry as expired. Answers the vendor's account of each, where it named one. */
+  expireDue(organizationId: string, now: Date): Promise<Array<string | null>>;
   countPending(organizationId: string, now: Date): Promise<number>;
   listRecent(organizationId: string, limit: number, now: Date): Promise<Array<Pick<ConnectLink, "id" | "status" | "expiresAt" | "createdAt" | "completedAt" | "lastError">>>;
 }

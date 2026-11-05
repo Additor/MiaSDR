@@ -219,7 +219,7 @@ describeDb("linkedin engine", () => {
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
 
-    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
     expect(accepted.status).toBe("done");
     const afterAccept = await enrollment(f.enrollmentIds[0]);
     expect(afterAccept.status).toBe("active");
@@ -249,7 +249,7 @@ describeDb("linkedin engine", () => {
     advance(20);
     await invite(gateway, f);
     for (const slug of f.slugs) {
-      const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${slug}`) });
+      const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, `ACo-${slug}`) });
       expect(accepted.status).toBe("done");
     }
     current = new Date("2026-10-15T11:00:00Z");
@@ -269,7 +269,7 @@ describeDb("linkedin engine", () => {
     const f = await fixture();
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
-    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
     expect(accepted.status).toBe("done");
     current = new Date("2026-10-15T10:03:00Z");
     // The flag lands between the claim and the provider call.
@@ -299,7 +299,7 @@ describeDb("linkedin engine", () => {
     const f = await fixture();
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
-    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
     expect(accepted.status).toBe("done");
     current = new Date("2026-10-15T10:03:00Z");
     await sql`update people set email = ${`${f.slugs[0]}@list.test`} where id = (select person_id from campaign_enrollments where id = ${f.enrollmentIds[0]})`;
@@ -327,12 +327,12 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
 
     const reply = replyPayload(f, member, "m-1");
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: reply })).status).toBe("done");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: reply })).status).toBe("done");
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", next_send_at: null, stop_reason: "replied" });
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: reply })).status).toBe("duplicate");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: reply })).status).toBe("duplicate");
 
     current = new Date("2026-10-20T10:00:00Z");
     expect((await act(gateway, f)).kind).toBe("idle");
@@ -347,10 +347,10 @@ describeDb("linkedin engine", () => {
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
     const echo = { ...replyPayload(f, member, "e-1", "Hi Lead0, let us connect"), sender: { attendee_provider_id: "ACo-owner-" + f.tag } };
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: echo })).status).toBe("done");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: echo })).status).toBe("done");
     expect(await details(f.enrollmentIds[0])).toMatchObject({ connection_state: "connected" });
     const second = { ...echo, message_id: "e-2" };
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: second })).status).toBe("skipped");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: second })).status).toBe("skipped");
     expect((await enrollment(f.enrollmentIds[0])).status).toBe("active");
   });
 
@@ -362,15 +362,15 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
 
     const reply = {
       ...replyPayload(f, member, "m-inbox", "Let us talk"),
       sender: { attendee_provider_id: member, attendee_name: "Someone Else", attendee_profile_url: "https://www.linkedin.com/in/" + f.slugs[0] },
       timestamp: "2026-10-14T11:30:00.000Z",
     };
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: reply })).status).toBe("done");
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: reply })).status).toBe("duplicate");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: reply })).status).toBe("done");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: reply })).status).toBe("duplicate");
 
     const rows = await inboxRows(f.org);
     expect(rows).toHaveLength(1);
@@ -406,9 +406,9 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: replyPayload(f, member, "first") });
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: replyPayload(f, member, "second", "One more thing") });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: replyPayload(f, member, "first") });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: replyPayload(f, member, "second", "One more thing") });
     const rows = await inboxRows(f.org);
     expect(rows.map((r) => r.body_text)).toEqual(["Sounds good", "One more thing"]);
     expect(new Set(rows.map((r) => r.thread_id)).size).toBe(1);
@@ -421,7 +421,7 @@ describeDb("linkedin engine", () => {
       ...replyPayload(f, "ACo-stranger", "s-1", "Saw your profile"),
       sender: { attendee_provider_id: "ACo-stranger", attendee_name: "Sam Stranger", attendee_profile_url: "https://www.linkedin.com/in/sam-stranger" },
     };
-    const result = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: stranger });
+    const result = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: stranger });
     expect(result.status).toBe("done");
     const rows = await inboxRows(f.org);
     expect(rows).toHaveLength(1);
@@ -434,12 +434,12 @@ describeDb("linkedin engine", () => {
     const f = await fixture();
     const other = await fixture();
     const own = { ...replyPayload(f, "ACo-someone", "own-1", "I wrote this"), sender: { attendee_provider_id: "ACo-owner-" + f.tag } };
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: own })).status).toBe("skipped");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: own })).status).toBe("skipped");
     expect(await inboxRows(f.org)).toHaveLength(0);
 
     // The delivery claims another organization's account: ignored, nothing stored for either.
     const foreign = replyPayload(f, "ACo-sneaky", "x-1", "Hello");
-    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: other.org, payload: foreign })).status).toBe("skipped");
+    expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: other.org, payload: foreign })).status).toBe("skipped");
     expect(await inboxRows(f.org)).toHaveLength(0);
     expect(await inboxRows(other.org)).toHaveLength(0);
   });
@@ -449,7 +449,7 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
 
     const reply = replyPayload(f, member, "retry-1", "Please call");
     // The first attempt does its work, then fails before the ledger row is closed. The replay job runs it again.
@@ -464,7 +464,7 @@ describeDb("linkedin engine", () => {
         return inboundStore.apply(org, event, now);
       },
     });
-    const first = await inbound.receiveLinkedInWebhook(flaky, { organizationId: f.org, payload: reply });
+    const first = await inbound.receiveLinkedInWebhook(flaky, { provider: "unipile", organizationId: f.org, payload: reply });
     expect(first.status).toBe("failed");
     current = new Date(current.getTime() + 60_000);
     const report = await inbound.replayLinkedInEvents(flaky);
@@ -595,7 +595,7 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
 
     gateway.messageBehavior = () => "timeout-after-accept";
     current = new Date("2026-10-16T10:00:00Z");
@@ -661,7 +661,7 @@ describeDb("linkedin engine", () => {
     await invite(gateway, f);
     const member = (await details(f.enrollmentIds[0])).provider_id as string;
     const { account_info: _ownerUnknown, ...echo } = replyPayload(f, "ACo-owner-" + f.tag, "m-echo", "Our own note");
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: { ...echo, attendees: [{ attendee_provider_id: member }, { attendee_provider_id: "ACo-owner-" + f.tag }] } });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: { ...echo, attendees: [{ attendee_provider_id: member }, { attendee_provider_id: "ACo-owner-" + f.tag }] } });
     // Not held for review as a stranger's message, and it counts as the acceptance a note-carrying echo means.
     const [{ held }] = await sql`select count(*)::int as held from identity_exceptions where organization_id = ${f.org}`;
     expect(held).toBe(0);
@@ -797,7 +797,7 @@ describeDb("linkedin engine", () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();
       await invite(gateway, f);
-      const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+      const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
       expect(accepted.status).toBe("done");
       let calls = 0;
       gateway.messageBehavior = () => {
@@ -917,7 +917,7 @@ describeDb("linkedin engine", () => {
         },
       });
       const payload = acceptedPayload(f, member);
-      const first = await inbound.receiveLinkedInWebhook(flaky, { organizationId: f.org, payload });
+      const first = await inbound.receiveLinkedInWebhook(flaky, { provider: "unipile", organizationId: f.org, payload });
       expect(first).toEqual({ status: "failed", error: "database blip" });
       const [row] = await sql`select * from inbound_events where organization_id = ${f.org}`;
       expect(row).toMatchObject({ status: "failed", provider: "unipile", attempts: 1 });
@@ -925,7 +925,7 @@ describeDb("linkedin engine", () => {
       expect(await details(f.enrollmentIds[0])).toMatchObject({ connection_state: "request_sent" });
 
       // A provider retry of the same delivery does no work. Replay does.
-      expect((await inbound.receiveLinkedInWebhook(flaky, { organizationId: f.org, payload })).status).toBe("duplicate");
+      expect((await inbound.receiveLinkedInWebhook(flaky, { provider: "unipile", organizationId: f.org, payload })).status).toBe("duplicate");
       expect((await inbound.replayLinkedInEvents(flaky)).claimed).toBe(0);
       advance(1);
       const replay = await inbound.replayLinkedInEvents(flaky);
@@ -939,7 +939,7 @@ describeDb("linkedin engine", () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();
       await invite(gateway, f);
-      const row = await inboundStore.begin({ organizationId: f.org, key: "k-" + f.tag, eventType: "new_relation", accountRef: f.providerAccount, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`), now: current });
+      const row = await inboundStore.begin({ provider: "unipile", organizationId: f.org, key: "k-" + f.tag, eventType: "new_relation", accountRef: f.providerAccount, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`), now: current });
       expect(row).not.toBeNull();
       expect((await inbound.replayLinkedInEvents(inboundDeps())).claimed).toBe(0);
       advance(6);
@@ -950,17 +950,17 @@ describeDb("linkedin engine", () => {
     it("ignores an event for an account of another organization, and payloads it does not handle", async () => {
       const f = await fixture();
       const other = await fixture();
-      const result = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: other.org, payload: acceptedPayload(f, "ACo-someone") });
+      const result = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: other.org, payload: acceptedPayload(f, "ACo-someone") });
       expect(result.status).toBe("skipped");
-      expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: { event: "message_read", account_id: f.providerAccount, account_type: "LINKEDIN" } })).status).toBe("ignored");
-      expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: { event: "new_relation", account_id: "x", account_type: "WHATSAPP", user_provider_id: "y" } })).status).toBe("ignored");
+      expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: { event: "message_read", account_id: f.providerAccount, account_type: "LINKEDIN" } })).status).toBe("ignored");
+      expect((await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: { event: "new_relation", account_id: "x", account_type: "WHATSAPP", user_provider_id: "y" } })).status).toBe("ignored");
     });
 
     it("authenticates deliveries with the organization's secret", async () => {
       const f = await fixture();
       const { receiveUnipileWebhook: receiveUnipileDelivery } = await import("@/composition/inbox-filing");
       const { drizzleLinkedInAccountStore } = await import("../drizzle-linkedin-account-store");
-      await drizzleLinkedInAccountStore.saveCredentials(f.org, { dsn: "api1.unipile.com:13111", apiKey: "key", notifySecret: "s".repeat(32) });
+      await drizzleLinkedInAccountStore.saveCredentials(f.org, { dsn: "api1.unipile.com:13111", apiKey: "key", notifySecret: "s".repeat(32) }, { key: "unipile", integrationName: "Unipile (LinkedIn)" });
       const payload = acceptedPayload(f, "ACo-nobody");
       expect(await receiveUnipileDelivery({ organizationId: f.org, secret: null, payload })).toEqual({ status: 401 });
       expect(await receiveUnipileDelivery({ organizationId: f.org, secret: "wrong", payload })).toEqual({ status: 401 });
@@ -1025,9 +1025,9 @@ describeDb("linkedin engine", () => {
     const gateway = new FakeLinkedInGateway();
     await invite(gateway, f);
     const member = `ACo-${f.slugs[0]}`;
-    await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, member) });
+    await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: acceptedPayload(f, member) });
     await withPause("true", async () => {
-      const reply = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: replyPayload(f, member, "paused-1") });
+      const reply = await inbound.receiveLinkedInWebhook(inboundDeps(), { provider: "unipile", organizationId: f.org, payload: replyPayload(f, member, "paused-1") });
       expect(reply.status).toBe("done");
     });
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", stop_reason: "replied" });

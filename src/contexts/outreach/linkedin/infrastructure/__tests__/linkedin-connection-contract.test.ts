@@ -25,6 +25,8 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
     createConnectLink: vi.fn(async (input: unknown) => ({ url: "https://link.test", input })),
   };
   const accounts = {
+    connectedVendor: vi.fn(async () => (options.stored === null ? null : "unipile")),
+    timeZone: vi.fn(async () => null),
     getCredentials: vi.fn(async () => (options.stored === undefined ? STORED : options.stored)),
     saveCredentials: vi.fn(async () => undefined),
     getWebhookStatus: vi.fn(async () => null),
@@ -36,7 +38,7 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
     list: vi.fn(async () => []),
   };
   const connectLinks = {
-    expireDue: vi.fn(async () => undefined),
+    expireDue: vi.fn(async () => []),
     countPending: vi.fn(async () => 0),
     create: vi.fn(async () => undefined),
     fail: vi.fn(async () => undefined),
@@ -46,7 +48,7 @@ function world(options: { appUrl?: string; stored?: typeof STORED | null } = {})
     listRecent: vi.fn(async () => []),
   };
   const audit = { record: vi.fn(async () => undefined) };
-  const deps = { accounts, vendor: createUnipileVendor({ gatewayFor: () => gateway as never }), appUrl: options.appUrl ?? "https://app.test/", now: () => new Date("2026-11-04T00:00:00Z"), audit, connectLinks } as unknown as mgmt.LinkedInManagementDeps;
+  const deps = { accounts, vendors: [createUnipileVendor({ gatewayFor: () => gateway as never })], appUrl: options.appUrl ?? "https://app.test/", now: () => new Date("2026-11-04T00:00:00Z"), audit, connectLinks } as unknown as mgmt.LinkedInManagementDeps;
   return { deps, gateway, accounts, connectLinks, audit };
 }
 

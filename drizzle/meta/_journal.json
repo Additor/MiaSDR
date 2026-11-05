@@ -8,6 +8,20 @@
       "when": 1793676451699,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793783651805,
+      "tag": "0001_linkedin_account_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793788317953,
+      "tag": "0002_linkedin_inbound_lease",
+      "breakpoints": true
     }
   ]
 }

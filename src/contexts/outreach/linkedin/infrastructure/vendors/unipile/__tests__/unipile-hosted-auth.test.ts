@@ -6,7 +6,7 @@ import { UnipileGateway } from "../unipile-gateway";
 describe("hosted-auth link against the local stand-in", () => {
   let standin: UnipileStandin;
   let gateway: UnipileGateway;
-  const link = { name: "mia-abc", expiresAt: new Date(Date.now() + 15 * 60_000), successRedirectUrl: "https://app.test/ok", failureRedirectUrl: "https://app.test/no", notifyUrl: "https://app.test/notify?link=1&secret=s" as string | null, reconnectAccount: null as string | null };
+  const link = { name: "mia-abc", expiresAt: new Date(Date.now() + 15 * 60_000), successRedirectUrl: "https://app.test/ok", failureRedirectUrl: "https://app.test/no", notifyUrl: "https://app.test/notify?link=1&secret=s" as string | null, reconnectAccount: null as string | null, timeZone: null };
 
   beforeAll(async () => {
     standin = await startUnipileStandin({ apiKey: "k" });

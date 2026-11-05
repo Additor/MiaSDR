@@ -3,7 +3,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
 import { REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
-import { LinkedInReplyError, type LinkedInReplyBlocker, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore, type LinkedInSentFinder } from "./linkedin-reply-ports";
+import { LinkedInReplyError, type LinkedInReplyAddress, type LinkedInReplyBlocker, type LinkedInReplyContext, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore, type LinkedInSentFinder } from "./linkedin-reply-ports";
 import type { AttemptRow } from "./reply-ports";
 
 /**
@@ -97,7 +97,7 @@ export async function sendLinkedInReply(
     await deps.store.markFailed(send, blocker.message);
     return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: blocker.message, reason: blocker.reason };
   }
-  if (!(await deps.sender.available(send.organizationId))) {
+  if (!(await deps.sender.available({ organizationId: send.organizationId, accountId: send.accountId }))) {
     // LinkedIn was disconnected between the claim and the call. Nothing went out.
     const text = "LinkedIn is not connected for this organization. The reply was not sent.";
     await deps.store.markFailed(send, text);
@@ -105,12 +105,12 @@ export async function sendLinkedInReply(
   }
 
   try {
-    const sent = await deps.sender.send({ organizationId: send.organizationId, account: send.providerAccountId, chat: send.chat, text: send.text });
+    const sent = await deps.sender.send({ ...addressOf(send), text: send.text });
     await deps.store.markSent(send, { providerMessageId: sent.messageId }, deps.now());
     return { status: "sent", attemptId: send.attempt.id, replayed: false };
   } catch (error) {
     if (error instanceof LinkedInReplyError && error.kind === "definite") {
-      if (error.code === "rate_limited") await deps.store.pauseAccount(send, new Date(deps.now().getTime() + REPLY_PAUSE_HOURS * 3_600_000));
+      if (error.code === "rate_limited") await deps.store.pauseAccount(send, new Date(deps.now().getTime() + (error.retryAfterMs ?? REPLY_PAUSE_HOURS * 3_600_000)));
       if (error.code === "auth") await deps.store.disconnectAccount(send, error.message);
       await deps.store.markFailed(send, error.message);
       return { status: "failed", attemptId: send.attempt.id, replayed: false, error: error.message };
@@ -120,6 +120,15 @@ export async function sendLinkedInReply(
     return { status: "delivery_uncertain", attemptId: send.attempt.id, replayed: false, error: message(error) };
   }
 }
+
+const addressOf = (send: LinkedInReplyContext): LinkedInReplyAddress => ({
+  organizationId: send.organizationId,
+  accountId: send.accountId,
+  account: send.providerAccountId,
+  chat: send.chat,
+  member: send.member,
+  slug: send.slug,
+});
 
 export interface LinkedInReplyReconcileReport {
   checked: number;
@@ -145,8 +154,8 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
     const overdue = item.status === "sending" && now.getTime() - item.startedAt.getTime() >= LINKEDIN_UNCERTAIN_AFTER_MS;
     let found: { messageId: string | null } | null;
     try {
-      if (!(await deps.sender.available(send.organizationId))) throw new Error("LinkedIn is not connected");
-      found = await deps.sender.findSent({ organizationId: send.organizationId, account: send.providerAccountId, chat: send.chat, text: send.text, since: new Date(item.startedAt.getTime() - 60_000) });
+      if (!(await deps.sender.available({ organizationId: send.organizationId, accountId: send.accountId }))) throw new Error("LinkedIn is not connected");
+      found = await deps.sender.findSent({ ...addressOf(send), text: send.text, since: new Date(item.startedAt.getTime() - 60_000) });
     } catch {
       if (overdue) {
         await deps.store.markUncertain(send, "The send never reported an outcome and LinkedIn could not be checked.");

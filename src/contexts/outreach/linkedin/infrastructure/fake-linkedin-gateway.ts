@@ -5,6 +5,7 @@ import {
   type ConnectLinkInput,
   type GatewayProfile,
   type LinkedInGateway,
+  type LinkedInRecipient,
   type LinkedInGatewayProvider,
   type SearchPage,
   type WebhookRegistration,
@@ -83,7 +84,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
   failHook: string | null = null;
   removeCalls = 0;
 
-  async forOrganization(): Promise<LinkedInGateway | null> {
+  async forAccount(): Promise<LinkedInGateway | null> {
     return this;
   }
 
@@ -157,7 +158,7 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return { invitationId: invitation.id };
   }
 
-  async invitationStatus(input: { account: string; member: string }): Promise<"pending" | "accepted" | "none"> {
+  async invitationStatus(input: { account: string; member: string; since?: Date }): Promise<"pending" | "accepted" | "none"> {
     if (this.readOutage) this.outage();
     const found = this.invitations.find((i) => i.account === input.account && i.member === input.member);
     if (!found) return "none";
@@ -169,9 +170,8 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     for (const i of this.invitations) if (i.member === member) i.accepted = true;
   }
 
-  async findChat(input: { account: string; member: string }): Promise<string | null> {
-    if (this.readOutage) this.outage();
-    return this.chats.get(`${input.account}:${input.member}`) ?? null;
+  private chatWith(account: string, member: string | null): string | null {
+    return member ? (this.chats.get(`${account}:${member}`) ?? null) : null;
   }
 
   private record(account: string, chat: string, text: string): FakeMessage {
@@ -180,27 +180,22 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return message;
   }
 
-  async sendMessage(input: { account: string; chat: string; text: string }): Promise<{ messageId: string | null }> {
+  async sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
+    if (this.readOutage && !input.to.chat) this.outage();
     const mode = this.gate(this.messageBehavior(input.text));
     if (mode === "skip-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
-    const message = this.record(input.account, input.chat, input.text);
-    if (mode === "perform-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
-    return { messageId: message.id };
-  }
-
-  async startChat(input: { account: string; member: string; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
-    const mode = this.gate(this.messageBehavior(input.text));
-    if (mode === "skip-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
-    const chat = this.chats.get(`${input.account}:${input.member}`) ?? this.next("chat");
-    this.chats.set(`${input.account}:${input.member}`, chat);
+    const chat = input.to.chat ?? this.chatWith(input.account, input.to.member) ?? this.next("chat");
+    if (input.to.member) this.chats.set(`${input.account}:${input.to.member}`, chat);
     const message = this.record(input.account, chat, input.text);
     if (mode === "perform-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
     return { chat, messageId: message.id };
   }
 
-  async findSentMessage(input: { account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null> {
+  async findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date }): Promise<{ messageId: string | null } | null> {
     if (this.readOutage) this.outage();
-    const hit = this.messages.find((m) => m.account === input.account && m.chat === input.chat && m.text.trim() === input.text.trim());
+    const chat = input.to.chat ?? this.chatWith(input.account, input.to.member);
+    if (!chat) return null;
+    const hit = this.messages.find((m) => m.account === input.account && m.chat === chat && m.text.trim() === input.text.trim());
     return hit ? { messageId: hit.id } : null;
   }
 

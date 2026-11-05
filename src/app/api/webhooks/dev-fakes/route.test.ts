@@ -4,7 +4,7 @@ const delivered = vi.hoisted(() => [{ to: "lead@acme.test" }]);
 
 vi.mock("@/shared/env", () => ({ env: () => ({ MAILBOX_PROVIDER: "fake", LINKEDIN_PROVIDER: "fake" }) }));
 vi.mock("@/contexts/outreach/infrastructure/composition", () => ({ mailboxProvider: () => ({ delivered }) }));
-vi.mock("@/contexts/outreach/linkedin/infrastructure/linkedin-composition", () => ({ linkedinGateways: () => ({ forOrganization: async () => ({}) }) }));
+vi.mock("@/contexts/outreach/linkedin/infrastructure/linkedin-composition", () => ({ linkedinGateways: () => ({ forAccount: async () => ({}) }) }));
 vi.mock("@/contexts/conversations/infrastructure/composition", () => ({ receiveInboundLinkedIn: vi.fn() }));
 vi.mock("@/contexts/identity/infrastructure/e2e-rate-limit", () => ({ resetE2eRateLimits: () => true }));
 vi.mock("@/platform/db/client", () => ({ db: {} }));

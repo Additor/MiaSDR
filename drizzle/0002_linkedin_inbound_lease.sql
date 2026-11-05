@@ -1,0 +1,1 @@
+ALTER TABLE "linkedin_accounts" ADD COLUMN "inbound_lease_until" timestamp with time zone;

@@ -1,20 +1,23 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
-import type { Job, SlotPort } from "@/platform/jobs/types";
+import type { Job, TickContext, SlotPort } from "@/platform/jobs/types";
+import { expireConnectLinks } from "./linkedin-connect";
 import { replayLinkedInEvents } from "./linkedin-inbound";
-import { syncAndRecord, syncErrorText, type LinkedInManagementDeps } from "./linkedin-management";
-import type { LinkedInEngineDeps, LinkedInInboundDeps } from "./linkedin-ports";
+import { syncAndRecord, syncErrorText, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
+import type { LinkedInEngineDeps, LinkedInInboundDeps, LinkedInInboundPollDeps } from "./linkedin-ports";
+import { pollLinkedInInbound } from "./poll-linkedin-inbound";
 import type { LinkedInSearchEngineDeps } from "./linkedin-search-ports";
 import { runNextSearchPage } from "./run-linkedin-search";
 import { reconcileLinkedInSends, runNextLinkedInAction } from "./send-next-linkedin";
 
 const SYNC_LEASE_MS = 120_000;
 const SYNC_RETRY_MS = 10 * 60_000;
+const POLL_BUDGET_MS = 15_000;
 
 /**
  * Per tick: replay failed webhook events (so a reply stops its sequence before sends are claimed),
- * reconcile unknown outcomes, read search pages, then give every due account one unit of work.
+ * reconcile unknown outcomes, read inboxes that have no webhook, read search pages, then give every due account one unit of work.
  */
-export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort): Job[] {
+export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort, poll?: LinkedInInboundPollDeps): Job[] {
   return [
     {
       // One sync per organization per UTC hour, so a disconnected account shows up without anyone pressing Sync.
@@ -29,11 +32,14 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           // Credentials that no longer decrypt read as null: nothing to sync, no slot, no error.
           const credentials = await management.accounts.getCredentials(organizationId);
           if (!credentials) continue;
+          const vendor = await vendorOf(management, organizationId);
           const claim = await slots.claim("linkedin-sync", hourKey, { organizationId, now: ctx.now(), leaseMs: SYNC_LEASE_MS });
           if (!claim) continue;
           detail.organizations += 1;
           try {
-            const result = await syncAndRecord(management, organizationId, () => management.vendor.gatewayFor(credentials));
+            const result = await syncAndRecord(management, organizationId, () => vendor.gatewayFor(credentials));
+            // A link nobody finished holds an account at this vendor, which costs a seat, whether or not anyone makes another link.
+            if (vendor.connectSession) await expireConnectLinks(management, organizationId, vendor, credentials, ctx.now());
             await slots.finish(claim, { status: "succeeded" }, ctx.now());
             detail.added += result.added;
             // A new account is `added`, not a status change.
@@ -41,7 +47,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           } catch (error) {
             detail.failed += 1;
             try {
-              await slots.finish(claim, { status: "failed", error: syncErrorText(management.vendor, error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
+              await slots.finish(claim, { status: "failed", error: syncErrorText(vendor, error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
             } catch (finishError) {
               // The lease expires on its own. The remaining organizations still get their turn.
               console.error(`LinkedIn sync: could not close the slot for organization ${organizationId}: ${finishError instanceof Error ? finishError.name : "unknown error"}`);
@@ -67,6 +73,20 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
         return { processed: report.foundSent + report.retryable + report.expired, more: report.checked >= 25, detail: { waiting: report.stillWaiting } };
       },
     },
+    ...(poll
+      ? [
+          {
+            // Before the search, which may use the rest of the tick, and before the sends: a claim refuses an account whose inbox was not read lately.
+            // A share of the tick, because every job shares one deadline.
+            name: "linkedin.poll-inbound",
+            failureKeys: ["failed"],
+            async run(ctx: TickContext) {
+              const report = await pollLinkedInInbound(poll, Math.min(ctx.deadline, Date.now() + POLL_BUDGET_MS));
+              return { processed: report.deliveries, more: false, detail: { accounts: report.accounts, finished: report.finished, failed: report.failed } };
+            },
+          } satisfies Job,
+        ]
+      : []),
     {
       // One page per claim. The pacing gap lives on the rows, so the job never sleeps: a search that is not due is skipped.
       name: "linkedin.search",
