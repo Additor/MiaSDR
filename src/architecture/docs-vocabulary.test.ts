@@ -88,12 +88,12 @@ describe("retired words in src/contexts/conversations", () => {
 
 /**
  * Words that left the whole product, in code, tests and comments alike. A campaign's Sequence stays, and raw provider
- * fields keep their own names: the `except` entries are a Unipile parameter and a spec that asserts the old words are gone.
+ * fields keep their own names: the `except` entries are a Unipile parameter, a Brain field key shared with Withmia and a spec that asserts the old words are gone.
  */
 const RETIRED_EVERYWHERE: ReadonlyArray<{ name: string; pattern: RegExp; except?: RegExp }> = [
   { name: "unclassified", pattern: /\bunclassified\b/i },
   { name: "subcategory", pattern: /sub-?categor(y|ies)/i, except: /^e2e\/46-reply-handling-settings\.spec\.ts$/ },
-  { name: "category", pattern: /\bcategor(y|ies)\b/i, except: /unipile-standin\.ts$|^e2e\/46-reply-handling-settings\.spec\.ts$/ },
+  { name: "category", pattern: /\bcategor(y|ies)\b/i, except: /unipile-standin\.ts$|^e2e\/46-reply-handling-settings\.spec\.ts$|^src\/contexts\/brain\/domain\/brain-(fields\.ts|item\.test\.ts)$/ },
   { name: "sequence event token", pattern: /["'`]sequence\.[a-z_]+/ },
   { name: "scheduled kind sequence", pattern: /kind: "sequence"|'sequence'::text/ },
   { name: "follow-up as a sequence", pattern: /follow-up sequence|sequence runs?\b|sequence_changed/i },

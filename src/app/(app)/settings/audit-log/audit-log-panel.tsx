@@ -34,6 +34,7 @@ const AREA_LABEL: Record<AuditArea, string> = {
   enrollment: "Campaign leads",
   linkedin: "LinkedIn",
   ai_jobs: "AI jobs",
+  brain: "Brain",
   search_batch: "LinkedIn searches",
   mcp: "MCP",
 };

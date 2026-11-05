@@ -68,6 +68,7 @@ test.describe("phone width in dark mode", () => {
       { path: "/inbox/unmatched" },
       { path: "/actions", ready: (p) => p.getByTestId("queue-item").first() },
       { path: "/actions?scope=others" },
+      { path: "/brain", ready: (p) => p.getByRole("button", { name: "Add to Brain" }).first() },
       { path: "/tables", ready: (p) => p.getByRole("link", { name: `S90 table ${tag}` }) },
       { path: `/tables/${workbookId}`, ready: (p) => p.getByRole("gridcell", { name: "Company: Beta" }) },
       { path: `/crm/contacts?q=${tag}` },

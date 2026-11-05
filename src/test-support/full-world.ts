@@ -105,7 +105,7 @@ export async function seedWorld(sql: Sql): Promise<World> {
     insert into company_domain_aliases (organization_id, company_id, domain, merged_name) values (${org}, ${company}, ${"was-" + tag + ".t8.test"}, 'Was') returning id`);
   // latest_version is a deferred foreign key: the document and its first version go in one transaction.
   const knowledgeDoc = await sql.begin(async (tx) => {
-    const id = await one(tx`insert into knowledge_documents (organization_id, title, kind) values (${org}, 'k', 'faq') returning id`);
+    const id = await one(tx`insert into knowledge_documents (organization_id, title, kind) values (${org}, 'k', 'unsorted') returning id`);
     await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${org}, ${id}, 1, 'c')`;
     return id;
   });

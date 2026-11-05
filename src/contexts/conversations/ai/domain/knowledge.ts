@@ -1,4 +1,13 @@
+import type { BrainKind } from "@/contexts/brain/domain/brain-kinds";
 import { normalizeTags } from "@/contexts/brain/domain/brain-tags";
+
+/**
+ * The Brain kinds a reply prompt may read. An ICP or a qualification is internal, and a competitor's weaknesses or a quote need
+ * rules of their own before a model writes from them to a customer. Until those rules exist, the other kinds stay out.
+ */
+export const PROMPT_KINDS = ["company_profile", "product", "price_book", "case_study", "objection_handling", "unsorted"] as const satisfies readonly BrainKind[];
+
+export const isPromptKind = (kind: BrainKind): boolean => (PROMPT_KINDS as readonly BrainKind[]).includes(kind);
 
 /** Prompt budget for knowledge: 2,000 tokens at 4 characters. */
 export const KNOWLEDGE_BUDGET_CHARS = 8000;

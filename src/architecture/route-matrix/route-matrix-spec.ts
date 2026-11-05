@@ -190,8 +190,8 @@ export const ROUTES: Record<string, RouteSpec> = {
   "integrations/[id]": { ids: { id: "integration_accounts" }, handlers: { DELETE: admin() } },
   "invitations/[id]": { ids: { id: "invitations" }, handlers: { DELETE: admin() } },
   "merge-fields": { handlers: { GET: ok() } },
-  "brain": { handlers: { POST: admin() } },
-  "brain/[id]": { ids: { id: "knowledge_documents" }, handlers: { PATCH: admin() } },
+  "brain": { handlers: { POST: ok({ kind: "product", fields: { productName: "Route matrix" } }) } },
+  "brain/[id]": { ids: { id: "knowledge_documents" }, handlers: { PATCH: ok({ tags: ["route-matrix"] }) } },
 
   "leads/[id]": { ids: { id: "people" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "leads/[id]/convert": { ids: { id: "people" }, handlers: { POST: ok() } },

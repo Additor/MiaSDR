@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // Old URLs keep working. Every redirect is temporary (307): a browser keeps a 308 forever. Route handlers answer the
   // links that need a lookup or must drop query values: `/crm/sequences/:id` (the owning campaign), `/crm/records`
   // (only `q` carries over) and `/crm/records/:id` (the person's conversation).
+  async redirects() {
+    return [{ source: "/settings/knowledge", destination: "/brain", permanent: false }];
+  },
   async headers() {
     return [
       { source: "/:path*", headers: [{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" }] },

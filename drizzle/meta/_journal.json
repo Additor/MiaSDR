@@ -36,6 +36,13 @@
       "when": 1793848651096,
       "tag": "0004_linkedin_gtm_api",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793862837195,
+      "tag": "0005_knowledge_structured_items",
+      "breakpoints": true
     }
   ]
 }

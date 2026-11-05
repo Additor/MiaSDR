@@ -31,18 +31,18 @@ describeDb("knowledge_documents_latest_version_fk", () => {
 
   it("refuses a document that commits without its version row", async () => {
     const w = await world();
-    await expect(sql`insert into knowledge_documents (organization_id, title, kind) values (${w.org}, 'alone', 'faq')`).rejects.toThrow(FK);
+    await expect(sql`insert into knowledge_documents (organization_id, title, kind) values (${w.org}, 'alone', 'unsorted')`).rejects.toThrow(FK);
     expect((await sql`select 1 from knowledge_documents where organization_id = ${w.org} and title = 'alone'`).length).toBe(0);
   });
 
   it("accepts the document and its first version in one transaction, in either order", async () => {
     const w = await world();
     await sql.begin(async (tx) => {
-      const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind) values (${w.org}, 'doc first', 'faq') returning id`;
+      const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind) values (${w.org}, 'doc first', 'unsorted') returning id`;
       await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${w.org}, ${doc.id}, 1, 'c')`;
     });
     await sql.begin(async (tx) => {
-      const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind, latest_version) values (${w.org}, 'late version', 'faq', 3) returning id`;
+      const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind, latest_version) values (${w.org}, 'late version', 'unsorted', 3) returning id`;
       await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${w.org}, ${doc.id}, 3, 'c')`;
     });
   });

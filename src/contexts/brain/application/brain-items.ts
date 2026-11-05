@@ -1,83 +1,90 @@
-import { BRAIN_KINDS } from "../domain/brain-kinds";
-import { parseTags } from "../domain/brain-tags";
-import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import { createBrainItem, reviseBrainItem, type BrainItemChange, type BrainItemInput, type BrainItemPatch, type BrainItemState, type NewBrainItem } from "../domain/brain-item";
+import type { BrainFields } from "../domain/brain-fields";
+import { BRAIN_GROUPS, type BrainGroup, type BrainKind } from "../domain/brain-kinds";
+import { NotFoundError, type Actor } from "@/shared/errors";
+import { isUuid } from "@/shared/uuid";
 
 /**
- * Pasted-text knowledge documents that drafts may draw on. Any member reads them; only an owner or admin adds or changes one.
- * Every content edit stores a new version, and a draft's stored request names the versions the model saw.
+ * Brain items: what an organization knows about itself and its market. Every member reads and changes them; each change
+ * lands in the audit log, and every change to the fields stores a new version. A draft's stored request names the versions
+ * the model saw.
  */
 
-export interface KnowledgeDoc {
+export const BRAIN_PAGE_SIZE = 50;
+
+export type BrainView = "all" | BrainGroup | "needs_sorting";
+
+export interface BrainItemRow {
   id: string;
   title: string;
-  kind: string;
-  alwaysInclude: boolean;
+  description: string | null;
+  kind: BrainKind;
   tags: string[];
+  alwaysInclude: boolean;
   active: boolean;
   version: number;
-  content: string;
+  /** A document from before the kinds existed. */
+  legacy: boolean;
   updatedAt: Date;
 }
 
-export interface KnowledgeInput {
-  title: string;
-  kind: string;
+export interface BrainItemDetail extends BrainItemRow {
   content: string;
-  alwaysInclude: boolean;
-  /** Lowercased, unique, at most 50 of up to 80 characters. Empty when omitted. */
-  tags?: string[];
+  structuredData: BrainFields | null;
 }
 
-export interface KnowledgeStore {
-  list(organizationId: string): Promise<KnowledgeDoc[]>;
-  create(organizationId: string, input: KnowledgeInput): Promise<{ id: string }>;
-  /** Adds a version when the content changed. Returns false when the document does not exist in the organization. */
-  update(organizationId: string, id: string, input: Partial<KnowledgeInput> & { active?: boolean }): Promise<boolean>;
+export interface BrainListFilter {
+  kinds: readonly BrainKind[] | null;
+  legacyOnly: boolean;
+  q: string;
+  active: boolean;
+  limit: number;
+  offset: number;
 }
 
-const MAX_CONTENT = 50_000;
-
-function clean(input: Partial<KnowledgeInput>) {
-  const out: Partial<KnowledgeInput> = {};
-  if (input.title !== undefined) {
-    const title = input.title.trim();
-    if (title === "" || title.length > 200) throw new ValidationError("The title must be 1 to 200 characters.");
-    out.title = title;
-  }
-  if (input.kind !== undefined) {
-    if (!(BRAIN_KINDS as readonly string[]).includes(input.kind)) throw new ValidationError("Unknown document kind.");
-    out.kind = input.kind;
-  }
-  if (input.content !== undefined) {
-    const content = input.content.trim();
-    if (content === "" || content.length > MAX_CONTENT) throw new ValidationError(`The text must be 1 to ${MAX_CONTENT} characters.`);
-    out.content = content;
-  }
-  if (input.alwaysInclude !== undefined) out.alwaysInclude = input.alwaysInclude;
-  if (input.tags !== undefined) {
-    const parsed = parseTags(input.tags);
-    if (parsed.problem !== null) throw new ValidationError(parsed.problem);
-    out.tags = parsed.tags;
-  }
-  return out;
+export interface BrainStore {
+  list(organizationId: string, filter: BrainListFilter): Promise<{ rows: BrainItemRow[]; total: number }>;
+  /** Active documents a person still has to sort. */
+  countLegacy(organizationId: string): Promise<number>;
+  hasActiveCompanyProfile(organizationId: string): Promise<boolean>;
+  get(organizationId: string, id: string): Promise<BrainItemDetail | null>;
+  create(organizationId: string, actorUserId: string, item: NewBrainItem): Promise<{ id: string }>;
+  /** Locks the item and saves what `decide` returns. False when the item is not in the organization. */
+  update(organizationId: string, actorUserId: string, id: string, decide: (current: BrainItemState) => BrainItemChange): Promise<boolean>;
 }
 
-function requireAdmin(actor: Actor): void {
-  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change knowledge documents.");
+export interface BrainListQuery {
+  view: BrainView;
+  q?: string;
+  archived?: boolean;
+  page?: number;
 }
 
-export const listKnowledge = (store: KnowledgeStore, actor: Actor) => store.list(actor.organizationId);
-
-export async function createKnowledge(store: KnowledgeStore, actor: Actor, input: KnowledgeInput) {
-  requireAdmin(actor);
-  const checked = clean(input) as KnowledgeInput;
-  if (!checked.title || !checked.kind || !checked.content) throw new ValidationError("Title, kind and text are required.");
-  return store.create(actor.organizationId, { ...checked, alwaysInclude: input.alwaysInclude, tags: checked.tags ?? [] });
+export async function listBrainItems(store: BrainStore, actor: Actor, query: BrainListQuery) {
+  const page = Math.max(1, Math.floor(query.page ?? 1));
+  const filter: BrainListFilter = {
+    kinds: query.view === "all" || query.view === "needs_sorting" ? null : BRAIN_GROUPS[query.view],
+    legacyOnly: query.view === "needs_sorting",
+    q: query.q?.trim() ?? "",
+    active: !query.archived,
+    limit: BRAIN_PAGE_SIZE,
+    offset: (page - 1) * BRAIN_PAGE_SIZE,
+  };
+  const [{ rows, total }, needsSorting, hasCompanyProfile] = await Promise.all([store.list(actor.organizationId, filter), store.countLegacy(actor.organizationId), store.hasActiveCompanyProfile(actor.organizationId)]);
+  return { rows, total, page, pageSize: BRAIN_PAGE_SIZE, needsSorting, hasCompanyProfile };
 }
 
-export async function updateKnowledge(store: KnowledgeStore, actor: Actor, id: string, input: Partial<KnowledgeInput> & { active?: boolean }) {
-  requireAdmin(actor);
-  const ok = await store.update(actor.organizationId, id, { ...clean(input), ...(input.active === undefined ? {} : { active: input.active }) });
-  if (!ok) throw new NotFoundError("Document not found");
+export async function getBrainItem(store: BrainStore, actor: Actor, id: string): Promise<BrainItemDetail> {
+  const item = isUuid(id) ? await store.get(actor.organizationId, id) : null;
+  if (!item) throw new NotFoundError("Item not found");
+  return item;
 }
+
+export const addBrainItem = (store: BrainStore, actor: Actor, input: BrainItemInput) => store.create(actor.organizationId, actor.userId, createBrainItem(input));
+
+export async function changeBrainItem(store: BrainStore, actor: Actor, id: string, patch: BrainItemPatch): Promise<void> {
+  const found = await store.update(actor.organizationId, actor.userId, id, (current) => reviseBrainItem(current, patch));
+  if (!found) throw new NotFoundError("Item not found");
+}
+
+export const brainHasActiveCompanyProfile = (store: BrainStore, actor: Actor) => store.hasActiveCompanyProfile(actor.organizationId);

@@ -1,17 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundEmailInput } from "../../../application/ports";
 import { DEFAULT_REPLY_TYPES } from "../../../domain/default-reply-types";
-import { ValidationError } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
+import { knowledgeFor } from "../../../infrastructure/thread-context";
 
 describeDb("knowledge tags, default reply type guidance and the unknown-sender AI cap", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");
-  let knowledgeApp: typeof import("@/contexts/brain/application/brain-items");
-  let knowledgeStore: typeof import("@/contexts/brain/infrastructure/drizzle-brain-store").drizzleKnowledgeStore;
   let engine: typeof import("../../../after-reply/infrastructure/drizzle-follow-up-engine").drizzleFollowUpEngine;
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let jobStore: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
@@ -70,8 +68,6 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
 
   beforeAll(async () => {
     composition = await import("../../../infrastructure/composition");
-    knowledgeApp = await import("@/contexts/brain/application/brain-items");
-    knowledgeStore = (await import("@/contexts/brain/infrastructure/drizzle-brain-store")).drizzleKnowledgeStore;
     engine = (await import("../../../after-reply/infrastructure/drizzle-follow-up-engine")).drizzleFollowUpEngine;
     aiJobsApp = await import("../../application/ai-jobs");
     jobStore = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
@@ -84,46 +80,21 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
   });
 
   describe("knowledge tags", () => {
-    it("stores normalized tags on create and update, and lists them", async () => {
-      const f = await fixture();
-      const { id } = await knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: "Price list", kind: "pricing", content: "Plans start at 10.", alwaysInclude: false, tags: [" Pricing ", "PRICING", "Plans"] });
-      let [doc] = await knowledgeApp.listKnowledge(knowledgeStore, f.actor);
-      expect(doc.tags).toEqual(["pricing", "plans"]);
-      await knowledgeApp.updateKnowledge(knowledgeStore, f.actor, id, { tags: ["Security"] });
-      [doc] = await knowledgeApp.listKnowledge(knowledgeStore, f.actor);
-      expect(doc.tags).toEqual(["security"]);
-      expect(doc.version).toBe(1);
-      // A PATCH without tags leaves them alone.
-      await knowledgeApp.updateKnowledge(knowledgeStore, f.actor, id, { title: "Price list 2" });
-      expect((await knowledgeApp.listKnowledge(knowledgeStore, f.actor))[0].tags).toEqual(["security"]);
-    });
-
-    it("keeps the tags when a PATCH sends only alwaysInclude", async () => {
-      const f = await fixture();
-      const { id } = await knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: "Price list", kind: "pricing", content: "Plans start at 10.", alwaysInclude: false, tags: ["pricing"] });
-      await knowledgeApp.updateKnowledge(knowledgeStore, f.actor, id, { alwaysInclude: true });
-      const [doc] = await knowledgeApp.listKnowledge(knowledgeStore, f.actor);
-      expect(doc).toMatchObject({ alwaysInclude: true, tags: ["pricing"] });
-      // Tags sent together with the flag still replace the old ones.
-      await knowledgeApp.updateKnowledge(knowledgeStore, f.actor, id, { alwaysInclude: false, tags: ["security"] });
-      expect((await knowledgeApp.listKnowledge(knowledgeStore, f.actor))[0]).toMatchObject({ alwaysInclude: false, tags: ["security"] });
-    });
-
-    it("refuses 51 tags and an 81-character tag", async () => {
-      const f = await fixture();
-      const base = { title: "T", kind: "faq", content: "c", alwaysInclude: false };
-      await expect(knowledgeApp.createKnowledge(knowledgeStore, f.actor, { ...base, tags: Array.from({ length: 51 }, (_, i) => `t${i}`) })).rejects.toBeInstanceOf(ValidationError);
-      await expect(knowledgeApp.createKnowledge(knowledgeStore, f.actor, { ...base, tags: ["x".repeat(81)] })).rejects.toBeInstanceOf(ValidationError);
-    });
+    /** A document from before the kinds existed: its text is the prompt's text as it stands. */
+    async function legacy(org: string, title: string, tags: string[], content = `${title} body`, alwaysInclude = false) {
+      await sql.begin(async (tx) => {
+        const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind, tags, always_include) values (${org}, ${title}, 'unsorted', ${tags}, ${alwaysInclude}) returning id`;
+        await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${org}, ${doc.id}, 1, ${content})`;
+      });
+    }
 
     it("gives a step with knowledgeTags the matching and always-included documents, best overlap first", async () => {
       const f = await fixture();
-      const mk = (title: string, tags: string[], content = `${title} body`, alwaysInclude = false) => knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title, kind: "custom", content, alwaysInclude, tags });
-      await mk("Always", [], "x".repeat(40_000), true);
-      await mk("Pricing only", ["pricing"]);
-      await mk("Pricing and security", ["pricing", "security"]);
-      await mk("Unrelated", ["billing"]);
-      await mk("Untagged", []);
+      await legacy(f.org, "Always", [], "x".repeat(40_000), true);
+      await legacy(f.org, "Pricing only", ["pricing"]);
+      await legacy(f.org, "Pricing and security", ["pricing", "security"]);
+      await legacy(f.org, "Unrelated", ["billing"]);
+      await legacy(f.org, "Untagged", []);
       const picked = await engine.knowledgeForTags(f.org, ["Pricing", "security"]);
       expect(picked.map((p) => p.title)).toEqual(["Always", "Pricing and security", "Pricing only"]);
       // The 40,000-character always-included document is cut, so the tagged ones still arrive.
@@ -133,11 +104,9 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
 
     it("finds the only matching document of 250 even when its title sorts last", async () => {
       const f = await fixture();
-      const rows = Array.from({ length: 249 }, (_, i) => ({ title: `Doc ${String(i).padStart(3, "0")}`, tags: ["billing"] }));
-      for (let i = 0; i < rows.length; i += 25) {
-        await Promise.all(rows.slice(i, i + 25).map((r) => knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: r.title, kind: "custom", content: `${r.title} body`, alwaysInclude: false, tags: r.tags })));
-      }
-      await knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: "Zulu pricing sheet", kind: "pricing", content: "Plans start at 10.", alwaysInclude: false, tags: ["pricing"] });
+      const rows = Array.from({ length: 249 }, (_, i) => `Doc ${String(i).padStart(3, "0")}`);
+      for (let i = 0; i < rows.length; i += 25) await Promise.all(rows.slice(i, i + 25).map((title) => legacy(f.org, title, ["billing"])));
+      await legacy(f.org, "Zulu pricing sheet", ["pricing"], "Plans start at 10.");
       const picked = await engine.knowledgeForTags(f.org, ["pricing"]);
       expect(picked.map((p) => p.title)).toEqual(["Zulu pricing sheet"]);
     }, 60_000);
@@ -145,17 +114,29 @@ describeDb("knowledge tags, default reply type guidance and the unknown-sender A
     it("ranks by tag overlap before the candidate limit, so the best match survives 220 weaker ones", async () => {
       const f = await fixture();
       const rows = Array.from({ length: 220 }, (_, i) => `Doc ${String(i).padStart(3, "0")}`);
-      for (let i = 0; i < rows.length; i += 25) {
-        await Promise.all(rows.slice(i, i + 25).map((title) => knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title, kind: "custom", content: `${title} body`, alwaysInclude: false, tags: ["pricing"] })));
-      }
-      await knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: "Zulu both", kind: "custom", content: "both", alwaysInclude: false, tags: ["pricing", "security"] });
+      for (let i = 0; i < rows.length; i += 25) await Promise.all(rows.slice(i, i + 25).map((title) => legacy(f.org, title, ["pricing"])));
+      await legacy(f.org, "Zulu both", ["pricing", "security"], "both");
       const picked = await engine.knowledgeForTags(f.org, ["pricing", "security"]);
       expect(picked[0].title).toBe("Zulu both");
     }, 60_000);
 
+    it("keeps the kinds prompts do not read out of every prompt, also when always-included or tagged", async () => {
+      const f = await fixture();
+      for (const kind of ["icp", "competitor", "testimonial", "qualification"]) {
+        await sql.begin(async (tx) => {
+          const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind, tags, always_include) values (${f.org}, ${kind}, ${kind}, ${["pricing"]}, true) returning id`;
+          await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${f.org}, ${doc.id}, 1, 'internal')`;
+        });
+      }
+      await legacy(f.org, "Pricing sheet", ["pricing"]);
+      expect((await engine.knowledgeForTags(f.org, ["pricing"])).map((p) => p.title)).toEqual(["Pricing sheet"]);
+      expect((await knowledgeFor(f.org, { alwaysOnly: false })).map((p) => p.title)).toEqual(["Pricing sheet"]);
+      expect(await knowledgeFor(f.org, { alwaysOnly: true })).toEqual([]);
+    });
+
     it("keeps documents out of a tagged step's prompt when they match nothing and are not always-included", async () => {
       const f = await fixture();
-      await knowledgeApp.createKnowledge(knowledgeStore, f.actor, { title: "Billing", kind: "custom", content: "b", alwaysInclude: false, tags: ["billing"] });
+      await legacy(f.org, "Billing", ["billing"], "b");
       expect(await engine.knowledgeForTags(f.org, ["pricing"])).toEqual([]);
     });
   });

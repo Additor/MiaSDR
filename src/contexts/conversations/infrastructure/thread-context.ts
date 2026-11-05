@@ -18,7 +18,7 @@ import {
 import type { DraftContext } from "../application/reply-ports";
 import type { AiPersonContext, ReplyTypeChange, ThreadEntry } from "../ai/domain/ai-contract";
 import { normalizeTags } from "@/contexts/brain/domain/brain-tags";
-import { KNOWLEDGE_BUDGET_CHARS, selectKnowledge } from "../ai/domain/knowledge";
+import { KNOWLEDGE_BUDGET_CHARS, PROMPT_KINDS, selectKnowledge } from "../ai/domain/knowledge";
 import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
@@ -63,6 +63,7 @@ export async function knowledgeFor(organizationId: string, options: { alwaysOnly
       and(
         eq(knowledgeDocuments.organizationId, organizationId),
         eq(knowledgeDocuments.active, true),
+        inArray(knowledgeDocuments.kind, [...PROMPT_KINDS]),
         options.alwaysOnly ? eq(knowledgeDocuments.alwaysInclude, true) : sql`true`,
         // A tagged step with no fallback reads only matching documents, so the candidate limit cannot cut them off.
         tagList && options.includeUnmatched === false ? sql`(${knowledgeDocuments.alwaysInclude} or ${knowledgeDocuments.tags} && ${tagList})` : sql`true`,
