@@ -1,8 +1,9 @@
 import type { DbHandle } from "@/platform/db/client";
 import { LIMIT_PAUSE_HOURS, pickMinutes, profileUrlFor } from "../domain/linkedin";
 import { resultMemberId } from "../domain/linkedin-identity";
+import { allowanceCutNote, asyncSearchLimit, MIN_ASYNC_SEARCH_READ } from "../domain/linkedin-operations";
 import { MAX_SEARCH_FAILURES, MAX_SEARCH_PAGES, itemsToKeep, resultSlug, searchRetrySeconds } from "../domain/linkedin-search";
-import { LinkedInGatewayError, type SearchItem } from "./linkedin-ports";
+import { LinkedInGatewayError, isSubmitted, type SearchItem, type SearchPage } from "./linkedin-ports";
 import type { FoundResult, LinkedInSearchEngineDeps, SearchPageClaim } from "./linkedin-search-ports";
 
 export type SearchOutcome =
@@ -11,6 +12,8 @@ export type SearchOutcome =
   /** Cancelled, or the claim expired, while the provider call ran. Nothing was stored and no lead was created. */
   | { kind: "dropped" }
   | { kind: "retry" }
+  /** The vendor took the search and reads it later. `linkedin.settle-operations` stores what it read. */
+  | { kind: "submitted" }
   | { kind: "failed" }
   | { kind: "paused"; reason: "limit" | "disconnected" | "no_gateway" };
 
@@ -33,11 +36,23 @@ export async function runNextSearchPage(deps: LinkedInSearchEngineDeps): Promise
     return { kind: "paused", reason: "no_gateway" };
   }
 
+  // A vendor that reads a whole search in one action asks for all of it now, within the day's allowance.
+  const wanted = claim.maxResults - claim.found;
+  const limit = Math.min(asyncSearchLimit({ maxResults: claim.maxResults, found: claim.found, quotaLeft: claim.quotaLeft }), gateway.operations?.maxSearchRead(claim.url) ?? Number.POSITIVE_INFINITY);
+  if (gateway.operations && limit < MIN_ASYNC_SEARCH_READ && limit < wanted) {
+    await deps.store.release(claim, { error: "The account's search allowance for today is nearly used. The search continues tomorrow.", retryAt: nextUtcDay(now), unknownFailure: false });
+    return { kind: "paused", reason: "limit" };
+  }
+
   let page;
   try {
-    page = await gateway.searchPeople({ account: claim.account.providerAccountId, searchUrl: claim.url, cursor: claim.cursor });
+    page = await gateway.searchPeople({ account: claim.account.providerAccountId, searchUrl: claim.url, cursor: claim.cursor, limit });
+    if (isSubmitted(page)) {
+      await deps.store.markSubmitted(claim, { operation: page.operation, limit, now: deps.clock.now() });
+      return { kind: "submitted" };
+    }
   } catch (error) {
-    return handleError(deps, claim, error);
+    return handleSearchError(deps, claim, error);
   }
 
   const kept = page.items.slice(0, itemsToKeep({ pageSize: page.items.length, maxResults: claim.maxResults, alreadyFound: claim.found }));
@@ -62,6 +77,33 @@ export async function runNextSearchPage(deps: LinkedInSearchEngineDeps): Promise
     gap,
   );
   return recorded ? { kind: "page", kept: kept.length, done, skippedContact } : { kind: "dropped" };
+}
+
+const nextUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+
+/** Stores a read a vendor ran in one action. There is no next page, so the search ends here, and the allowance keeps what it read. */
+export async function recordSearchRead(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, page: SearchPage, reserved: number): Promise<SearchOutcome> {
+  const kept = page.items.slice(0, itemsToKeep({ pageSize: page.items.length, maxResults: claim.maxResults, alreadyFound: claim.found }));
+  let skippedContact = 0;
+  const recorded = await deps.store.recordPage(
+    claim,
+    {
+      results: async (tx) => {
+        const found = await toResults(deps, claim, kept, tx);
+        skippedContact = found.skippedContact;
+        return found.results;
+      },
+      received: page.items.length,
+      reserved,
+      note: allowanceCutNote({ wanted: claim.maxResults - claim.found, limit: reserved, received: page.items.length }),
+      nextCursor: null,
+      totalEstimate: page.totalEstimate,
+      done: true,
+    },
+    deps.clock.now(),
+    pickMinutes(claim.gapSeconds, deps.random),
+  );
+  return recorded ? { kind: "page", kept: kept.length, done: true, skippedContact } : { kind: "dropped" };
 }
 
 async function toResults(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, items: SearchItem[], tx: DbHandle): Promise<{ results: FoundResult[]; skippedContact: number }> {
@@ -92,7 +134,7 @@ async function toResults(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim,
   return { results: keyed.map(({ item, profileUrl }) => ({ profileUrl, item, personId: people.get(profileUrl) ?? null })), skippedContact };
 }
 
-async function handleError(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, error: unknown): Promise<SearchOutcome> {
+export async function handleSearchError(deps: LinkedInSearchEngineDeps, claim: SearchPageClaim, error: unknown): Promise<SearchOutcome> {
   const now = deps.clock.now();
   const message = errorText(error);
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {

@@ -1,9 +1,11 @@
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { campaigns, channelSettings, linkedinAccounts, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
+import { campaigns, channelSettings, linkedinAccounts, linkedinOpenOperations, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
 import type { LinkedInSearchEngineStore, LinkedInSearchRecord, LinkedInSearchStore, SearchPageClaim } from "../application/linkedin-search-ports";
 import { linkedinRules } from "../domain/linkedin";
+import { OPERATION_GONE_HOURS } from "../domain/linkedin-operations";
 import { SEARCH_LEASE_SECONDS, allowedFrom, searchDay, searchQuotaLeft, statusAfter, type SearchStatus } from "../domain/linkedin-search";
+import { insertOpenOperation } from "./drizzle-linkedin-open-operations-store";
 
 type Tx = DbTx;
 
@@ -184,6 +186,9 @@ interface Candidate {
   allowed_account_ids: string[];
 }
 
+/** Raw SQL over accounts `a`, searches `q` and batches `b`: a connected account this search may use. */
+const allowedAccount = sql`a.organization_id = q.organization_id and a.status = 'connected' and (jsonb_array_length(b.account_ids) = 0 or b.account_ids @> to_jsonb(a.id::text))`;
+
 export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
   async claimPage({ now }) {
     return db.transaction(async (tx) => {
@@ -196,6 +201,12 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
         where q.status in (${sql.join(CLAIMABLE.map((s) => sql`${s}`), sql`, `)})
           and (q.status <> 'running' or q.lease_until is null or q.lease_until < ${nowIso}::timestamptz)
           and (q.next_page_at is null or q.next_page_at <= ${nowIso}::timestamptz)
+          and not exists (select 1 from linkedin_open_operations o where o.kind = 'search' and o.subject_id = q.id)
+          -- Searches waiting on accounts that all have an open action must not fill the window below and hold back other organizations'.
+          and (
+            not exists (select 1 from linkedin_accounts a where ${allowedAccount} and exists (select 1 from linkedin_open_operations o where o.linkedin_account_id = a.id))
+            or exists (select 1 from linkedin_accounts a where ${allowedAccount} and not exists (select 1 from linkedin_open_operations o where o.linkedin_account_id = a.id))
+          )
         order by q.created_at asc
         limit 10
         for update of q skip locked
@@ -216,10 +227,16 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
             ),
           )
           .for("update", { skipLocked: true });
+        // An account with an open action runs nothing else until it settles.
+        const busy = new Set(
+          accounts.length === 0
+            ? []
+            : (await tx.select({ id: linkedinOpenOperations.linkedinAccountId }).from(linkedinOpenOperations).where(inArray(linkedinOpenOperations.linkedinAccountId, accounts.map((a) => a.id)))).map((row) => row.id),
+        );
 
         const used = (a: (typeof accounts)[number]) => (a.searchDay === day ? a.searchLeadsToday : 0);
         const left = (a: (typeof accounts)[number]) => searchQuotaLeft({ limit: rules.searchLeadsPerDay, usedToday: used(a) });
-        const idle = (a: (typeof accounts)[number]) => !a.searchLeaseUntil || a.searchLeaseUntil <= now;
+        const idle = (a: (typeof accounts)[number]) => (!a.searchLeaseUntil || a.searchLeaseUntil <= now) && !busy.has(a.id);
         const unrestricted = (a: (typeof accounts)[number]) => !a.limitReachedUntil || a.limitReachedUntil <= now;
         const usable = (a: (typeof accounts)[number]) => idle(a) && unrestricted(a) && left(a) > 0;
 
@@ -294,7 +311,7 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
       await tx
         .update(linkedinAccounts)
         .set({
-          searchLeadsToday: sql`(case when ${linkedinAccounts.searchDay} = ${day} then ${linkedinAccounts.searchLeadsToday} else 0 end) + ${page.received}`,
+          searchLeadsToday: sql`greatest((case when ${linkedinAccounts.searchDay} = ${day} then ${linkedinAccounts.searchLeadsToday} - ${page.reserved ?? 0} else 0 end) + ${page.received}, 0)`,
           searchDay: day,
           searchLeaseUntil: gapUntil,
         })
@@ -343,7 +360,7 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
           cursor: done ? null : page.nextCursor,
           totalCount: page.totalEstimate ?? sql`${q.totalCount}`,
           failures: 0,
-          lastError: null,
+          lastError: page.note ?? null,
           leaseUntil: null,
           nextPageAt: gapUntil,
           currentAccountId: claim.account.id,
@@ -354,6 +371,26 @@ export const drizzleLinkedInSearchEngineStore: LinkedInSearchEngineStore = {
         .returning({ status: q.status });
       return { inserted, imported, status: updated.status as SearchStatus };
     });
+  },
+
+  async markSubmitted(claim, { operation, limit, now }) {
+    const day = searchDay(now);
+    await db.transaction(async (tx) => {
+      await insertOpenOperation(tx, { kind: "search", subjectId: claim.searchId, organizationId: claim.organizationId, account: claim.account, operation, rowLimit: limit, now });
+      await tx
+        .update(linkedinAccounts)
+        .set({ searchLeadsToday: sql`(case when ${linkedinAccounts.searchDay} = ${day} then ${linkedinAccounts.searchLeadsToday} else 0 end) + ${limit}`, searchDay: day })
+        .where(eq(linkedinAccounts.id, claim.account.id));
+      // The row holds the account from here. The lease only fences the settle's writes, so it outlasts every way the action ends.
+      await tx.update(q).set({ leaseUntil: secondsFrom(now, (OPERATION_GONE_HOURS + 1) * 3600) }).where(and(eq(q.id, claim.searchId), eq(q.leaseUntil, claim.leaseUntil)));
+    });
+  },
+
+  async returnAllowance(claim, reserved, now) {
+    await db
+      .update(linkedinAccounts)
+      .set({ searchLeadsToday: sql`greatest(${linkedinAccounts.searchLeadsToday} - ${reserved}, 0)` })
+      .where(and(eq(linkedinAccounts.id, claim.account.id), eq(linkedinAccounts.searchDay, searchDay(now))));
   },
 
   async release(claim, input) {

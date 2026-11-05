@@ -7,6 +7,7 @@ import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
 import type { ContactStop, InboxFiling } from "../../application/inbound-ports";
 import { createLinkedInJobs } from "../application/linkedin-jobs";
+import type { LinkedInSettleDeps } from "../application/settle-linkedin-operations";
 import { receiveLinkedInWebhook, type WebhookResult } from "../application/linkedin-inbound";
 import type { LinkedInOperationsDeps } from "../application/linkedin-operations";
 import type { LinkedInCampaignDeps } from "../application/linkedin-campaigns";
@@ -20,6 +21,7 @@ import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enroll
 import { drizzleMergeFieldSource } from "../../infrastructure/drizzle-merge-fields";
 import { accountVendorOf, drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
+import { drizzleLinkedInOpenOperationStore } from "./drizzle-linkedin-open-operations-store";
 import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
 import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { drizzleLinkedInCampaignStore } from "./drizzle-linkedin-campaign-store";
@@ -153,7 +155,8 @@ const polledInboundSource: LinkedInInboundPollDeps["source"] = {
 /** LinkedIn jobs. They idle until an organization connects LinkedIn, so they are always registered. */
 export function linkedinJobs(inbox: InboxFiling, stop: ContactStop): Job[] {
   const poll: LinkedInInboundPollDeps = { store: drizzleLinkedInInboundPollStore, source: polledInboundSource, inbound: inboundDeps(inbox), clock: { now: () => new Date() } };
-  return createLinkedInJobs(engineDeps(stop), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll);
+  const settle: LinkedInSettleDeps = { operations: drizzleLinkedInOpenOperationStore, engine: engineDeps(stop), search: searchEngineDeps(), inbound: inboundDeps(inbox) };
+  return createLinkedInJobs(engineDeps(stop), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll, settle);
 }
 
 export type UnipileDelivery = { status: 401 } | { status: 200; result: WebhookResult };

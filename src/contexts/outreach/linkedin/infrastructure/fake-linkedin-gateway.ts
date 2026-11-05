@@ -5,6 +5,9 @@ import {
   type ConnectLinkInput,
   type GatewayProfile,
   type LinkedInGateway,
+  type LinkedInGatewayOperations,
+  type OperationProgress,
+  type SubmittedOperation,
   type LinkedInRecipient,
   type LinkedInGatewayProvider,
   type SearchPage,
@@ -20,6 +23,15 @@ export type FakeLinkedInBehavior =
   | "timeout-after-accept"
   /** The call times out and nothing happened. */
   | "timeout-lost";
+
+interface FakeOperation {
+  kind: string;
+  account: string;
+  /** Runs the action the way the vendor would when its queue reaches it. */
+  run: () => Promise<unknown>;
+  outcome: { value: unknown } | { error: LinkedInGatewayError } | null;
+  held: boolean;
+}
 
 export type FakeProfileFailure = "auth" | "insufficient_privileges" | "not_found" | "rejected" | "invalid_recipient" | "transient";
 
@@ -83,6 +95,72 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
   /** Name of one hook (such as `messaging:message_received`) whose creation fails. */
   failHook: string | null = null;
   removeCalls = 0;
+  /** True: every action answers `{ operation }` and runs when a test calls `finishOperations`, as a vendor with a queue does. */
+  asyncMode = false;
+  readonly openOperations = new Map<string, FakeOperation>();
+  /** Every read of an operation throws while this is set. A throw says nothing about the action. */
+  progressOutage: LinkedInGatewayError | null = null;
+  /** How the vendor answers a cancel. Throw to leave it unconfirmed. */
+  cancelAnswer: (operation: string) => "cancelled" | "already_finished" = () => "cancelled";
+  readonly cancelled: string[] = [];
+  readonly threadChecks: Array<{ account: string; since: Date }> = [];
+  /** What a look at a thread finds. */
+  threadDeliveries: unknown[] = [];
+  searchReadCap = 1000;
+
+  private readonly asyncOperations: LinkedInGatewayOperations = {
+    progress: async <K extends Parameters<LinkedInGatewayOperations["progress"]>[0]["kind"]>(input: { account: string; operation: string; kind: K }): Promise<OperationProgress<K>> => {
+      if (this.progressOutage) throw this.progressOutage;
+      const open = this.openOperations.get(input.operation);
+      if (!open) throw new LinkedInGatewayError("Fake: no such operation", "unknown", "unavailable");
+      if (!open.outcome) return { state: "waiting", held: open.held };
+      return "error" in open.outcome ? { state: "failed", error: open.outcome.error } : ({ state: "finished", value: open.outcome.value } as OperationProgress<K>);
+    },
+    cancel: async ({ operation }) => {
+      const answer = this.cancelAnswer(operation);
+      if (answer === "cancelled") {
+        this.cancelled.push(operation);
+        this.openOperations.delete(operation);
+      }
+      return answer;
+    },
+    maxSearchRead: () => this.searchReadCap,
+    checkThread: async ({ account, since }) => {
+      this.threadChecks.push({ account, since });
+      return this.submit("reply_check", account, async () => null);
+    },
+    readThread: async () => {
+      if (this.progressOutage) throw this.progressOutage;
+      return this.threadDeliveries;
+    },
+  };
+
+  get operations(): LinkedInGatewayOperations | undefined {
+    return this.asyncMode ? this.asyncOperations : undefined;
+  }
+
+  private submit(kind: string, account: string, run: () => Promise<unknown>): SubmittedOperation {
+    const operation = this.next("op");
+    this.openOperations.set(operation, { kind, account, run, outcome: null, held: false });
+    return { operation };
+  }
+
+  /** The vendor's queue reaches every open action, or only `operation`. */
+  async finishOperations(operation?: string): Promise<void> {
+    for (const [id, open] of this.openOperations) {
+      if (open.outcome || (operation && operation !== id)) continue;
+      try {
+        open.outcome = { value: await open.run() };
+      } catch (error) {
+        open.outcome = { error: error as LinkedInGatewayError };
+      }
+    }
+  }
+
+  /** The vendor holds every open action for its working hours. */
+  holdOperations(): void {
+    for (const open of this.openOperations.values()) open.held = true;
+  }
 
   async forAccount(): Promise<LinkedInGateway | null> {
     return this;
@@ -119,7 +197,12 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return { member: a?.linkedinId ?? account, publicSlug: a?.username ?? null, firstName: a?.name ?? null, lastName: null, headline: null, location: null, pictureUrl: null, networkDistance: "unknown", isPremium: false };
   }
 
-  async getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile> {
+  getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile | SubmittedOperation> {
+    if (this.asyncMode) return Promise.resolve(this.submit("lookup", input.account, () => this.lookUp(input)));
+    return this.lookUp(input);
+  }
+
+  private async lookUp(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile> {
     this.profileCalls.push({ account: input.account, identifier: input.identifier, linkedinApi: input.linkedinApi ?? null });
     if (this.readOutage) this.outage();
     const failure = this.profileFailure({ identifier: input.identifier, linkedinApi: input.linkedinApi ?? null });
@@ -149,7 +232,12 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return profile;
   }
 
-  async sendInvitation(input: { account: string; member: string; note: string | null }): Promise<{ invitationId: string | null }> {
+  sendInvitation(input: { account: string; member: string; note: string | null }): Promise<{ invitationId: string | null } | SubmittedOperation> {
+    if (this.asyncMode) return Promise.resolve(this.submit("invitation", input.account, () => this.invite(input)));
+    return this.invite(input);
+  }
+
+  private async invite(input: { account: string; member: string; note: string | null }): Promise<{ invitationId: string | null }> {
     const mode = this.gate(this.inviteBehavior(input.member));
     if (mode === "skip-then-fail") throw new LinkedInGatewayError("Request timed out", "unknown", "unavailable");
     const invitation = { account: input.account, member: input.member, note: input.note, id: this.next("inv"), accepted: false };
@@ -180,7 +268,12 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return message;
   }
 
-  async sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
+  sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null } | SubmittedOperation> {
+    if (this.asyncMode) return Promise.resolve(this.submit("message", input.account, () => this.message(input)));
+    return this.message(input);
+  }
+
+  private async message(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }> {
     if (!input.to.chat && !input.to.member && !input.to.slug) throw new LinkedInGatewayError("No chat or member to send this message to.", "definite", "invalid_recipient");
     if (this.readOutage && !input.to.chat) this.outage();
     const mode = this.gate(this.messageBehavior(input.text));
@@ -200,7 +293,15 @@ export class FakeLinkedInGateway implements LinkedInGateway, LinkedInGatewayProv
     return hit ? { messageId: hit.id } : null;
   }
 
-  async searchPeople(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage> {
+  readonly searchLimits: number[] = [];
+
+  searchPeople(input: { account: string; searchUrl: string; cursor: string | null; limit: number }): Promise<SearchPage | SubmittedOperation> {
+    this.searchLimits.push(input.limit);
+    if (this.asyncMode) return Promise.resolve(this.submit("search", input.account, () => this.search(input)));
+    return this.search(input);
+  }
+
+  private async search(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage> {
     const call = { account: input.account, url: input.searchUrl, cursor: input.cursor };
     this.searchLog.push(call);
     const mode = this.gate(this.searchBehavior(call));

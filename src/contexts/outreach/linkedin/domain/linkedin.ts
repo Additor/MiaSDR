@@ -234,7 +234,8 @@ export function profileUrlFor(slug: string): string {
 
 /** Webhook events this app reacts to, in normalized form. */
 export type LinkedInInboundEvent =
-  | { type: "connection_accepted"; account: string; member: string; name: string | null; profileUrl: string | null }
+  /** `member` is null for a vendor whose event names the person only by URN or public slug. Then the store finds them among the waiting leads. */
+  | { type: "connection_accepted"; account: string; member: string | null; memberUrn?: string | null; slug?: string | null; name: string | null; profileUrl: string | null }
   | {
       type: "message_received";
       account: string;

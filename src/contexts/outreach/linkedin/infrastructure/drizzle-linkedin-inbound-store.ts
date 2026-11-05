@@ -27,18 +27,25 @@ const toLedger = (r: { id: string; organizationId: string | null; payload: unkno
 /** The row this claim still holds: processing, with the claim's token and attempt. */
 const heldEvent = (claim: LedgerEvent) => and(eq(inboundEvents.id, claim.id), eq(inboundEvents.status, "processing"), heldBy("inbound_events", claim));
 
-/** Enrollments of this member on this account that still wait for an acceptance. */
-async function waitingForAcceptance(tx: Tx, organizationId: string, accountId: string, member: string) {
+/** Enrollments of this person on this account that still wait for an acceptance. An event names a person in up to three ways. */
+async function waitingForAcceptance(tx: Tx, organizationId: string, accountId: string, person: { member: string | null; memberUrn?: string | null; slug?: string | null }) {
+  const named = [
+    person.member ? eq(linkedinEnrollmentDetails.providerId, person.member) : undefined,
+    person.memberUrn ? eq(linkedinEnrollmentDetails.memberUrn, person.memberUrn) : undefined,
+    person.slug ? eq(people.linkedinSlug, person.slug) : undefined,
+  ].filter((clause) => clause !== undefined);
+  if (named.length === 0) return [];
   return tx
-    .select({ id: campaignEnrollments.id, steps: campaigns.steps })
+    .select({ id: campaignEnrollments.id, steps: campaigns.steps, providerId: linkedinEnrollmentDetails.providerId })
     .from(campaignEnrollments)
     .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
     .innerJoin(linkedinEnrollmentDetails, eq(linkedinEnrollmentDetails.enrollmentId, campaignEnrollments.id))
+    .innerJoin(people, eq(people.id, campaignEnrollments.personId))
     .where(
       and(
         eq(campaignEnrollments.organizationId, organizationId),
         eq(campaignEnrollments.linkedinAccountId, accountId),
-        eq(linkedinEnrollmentDetails.providerId, member),
+        or(...named),
         sql`${linkedinEnrollmentDetails.connectionState} <> 'connected'`,
         inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
         // Only invitations that went out (or may have) can be accepted.
@@ -172,8 +179,10 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
 
         const event = withKnownOwner(delivered, account.linkedinId);
         if (event.type === "connection_accepted") {
-          await upsertConnection(tx, organizationId, account.id, event.member, { name: event.name, profileUrl: event.profileUrl, connected: now });
-          const waiting = await waitingForAcceptance(tx, organizationId, account.id, event.member);
+          const waiting = await waitingForAcceptance(tx, organizationId, account.id, event);
+          // An event with no member id takes the one the lookup found.
+          const member = event.member ?? waiting.find((e) => e.providerId)?.providerId ?? null;
+          if (member) await upsertConnection(tx, organizationId, account.id, member, { name: event.name, profileUrl: event.profileUrl, connected: now });
           let applied = 0;
           for (const e of waiting) if (await applyAcceptance(tx, e.id, e.steps[1]?.waitDays ?? null, now)) applied += 1;
           return { done: { result: "done" as const, note: applied === 0 ? "No lead was waiting for this acceptance." : `Accepted: ${applied} lead(s).` } };
@@ -184,7 +193,7 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
 
         if (event.fromAccountOwner) {
           // A note-carrying invitation opens a chat with only our note once accepted. Anything else we wrote is an echo.
-          const waiting = await waitingForAcceptance(tx, organizationId, account.id, event.counterparty);
+          const waiting = await waitingForAcceptance(tx, organizationId, account.id, { member: event.counterparty });
           let applied = 0;
           for (const e of waiting) if (await applyAcceptance(tx, e.id, e.steps[1]?.waitDays ?? null, now)) applied += 1;
           return { done: { result: applied > 0 ? ("done" as const) : ("skipped" as const), note: applied > 0 ? "Echo treated as acceptance." : "Echo of our own message." } };

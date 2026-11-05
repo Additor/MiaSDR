@@ -12,7 +12,7 @@ import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../d
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
 import { countMessagesToday } from "./linkedin-account-state";
-import { credentialFieldsOf, inviteLimitCapOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
+import { capturesOnlyLaterEvents, credentialFieldsOf, inviteLimitCapOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), inArray(integrationAccounts.key, VENDOR_KEYS));
 
@@ -188,6 +188,8 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             status,
             ...(account.headline ? { headline: account.headline } : {}),
             ...(account.isPremium !== null ? { isPremium: account.isPremium } : {}),
+            // What happened while the old id was signed out was never captured. The gate stays shut until the new id's first read, and each lead's thread is read before its next message.
+            ...(existing && existing.providerAccountId !== account.ref && capturesOnlyLaterEvents(vendorKey) ? { inboxGapUntil: new Date(), inboundReadAt: null } : {}),
           };
           if (existing) {
             await tx.update(linkedinAccounts).set(fields).where(eq(linkedinAccounts.id, existing.id));

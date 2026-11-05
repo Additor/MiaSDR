@@ -183,6 +183,8 @@ export async function listUnsettledAttempts(channel: "email" | "linkedin", older
       and(
         channel === "linkedin" ? eq(sendAttempts.provider, "linkedin") : sql`${sendAttempts.provider} is distinct from 'linkedin'`,
         inArray(sendAttempts.status, ["sending", "delivery_uncertain"]),
+        // A vendor still runs it, so there is nothing to look for yet. `listSubmitted` has these.
+        sql`not (${sendAttempts.status} = 'sending' and ${sendAttempts.providerOperationId} is not null)`,
         sql`${sendAttempts.updatedAt} < ${olderThan.toISOString()}::timestamptz`,
       ),
     )

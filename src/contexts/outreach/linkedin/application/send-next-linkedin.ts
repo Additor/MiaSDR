@@ -10,14 +10,19 @@ import {
 import { parseLinkedInProfileRef } from "../domain/linkedin-identity";
 import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES, UNCERTAIN_RECHECK_MINUTES } from "../../domain/send-policy";
 import { defaultWorkingHours } from "../../domain/working-hours";
+import { REPLY_CHECK_RETRY_MINUTES } from "../domain/linkedin-operations";
 import {
   LinkedInGatewayError,
+  isSubmitted,
   type GatewayProfile,
   type LinkedInClaim,
   type LinkedInEngineDeps,
   type LinkedInGateway,
+  type LinkedInReplyCheckClaim,
   type LinkedInResolveClaim,
   type LinkedInSendClaim,
+  type LinkedInSettleClaim,
+  type SubmittedOperation,
 } from "./linkedin-ports";
 
 export type LinkedInOutcome =
@@ -29,6 +34,8 @@ export type LinkedInOutcome =
   | { kind: "failed"; retry: boolean }
   | { kind: "paused"; reason: "limit" | "disconnected" | "no_gateway" }
   | { kind: "unknown" }
+  /** The vendor took it and runs it later. `linkedin.settle-operations` writes the outcome. */
+  | { kind: "submitted" }
   /** The claim was lost before the provider call (a reconcile or another worker took the send). Nothing went out. */
   | { kind: "dropped" };
 
@@ -53,6 +60,10 @@ export async function runNextLinkedInAction(deps: LinkedInEngineDeps, accountId:
     if (!gateway) return { kind: "paused", reason: "no_gateway" };
     return resolve(deps, gateway, claim);
   }
+  if (claim.kind === "reply_check") {
+    if (!gateway) return { kind: "paused", reason: "no_gateway" };
+    return startReplyCheck(deps, gateway, claim);
+  }
   if (!gateway) {
     // LinkedIn was disconnected between the claim and the call. Nothing went out: give the attempt back.
     await deps.store.disconnectAccount(claim.account.id, "LinkedIn is not connected for this organization.");
@@ -62,12 +73,12 @@ export async function runNextLinkedInAction(deps: LinkedInEngineDeps, accountId:
   return deliver(deps, gateway, claim);
 }
 
-const NO_PREMIUM_ACCESS = "This LinkedIn account has no Sales Navigator or Recruiter access, and the member could not be found with a standard lookup.";
+export const NO_PREMIUM_ACCESS = "This LinkedIn account has no Sales Navigator or Recruiter access, and the member could not be found with a standard lookup.";
 const UNREADABLE_PROFILE = "This LinkedIn URL does not identify a person profile.";
 
 /** What the lookup sends: a slug or URL goes through as stored (classic), a member id goes with its API.
  * `linkedinApi` is not sent on the first call. It marks the Sales Navigator or Recruiter fallback that `lookupProfile` may try next. */
-function lookupInput(identifier: string): { identifier: string; linkedinApi?: "sales_navigator" | "recruiter"; memberId?: string } | null {
+export function lookupInput(identifier: string): { identifier: string; linkedinApi?: "sales_navigator" | "recruiter"; memberId?: string } | null {
   const ref = parseLinkedInProfileRef(identifier);
   if (ref?.kind === "member") {
     return { identifier: ref.memberId, memberId: ref.memberId, ...(ref.api === "classic" ? {} : { linkedinApi: ref.api }) };
@@ -80,7 +91,14 @@ function lookupInput(identifier: string): { identifier: string; linkedinApi?: "s
 /** Definite answers to the classic lookup after which a Sales Navigator or Recruiter lookup can still succeed. */
 const FALLBACK_AFTER: ReadonlySet<string> = new Set(["not_found", "rejected", "invalid_recipient", "insufficient_privileges"]);
 
-type LookupResult = { ok: true; profile: GatewayProfile } | { ok: false; reason: "no_access" };
+/** Whether a classic lookup's failure leaves a lookup on the lead's own product worth trying. */
+export const fallsBackToApi = (error: unknown): error is LinkedInGatewayError => error instanceof LinkedInGatewayError && error.kind === "definite" && FALLBACK_AFTER.has(error.code);
+
+type LookupResult = { ok: true; profile: GatewayProfile } | { ok: false; reason: "no_access" } | { ok: "submitted"; submitted: SubmittedOperation; api: "sales_navigator" | "recruiter" | null };
+
+function lookupAnswer(answer: GatewayProfile | SubmittedOperation, api: "sales_navigator" | "recruiter" | null): LookupResult {
+  return isSubmitted(answer) ? { ok: "submitted", submitted: answer, api } : { ok: true, profile: answer };
+}
 
 /**
  * Looks a member up. The first call carries no linkedin_api. For a Sales Navigator or Recruiter reference, a definite
@@ -88,14 +106,18 @@ type LookupResult = { ok: true; profile: GatewayProfile } | { ok: false; reason:
  * that retry means the account has no such product: `no_access`. Everything else throws: auth, rate_limited and unknown
  * outcomes on either call, and any other definite failure of the retry.
  */
-async function lookupProfile(gateway: LinkedInGateway, account: string, lookup: { identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<LookupResult> {
-  try {
-    return { ok: true, profile: await gateway.getProfile({ account, identifier: lookup.identifier }) };
-  } catch (first) {
-    if (!lookup.linkedinApi || !(first instanceof LinkedInGatewayError) || first.kind !== "definite" || !FALLBACK_AFTER.has(first.code)) throw first;
+async function lookupProfile(gateway: LinkedInGateway, account: string, lookup: { identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }, nextApi: "sales_navigator" | "recruiter" | null): Promise<LookupResult> {
+  // A vendor's classic lookup already finished without a person, so this claim goes straight to the product.
+  const api = nextApi ?? lookup.linkedinApi;
+  if (!nextApi) {
+    try {
+      return lookupAnswer(await gateway.getProfile({ account, identifier: lookup.identifier }), null);
+    } catch (first) {
+      if (!lookup.linkedinApi || !fallsBackToApi(first)) throw first;
+    }
   }
   try {
-    return { ok: true, profile: await gateway.getProfile({ account, identifier: lookup.identifier, linkedinApi: lookup.linkedinApi }) };
+    return lookupAnswer(await gateway.getProfile({ account, identifier: lookup.identifier, linkedinApi: api }), api ?? null);
   } catch (second) {
     if (second instanceof LinkedInGatewayError && second.code === "insufficient_privileges") return { ok: false, reason: "no_access" };
     throw second;
@@ -111,43 +133,90 @@ async function resolve(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
     }
     // The classic lookup by member id comes first (live check 2026-10-15, on a classic-only account only: it resolved the id
     // there; a Sales Navigator account was not checked). The Sales Navigator or Recruiter lookup is the fallback.
-    const found = await lookupProfile(gateway, claim.account.providerAccountId, lookup);
-    if (!found.ok) {
-      // The account is healthy. It lacks the product, so the lead may resolve later (the plan can change) and retries with backoff.
-      await deps.store.markResolveFailed(claim, NO_PREMIUM_ACCESS, deps.clock.now(), false);
-      return { kind: "resolve_failed" };
+    const found = await lookupProfile(gateway, claim.account.providerAccountId, lookup, claim.nextApi);
+    if (found.ok === "submitted") {
+      await deps.store.noteSubmitted({ kind: "lookup", subjectId: claim.enrollmentId, organizationId: claim.organizationId, account: claim.account, operation: found.submitted.operation, api: found.api, now: deps.clock.now() });
+      return { kind: "submitted" };
     }
-    const profile = found.profile;
-    const written = await deps.store.markResolved(
-      claim,
-      {
-        providerId: profile.member,
-        slug: profile.publicSlug,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        headline: profile.headline,
-        pictureUrl: profile.pictureUrl,
-        ...(lookup.memberId ? { memberId: lookup.memberId } : {}),
-      },
-      deps.clock.now(),
-    );
-    return written === "slug_collision" ? { kind: "resolve_failed" } : { kind: "resolved" };
+    if (!found.ok) return lookupWithoutAccess(deps, claim);
+    return await writeLookup(deps, claim, found.profile, lookup.memberId);
   } catch (error) {
-    const code = error instanceof LinkedInGatewayError ? error.code : null;
-    if (code === "auth") {
+    return handleLookupError(deps, claim, error);
+  }
+}
+
+/** The account is healthy. It lacks the product, so the lead may resolve later (the plan can change) and retries with backoff. */
+export async function lookupWithoutAccess(deps: LinkedInEngineDeps, claim: LinkedInResolveClaim): Promise<LinkedInOutcome> {
+  await deps.store.markResolveFailed(claim, NO_PREMIUM_ACCESS, deps.clock.now(), false);
+  return { kind: "resolve_failed" };
+}
+
+export async function writeLookup(deps: LinkedInEngineDeps, claim: LinkedInResolveClaim, profile: GatewayProfile, memberId: string | undefined): Promise<LinkedInOutcome> {
+  const written = await deps.store.markResolved(
+    claim,
+    {
+      providerId: profile.member,
+      slug: profile.publicSlug,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      headline: profile.headline,
+      pictureUrl: profile.pictureUrl,
+      ...(memberId ? { memberId } : {}),
+      ...(profile.memberUrn ? { memberUrn: profile.memberUrn } : {}),
+    },
+    deps.clock.now(),
+  );
+  return written === "slug_collision" ? { kind: "resolve_failed" } : written === "stopped" ? { kind: "dropped" } : { kind: "resolved" };
+}
+
+export async function handleLookupError(deps: LinkedInEngineDeps, claim: LinkedInResolveClaim, error: unknown): Promise<LinkedInOutcome> {
+  const code = error instanceof LinkedInGatewayError ? error.code : null;
+  if (code === "auth") {
+    await deps.store.disconnectAccount(claim.account.id, errorText(error));
+    return { kind: "paused", reason: "disconnected" };
+  }
+  if (code === "rate_limited") {
+    const limit = error as LinkedInGatewayError;
+    if (limit.limits === "invitations") await deps.store.pauseInvitationsForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
+    else await deps.store.pauseAccountForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
+    return { kind: "paused", reason: "limit" };
+  }
+  // A lookup changes nothing at the provider, so every failure is safe to retry later.
+  await deps.store.markResolveFailed(claim, errorText(error), deps.clock.now(), code === "not_found" || code === "invalid_recipient");
+  return { kind: "resolve_failed" };
+}
+
+/** Asks the vendor to read this lead's thread before its next message. Until a look finishes, nothing goes out to the lead. */
+async function startReplyCheck(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim: LinkedInReplyCheckClaim): Promise<LinkedInOutcome> {
+  const now = deps.clock.now();
+  // Only a vendor with operations leaves such a gap, and one that stopped being this account's vendor has no way to look.
+  if (!gateway.operations) {
+    await deps.store.deferReplyCheck(claim.enrollmentId, new Date(now.getTime() + REPLY_CHECK_RETRY_MINUTES * 60_000));
+    return { kind: "paused", reason: "no_gateway" };
+  }
+  try {
+    const { operation } = await gateway.operations.checkThread({ account: claim.account.providerAccountId, to: claim.to, since: claim.since });
+    await deps.store.noteSubmitted({ kind: "reply_check", subjectId: claim.enrollmentId, organizationId: claim.organizationId, account: claim.account, operation, now });
+    return { kind: "submitted" };
+  } catch (error) {
+    return handleReplyCheckError(deps, claim, error);
+  }
+}
+
+export async function handleReplyCheckError(deps: LinkedInEngineDeps, claim: LinkedInReplyCheckClaim, error: unknown): Promise<LinkedInOutcome> {
+  const now = deps.clock.now();
+  if (error instanceof LinkedInGatewayError && error.kind === "definite") {
+    if (error.code === "auth") {
       await deps.store.disconnectAccount(claim.account.id, errorText(error));
       return { kind: "paused", reason: "disconnected" };
     }
-    if (code === "rate_limited") {
-      const limit = error as LinkedInGatewayError;
-      if (limit.limits === "invitations") await deps.store.pauseInvitationsForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
-      else await deps.store.pauseAccountForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
+    if (error.code === "rate_limited") {
+      await deps.store.pauseAccountForLookupLimit(claim, pausedUntil(error, now));
       return { kind: "paused", reason: "limit" };
     }
-    // A lookup changes nothing at the provider, so every failure is safe to retry later.
-    await deps.store.markResolveFailed(claim, errorText(error), deps.clock.now(), code === "not_found" || code === "invalid_recipient");
-    return { kind: "resolve_failed" };
   }
+  await deps.store.deferReplyCheck(claim.enrollmentId, new Date(now.getTime() + REPLY_CHECK_RETRY_MINUTES * 60_000));
+  return { kind: "blocked", reason: "reply_check_failed" };
 }
 
 async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim: LinkedInSendClaim): Promise<LinkedInOutcome> {
@@ -176,26 +245,29 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
   try {
     if (claim.kind === "invitation") {
       const sent = await gateway.sendInvitation({ account: claim.account.providerAccountId, member: claim.providerId, note: text === "" ? null : text, sendKey: claim.sendId });
+      if (isSubmitted(sent)) return await noteSendSubmitted(deps, claim, sent);
       await deps.store.markSent(claim, { providerMessageId: sent.invitationId, chatId: null }, deps.clock.now());
       return { kind: "sent", what: "invitation" };
     }
-    const sent = await sendMessage(gateway, claim, text);
-    await deps.store.markSent(claim, sent, deps.clock.now());
+    const sent = await gateway.sendMessage({ account: claim.account.providerAccountId, to: { chat: claim.chatId, member: claim.providerId, slug: claim.slug }, text, sendKey: claim.sendId, unlessRepliedAfter: claim.outreachStartedAt });
+    if (isSubmitted(sent)) return await noteSendSubmitted(deps, claim, sent);
+    await deps.store.markSent(claim, { providerMessageId: sent.messageId, chatId: sent.chat }, deps.clock.now());
     return { kind: "sent", what: "message" };
   } catch (error) {
     return handleSendError(deps, claim, error);
   }
 }
 
-async function sendMessage(gateway: LinkedInGateway, claim: LinkedInSendClaim, text: string) {
-  const sent = await gateway.sendMessage({ account: claim.account.providerAccountId, to: { chat: claim.chatId, member: claim.providerId, slug: claim.slug }, text, sendKey: claim.sendId, unlessRepliedAfter: claim.outreachStartedAt });
-  return { providerMessageId: sent.messageId, chatId: sent.chat };
+/** The send stays `sending`, so it counts against the limits and nobody reclaims it. A failure here reads as unknown, which reconciling looks into. */
+async function noteSendSubmitted(deps: LinkedInEngineDeps, claim: LinkedInSendClaim, submitted: SubmittedOperation): Promise<LinkedInOutcome> {
+  await deps.store.noteSubmitted({ kind: claim.kind, subjectId: claim.sendId, organizationId: claim.organizationId, account: claim.account, operation: submitted.operation, now: deps.clock.now() });
+  return { kind: "submitted" };
 }
 
 /** Until when a limit stops the account: as long as the provider says, else the full pause. */
 const pausedUntil = (error: LinkedInGatewayError, now: Date) => new Date(now.getTime() + (error.retryAfterMs ?? LIMIT_PAUSE_HOURS * 3_600_000));
 
-async function handleSendError(deps: LinkedInEngineDeps, claim: LinkedInSendClaim, error: unknown): Promise<LinkedInOutcome> {
+export async function handleSendError(deps: LinkedInEngineDeps, claim: LinkedInSettleClaim, error: unknown): Promise<LinkedInOutcome> {
   const now = deps.clock.now();
   const message = errorText(error);
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {
@@ -285,6 +357,13 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
       } else {
         const to = { chat: send.chatId, member: send.providerId, slug: send.slug };
         const found = send.body ? await gateway.findSentMessage({ account: send.account.providerAccountId, to, text: send.body, since: new Date(send.claimedAt.getTime() - 60_000), sendKey: send.sendId }) : null;
+        if (found === "ask_a_person") {
+          // Nothing here can say it did not go out, so waiting out the grace period would send it twice.
+          await deps.store.markUnknown(send, "The message is not in the LinkedIn chat, and it may only be late. Check the chat and settle it.");
+          await deps.store.deferUncertain(send.sendId, later);
+          report.stillWaiting += 1;
+          continue;
+        }
         if (found) {
           await deps.store.resolveUncertainAsSent(send, { providerMessageId: found.messageId, accepted: false }, now);
           report.foundSent += 1;

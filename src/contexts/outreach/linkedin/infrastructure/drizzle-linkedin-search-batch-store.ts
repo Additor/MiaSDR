@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { campaigns, linkedinAccounts, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
+import { campaigns, linkedinAccounts, linkedinOpenOperations, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import type { DbHandle } from "@/platform/db/client";
 import type { LinkedInSearchBatchStore, SearchBatchDetail, SearchBatchSummary, SearchResultExportRow } from "../application/linkedin-search-ports";
@@ -230,7 +230,7 @@ export const drizzleLinkedInSearchBatchStore: LinkedInSearchBatchStore = {
   async removeQueries(organizationId, batchId, ids, audit) {
     return db.transaction(async (tx) => {
       const locked = await lockQueries(tx, organizationId, batchId, ids);
-      const running = locked.filter((row) => row.status === RUNNING).length;
+      const running = await countRunning(tx, locked);
       if (running > 0) return { ok: false as const, reason: "running" as const, running };
       const queryIds = locked.map((row) => row.id);
       const resultsRemoved = await deleteResultRows(tx, organizationId, queryIds);
@@ -244,7 +244,7 @@ export const drizzleLinkedInSearchBatchStore: LinkedInSearchBatchStore = {
   async deleteResults(organizationId, batchId, ids, audit) {
     return db.transaction(async (tx) => {
       const locked = await lockQueries(tx, organizationId, batchId, ids);
-      const running = locked.filter((row) => row.status === RUNNING).length;
+      const running = await countRunning(tx, locked);
       if (running > 0) return { ok: false as const, reason: "running" as const, running };
       const queryIds = locked.map((row) => row.id);
       const resultsRemoved = await deleteResultRows(tx, organizationId, queryIds);
@@ -263,7 +263,7 @@ export const drizzleLinkedInSearchBatchStore: LinkedInSearchBatchStore = {
       const [batch] = await tx.select({ id: b.id, name: b.name }).from(b).where(and(eq(b.organizationId, organizationId), eq(b.id, batchId), eq(b.kind, BULK))).for("update");
       if (!batch) return { ok: true as const, searches: 0, resultsRemoved: 0 };
       const locked = await lockQueries(tx, organizationId, batchId, null);
-      const running = locked.filter((row) => row.status === RUNNING).length;
+      const running = await countRunning(tx, locked);
       if (running > 0) return { ok: false as const, reason: "running" as const, running };
       const [{ n }] =
         locked.length === 0
@@ -295,6 +295,15 @@ export const drizzleLinkedInSearchBatchStore: LinkedInSearchBatchStore = {
     });
   },
 };
+
+/** Searches that may not be removed yet: running, or paused or cancelled with a read still open at the vendor, which the settle job closes. */
+async function countRunning(tx: DbHandle, locked: Array<{ id: string; status: string }>): Promise<number> {
+  const running = locked.filter((row) => row.status === RUNNING);
+  const others = locked.filter((row) => row.status !== RUNNING).map((row) => row.id);
+  if (others.length === 0) return running.length;
+  const open = await tx.select({ id: linkedinOpenOperations.id }).from(linkedinOpenOperations).where(and(eq(linkedinOpenOperations.kind, "search"), inArray(linkedinOpenOperations.subjectId, others)));
+  return running.length + open.length;
+}
 
 /** Locks the named searches of the batch (all of them when `ids` is null) in id order, so two calls cannot deadlock. A claim holds the same lock while it sets `running`. */
 async function lockQueries(tx: DbHandle, organizationId: string, batchId: string, ids: string[] | null) {

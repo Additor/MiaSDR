@@ -440,6 +440,101 @@ describeDb("LinkedIn conversation replies", () => {
     const thread = await inboxApp.getThread({ store: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: () => new Date() }, f.actor, f.threadId);
     expect(thread.messages.filter((m) => m.direction === "outbound").map((m) => m.bodyText)).toContain("In the thread");
   });
+  describe("a vendor that runs the send later", () => {
+    async function submitted() {
+      const f = await fixture();
+      f.fake.asyncMode = true;
+      const result = await send(f);
+      return { f, result };
+    }
+    const attempt = (f: Fx) => one("select status, provider_operation_id, provider_operation_account from send_attempts where organization_id = $1", [f.org]);
+    const draft = (f: Fx) => one("select status, error from drafts where organization_id = $1", [f.org]);
+
+    it("answers in progress and holds the chat until the vendor finishes, and the panel knows to wait", async () => {
+      const { f, result } = await submitted();
+      expect(result).toMatchObject({ status: "in_progress", replayed: false });
+      expect(f.fake.messages).toHaveLength(0);
+      expect(await attempt(f)).toMatchObject({ status: "sending", provider_operation_id: expect.any(String), provider_operation_account: "acct-" + f.tag });
+      expect((await store.panel(f.org, f.threadId, new Date()))?.draft).toMatchObject({ status: "sending", awaitingVendor: true });
+      await expect(send(f, "Another")).rejects.toBeInstanceOf(ConflictError);
+
+      await f.fake.finishOperations();
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("sent");
+      expect((await draft(f)).status).toBe("sent");
+      expect(f.fake.messages).toHaveLength(1);
+    });
+
+    it("answers a repeat of the key as still running", async () => {
+      const f = await fixture();
+      f.fake.asyncMode = true;
+      const k = key();
+      await send(f, "Hello", k);
+      expect(await send(f, "Hello", k)).toMatchObject({ status: "in_progress", replayed: true });
+      expect(f.fake.openOperations.size).toBe(1);
+    });
+
+    it("waits on a failed read, and never reads it as a refusal", async () => {
+      const { f } = await submitted();
+      const { LinkedInGatewayError } = await import("@/contexts/outreach/linkedin/application/linkedin-ports");
+      f.fake.progressOutage = new LinkedInGatewayError("Slow down.", "definite", "rate_limited");
+      await age(f, 90);
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("sending");
+      expect((await draft(f)).status).toBe("sending");
+      expect(f.fake.cancelled).toHaveLength(0);
+    });
+
+    it("puts the draft back for review on a refusal, as a live send does", async () => {
+      const { f } = await submitted();
+      f.fake.messageBehavior = () => ({ refuse: "not_first_degree" });
+      await f.fake.finishOperations();
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("failed");
+      expect((await draft(f)).status).toBe("awaiting_review");
+    });
+
+    it("leaves a person to decide after the time limit, once the cancel is confirmed", async () => {
+      const { f } = await submitted();
+      await age(f, 60);
+      f.fake.cancelAnswer = () => {
+        throw new Error("no answer");
+      };
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("sending");
+      f.fake.cancelAnswer = () => "cancelled";
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("delivery_uncertain");
+      expect((await draft(f)).status).toBe("delivery_uncertain");
+    });
+
+    it("stops a send held for working hours, pauses the account, and gives the draft back", async () => {
+      const { f } = await submitted();
+      f.fake.holdOperations();
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("failed");
+      expect((await draft(f)).status).toBe("awaiting_review");
+      expect((await one("select limit_reached_until from linkedin_accounts where id = $1", [f.account])).limit_reached_until).not.toBeNull();
+    });
+
+    it("stops a send to someone just marked do not contact", async () => {
+      const { f } = await submitted();
+      await sql`insert into contact_policies (person_id, organization_id, do_not_contact, reason, source, set_at) values (${f.personId}, ${f.org}, true, 'asked', 'human', now())`;
+      await app.reconcileLinkedInReplies(f.deps);
+      expect(f.fake.cancelled).toHaveLength(1);
+      expect((await attempt(f)).status).toBe("failed");
+    });
+
+    it("turns uncertain after a day of failed reads", async () => {
+      const { f } = await submitted();
+      const { LinkedInGatewayError } = await import("@/contexts/outreach/linkedin/application/linkedin-ports");
+      f.fake.progressOutage = new LinkedInGatewayError("Gone.", "unknown", "unavailable");
+      await age(f, 24 * 60);
+      await app.reconcileLinkedInReplies(f.deps);
+      expect((await attempt(f)).status).toBe("delivery_uncertain");
+    });
+  });
+
   describe("attempt status guard", () => {
     async function claimed(f: Fx) {
       const r = await store.begin({ organizationId: f.org, threadId: f.threadId, text: "Guard me", idempotencyKey: key(), actorUserId: f.user, now: new Date() });

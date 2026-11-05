@@ -73,7 +73,7 @@ export const sendReplyTool = defineTool({
     // A replay answers what this key did before, so a block it reports says nothing about sending now.
     const retryable = result.status === "failed" || (result.status === "blocked" && !result.replayed && RETRYABLE_BLOCKS.has(result.reason));
     return {
-      summary: [error, NEXT_STEP[result.status], result.replayed ? "This key had already sent; nothing new went out." : null].filter(Boolean).join(" "),
+      summary: [error, NEXT_STEP[result.status], result.replayed && result.status !== "in_progress" ? "This key had already sent; nothing new went out." : null].filter(Boolean).join(" "),
       structured: { threadId: input.threadId, status: result.status, attemptId: result.attemptId, replayed: result.replayed, retryable, error, appUrl: appLinks(out).thread(input.threadId) },
     };
   },

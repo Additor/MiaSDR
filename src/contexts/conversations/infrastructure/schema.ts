@@ -507,6 +507,10 @@ export const sendAttempts = pgTable(
     mcpTokenId: uuid("mcp_token_id"),
     /** The agent client's own name, when the protocol carried one. */
     clientName: text("client_name"),
+    /** The vendor's id for a send it accepted and has not finished. Null once settled, and on a vendor that answers at once. */
+    providerOperationId: text("provider_operation_id"),
+    /** The account id that send was submitted as. A reconnect can bring a new id, and the action still answers to the old one. */
+    providerOperationAccount: text("provider_operation_account"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

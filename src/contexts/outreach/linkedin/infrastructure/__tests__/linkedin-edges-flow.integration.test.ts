@@ -332,7 +332,7 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const created = { url: "https://login", account: `uid-${f.tag}` };
       gateway.createConnectLink = async () => created;
       gateway.getOwnProfile = async () => ({ member: own.member, publicSlug: own.slug, firstName: "Ada", lastName: "L", headline: null, location: null, pictureUrl: null, networkDistance: "unknown", isPremium: true });
-      const vendor = { ...edgesVendor.createEdgesVendor(), gatewayFor: () => gateway, connectSession: { status: async () => session, cancel: async () => { cancelled.push(created.account); } } };
+      const vendor = { ...edgesVendor.createEdgesVendor(), gatewayFor: () => gateway, connectSession: { status: async () => ({ state: session }), cancel: async () => { cancelled.push(created.account); } } };
       const cancelled: string[] = [];
       const { drizzleLinkedInConnectStore } = await import("../drizzle-linkedin-connect-store");
       const { auditSink } = await import("@/contexts/tenancy/infrastructure/audit");
@@ -340,6 +340,47 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const link = await connect.createConnectLink(deps as never, actor);
       return { f, actor, deps: deps as never, link, ref: created.account, cancelled };
     };
+
+    describe("when the link is a session that names the account", () => {
+      const named = async (own: { member: string; slug: string }, reconnect = false) => {
+        const t = await setup("connected", own);
+        const account = `new-${uniqueKey()}`;
+        const [vendor] = (t.deps as unknown as { vendors: Array<{ connectSession: { status: unknown } }> }).vendors;
+        vendor.connectSession.status = async () => ({ state: "connected", account });
+        if (reconnect) {
+          const [{ id }] = await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, username, status) values (${t.f.id}, 'edges', ${"old-" + account}, ${`ACoAAowner${account}`}, ${`owner-${account}`}, 'disconnected') returning id`;
+          await sql`update linkedin_connect_links set reconnect_account_id = ${id} where id = ${t.link.linkId}`;
+        }
+        return { ...t, account };
+      };
+
+      it("connects the account it names, not the session", async () => {
+        const key = uniqueKey();
+        const t = await named({ member: `ACoAAada${key}`, slug: `ada-${key}` });
+        expect(await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).toEqual({ status: "completed", error: null });
+        expect((await sql`select provider_account_id from linkedin_accounts where organization_id = ${t.f.id}`)[0].provider_account_id).toBe(t.account);
+        expect((await sql`select provider_account_id from linkedin_connect_links where id = ${t.link.linkId}`)[0].provider_account_id).toBe(t.account);
+      });
+
+      it("keeps a reconnect open while another profile is signed in, and touches no account", async () => {
+        const key = uniqueKey();
+        const t = await named({ member: `ACoAAother${key}`, slug: `other-${key}` }, true);
+        const state = await connect.checkConnectLink(t.deps, t.actor, t.link.linkId);
+        expect(state).toEqual({ status: "pending", error: expect.stringMatching(/Someone else is signed in/) });
+        expect((await sql`select count(*)::int as n from linkedin_accounts where provider_account_id = ${t.account}`)[0].n).toBe(0);
+        expect(t.cancelled).toEqual([]);
+      });
+
+      it("fails the link with the reason when a profile is refused, and cancels nothing that is not a session", async () => {
+        const key = uniqueKey();
+        const t = await named({ member: `ACoAAada${key}`, slug: `ada-${key}` });
+        await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, status) values (${t.f.id}, 'unipile', ${"u-" + key}, ${`ACoAAada${key}`}, 'connected')`;
+        const state = await connect.checkConnectLink(t.deps, t.actor, t.link.linkId);
+        expect(state.status).toBe("failed");
+        expect(state.error).toMatch(/another LinkedIn provider/);
+        expect(t.cancelled).toEqual([]);
+      });
+    });
 
     it("keeps the link for 48 hours, and names no callback", async () => {
       const t = await setup("pending", { member: "ACoAAx", slug: "x" });

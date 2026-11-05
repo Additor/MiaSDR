@@ -13,6 +13,7 @@ const toLink = (r: typeof t.$inferSelect): ConnectLink => ({
   status: r.status as ConnectLink["status"],
   expiresAt: r.expiresAt,
   providerAccountId: r.providerAccountId,
+  reconnectAccountId: r.reconnectAccountId,
   lastError: r.lastError,
   createdAt: r.createdAt,
   completedAt: r.completedAt,
@@ -20,7 +21,7 @@ const toLink = (r: typeof t.$inferSelect): ConnectLink => ({
 
 export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
   async create(link) {
-    await db.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy, ownerUserId: link.ownerUserId });
+    await db.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy, ownerUserId: link.ownerUserId, reconnectAccountId: link.reconnectAccountId });
   },
 
   async find(id) {
