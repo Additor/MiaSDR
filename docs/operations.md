@@ -60,7 +60,7 @@ Pausing a single campaign or disabling a single mailbox stays available for a na
 | --- | --- |
 | `startedAt` | ISO time the tick began. |
 | `durationMs` | Total time of the tick. |
-| `jobs[].name` | `email.inbox-sync`, `email.reconcile`, `email.send`, the LinkedIn jobs, the AI jobs, `threads.follow-ups`, `grid.run`, `platform.daily-rollover` and `platform.history-prune`. |
+| `jobs[].name` | `email.inbox-sync`, `email.reconcile`, `email.send`, the LinkedIn jobs, the AI jobs, `threads.follow-ups`, `grid.run`, `mia.run`, `platform.daily-rollover` and `platform.history-prune`. |
 | `jobs[].processed` | Items handled: mailboxes synced, uncertain sends settled, emails sent. |
 | `jobs[].more` | `true` when work remains or the job did not run because the 50 second budget ran out. A caller can tick again soon. |
 | `jobs[].detail` | Counts for `email.inbox-sync`: `hard_bounce`, `soft_bounce`, `reply`, `auto_reply`, `own_message`, `ignored_unknown_sender`, and `mailboxes_failed`. |

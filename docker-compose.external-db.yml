@@ -38,6 +38,7 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-8}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-}
       EMBEDDED_SCHEDULER: ${EMBEDDED_SCHEDULER:-}
+      MIA_ENABLED: ${MIA_ENABLED:-}
       PAUSE_OUTBOUND: ${PAUSE_OUTBOUND:-}
       DEFAULT_PHONE_COUNTRY: ${DEFAULT_PHONE_COUNTRY:-}
       MAILBOX_PROVIDER: ${MAILBOX_PROVIDER:-}
@@ -61,6 +62,7 @@ services:
       RETENTION_INBOUND_FAILED_DAYS: ${RETENTION_INBOUND_FAILED_DAYS:-}
       RETENTION_AI_JOBS_DAYS: ${RETENTION_AI_JOBS_DAYS:-}
       RETENTION_MCP_TOOL_CALLS_DAYS: ${RETENTION_MCP_TOOL_CALLS_DAYS:-}
+      RETENTION_MIA_RUNS_DAYS: ${RETENTION_MIA_RUNS_DAYS:-}
     # To use the file variant, uncomment and set GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google-service-account.json in .env.
     # volumes:
     #   - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro

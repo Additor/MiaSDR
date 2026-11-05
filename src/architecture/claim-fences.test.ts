@@ -28,6 +28,9 @@ const NOT_YET_FENCED: Record<string, string> = {
 
 /** Methods that update, delete or upsert a fenced table without holding a claim, and why that is right. */
 const FENCE_EXEMPT: Record<string, string> = {
+  "src/contexts/mia/infrastructure/drizzle-mia-store.ts#claim": "Takes the claim: it writes the fresh token.",
+  "src/contexts/mia/infrastructure/drizzle-mia-store.ts#requestCancel":
+    "A person stops a run. A running one only gets its stop mark, which its worker reads and acts on. One that no worker holds ends here, under the row lock.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#claimDue":
     "The expiry sweep before the claim: it fails steps whose lease ran out on the last attempt and clears their token. A worker still on that attempt finds the step no longer drafting, so its settles change nothing.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#takeDueStep":

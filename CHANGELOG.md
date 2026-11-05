@@ -4,6 +4,14 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ## Unreleased
 
+### Mia
+
+Mia is a new AI inside the app that fills Brain. Fill with Mia on the Brain page reads your website or some text, and Sort with Mia reads a document in Needs sorting. Its suggestions wait under Suggestions, each value beside the sentence it came from. Nothing reaches Brain until a person saves it, and a number the sentence does not hold needs a tick or an edit first.
+
+- Mia uses your existing AI connection through the AI SDK, and sends the pages and text it reads to that provider.
+- New settings: `MIA_ENABLED`, `RETENTION_MIA_RUNS_DAYS`, and a switch and daily token limit under Settings, Organization.
+- Migration `0007` adds `mia_runs`, `mia_suggestions` and `mia_usage_daily`.
+
 ### Brain
 
 Knowledge moved out of Settings into Brain, a sidebar place at `/brain`. `/settings/knowledge` redirects there. An item now has a kind and fields instead of pasted text, and these kinds match Brain in Withmia. Every member can add and change items, and each change lands in the audit log.

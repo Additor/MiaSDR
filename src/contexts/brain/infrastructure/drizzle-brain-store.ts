@@ -1,5 +1,5 @@
 import { and, asc, count, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import { violatedConstraint } from "@/platform/db/errors";
 import { knowledgeDocuments, knowledgeDocumentVersions } from "@/platform/db/schema";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
@@ -59,7 +59,8 @@ function filterOf(organizationId: string, filter: BrainListFilter) {
   );
 }
 
-export const drizzleBrainStore: BrainStore = {
+/** The store, writing through `handle`: the shared client, or a caller's transaction so a save and its own row commit together. */
+export const brainStoreIn = (handle: DbHandle): BrainStore => ({
   async list(organizationId, filter) {
     const where = filterOf(organizationId, filter);
     const [rows, [{ total }]] = await Promise.all([
@@ -94,6 +95,16 @@ export const drizzleBrainStore: BrainStore = {
     return row !== undefined;
   },
 
+  async findActive(organizationId, kind, title) {
+    const sameItem = kind === SINGLE_ITEM_KIND ? undefined : sql`lower(${knowledgeDocuments.title}) = lower(${title})`;
+    const [row] = await db
+      .select({ id: knowledgeDocuments.id })
+      .from(knowledgeDocuments)
+      .where(and(eq(knowledgeDocuments.organizationId, organizationId), eq(knowledgeDocuments.kind, kind), eq(knowledgeDocuments.active, true), sameItem))
+      .limit(1);
+    return row ?? null;
+  },
+
   async get(organizationId, id) {
     const [row] = await db
       .select({ ...rowColumns, content: knowledgeDocumentVersions.content, structuredData: knowledgeDocumentVersions.structuredData })
@@ -105,7 +116,7 @@ export const drizzleBrainStore: BrainStore = {
 
   async create(organizationId, actorUserId, item) {
     try {
-      return await db.transaction(async (tx) => {
+      return await handle.transaction(async (tx) => {
         const [doc] = await tx
           .insert(knowledgeDocuments)
           .values({ organizationId, title: item.title, description: item.description, kind: item.kind, alwaysInclude: item.alwaysInclude, tags: item.tags, createdBy: actorUserId })
@@ -121,7 +132,7 @@ export const drizzleBrainStore: BrainStore = {
 
   async update(organizationId, actorUserId, id, decide) {
     try {
-      return await db.transaction(async (tx) => {
+      return await handle.transaction(async (tx) => {
         const [doc] = await tx
           .select()
           .from(knowledgeDocuments)
@@ -172,4 +183,6 @@ export const drizzleBrainStore: BrainStore = {
       throw asConflict(error);
     }
   },
-};
+});
+
+export const drizzleBrainStore: BrainStore = brainStoreIn(db);

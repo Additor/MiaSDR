@@ -52,6 +52,7 @@ services:
       # Set to false to run migrations yourself or tick from an external scheduler (see docs/deploy/self-host.md).
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-}
       EMBEDDED_SCHEDULER: ${EMBEDDED_SCHEDULER:-}
+      MIA_ENABLED: ${MIA_ENABLED:-}
       # Emergency brake: true holds automated sequence sends and test sends; approved replies still send (see docs/operations.md, Pause all sending).
       PAUSE_OUTBOUND: ${PAUSE_OUTBOUND:-}
       DEFAULT_PHONE_COUNTRY: ${DEFAULT_PHONE_COUNTRY:-}
@@ -78,6 +79,7 @@ services:
       RETENTION_INBOUND_FAILED_DAYS: ${RETENTION_INBOUND_FAILED_DAYS:-}
       RETENTION_AI_JOBS_DAYS: ${RETENTION_AI_JOBS_DAYS:-}
       RETENTION_MCP_TOOL_CALLS_DAYS: ${RETENTION_MCP_TOOL_CALLS_DAYS:-}
+      RETENTION_MIA_RUNS_DAYS: ${RETENTION_MIA_RUNS_DAYS:-}
     # To use the file variant, uncomment and set GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google-service-account.json in .env.
     # volumes:
     #   - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro

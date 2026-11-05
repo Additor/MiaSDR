@@ -50,6 +50,8 @@ export interface BrainStore {
   countLegacy(organizationId: string, active: boolean): Promise<number>;
   hasActiveCompanyProfile(organizationId: string): Promise<boolean>;
   get(organizationId: string, id: string): Promise<BrainItemDetail | null>;
+  /** The active item another item of this kind and title would repeat: the one company profile, or one with the same title. */
+  findActive(organizationId: string, kind: BrainKind, title: string): Promise<{ id: string } | null>;
   create(organizationId: string, actorUserId: string, item: NewBrainItem): Promise<{ id: string }>;
   /** Locks the item and saves what `decide` returns, writing nothing when it changes nothing. False when the item is not in the organization. */
   update(organizationId: string, actorUserId: string, id: string, decide: (current: BrainItemState) => BrainItemChange): Promise<boolean>;

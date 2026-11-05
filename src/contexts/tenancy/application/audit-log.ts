@@ -33,7 +33,7 @@ export interface AuditLogStore {
 }
 
 /** The first part of an action (`deal_stage` in `deal_stage.renamed`) names its area, which the page filters by. */
-export const AUDIT_AREAS = ["organization", "integration", "mailbox", "suppression", "deal_stage", "deal", "company", "person", "campaign", "enrollment", "linkedin", "ai_jobs", "search_batch", "mcp", "brain"] as const;
+export const AUDIT_AREAS = ["organization", "integration", "mailbox", "suppression", "deal_stage", "deal", "company", "person", "campaign", "enrollment", "linkedin", "ai_jobs", "search_batch", "mcp", "brain", "mia"] as const;
 
 export type AuditArea = (typeof AUDIT_AREAS)[number];
 

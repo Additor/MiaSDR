@@ -14,8 +14,11 @@ import { BRAIN_KIND_LABELS, isBrainItemKind } from "@/contexts/brain/domain/brai
 import { brainStore } from "@/contexts/brain/infrastructure/composition";
 import { isPromptKind } from "@/contexts/conversations/ai/domain/knowledge";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { miaUnavailable } from "@/contexts/mia/application/mia-use-cases";
+import { miaDeps } from "@/contexts/mia/infrastructure/composition";
 import { NotFoundError } from "@/shared/errors";
 import { BrainItemActions } from "../_components/brain-buttons";
+import { SortWithMiaButton } from "../_components/mia-controls";
 
 export const metadata: Metadata = { title: "Brain" };
 
@@ -49,12 +52,13 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
   await connection();
   const actor = toActor(await requireOrgContext());
   const { id } = await params;
-  const [item, hasCompanyProfile] = await Promise.all([
+  const [item, hasCompanyProfile, unavailable] = await Promise.all([
     getBrainItem(brainStore, actor, id).catch((error: unknown) => {
       if (error instanceof NotFoundError) notFound();
       throw error;
     }),
     brainHasActiveCompanyProfile(brainStore, actor),
+    miaUnavailable(miaDeps(), actor),
   ]);
   const rows = item.structuredData && isBrainItemKind(item.kind) ? brainFieldRows(item.kind, item.structuredData) : [];
   const dialogItem = {
@@ -75,7 +79,12 @@ async function BrainItem({ params }: { params: PageProps<"/brain/[id]">["params"
         title={item.title}
         titleAs="p"
         back={{ href: "/brain", label: "Brain" }}
-        actions={<BrainItemActions item={dialogItem} active={item.active} hasCompanyProfile={hasCompanyProfile} />}
+        actions={
+          <>
+            {item.legacy && item.active && <SortWithMiaButton itemId={item.id} unavailable={unavailable} />}
+            <BrainItemActions item={dialogItem} active={item.active} hasCompanyProfile={hasCompanyProfile} />
+          </>
+        }
       />
       <div className="page stack-section max-w-3xl">
         <div className="stack-field">

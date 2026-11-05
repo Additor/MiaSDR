@@ -13,6 +13,7 @@ export const LAYERS: readonly (readonly string[])[] = [
   ["outreach"],
   ["conversations"],
   ["deals", "grid", "analytics"],
+  ["mia"],
 ];
 
 export const layerOf = (context: string): number => LAYERS.findIndex((layer) => layer.includes(context));

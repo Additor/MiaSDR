@@ -58,7 +58,7 @@ function draftOf(item: BrainDialogItem | null, startKind: BrainItemKind): Draft 
   };
 }
 
-function FieldInput({ field, id, value, onChange }: { field: BrainField; id: string; value: string; onChange: (value: string) => void }) {
+export function FieldInput({ field, id, value, onChange }: { field: BrainField; id: string; value: string; onChange: (value: string) => void }) {
   if (field.type === "enum") {
     const items = [{ value: "", label: "None" }, ...(field.options ?? [])];
     return (

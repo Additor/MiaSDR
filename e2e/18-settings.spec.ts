@@ -102,15 +102,16 @@ test.describe("organization settings", () => {
     // The slug is shown as text under the name, never as a field.
     const { id: organizationId, slug } = (await (await page.request.get("/api/settings/organization")).json()) as { id: string; slug: string };
     await expect(page.getByText(slug, { exact: true })).toBeVisible();
-    // Save stays off until something changes.
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+    // Save stays off until something changes. Other sections of this page have a Save of their own.
+    const save = page.locator("form", { has: page.getByLabel("Name") }).getByRole("button", { name: "Save" });
+    await expect(save).toBeDisabled();
 
     try {
       await page.getByLabel("Name").fill("E2E Corp Renamed");
       // The zone picker is a combobox: type part of the name, then pick it.
       await page.getByLabel("Default time zone").fill("Seoul");
       await page.getByRole("option", { name: "Asia/Seoul", exact: true }).click();
-      await page.getByRole("button", { name: "Save" }).click();
+      await save.click();
       await expect(page.getByText("Organization saved.")).toBeVisible();
       await page.reload();
       await expect(page.getByLabel("Name")).toHaveValue("E2E Corp Renamed");

@@ -97,6 +97,7 @@ const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
     "@/contexts/grid/infrastructure/schema",
     "@/contexts/identity/infrastructure/schema",
     "@/contexts/integrations/infrastructure/schema",
+    "@/contexts/mia/infrastructure/schema",
     "@/contexts/outreach/infrastructure/schema",
     "@/contexts/people/infrastructure/schema",
     "@/contexts/tenancy/infrastructure/schema",
