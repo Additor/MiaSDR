@@ -19,6 +19,12 @@ describe("LinkedIn vendor boundary", () => {
     expect(leaks).toEqual([]);
   });
 
+  it("keeps vendors out of the LinkedIn stores", () => {
+    const stores = readdirSync(join(ROOT, "infrastructure")).filter((file) => /^drizzle-.*\.ts$|^linkedin-account-state\.ts$/.test(file));
+    const leaks = stores.filter((file) => /unipile|\bedges\b/i.test(readFileSync(join(ROOT, "infrastructure", file), "utf8")));
+    expect(leaks).toEqual([]);
+  });
+
   it("keeps one vendor's adapter from importing another's", () => {
     const vendors = readdirSync(join(ROOT, "infrastructure/vendors"));
     const crossing = vendors.flatMap((vendor) =>

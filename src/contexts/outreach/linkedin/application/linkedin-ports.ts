@@ -162,8 +162,8 @@ export interface LinkedInVendor {
   readConnectInput(input: Record<string, string>): VendorCredentials;
   /** Builds the gateway for credentials. Throws a ConflictError a person can act on when they may no longer be used. */
   gatewayFor(credentials: VendorCredentials): LinkedInGateway;
-  /** What an owner or admin sees about the connection. */
-  describe(credentials: VendorCredentials | null): { dsn: string | null };
+  /** The address an owner or admin sees after "Connected to", or null when the vendor's name says enough. */
+  connectedTo(credentials: VendorCredentials | null): string | null;
   /** Fixed text for a gateway failure. The upstream text never reaches a person. */
   explain(error: unknown): string;
   /** The same, for a sync that used stored credentials. */

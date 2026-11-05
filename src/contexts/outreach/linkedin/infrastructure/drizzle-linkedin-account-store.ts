@@ -11,10 +11,8 @@ import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
+import { credentialFieldsOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
-/** The vendors' rows in the integration tables, and the fields each must have stored to count as connected. */
-const VENDOR_FIELDS: Record<string, readonly string[]> = { unipile: ["dsn", "apiKey"], edges: ["apiKey"] };
-const VENDOR_KEYS = Object.keys(VENDOR_FIELDS);
 const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), inArray(integrationAccounts.key, VENDOR_KEYS));
 
 /** The one vendor row of an organization, enabled or not. */
@@ -57,7 +55,7 @@ export async function countMessagesToday(account: { id: string; providerAccountI
 function parseCredentials(key: string, plaintext: string): LinkedInCredentials | null {
   try {
     const value = JSON.parse(plaintext) as Record<string, unknown>;
-    if (typeof value.notifySecret !== "string" || !(VENDOR_FIELDS[key] ?? []).every((field) => typeof value[field] === "string")) return null;
+    if (typeof value.notifySecret !== "string" || !credentialFieldsOf(key).every((field) => typeof value[field] === "string")) return null;
     return value as LinkedInCredentials;
   } catch {
     return null;
@@ -209,7 +207,10 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             skip(`Account id ${account.ref} is already used by another LinkedIn account.`);
             return;
           }
+          // A late or replayed delivery still names the id this account had, so the old id stays resolvable.
+          const formerIds = existing && existing.providerAccountId !== account.ref ? [...existing.formerProviderAccountIds.filter((id) => id !== account.ref), existing.providerAccountId] : (existing?.formerProviderAccountIds ?? []);
           const fields = {
+            formerProviderAccountIds: formerIds,
             providerAccountId: account.ref,
             linkedinId,
             username: account.username,
@@ -268,6 +269,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
           username: row.username,
           status: row.status,
           inboundReadAt: row.inboundReadAt,
+          inboxReadByPoll: VENDORS_READ_BY_POLL.includes(row.provider),
           isPremium: row.isPremium,
           dailyInviteLimit: row.dailyInviteLimit,
           dailyMessageLimit: row.dailyMessageLimit,

@@ -532,10 +532,13 @@ export async function chooseFromMoreMenu(page: Page, item: string): Promise<void
   await page.getByRole("menuitem", { name: item }).click();
 }
 
-/** Finds the element anew on each try: React can replace the one the server sent, and that one never hydrates. */
+/**
+ * Finds the element anew on each try: React can replace the one the server sent, and that one never hydrates. While a page
+ * streams, the server's copy can also wait in a hidden node beside the one React rendered, so this holds out for a single copy.
+ */
 export async function waitForHydrated(locator: Locator): Promise<void> {
   await expect
-    .poll(() => locator.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))), { message: "the element hydrates", timeout: 30_000, intervals: [50, 100, 250] })
+    .poll(() => locator.evaluateAll((els) => els.length === 1 && Object.keys(els[0]).some((k) => k.startsWith("__reactProps$"))), { message: "the element hydrates", timeout: 30_000, intervals: [50, 100, 250] })
     .toBe(true);
 }
 

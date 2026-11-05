@@ -4,7 +4,8 @@ import { linkedinAccounts } from "@/platform/db/schema";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { defaultWorkingHours, type WorkingHours } from "../../domain/working-hours";
 import type { LinkedInInboundPollStore } from "../application/linkedin-ports";
-import { disconnectLinkedInAccount, VENDORS_READ_BY_POLL } from "./linkedin-account-state";
+import { disconnectLinkedInAccount } from "./linkedin-account-state";
+import { VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 const a = linkedinAccounts;
 

@@ -35,7 +35,7 @@ export function createEdgesVendor(): LinkedInVendor {
     },
 
     gatewayFor: stored,
-    describe: () => ({ dsn: null }),
+    connectedTo: () => null,
     explain,
 
     explainSyncFailure(error) {

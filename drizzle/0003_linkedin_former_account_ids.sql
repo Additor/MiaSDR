@@ -1,0 +1,1 @@
+ALTER TABLE "linkedin_accounts" ADD COLUMN "former_provider_account_ids" text[] DEFAULT '{}'::text[] NOT NULL;
