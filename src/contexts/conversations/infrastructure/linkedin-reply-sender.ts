@@ -13,9 +13,10 @@ export function createLinkedInReplySender(gateways: LinkedInGatewayProvider): Li
       const gateway = await gateways.forAccount(input);
       if (!gateway) throw new LinkedInReplyError("LinkedIn is not connected for this organization.", "definite", "other");
       try {
-        return await gateway.sendMessage({ account: input.account, to: { chat: input.chat, member: input.member, slug: input.slug }, text: input.text });
+        return await gateway.sendMessage({ account: input.account, to: { chat: input.chat, member: input.member, slug: input.slug }, text: input.text, sendKey: input.sendKey, unlessRepliedAfter: input.unlessRepliedAfter });
       } catch (error) {
         if (error instanceof LinkedInGatewayError) {
+          if (error.code === "replied") throw new LinkedInReplyError("The person wrote again after this draft. Read their message, then write the reply again.", "definite", "other");
           const code = error.code === "rate_limited" ? "rate_limited" : error.code === "auth" ? "auth" : "other";
           throw new LinkedInReplyError(error.message, error.kind, code, error.retryAfterMs);
         }

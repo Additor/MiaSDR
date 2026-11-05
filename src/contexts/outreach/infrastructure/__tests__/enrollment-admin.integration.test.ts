@@ -42,7 +42,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
     current = new Date(current.getTime() + minutes * 60_000);
   };
   const engineDeps = (provider: FakeMailboxProvider): EngineDeps => ({ store: emailStore, provider, clock, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40) });
-  const liDeps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store: liStore, gateways: gateway, clock, random: () => 0 });
+  const liDeps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store: liStore, stopForReply: async () => undefined, gateways: gateway, clock, random: () => 0 });
   const emailUc = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin, now: () => current });
   const liUc = () => ({ campaigns: liCampaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin, now: () => current });
 

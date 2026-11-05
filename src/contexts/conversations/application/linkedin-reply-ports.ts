@@ -31,7 +31,7 @@ export interface LinkedInSentFinder {
   /** False means this account's LinkedIn connection is gone. */
   available(input: { organizationId: string; accountId: string }): Promise<boolean>;
   /** A message from the account owner in the chat with this text after `since`. Throws when LinkedIn cannot answer. */
-  findSent(input: LinkedInReplyAddress & { text: string; since: Date }): Promise<{ messageId: string | null } | null>;
+  findSent(input: LinkedInReplyAddress & { text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | null>;
 }
 
 /**
@@ -39,7 +39,8 @@ export interface LinkedInSentFinder {
  * LinkedInReplyError. Only the send deps (`reply-send-composition.ts`) hold one.
  */
 export interface LinkedInReplySender extends LinkedInSentFinder {
-  send(input: LinkedInReplyAddress & { text: string }): Promise<{ messageId: string | null }>;
+  /** `unlessRepliedAfter`: refused with a definite error when the person wrote after this moment, where the vendor can read the thread first. */
+  send(input: LinkedInReplyAddress & { text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<{ messageId: string | null }>;
 }
 
 /** What one claimed reply knows. Built from the approval snapshot stored on the ledger row. */
@@ -57,6 +58,8 @@ export interface LinkedInReplyContext {
   member: string | null;
   slug: string | null;
   text: string;
+  /** When an agent's draft was last written. Null: a person is sending what they just read and typed. */
+  draftWrittenAt: Date | null;
 }
 
 export type BeginLinkedInReply = { kind: "replay"; attempt: AttemptRow } | { kind: "started"; send: LinkedInReplyContext };

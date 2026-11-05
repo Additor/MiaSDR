@@ -11,5 +11,5 @@ import { organizationTimeZones } from "@/contexts/tenancy/infrastructure/drizzle
 
 /** The composition point for background work: each bounded context contributes its jobs here. */
 export function registeredJobs(): Job[] {
-  return [...emailJobs(inboxFiling, contactStop, personTimeline), ...linkedinJobs(inboxFiling), ...conversationJobs(), ...followUpJobs(), ...gridJobs(), ...maintenanceJobs({ steps: rolloverSteps(), zones: organizationTimeZones })];
+  return [...emailJobs(inboxFiling, contactStop, personTimeline), ...linkedinJobs(inboxFiling, contactStop), ...conversationJobs(), ...followUpJobs(), ...gridJobs(), ...maintenanceJobs({ steps: rolloverSteps(), zones: organizationTimeZones })];
 }

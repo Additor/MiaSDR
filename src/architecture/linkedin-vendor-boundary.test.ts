@@ -15,13 +15,13 @@ function filesIn(dir: string): string[] {
 /** What a vendor names, sends or expects lives in `infrastructure/vendors/<vendor>`, behind `LinkedInGateway` and `LinkedInVendor`. */
 describe("LinkedIn vendor boundary", () => {
   it("keeps vendors out of the LinkedIn application and domain layers", () => {
-    const leaks = LAYERS.flatMap((layer) => filesIn(join(ROOT, layer))).filter((file) => /unipile|\bedges\b/i.test(readFileSync(file, "utf8")));
+    const leaks = LAYERS.flatMap((layer) => filesIn(join(ROOT, layer))).filter((file) => /unipile|\bedges\b|\bgtm/i.test(readFileSync(file, "utf8")));
     expect(leaks).toEqual([]);
   });
 
   it("keeps vendors out of the LinkedIn stores", () => {
     const stores = readdirSync(join(ROOT, "infrastructure")).filter((file) => /^drizzle-.*\.ts$|^linkedin-account-state\.ts$/.test(file));
-    const leaks = stores.filter((file) => /unipile|\bedges\b/i.test(readFileSync(join(ROOT, "infrastructure", file), "utf8")));
+    const leaks = stores.filter((file) => /unipile|\bedges\b|\bgtm/i.test(readFileSync(join(ROOT, "infrastructure", file), "utf8")));
     expect(leaks).toEqual([]);
   });
 

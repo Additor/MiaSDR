@@ -22,6 +22,7 @@ export const MANAGED_PROVIDERS: ProviderSpec[] = AI_CONNECTIONS.map((c) => ({ ke
 export const EXTERNAL_PROVIDERS: Record<string, { label: string; href: string }> = {
   unipile: { label: "Unipile (LinkedIn)", href: "/settings/linkedin" },
   edges: { label: "Edges (LinkedIn)", href: "/settings/linkedin" },
+  gtmapi: { label: "gtm-api (LinkedIn)", href: "/settings/linkedin" },
 };
 
 export function managedProvider(key: string): ProviderSpec | undefined {

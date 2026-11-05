@@ -29,6 +29,13 @@
       "when": 1793842480946,
       "tag": "0003_linkedin_former_account_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793848651096,
+      "tag": "0004_linkedin_gtm_api",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,7 @@ describeDb("linkedin sales navigator identity", () => {
 
   let current = new Date("2026-10-14T10:00:00Z");
   const clock = { now: () => current };
-  const deps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store, gateways: gateway, clock, random: () => 0 });
+  const deps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store, stopForReply: async () => undefined, gateways: gateway, clock, random: () => 0 });
 
   async function fixture() {
     const tag = uniqueKey();

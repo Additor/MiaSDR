@@ -11,7 +11,7 @@ import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
-import { credentialFieldsOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
+import { credentialFieldsOf, inviteLimitCapOf, VENDOR_KEYS, VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 const vendorRow = (organizationId: string) => and(eq(integrationAccounts.organizationId, organizationId), inArray(integrationAccounts.key, VENDOR_KEYS));
 
@@ -225,7 +225,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             // The status was read in this transaction, so the change list matches what the write replaced.
             if (existing.status !== status) changes.push({ ref: account.ref, from: existing.status === "connected" ? "connected" : "disconnected", to: status });
           } else {
-            await tx.insert(linkedinAccounts).values({ organizationId, provider: vendorKey, ...fields, dailyInviteLimit: account.isPremium ? 30 : 5 });
+            await tx.insert(linkedinAccounts).values({ organizationId, provider: vendorKey, ...fields, dailyInviteLimit: Math.min(account.isPremium ? 30 : 5, inviteLimitCapOf(vendorKey)) });
             added += 1;
             changes.push({ ref: account.ref, from: null, to: status });
           }

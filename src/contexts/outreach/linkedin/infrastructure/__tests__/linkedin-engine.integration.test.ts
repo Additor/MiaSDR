@@ -30,7 +30,7 @@ describeDb("linkedin engine", () => {
     current = new Date(current.getTime() + minutes * 60_000);
   };
 
-  const deps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store, gateways: gateway, clock, random: () => 0 });
+  const deps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store, stopForReply: async () => undefined, gateways: gateway, clock, random: () => 0 });
   const inboundDeps = (override?: Partial<LinkedInInboundStore>): LinkedInInboundDeps => ({
     store: override ? { ...inboundStore, ...override } : inboundStore,
     clock,

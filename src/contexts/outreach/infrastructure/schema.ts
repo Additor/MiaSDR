@@ -105,6 +105,8 @@ export const linkedinAccounts = pgTable(
     inboundReadAt: tstz("inbound_read_at"),
     /** No read of this inbox starts before this: a worker holds it, or its last read failed and waits its turn. */
     inboundLeaseUntil: tstz("inbound_lease_until"),
+    /** A limit stopped invitations and lookups alone, until this moment. Messages and replies go on. */
+    invitesPausedUntil: tstz("invites_paused_until"),
     /**
      * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
      * sync or before owners existed, until an admin picks one. An agent's search uses only accounts its token's person
@@ -117,7 +119,7 @@ export const linkedinAccounts = pgTable(
   (t) => [
     unique("linkedin_accounts_id_org_uq").on(t.id, t.organizationId),
     check("linkedin_accounts_status_ck", sql`${t.status} in ('connected', 'disconnected')`),
-    check("linkedin_accounts_provider_ck", sql`${t.provider} in ('unipile', 'edges')`),
+    check("linkedin_accounts_provider_ck", sql`${t.provider} in ('unipile', 'edges', 'gtmapi')`),
     check("linkedin_accounts_invite_limit_ck", sql`${t.dailyInviteLimit} between 1 and 100`),
     check("linkedin_accounts_message_limit_ck", sql`${t.dailyMessageLimit} between 1 and 200`),
   ],
@@ -540,7 +542,7 @@ export const inboundEvents = pgTable(
     index("inbound_events_claim_idx").on(t.status, t.nextAttemptAt),
     index("inbound_events_org_status_idx").on(t.organizationId, t.provider, t.status, t.createdAt),
     check("inbound_events_replay_ck", sql`${t.replayCount} >= 0`),
-    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile', 'edges')`),
+    check("inbound_events_provider_ck", sql`${t.provider} in ('gmail', 'unipile', 'edges', 'gtmapi')`),
     check("inbound_events_status_ck", sql`${t.status} in ('pending', 'processing', 'done', 'failed', 'skipped')`),
   ],
 );

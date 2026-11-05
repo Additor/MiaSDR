@@ -35,6 +35,7 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     member: snap.member ?? null,
     slug: snap.slug ?? null,
     text: snap.text,
+    draftWrittenAt: snap.draftWrittenAt ? new Date(snap.draftWrittenAt) : null,
   };
 }
 
@@ -157,9 +158,11 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             .for("update");
       let draftId: string;
       let revision: number;
+      let draftWrittenAt: string | null = null;
       if (input.via && target) {
         draftId = target.id;
         revision = target.revision;
+        draftWrittenAt = target.updatedAt.toISOString();
       } else if (open) {
         // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
         const [updated] = await tx
@@ -193,6 +196,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         chat,
         member: conv.member,
         slug: (await tx.select({ slug: people.linkedinSlug }).from(people).where(eq(people.id, conversation.personId)))[0]?.slug ?? null,
+        draftWrittenAt,
         accountId: account.id,
         providerAccountId: account.providerAccountId,
         threadId: conv.id,

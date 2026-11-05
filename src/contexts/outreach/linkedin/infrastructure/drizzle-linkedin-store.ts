@@ -1,5 +1,5 @@
 import type { SendResolutionStore } from "../../application/send-resolution";
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
@@ -19,6 +19,7 @@ import type {
   LinkedInResolveClaim,
   LinkedInSendClaim,
   UncertainLinkedInSend,
+  LinkedInEngineDeps,
 } from "../application/linkedin-ports";
 import {
   MAX_RESOLVE_ATTEMPTS,
@@ -37,6 +38,7 @@ import { readSendPause } from "../../domain/send-pause";
 import { ALREADY_CONTACTED_BY_ACCOUNT } from "../../domain/cross-campaign-notice";
 import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
+import type { ContactStop } from "../../application/inbound-ports";
 import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
@@ -257,6 +259,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .from(sends)
         .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, SEND_COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
       const limit = dailyInviteLimit({ dailyInviteLimit: account.dailyInviteLimit, isPremium: account.isPremium }, rules);
+      // A limit that stops invitations alone holds lookups too: a lookup only leads to an invitation.
+      if (account.invitesPausedUntil && account.invitesPausedUntil.getTime() > options.now.getTime()) return null;
       if (!inviteBlock({ today, week }, limit, rules.invitesPerWeek)) {
         const invitation = await claimSend("invitation", pickMinutes(rules.inviteGapMinutes, options.random), async (exclude) =>
           (await tx.execute(sql`
@@ -409,6 +413,17 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async pauseAccountForLookupLimit(claim, until) {
     await pauseLinkedInAccount(db, claim.account.id, until);
+  },
+
+  async pauseInvitationsForLimit(claim, until) {
+    await db.transaction(async (tx) => {
+      await giveBackAttempt(tx, claim, "limit_reached");
+      await tx.update(linkedinAccounts).set({ invitesPausedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
+    });
+  },
+
+  async pauseInvitationsForLookupLimit(claim, until) {
+    await db.update(linkedinAccounts).set({ invitesPausedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
   },
 
   async disconnectAccount(accountId, error) {
@@ -621,6 +636,13 @@ async function buildSendClaim(
     .from(linkedinConnections)
     .where(and(eq(linkedinConnections.linkedinAccountId, account.id), eq(linkedinConnections.providerId, row.providerId as string)));
 
+  const [started] = await tx
+    .select({ at: sql<Date | null>`min(${sends.claimedAt})` })
+    .from(sends)
+    .where(and(eq(sends.enrollmentId, candidate.id), lt(sends.stepNumber, input.stepNumber), inArray(sends.status, SEND_COUNTED)));
+  const [details] = await tx.select({ acceptedAt: linkedinEnrollmentDetails.acceptedAt }).from(linkedinEnrollmentDetails).where(eq(linkedinEnrollmentDetails.enrollmentId, candidate.id));
+  const outreachStartedAt = started?.at ? new Date(started.at) : (details?.acceptedAt ?? null);
+
   const step = row.steps[input.stepNumber - 1];
   const next = row.steps[input.stepNumber];
   return {
@@ -638,6 +660,7 @@ async function buildSendClaim(
     slug: row.slug,
     step: { body: step.body, waitDays: step.waitDays },
     nextStep: next ? { waitDays: next.waitDays } : null,
+    outreachStartedAt,
   };
 }
 
@@ -684,3 +707,10 @@ export const drizzleLinkedInSendResolutionStore: SendResolutionStore = {
     return "resolved";
   },
 };
+
+/** Conversations owns the stop, so it is passed in. The stop takes the person's locks first, and the send's row follows. */
+export const createLinkedInReplyStop = (stop: ContactStop): LinkedInEngineDeps["stopForReply"] => (claim, now) =>
+  db.transaction(async (tx) => {
+    await stop.stopContactTx(tx, { organizationId: claim.organizationId, personId: claim.person.id }, { kind: "reply", channel: "linkedin", now });
+    await giveBackAttempt(tx, claim, "replied");
+  });

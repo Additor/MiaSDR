@@ -64,7 +64,7 @@ interface ConnectLinkRow {
 interface State {
   connected: boolean;
   /** The connected vendor, or the default one. */
-  vendor: { key: string; name: string; pollsConnect: boolean };
+  vendor: { key: string; name: string; pollsConnect: boolean; connectLinks: boolean };
   vendors: Array<{ key: string; name: string }>;
   connectedTo: string | null;
   accounts: Account[];
@@ -162,6 +162,8 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   const vendor = state.connected ? state.vendor : (state.vendors.find((item) => item.key === formVendor) ?? state.vendor);
   const hasWebhooks = state.connected ? state.webhookUrl !== null : vendor.key === "unipile";
   const asksDsn = vendor.key === "unipile";
+  const syncsTeam = vendor.key === "gtmapi";
+  const syncAccounts = () => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."));
 
   function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -241,7 +243,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
               Preview
             </Badge>
             A full campaign has not run on a real LinkedIn account yet.{" "}
-            {state.connected ? (state.connectedTo ? `Connected to ${state.connectedTo}.` : `Connected to ${vendor.name}.`) : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
+            {state.connected ? `${state.connectedTo ? `Connected to ${state.connectedTo}.` : `Connected to ${vendor.name}.`}${syncsTeam ? " Every LinkedIn account in this key's team is read here, including its messages." : ""}` : syncsTeam ? "Create an API key in gtm-api. MiaSDR checks it, saves it encrypted, and adds every LinkedIn account in the key's team, including its messages. Set how often gtm-api syncs each account there: replies and acceptances arrive only that fast, and an account sends nothing while its sync has stalled." : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
           </>
         }
       >
@@ -303,7 +305,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
             {state.connected && !editingCredentials && (
               <>
                 {/* A vendor cannot call a local address back, so a link there never learns the account it made: its owner is set on the row. */}
-                {ownerOnConnect && (
+                {state.vendor.connectLinks && ownerOnConnect && (
                   <Select items={ownerChoices(members)} value={newOwner} onValueChange={(v) => v && setNewOwner(v)}>
                     <SelectTrigger aria-label="Owner of the new account" className="w-48">
                       <SelectValue />
@@ -317,16 +319,24 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
                     </SelectContent>
                   </Select>
                 )}
-                <Button type="button" onClick={() => void startHostedAuth(null)} disabled={linking !== null}>
-                  {linking === "new" ? `Opening ${vendor.name}…` : "Connect a LinkedIn account"}
-                </Button>
+                {state.vendor.connectLinks ? (
+                  <Button type="button" onClick={() => void startHostedAuth(null)} disabled={linking !== null}>
+                    {linking === "new" ? `Opening ${vendor.name}…` : "Connect a LinkedIn account"}
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={syncAccounts} disabled={isBusy("sync")}>
+                    {isBusy("sync") ? "Syncing…" : "Sync accounts"}
+                  </Button>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button type="button" variant="ghost" />}>More</DropdownMenuTrigger>
                   <DropdownMenuContent className="w-auto min-w-48">
                     <DropdownMenuItem onClick={() => setEditingCredentials(true)}>Edit credentials</DropdownMenuItem>
-                    <DropdownMenuItem disabled={isBusy("sync")} onClick={() => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."))}>
-                      {isBusy("sync") ? "Syncing…" : "Sync accounts"}
-                    </DropdownMenuItem>
+                    {state.vendor.connectLinks && (
+                      <DropdownMenuItem disabled={isBusy("sync")} onClick={syncAccounts}>
+                        {isBusy("sync") ? "Syncing…" : "Sync accounts"}
+                      </DropdownMenuItem>
+                    )}
                     {hasWebhooks && (
                       <DropdownMenuItem disabled={isBusy("webhooks")} onClick={() => void registerWebhooks()}>
                         {isBusy("webhooks") ? "Registering…" : "Register webhooks"}
@@ -432,7 +442,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
           ) : (
             <ul className={RULED_LIST}>
               {state.accounts.map((account) => (
-                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} members={members} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
+                <AccountRow key={account.id} signInAt={state.vendor.connectLinks ? null : vendor.name} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} members={members} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
               ))}
             </ul>
           )}
@@ -444,7 +454,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
         open={confirmDisconnect}
         onOpenChange={setConfirmDisconnect}
         title={`Disconnect ${vendor.name}?`}
-        description={`MiaSDR deletes the saved key${hasWebhooks ? ` and removes its webhooks at ${vendor.name}` : ""}. Every LinkedIn account shows as disconnected until you connect again.`}
+        description={`MiaSDR deletes the saved key${hasWebhooks ? ` and removes its webhooks at ${vendor.name}` : ""}. Every LinkedIn account shows as disconnected until you connect again.${state.vendor.connectLinks ? "" : ` The accounts stay connected at ${vendor.name}.`}`}
         confirmLabel={`Disconnect ${vendor.name}`}
         cancelLabel="Stay connected"
         pendingLabel="Disconnecting…"
@@ -498,6 +508,7 @@ function AccountRow({
   reconnecting,
   linkOpening,
   onReconnect,
+  signInAt,
   onChanged,
 }: {
   account: Account;
@@ -508,6 +519,8 @@ function AccountRow({
   /** True while any connection link opens; one opens at a time. */
   linkOpening: boolean;
   onReconnect: () => void;
+  /** The vendor whose own app signs an account back in, when this app has no link for it. */
+  signInAt: string | null;
   onChanged: () => void;
 }) {
   const orgTimeZone = useOrgTimeZone();
@@ -579,11 +592,14 @@ function AccountRow({
             )}
           </p>
         </div>
-        {account.status !== "connected" && (
-          <Button variant="ghost" size="sm" onClick={onReconnect} disabled={linkOpening}>
-            {reconnecting ? "Opening…" : "Reconnect"}
-          </Button>
-        )}
+        {account.status !== "connected" &&
+          (signInAt ? (
+            <p className="text-sm text-muted-foreground">Sign in again in {signInAt}, then choose Sync accounts.</p>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={onReconnect} disabled={linkOpening}>
+              {reconnecting ? "Opening…" : "Reconnect"}
+            </Button>
+          ))}
       </div>
       <form onSubmit={save}>
         <FieldGroup>

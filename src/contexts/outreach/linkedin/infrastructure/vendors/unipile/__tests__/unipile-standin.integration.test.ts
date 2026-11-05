@@ -73,7 +73,7 @@ describeDb("unipile gateway against the local stand-in", () => {
   const shortProvider = (timeoutMs = 400): LinkedInGatewayProvider => ({
     forAccount: async () => new UnipileGateway({ dsn: standin.dsn, apiKey: API_KEY, timeoutMs, scheme: "http" }),
   });
-  const engineDeps = (gateways: LinkedInGatewayProvider = shortProvider()): LinkedInEngineDeps => ({ store, gateways, clock, random: () => 0 });
+  const engineDeps = (gateways: LinkedInGatewayProvider = shortProvider()): LinkedInEngineDeps => ({ store, stopForReply: async () => undefined, gateways, clock, random: () => 0 });
   const inboundDeps = (): LinkedInInboundDeps => ({ store: inboundStore, clock, parse, eventKey: unipileEventKey });
   const mgmtDeps = () => ({ accounts: accountStore, vendors: [createUnipileVendor({ dsnPolicy: { allowedHosts: [], allowLoopback: true } })], appUrl: APP_URL, now: () => clock.now(), audit: auditSink, connectLinks: connectStore });
 

@@ -18,6 +18,8 @@ export type GatewayErrorCode =
   | "already_connected"
   | "already_invited"
   | "not_first_degree"
+  /** The person wrote after the moment `unlessRepliedAfter` named, so nothing went out. */
+  | "replied"
   | "rejected"
   | "unavailable";
 
@@ -28,6 +30,8 @@ export class LinkedInGatewayError extends Error {
     readonly code: GatewayErrorCode,
     /** For `rate_limited`: how long the limit lasts, when the provider says. Without it the account stops for the full pause. */
     readonly retryAfterMs: number | null = null,
+    /** For `rate_limited`: what the limit stops. `invitations` also covers profile lookups, which only lead to invitations. */
+    readonly limits: "account" | "invitations" = "account",
   ) {
     super(message);
   }
@@ -85,25 +89,30 @@ export interface LinkedInGateway {
   getOwnProfile(account: string): Promise<GatewayProfile>;
   /** Resolves a slug or a member id to a provider member id. `linkedinApi` is set only on the retry for a Sales Navigator or Recruiter member id, after a classic lookup found nothing. */
   getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile>;
-  sendInvitation(input: { account: string; member: string; note: string | null }): Promise<{ invitationId: string | null }>;
+  /** `sendKey` names this send across its retries, for a vendor that answers a repeat instead of sending again. Others ignore it. */
+  sendInvitation(input: { account: string; member: string; note: string | null; sendKey: string }): Promise<{ invitationId: string | null }>;
   /**
    * For reconciling an unknown invitation: still pending, accepted (the member is now first degree), or not found.
    * Throws when the provider cannot answer.
    */
-  invitationStatus(input: { account: string; member: string; since: Date }): Promise<"pending" | "accepted" | "none">;
-  /** Sends to whoever `to` names. Answers the chat it went into, when the provider says. Throws a definite `invalid_recipient` when `to` is not enough for this provider. */
-  sendMessage(input: { account: string; to: LinkedInRecipient; text: string }): Promise<{ chat: string | null; messageId: string | null }>;
+  invitationStatus(input: { account: string; member: string; since: Date; sendKey: string }): Promise<"pending" | "accepted" | "none">;
+  /**
+   * Sends to whoever `to` names. Answers the chat it went into, when the provider says. Throws a definite `invalid_recipient` when `to` is not enough for this provider.
+   * `unlessRepliedAfter`: best effort. A vendor that can read the thread first throws a definite `replied` when the person wrote after this moment. Others ignore it.
+   */
+  sendMessage(input: { account: string; to: LinkedInRecipient; text: string; sendKey: string; unlessRepliedAfter: Date | null }): Promise<{ chat: string | null; messageId: string | null }>;
   /**
    * For reconciling an unknown message: a message from the account owner with this text after `since`. Null leads to a
    * resend, so it means the provider showed there is none. Throws when it cannot tell.
    */
-  findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
+  findSentMessage(input: { account: string; to: LinkedInRecipient; text: string; since: Date; sendKey: string }): Promise<{ messageId: string | null } | null>;
   searchPeople(input: { account: string; searchUrl: string; cursor: string | null }): Promise<SearchPage>;
   /**
    * Makes a single-use link that connects a LinkedIn account. `reconnectAccount` re-authenticates that provider account in place; without it the link connects a new one.
    * The caller sends the person to `url` in a full page navigation. `account`: the provider account the link is for, when it exists already.
+   * Absent for a vendor whose accounts connect only in its own app.
    */
-  createConnectLink(input: ConnectLinkInput): Promise<{ url: string; account?: string | null }>;
+  createConnectLink?(input: ConnectLinkInput): Promise<{ url: string; account?: string | null }>;
 }
 
 /** Whom a message goes to, with all that is known. A provider uses what it can address by. */
@@ -156,8 +165,8 @@ export interface LinkedInVendor {
   readonly integrationName: string;
   /** Whether an account the listing shows becomes an account here. False: only one connected through this app does. */
   readonly syncAddsAccounts: boolean;
-  /** How long a connect link stays valid. */
-  readonly connectLinkMinutes: number;
+  /** How long a connect link stays valid. Null: accounts connect in the vendor's own app, and a sync brings them here. */
+  readonly connectLinkMinutes: number | null;
   /** Checks what a person entered and returns the credentials to store. Throws a ValidationError a person can act on. */
   readConnectInput(input: Record<string, string>): VendorCredentials;
   /** Builds the gateway for credentials. Throws a ConflictError a person can act on when they may no longer be used. */
@@ -168,6 +177,8 @@ export interface LinkedInVendor {
   explain(error: unknown): string;
   /** The same, for a sync that used stored credentials. */
   explainSyncFailure(error: unknown): string;
+  /** For a vendor with no webhooks here: how replies and acceptances arrive, in a sentence for a person. */
+  readonly inboundNote?: string;
   /** Null: this vendor sends nothing this app acts on by webhook. */
   readonly webhooks: {
     requestUrl(appUrl: string, organizationId: string): string;
@@ -214,6 +225,8 @@ export interface LinkedInSendClaim {
   step: { body: string; waitDays: number };
   /** The step after this one, if any, for scheduling. */
   nextStep: { waitDays: number } | null;
+  /** When this enrollment's outreach began: its first send, else the acceptance. A message after that from this person is a reply. */
+  outreachStartedAt: Date | null;
 }
 
 export interface LinkedInResolveClaim {
@@ -293,6 +306,10 @@ export interface LinkedInOutreachStore {
   markAlreadyConnected(claim: LinkedInSendClaim, now: Date): Promise<void>;
   /** LinkedIn refused for a limit: give the attempt back and stop the account for a while. */
   pauseAccountForLimit(claim: LinkedInSendClaim, until: Date): Promise<void>;
+  /** LinkedIn refused an invitation for a limit that stops invitations alone: give the attempt back and hold invitations and lookups for a while. */
+  pauseInvitationsForLimit(claim: LinkedInSendClaim, until: Date): Promise<void>;
+  /** LinkedIn refused a profile lookup for a limit that stops invitations alone. The lead keeps its retries. */
+  pauseInvitationsForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
   /** The provider rejected the credentials or the account: give the attempt back and mark the account disconnected. */
   disconnectAccount(accountId: string, error: string): Promise<void>;
 
@@ -311,6 +328,8 @@ export interface LinkedInOutreachStore {
 
 export interface LinkedInEngineDeps {
   store: LinkedInOutreachStore;
+  /** The vendor read the thread and the person wrote, so nothing went out. Stops outreach to the person as a filed reply does, and gives the attempt back. The inbox read files the message later. */
+  stopForReply(claim: LinkedInSendClaim, now: Date): Promise<void>;
   gateways: LinkedInGatewayProvider;
   clock: Clock;
   random: () => number;
@@ -332,7 +351,8 @@ export type InboundResult = "done" | "skipped";
 export interface LinkedInInboundStore {
   /** Inserts the delivery as `processing`. Returns null when the key was seen before. */
   /** A delivery of an event this app acts on that it could not read. Stored as given up, so a person sees it. */
-  recordUnreadable(input: { organizationId: string; provider: string; eventType: string; payload: unknown; now: Date }): Promise<void>;
+  /** `key`: for a source that reads the same row again, so a repeat adds no second row. */
+  recordUnreadable(input: { organizationId: string; provider: string; eventType: string; payload: unknown; now: Date; key?: string | null }): Promise<void>;
   begin(input: { organizationId: string; provider: string; key: string; eventType: string; accountRef: string; payload: unknown; now: Date }): Promise<LedgerEvent | null>;
   /** Settles the claim. A worker whose lease ran out, or whose row an admin requeued and another claim took, changes nothing. */
   finish(claim: LedgerEvent, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
@@ -360,7 +380,7 @@ export interface LinkedInInboundRead {
 
 /** For a vendor that sends no webhook for messages. Throws a LinkedInGatewayError when it cannot read. */
 export interface LinkedInInboundSource {
-  read(input: { organizationId: string; account: string; cursor: unknown; now: Date }): Promise<LinkedInInboundRead>;
+  read(input: { organizationId: string; provider: string; account: string; cursor: unknown; now: Date }): Promise<LinkedInInboundRead>;
 }
 
 export interface LinkedInInboundPollStore {
@@ -388,6 +408,8 @@ export interface LinkedInInboundDeps {
   parse: (payload: unknown) => LinkedInInboundEvent | null;
   /** The event's name when it is one this app acts on and `parse` could not read it. */
   unreadable?: (payload: unknown) => string | null;
+  /** The ledger key of an unreadable delivery a source will read again. Null: every delivery counts on its own. */
+  unreadableKey?: (payload: unknown, organizationId: string) => string | null;
   /** Idempotency key for the ledger. Null when the event has no id to key on. */
   eventKey: (event: LinkedInInboundEvent, organizationId: string, payload: unknown) => string | null;
 }

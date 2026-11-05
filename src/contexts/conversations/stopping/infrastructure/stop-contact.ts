@@ -144,7 +144,7 @@ async function writeStopEventsTx(tx: DbTx, target: StopTarget, trigger: StopTrig
 }
 
 /** Whether the message already sits in the Inbox. Filing stops outreach in its own transaction, so an early stop for it has nothing left to do. */
-async function messageFiled(tx: DbTx, organizationId: string, trigger: Extract<OutreachStopTrigger, { kind: "reply" }>): Promise<boolean> {
+async function messageFiled(tx: DbTx, organizationId: string, trigger: Extract<OutreachStopTrigger, { unlessFiled: unknown }>): Promise<boolean> {
   const { accountRef, providerMessageId } = trigger.unlessFiled;
   const [filed] = await tx
     .select({ id: messages.id })

@@ -122,7 +122,7 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
     {
       id: "linkedin",
       title: "Connect LinkedIn",
-      description: "Optional. Adds LinkedIn invitations and messages through Unipile or Edges.",
+      description: "Optional. Adds LinkedIn invitations and messages through Unipile, Edges or gtm-api.",
       optional: true,
       status: facts.connectedLinkedInAccounts > 0 ? "done" : "todo",
       detail: facts.connectedLinkedInAccounts > 0 ? `${plural(facts.connectedLinkedInAccounts, "account")} connected` : null,

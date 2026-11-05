@@ -94,10 +94,11 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
       return row ? toLedger(row) : null;
     },
 
-    async recordUnreadable({ organizationId, provider, eventType, payload, now }) {
-      await db.insert(inboundEvents).values({
+    async recordUnreadable({ organizationId, provider, eventType, payload, now, key }) {
+      const row = {
         organizationId,
         provider,
+        ...(key ? { providerEventKey: key } : {}),
         eventType,
         payload,
         status: "failed",
@@ -105,7 +106,8 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
         nextAttemptAt: now,
         processedAt: now,
         log: [{ ts: now.toISOString(), level: "error", message: "MiaSDR could not read this delivery, so it filed nothing. The LinkedIn provider may have changed its format." }],
-      });
+      };
+      await db.insert(inboundEvents).values(row).onConflictDoNothing();
     },
 
     async finish(claim, status, note, now) {

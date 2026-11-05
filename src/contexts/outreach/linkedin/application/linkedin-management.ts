@@ -149,7 +149,7 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null },
+    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null, connectLinks: vendor.connectLinkMinutes !== null },
     vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
     connectedTo: vendor.connectedTo(credentials),
     webhooks,
@@ -250,7 +250,7 @@ async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: st
       console.error(`LinkedIn webhooks: could not save the registration status for organization ${organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }
   };
-  if (!vendor.webhooks) return { status: "skipped", detail: `${vendor.name} has no webhooks to register. Replies and acceptances are read from the account about every 10 minutes.` };
+  if (!vendor.webhooks) return { status: "skipped", detail: vendor.inboundNote ?? `${vendor.name} has no webhooks to register. Replies and acceptances are read from the account about every 10 minutes.` };
   if (isLocalOrigin(deps.appUrl)) {
     await persist([]);
     return { status: "skipped", detail: `APP_URL is a local or private address, so ${vendor.name} cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL.` };

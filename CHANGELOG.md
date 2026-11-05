@@ -20,6 +20,17 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### LinkedIn through gtm-api
+
+You can connect LinkedIn through [gtm-api](docs/setup/linkedin-gtm-api.md). It has not been run against a real gtm-api account from MiaSDR yet.
+
+- Accounts connect in gtm-api's own app, and a sync brings every account in the key's team here, including its messages.
+- Replies and acceptances are read from gtm-api's store about every 10 minutes. An account sends nothing while gtm-api's sync has stalled.
+- A campaign message asks gtm-api to read the thread first and refuse if the person wrote. All outreach to that person then stops, as a filed reply does.
+- A limit on invitations or lookups holds those alone, so messages and inbox replies go on.
+
+The database gains `linkedin_accounts.invites_paused_until`, and both provider constraints allow `gtmapi`. The new `inbound_events` constraint checks every row while it holds its lock, so stop old instances first on a large install.
+
 ### LinkedIn through Edges
 
 You can connect LinkedIn through [Edges](docs/setup/linkedin-edges.md) instead of Unipile. It has not been run against a real Edges account from MiaSDR yet.
