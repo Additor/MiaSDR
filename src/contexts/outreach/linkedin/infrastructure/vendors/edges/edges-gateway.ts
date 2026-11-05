@@ -1,7 +1,8 @@
 import { LinkedInGatewayError, type ConnectLinkInput, type GatewayAccount, type GatewayProfile, type LinkedInGateway, type LinkedInRecipient, type SearchPage } from "../../../application/linkedin-ports";
-import { gatewayErrorFrom } from "./edges-errors";
+import { linkedinSlug } from "../../../domain/linkedin";
+import { gatewayErrorFrom, IDENTITY_GONE } from "./edges-errors";
 import { EdgesClient, EdgesRequestError, type EdgesClientOptions } from "./edges-http";
-import { acoaaOf, edgesTime, normalizedText, obj, ownProfileFrom, profileFrom, recipientUrl, rows, searchItemFrom, str, lookupUrl } from "./edges-people";
+import { acoaaOf, edgesTime, listOf, normalizedText, obj, ownProfileFrom, profileFrom, publicProfileUrl, recipientUrl, rows, searchItemFrom, str, lookupUrl } from "./edges-people";
 
 const MAX_NOTE = 300;
 const MAX_MESSAGE = 8000;
@@ -12,18 +13,20 @@ const MAX_PAGES = 10;
 const SEND_SLACK_MS = 10 * 60_000;
 const CLOCK_SLACK_MS = 60_000;
 const DAY_MS = 86_400_000;
+/** Edges limits management calls to 2 a second on its lower plans. */
+const LIST_PACE_MS = 600;
 
 const noAnswer = (what: string) => new LinkedInGatewayError(`Too many ${what} to finish the check.`, "unknown", "unavailable");
 
 /** A reply's chat may be a placeholder for a thread with no chat id yet. */
 const threadId = (chat: string | null) => (chat && !chat.startsWith("member:") ? chat : null);
 
-const isIdentityGone = (error: unknown) => error instanceof EdgesRequestError && error.status === 404 && error.label.startsWith("WORKSPACE_IDENTITY_404");
+const isIdentityGone = (error: unknown) => error instanceof EdgesRequestError && error.status === 404 && error.label.startsWith(IDENTITY_GONE);
 const isNotFound = (error: unknown) => error instanceof EdgesRequestError && error.status === 404;
 
 /** LinkedIn through Edges. An account is an Edges identity, and its ref is the identity's uid. */
 export class EdgesGateway implements LinkedInGateway {
-  readonly client: EdgesClient;
+  private readonly client: EdgesClient;
 
   constructor(options: EdgesClientOptions) {
     this.client = new EdgesClient(options);
@@ -43,42 +46,53 @@ export class EdgesGateway implements LinkedInGateway {
     });
   }
 
-  /** Edges lists every identity of a workspace, connected through this app or not, so it answers only for the refs it is given. */
+  /**
+   * Edges lists every identity of a workspace, connected through this app or not, so it answers only for the refs it is given.
+   * `username` names who is signed in now, which is what tells a sign-in as someone else from the account's own.
+   */
   listAccounts(only: string[] = []): Promise<GatewayAccount[]> {
     return this.attempt(async () => {
       const listed: GatewayAccount[] = [];
-      for (const ref of only) {
-        const status = await this.integrationStatus(ref);
+      for (const [index, ref] of only.entries()) {
+        if (index > 0) await new Promise((resolve) => setTimeout(resolve, LIST_PACE_MS));
+        const { status, username } = await this.integration(ref);
         // Still pending is a sign-in LinkedIn holds at a check, which is not a connected account.
-        listed.push({ ref, linkedinId: null, name: null, username: null, status: status === "connected" ? "connected" : "disconnected" });
+        listed.push({ ref, linkedinId: null, name: null, username, status: status === "connected" ? "connected" : "disconnected" });
       }
       return listed;
     });
   }
 
-  /** Where an identity's LinkedIn sign-in stands. */
-  async integrationStatus(uid: string): Promise<"pending" | "connected" | "failed"> {
+  private async integration(uid: string): Promise<{ status: "pending" | "connected" | "failed"; username: string | null }> {
     let integration: unknown;
     try {
       integration = await this.client.request("GET", `/identities/${encodeURIComponent(uid)}/integrations/linkedin`);
     } catch (error) {
-      if (isIdentityGone(error)) return "failed";
-      if (isNotFound(error)) return "pending";
+      if (isIdentityGone(error)) return { status: "failed", username: null };
+      if (isNotFound(error)) return { status: "pending", username: null };
       throw error;
     }
-    const status = String(obj(integration).status ?? "").toUpperCase();
-    if (status === "VALID" || status === "LIMIT_REACHED") return "connected";
-    return status === "INVALID" ? "failed" : "pending";
+    const answer = obj(integration);
+    const raw = String(answer.status ?? "").toUpperCase();
+    const url = publicProfileUrl(obj(answer.meta).url);
+    return { status: raw === "VALID" || raw === "LIMIT_REACHED" ? "connected" : raw === "INVALID" ? "failed" : "pending", username: url ? linkedinSlug(url) : null };
   }
 
-  /** Removes an identity that never connected. One whose sign-in worked is an account, and stays. */
-  async removeUnusedIdentity(uid: string): Promise<void> {
-    try {
-      if ((await this.integrationStatus(uid)) === "connected") return;
-      await this.client.request("DELETE", `/identities/${encodeURIComponent(uid)}`);
-    } catch (error) {
-      if (!isNotFound(error)) throw gatewayErrorFrom(error);
-    }
+  /** Where an identity's LinkedIn sign-in stands. */
+  integrationStatus(uid: string): Promise<"pending" | "connected" | "failed"> {
+    return this.attempt(async () => (await this.integration(uid)).status);
+  }
+
+  /**
+   * Removes an identity no account uses, even one whose sign-in worked: sync adds no accounts, so nothing here would pick it up,
+   * and Edges refuses a second identity for the same profile.
+   */
+  removeUnusedIdentity(uid: string): Promise<void> {
+    return this.attempt(async () => {
+      await this.client.request("DELETE", `/identities/${encodeURIComponent(uid)}`).catch((error: unknown) => {
+        if (!isNotFound(error)) throw error;
+      });
+    });
   }
 
   getOwnProfile(account: string): Promise<GatewayProfile> {
@@ -151,7 +165,7 @@ export class EdgesGateway implements LinkedInGateway {
     let cursor: string | null = null;
     for (let page = 0; page < MAX_PAGES; page++) {
       const answer: { body: unknown; nextCursor: string | null } = await this.client.action(slug, { identity: input.account, cursor });
-      const items = rows(answer.body);
+      const items = listOf(answer.body);
       if (items.some((item) => item.sales_navigator_profile_id === input.member)) return true;
       const times = items.map((item) => edgesTime(item[dateField])).filter((time) => !Number.isNaN(time));
       cursor = answer.nextCursor;
@@ -178,7 +192,7 @@ export class EdgesGateway implements LinkedInGateway {
     let cursor: string | null = null;
     for (let page = 0; page < MAX_PAGES; page++) {
       const answer: { body: unknown; nextCursor: string | null } = await this.client.action("linkedin-extract-conversations", { identity: account, cursor });
-      const conversations = rows(answer.body);
+      const conversations = listOf(answer.body);
       const found = conversations.find((c) => {
         const participants = rows(c.participants);
         return participants.length === 1 && acoaaOf(participants[0].sales_navigator_profile_id) === member;
@@ -205,8 +219,9 @@ export class EdgesGateway implements LinkedInGateway {
       let cursor: string | null = null;
       for (let page = 0; page < MAX_PAGES; page++) {
         const answer: { body: unknown; nextCursor: string | null } = await this.client.action("linkedin-extract-messages", { identity: input.account, input: { linkedin_thread_url: thread }, cursor });
-        const messages = rows(answer.body);
-        const hit = messages.find((m) => normalizedText(m.content) === wanted && edgesTime(m.delivered_at) >= since);
+        const messages = listOf(answer.body);
+        // The port asks for the account owner's message, so the same words from the lead do not count.
+        const hit = messages.find((m) => normalizedText(m.content) === wanted && edgesTime(m.delivered_at) >= since && !(member && acoaaOf(m.sales_navigator_profile_id) === member));
         if (hit) return { messageId: str(hit.message_id) };
         cursor = answer.nextCursor;
         if (!cursor) return null;
@@ -219,8 +234,7 @@ export class EdgesGateway implements LinkedInGateway {
     return this.attempt(async () => {
       if (!CLASSIC_SEARCH.test(input.searchUrl.trim())) throw new LinkedInGatewayError("Edges searches only LinkedIn's classic people search (linkedin.com/search/results/people/).", "definite", "rejected");
       const answer = await this.client.action<unknown>("linkedin-search-people", { identity: input.account, input: { linkedin_people_search_url: input.searchUrl.trim() }, cursor: input.cursor });
-      const items = Array.isArray(answer.body) ? answer.body : [];
-      return { items: items.map(searchItemFrom).filter((item) => item !== null), nextCursor: answer.nextCursor, totalEstimate: null };
+      return { items: listOf(answer.body).map(searchItemFrom).filter((item) => item !== null), nextCursor: answer.nextCursor, totalEstimate: null };
     });
   }
 
@@ -228,7 +242,7 @@ export class EdgesGateway implements LinkedInGateway {
   createConnectLink(input: ConnectLinkInput): Promise<{ url: string; account: string }> {
     return this.attempt(async () => {
       if (input.reconnectAccount) return { url: await this.loginLink(input.reconnectAccount), account: input.reconnectAccount };
-      const created = obj(await this.createIdentity(input.expiresAt));
+      const created = obj(await this.createIdentity(input.expiresAt, input.timeZone));
       const uid = str(created.uid);
       if (!uid) throw new LinkedInGatewayError("Edges created an identity without an id.", "definite", "rejected");
       try {
@@ -240,9 +254,12 @@ export class EdgesGateway implements LinkedInGateway {
     });
   }
 
-  /** Engagement identities read without credits, which matters for an inbox read every 10 minutes. A workspace must turn them on. */
-  private async createIdentity(now: Date): Promise<unknown> {
-    const body = (type: "engagement" | "standard") => ({ name: `MiaSDR ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`, type });
+  /**
+   * Engagement identities read without credits, which matters for an inbox read every 10 minutes. A workspace must turn them on.
+   * Edges picks the identity's address by its zone and defaults to Europe/Paris. LinkedIn notices a sign-in from far away.
+   */
+  private async createIdentity(now: Date, timeZone: string | null): Promise<unknown> {
+    const body = (type: "engagement" | "standard") => ({ name: `MiaSDR ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`, type, ...(timeZone ? { timezone: timeZone } : {}) });
     try {
       return await this.client.request("POST", "/identities", body("engagement"));
     } catch (error) {

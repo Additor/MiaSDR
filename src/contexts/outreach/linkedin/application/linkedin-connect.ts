@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { LinkedInGatewayError } from "./linkedin-ports";
+import { LinkedInGatewayError, type LinkedInVendor, type VendorCredentials } from "./linkedin-ports";
 import { isLocalOrigin } from "@/shared/local-origin";
 import { syncWith, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
 
@@ -19,6 +19,22 @@ function sameHash(secret: string, storedHex: string): boolean {
 
 function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can connect LinkedIn accounts.");
+}
+
+/** Removes an account no row here uses at the vendor, which would otherwise hold a seat of its plan and block a second try at the same profile. */
+async function removeUnusedAccount(vendor: LinkedInVendor, credentials: VendorCredentials, account: string): Promise<void> {
+  await vendor.connectSession?.cancel(credentials, account).catch((error: unknown) => {
+    console.error(`LinkedIn connect: could not remove the unused account at ${vendor.name}: ${error instanceof Error ? error.name : "unknown error"}`);
+  });
+}
+
+/** Ends this organization's links past their expiry, and gives their unused accounts back to the vendor. */
+export async function expireConnectLinks(deps: LinkedInManagementDeps, organizationId: string, vendor: LinkedInVendor, credentials: VendorCredentials, now: Date): Promise<void> {
+  const expired = await deps.connectLinks.expireDue(organizationId, now);
+  const accounts = expired.filter((account) => account !== null);
+  if (!vendor.connectSession || accounts.length === 0) return;
+  const inUse = await deps.accounts.accountRefs(organizationId, vendor.key);
+  for (const account of accounts) if (!inUse.includes(account)) await removeUnusedAccount(vendor, credentials, account);
 }
 
 export interface ConnectLinkResult {
@@ -55,9 +71,9 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
     reconnectAccount = account.providerAccountId;
   }
 
-  await deps.connectLinks.expireDue(actor.organizationId, now);
+  await expireConnectLinks(deps, actor.organizationId, vendor, credentials, now);
   if ((await deps.connectLinks.countPending(actor.organizationId, now)) >= MAX_PENDING_LINKS) {
-    throw new ConflictError("Several connection links are still open. Finish one or wait a few minutes.");
+    throw new ConflictError(vendor.connectSession ? "Several connection links are still open. Finish or cancel one." : "Several connection links are still open. Finish one or wait a few minutes.");
   }
 
   const id = randomUUID();
@@ -76,6 +92,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
       failureRedirectUrl: urls?.failure ?? deps.appUrl,
       notifyUrl: notify && urls ? urls.notify : null,
       reconnectAccount,
+      timeZone: reconnectAccount ? null : await deps.accounts.timeZone(actor.organizationId),
     });
     if (account) await deps.connectLinks.noteAccount(id, account);
     await deps.audit.record({
@@ -158,8 +175,8 @@ const linkState = (status: "pending" | "completed" | "failed", error: string | n
 
 /**
  * Asks the vendor how a link stands, for a vendor whose link does not report back. Once it says connected, this reads who
- * signed in and stores the account. Signing in as another person on a reconnect leaves that account disconnected:
- * its leads and threads are someone else's.
+ * signed in and stores the account. Someone else signed in on a reconnect leaves that account disconnected, because its
+ * leads and threads are not theirs, and the link open, because the person may be on their way to the right sign-in.
  */
 export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Actor, linkId: string): Promise<ConnectLinkState> {
   requireAdmin(actor);
@@ -180,6 +197,9 @@ export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Acto
     const status = await vendor.connectSession.status(credentials, account);
     if (status === "pending") return linkState("pending");
     if (status === "failed") {
+      // A reconnect starts from a sign-in the vendor already calls failed, so until the person signs in again this says nothing. Cancel or the expiry ends the link.
+      if ((await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) return linkState("pending");
+      await removeUnusedAccount(vendor, credentials, account);
       const text = `${vendor.name} could not keep LinkedIn signed in. Try again.`;
       await deps.connectLinks.fail(link.id, text);
       return linkState("failed", text);
@@ -191,7 +211,13 @@ export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Acto
       vendor.key,
     );
     if (stored.skipped > 0) {
-      await deps.accounts.updateAccountStatuses(actor.organizationId, vendor.key, [{ ref: account, linkedinId: null, name: null, username: null, status: "disconnected" }]);
+      if ((await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) {
+        await deps.accounts.updateAccountStatuses(actor.organizationId, vendor.key, [{ ref: account, linkedinId: null, name: null, username: null, status: "disconnected" }]);
+        const text = "Someone else is signed in to this account. Sign in with its own LinkedIn.";
+        await deps.connectLinks.noteError(link.id, text);
+        return linkState("pending", text);
+      }
+      await removeUnusedAccount(vendor, credentials, account);
       const text = stored.skippedReasons[0] ?? "This LinkedIn account could not be connected here.";
       await deps.connectLinks.fail(link.id, text);
       return linkState("failed", text);
@@ -201,12 +227,13 @@ export async function checkConnectLink(deps: LinkedInManagementDeps, actor: Acto
     }
     return linkState("completed");
   } catch (error) {
-    await deps.connectLinks.noteError(link.id, vendor.explain(error));
-    return linkState("pending");
+    const text = vendor.explain(error);
+    await deps.connectLinks.noteError(link.id, text);
+    return linkState("pending", text);
   }
 }
 
-/** Gives up on a link. A new account that never connected is removed at the vendor; a reconnect keeps its account. */
+/** Gives up on a link. An account no row uses is removed at the vendor; a reconnect keeps its account. */
 export async function cancelConnectLink(deps: LinkedInManagementDeps, actor: Actor, linkId: string): Promise<void> {
   requireAdmin(actor);
   const link = await deps.connectLinks.find(linkId);
@@ -215,10 +242,7 @@ export async function cancelConnectLink(deps: LinkedInManagementDeps, actor: Act
   const vendor = await vendorOf(deps, actor.organizationId);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   const account = link.providerAccountId;
-  if (credentials && vendor.connectSession && account && !(await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) {
-    await vendor.connectSession.cancel(credentials, account).catch((error: unknown) => {
-      console.error(`LinkedIn connect: could not remove the unused account at ${vendor.name}: ${error instanceof Error ? error.name : "unknown error"}`);
-    });
-  }
-  await deps.connectLinks.fail(link.id, "Cancelled.");
+  // The link closes first: one a check completed a moment ago has an account, which stays.
+  if (!(await deps.connectLinks.fail(link.id, "Cancelled."))) return;
+  if (credentials && vendor.connectSession && account && !(await deps.accounts.accountRefs(actor.organizationId, vendor.key)).includes(account)) await removeUnusedAccount(vendor, credentials, account);
 }

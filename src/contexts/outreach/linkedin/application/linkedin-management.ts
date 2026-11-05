@@ -3,7 +3,7 @@ import type { MemberDirectory } from "@/contexts/tenancy/application/member-dire
 import { randomBytes } from "node:crypto";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { DEFAULT_LINKEDIN_RULES } from "../domain/linkedin";
+import { DEFAULT_LINKEDIN_RULES, inboundIsStale } from "../domain/linkedin";
 import { INVITE_LIMIT_RULE, MESSAGE_LIMIT_RULE, limitProblem, limitWarnings } from "../domain/linkedin-limits";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { type WorkingHours } from "../../domain/working-hours";
@@ -50,6 +50,8 @@ export interface LinkedInAccountRecord {
   dailyInviteLimit: number;
   dailyMessageLimit: number;
   limitReachedUntil: Date | null;
+  /** When a read of the inbox last started, for a vendor with no webhook for messages. */
+  inboundReadAt: Date | null;
   workingHours: WorkingHours | null;
   invitesToday: number;
   messagesToday: number;
@@ -62,9 +64,15 @@ export interface LinkedInAccountStore {
   saveCredentials(organizationId: string, credentials: LinkedInCredentials, vendor: Pick<LinkedInVendor, "key" | "integrationName">): Promise<void>;
   /** The key of the vendor this organization connected, or null. */
   connectedVendor(organizationId: string): Promise<string | null>;
+  /** The organization's zone, or null when it has none of its own. */
+  timeZone(organizationId: string): Promise<string | null>;
   /** The vendor's ids of this organization's accounts on that vendor. */
   accountRefs(organizationId: string, vendorKey: string): Promise<string[]>;
-  /** Moves known accounts to their listed status and changes nothing else. A ref with no row is ignored. */
+  /**
+   * Moves known accounts to their listed status and changes nothing else. A ref with no row is ignored. A listed `username`
+   * that differs from the account's means someone else signed in, so the account stays disconnected: its leads and threads
+   * are not theirs. A listing with no username cannot tell, so a connected answer leaves the status as it is.
+   */
   updateAccountStatuses(organizationId: string, vendorKey: string, accounts: GatewayAccount[]): Promise<{ added: number; updated: number; skipped: number; skippedReasons: string[]; changes: AccountStatusChange[] }>;
   /** The last stored registration result, or null when none was recorded. */
   getWebhookStatus(organizationId: string): Promise<WebhookStatus | null>;
@@ -144,7 +152,7 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
     ...vendor.describe(credentials),
     webhooks,
     sync,
-    accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account) })),
+    accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account), inboxStale: vendor.webhooks === null && inboundIsStale(now, account.inboundReadAt) })),
     links,
     limits: { invites: INVITE_LIMIT_RULE, messages: MESSAGE_LIMIT_RULE },
     defaults: { invitesPerDayPremium: DEFAULT_LINKEDIN_RULES.invitesPerDayPremium, invitesPerDayFree: DEFAULT_LINKEDIN_RULES.invitesPerDayFree },

@@ -14,6 +14,8 @@ Edges ([edges.run](https://edges.run)) runs LinkedIn actions from its own sessio
 
 MiaSDR asks for an engagement identity, which reads without credits, and falls back to a standard one when the workspace has not turned engagement on. On a standard identity, reading the inbox spends credits.
 
+MiaSDR creates the identity in the organization's time zone, because Edges picks the address LinkedIn sees by it. Set the time zone in Settings before connecting. With none set, Edges uses Europe/Paris, and LinkedIn may ask for a check on a sign-in from far away. An identity keeps its zone.
+
 MiaSDR uses only identities connected through this page. Others in the workspace never become accounts here.
 
 ## How it differs from Unipile

@@ -79,7 +79,7 @@ export interface SearchPage {
 export interface LinkedInGateway {
   /** Confirms the credentials work. Throws a LinkedInGatewayError a person can act on. */
   verify(): Promise<void>;
-  /** The accounts the credentials reach. `only`: just these refs, for a vendor whose listing is not this organization's alone. */
+  /** The accounts the credentials reach. `only`: these refs alone, for a vendor whose listing is not this organization's alone. */
   listAccounts(only?: string[]): Promise<GatewayAccount[]>;
   /** Own profile of a connected account (premium flag, name). */
   getOwnProfile(account: string): Promise<GatewayProfile>;
@@ -139,6 +139,8 @@ export interface ConnectLinkInput {
   /** Left out when the vendor cannot reach this app (a local address). */
   notifyUrl: string | null;
   reconnectAccount: string | null;
+  /** The organization's zone, for a vendor that picks a new account's sign-in address by it. Null when it has none. */
+  timeZone: string | null;
 }
 
 /** Fields a vendor needs to reach its API, stored encrypted as given. The application passes them through without reading them. */
@@ -183,7 +185,7 @@ export interface LinkedInVendor {
   /** For a vendor whose link does not report back. */
   readonly connectSession: {
     status(credentials: VendorCredentials, account: string): Promise<"pending" | "connected" | "failed">;
-    /** Removes an account that never connected. */
+    /** Removes an account at the vendor. The caller checks that no row here uses it. */
     cancel(credentials: VendorCredentials, account: string): Promise<void>;
   } | null;
 }
@@ -362,9 +364,13 @@ export interface LinkedInInboundSource {
 }
 
 export interface LinkedInInboundPollStore {
-  /** Connected accounts on such a vendor last read before `readBefore`, oldest read first. */
-  listDue(readBefore: Date): Promise<Array<{ id: string; organizationId: string; provider: string; providerAccountId: string; cursor: unknown; workingHours: WorkingHours }>>;
+  /** Connected accounts on such a vendor last read before `readBefore` that nothing holds at `now`, oldest read first. */
+  listDue(readBefore: Date, now: Date): Promise<Array<{ id: string; organizationId: string; provider: string; providerAccountId: string; workingHours: WorkingHours }>>;
+  /** Holds the account until `until` and answers its cursor. Null: another worker holds it, or it was read or disconnected since the listing. */
+  claim(accountId: string, input: { readBefore: Date; now: Date; until: Date }): Promise<{ cursor: unknown } | null>;
   saveCursor(accountId: string, cursor: unknown, finishedRunStartedAt: Date | null): Promise<void>;
+  /** Ends the hold. `retryAt`: the next read waits until then. */
+  release(accountId: string, retryAt: Date | null): Promise<void>;
   disconnect(accountId: string, error: string): Promise<void>;
 }
 

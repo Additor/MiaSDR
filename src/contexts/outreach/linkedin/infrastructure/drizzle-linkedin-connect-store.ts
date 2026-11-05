@@ -74,8 +74,8 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
       .update(t)
       .set({ status: "expired" })
       .where(and(eq(t.organizationId, organizationId), eq(t.status, "pending"), lte(t.expiresAt, now)))
-      .returning({ id: t.id });
-    return rows.length;
+      .returning({ account: t.providerAccountId });
+    return rows.map((row) => row.account);
   },
 
   async countPending(organizationId, now) {
@@ -87,7 +87,13 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
   },
 
   async listRecent(organizationId, limit, now) {
-    const rows = await db.select().from(t).where(eq(t.organizationId, organizationId)).orderBy(desc(t.createdAt)).limit(limit);
+    // Open links first: the page asks about and cancels only what it lists, however many links came after one.
+    const rows = await db
+      .select()
+      .from(t)
+      .where(eq(t.organizationId, organizationId))
+      .orderBy(sql`(${t.status} = 'pending' and ${t.expiresAt} > ${now.toISOString()}::timestamptz) desc`, desc(t.createdAt))
+      .limit(limit);
     return rows.map((r) => {
       const link = toLink(r);
       // A pending link past its expiry reads as expired even before the next sweep marks it.

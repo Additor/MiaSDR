@@ -1,15 +1,22 @@
 import type { GatewayProfile, NetworkDistance, SearchItem } from "../../../application/linkedin-ports";
+import { linkedinSlug } from "../../../domain/linkedin";
+import { EdgesRequestError } from "./edges-http";
 
 const ACOAA = /^ACoAA[\w-]+$/;
 const PROFILE_URL = /^https:\/\/(?:(?:www|[a-z]{2})\.)?linkedin\.com\/(?:in|pub|sales\/people|sales\/lead)\/[^\s/]+/i;
 const BARE_ID = /^AC[\w-]{20,}$/;
-const BARE_SLUG = /^[\w%-]+$/;
 
 export type Json = Record<string, unknown>;
 export const str = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
 export const obj = (value: unknown): Json => (value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {});
 export const rows = (value: unknown): Json[] => (Array.isArray(value) ? value.map(obj) : []);
 export const firstOf = (body: unknown): Json => (Array.isArray(body) ? obj(body[0]) : obj(body));
+
+/** A list answer's rows, for a read that decides something. Any other shape throws, an empty answer too: read as empty, it would pass for "nothing new". */
+export function listOf(body: unknown): Json[] {
+  if (Array.isArray(body)) return rows(body);
+  throw new EdgesRequestError(0, "unreadable", "Edges answered a list with something else.");
+}
 
 /** The ACoAA member id every engine keys on. An ACwAA Sales Navigator id is not one. */
 export const acoaaOf = (value: unknown): string | null => {
@@ -24,14 +31,24 @@ export function memberIdOf(value: unknown): string | null {
   return null;
 }
 
-const inUrl = (id: string) => `https://www.linkedin.com/in/${encodeURIComponent(id)}`;
+function decoded(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
 
-/** The `linkedin_profile_url` for a lookup: a URL Edges takes as is, an AC id or a bare slug under `/in/`. */
+/** A stored slug may be decoded (Hangul, accents) or still percent-encoded, and goes out encoded once. */
+const inUrl = (id: string) => `https://www.linkedin.com/in/${encodeURIComponent(decoded(id))}`;
+
+/** The `linkedin_profile_url` for a lookup: a URL Edges takes as is, an AC id, or a slug under `/in/` by the rule people use. */
 export function lookupUrl(identifier: string): string | null {
   const value = identifier.trim();
   if (PROFILE_URL.test(value)) return value.replace(/^https:\/\/(?:[a-z]{2}\.)?linkedin\.com/i, "https://www.linkedin.com");
-  if (BARE_ID.test(value) || BARE_SLUG.test(value)) return inUrl(value);
-  return null;
+  if (BARE_ID.test(value)) return inUrl(value);
+  const slug = linkedinSlug(value);
+  return slug ? inUrl(slug) : null;
 }
 
 /** The public slug first: `/in/<ACoAA>` was only checked for lookups, and answers those with fewer fields. */
@@ -43,6 +60,8 @@ export function publicProfileUrl(url: unknown): string | null {
   const slug = value?.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1];
   return value && slug && !/^AC[\w-]{20,}$/.test(slug) ? value : null;
 }
+
+export const fullName = (row: Json) => str(row.full_name) ?? ([str(row.first_name), str(row.last_name)].filter(Boolean).join(" ") || null);
 
 function distanceOf(raw: unknown): NetworkDistance {
   const text = String(raw ?? "").toLowerCase();
@@ -100,7 +119,7 @@ export function searchItemFrom(raw: unknown): SearchItem | null {
   return {
     identifier,
     profileUrl,
-    name: str(item.full_name) ?? ([str(item.first_name), str(item.last_name)].filter(Boolean).join(" ") || null),
+    name: fullName(item),
     headline: str(item.headline) ?? str(item.job_title),
     location: str(item.location),
     networkDistance: str(item.connection_degree),

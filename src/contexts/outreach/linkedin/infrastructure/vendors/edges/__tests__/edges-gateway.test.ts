@@ -3,6 +3,7 @@ import { LinkedInGatewayError } from "../../../../application/linkedin-ports";
 import { gatewayErrorFrom } from "../edges-errors";
 import { EdgesGateway } from "../edges-gateway";
 import { EdgesRequestError } from "../edges-http";
+import { createEdgesVendor } from "../edges-vendor";
 
 type Answer = { status?: number; json?: unknown; next?: string } | Error;
 
@@ -30,6 +31,20 @@ describe("EdgesGateway", () => {
     expect(await gateway.getProfile({ account: "uid-1", identifier: "ada" })).toMatchObject({ member: MEMBER, publicSlug: "ada", firstName: "Ada" });
     expect(calls[0]).toMatchObject({ path: "/actions/linkedin-extract-people/run/live", apiKey: "key" });
     expect(calls[0].body).toMatchObject({ identity_ids: ["uid-1"], input: { linkedin_profile_url: "https://www.linkedin.com/in/ada" } });
+  });
+
+  it("addresses slugs in any script, with no second encoding, and URLs in any form people use", async () => {
+    const asked = async (identifier: string) => {
+      const { gateway, calls } = mock([{ json: { sales_navigator_profile_id: MEMBER } }]);
+      await gateway.getProfile({ account: "u", identifier });
+      return (calls[0].body as { input: { linkedin_profile_url: string } }).input.linkedin_profile_url;
+    };
+    expect(await asked("홍길동-12a")).toBe(`https://www.linkedin.com/in/${encodeURIComponent("홍길동-12a")}`);
+    expect(await asked("jos%C3%A9-l")).toBe("https://www.linkedin.com/in/jos%C3%A9-l");
+    expect(await asked("first.last")).toBe("https://www.linkedin.com/in/first.last");
+    expect(await asked("http://linkedin.com/in/ada/")).toBe("https://www.linkedin.com/in/ada");
+    expect(await asked("https://kr.linkedin.com/in/ada")).toBe("https://www.linkedin.com/in/ada");
+    expect(await asked("https://www.linkedin.com/sales/lead/ACwAAlead,NAME")).toBe("https://www.linkedin.com/sales/lead/ACwAAlead,NAME");
   });
 
   it("refuses a profile with no ACoAA id, and a Recruiter member", async () => {
@@ -111,6 +126,16 @@ describe("EdgesGateway", () => {
       expect(await mock([{ json: [{ content: "Hello there", delivered_at: "2026-10-01T00:00:00Z", message_id: "old" }] }]).gateway.findSentMessage(find)).toBeNull();
     });
 
+    it("does not take the lead's own words for our message", async () => {
+      expect(await mock([{ json: [{ content: "Hello there", delivered_at: late, message_id: "theirs", sales_navigator_profile_id: MEMBER }] }]).gateway.findSentMessage(find)).toBeNull();
+    });
+
+    it("gives no answer when the list comes back in another shape, or not as JSON", async () => {
+      await expect(mock([{ json: { error: "busy" } }]).gateway.findSentMessage(find)).rejects.toMatchObject({ kind: "unknown" });
+      const impl = async () => new Response("<html>busy</html>", { status: 200 });
+      await expect(new EdgesGateway({ apiKey: "k", fetch: impl as never }).findSentMessage(find)).rejects.toMatchObject({ kind: "unknown" });
+    });
+
     it("gives no answer when the thread is too long to finish", async () => {
       const pages = Array.from({ length: 10 }, () => ({ json: [], next: "more" }));
       await expect(mock(pages).gateway.findSentMessage(find)).rejects.toMatchObject({ kind: "unknown" });
@@ -146,15 +171,30 @@ describe("EdgesGateway", () => {
       expect(calls.map((c) => c.path)).toEqual(["/identities/a/integrations/linkedin", "/identities/b/integrations/linkedin"]);
     });
 
-    it("creates an engagement identity, falls back to standard, and names the account in the link", async () => {
-      const input = { name: "n", expiresAt: since, successRedirectUrl: "", failureRedirectUrl: "", notifyUrl: null, reconnectAccount: null };
+    it("names who is signed in, so a sync can tell someone else's sign-in from the account's own", async () => {
+      const { gateway } = mock([{ json: { status: "VALID", meta: { url: "https://www.linkedin.com/in/Ada-L/" } } }]);
+      expect(await gateway.listAccounts(["a"])).toEqual([{ ref: "a", linkedinId: null, name: null, username: "ada-l", status: "connected" }]);
+      const hashed = mock([{ json: { status: "VALID", meta: { url: `https://www.linkedin.com/in/${MEMBER}aaaaaaaaaaaaaaaaaaaa` } } }]);
+      expect((await hashed.gateway.listAccounts(["a"]))[0].username).toBeNull();
+    });
+
+    it("words a failed status check as the port's error", async () => {
+      await expect(mock([{ status: 401, json: {} }]).gateway.integrationStatus("a")).rejects.toMatchObject({ kind: "definite", code: "auth" });
+      await expect(mock([{ status: 500, json: {} }]).gateway.removeUnusedIdentity("a")).rejects.toBeInstanceOf(LinkedInGatewayError);
+    });
+
+    it("creates an engagement identity in the organization's zone, falls back to standard, and names the account in the link", async () => {
+      const input = { name: "n", expiresAt: since, successRedirectUrl: "", failureRedirectUrl: "", notifyUrl: null, reconnectAccount: null, timeZone: "Asia/Seoul" };
       const fallback = mock([{ status: 400, json: { message: "no engagement" } }, { json: { uid: "uid-9", identity_login_links: { linkedin: "https://login" } } }]);
       expect(await fallback.gateway.createConnectLink(input)).toEqual({ url: "https://login", account: "uid-9" });
-      expect(fallback.calls.map((c) => c.body?.type)).toEqual(["engagement", "standard"]);
+      expect(fallback.calls.map((c) => [c.body?.type, c.body?.timezone])).toEqual([["engagement", "Asia/Seoul"], ["standard", "Asia/Seoul"]]);
+      const noZone = mock([{ json: { uid: "uid-9", identity_login_links: { linkedin: "https://login" } } }]);
+      await noZone.gateway.createConnectLink({ ...input, timeZone: null });
+      expect(noZone.calls[0].body).not.toHaveProperty("timezone");
     });
 
     it("removes an identity no link came of, and reconnects the same identity", async () => {
-      const input = { name: "n", expiresAt: since, successRedirectUrl: "", failureRedirectUrl: "", notifyUrl: null, reconnectAccount: null };
+      const input = { name: "n", expiresAt: since, successRedirectUrl: "", failureRedirectUrl: "", notifyUrl: null, reconnectAccount: null, timeZone: null };
       const broken = mock([{ json: { uid: "uid-9" } }, { json: {} }, { json: {} }]);
       await expect(broken.gateway.createConnectLink(input)).rejects.toBeInstanceOf(LinkedInGatewayError);
       expect(broken.calls[2].path).toBe("/identities/uid-9");
@@ -162,11 +202,32 @@ describe("EdgesGateway", () => {
       expect(await again.gateway.createConnectLink({ ...input, reconnectAccount: "uid-1" })).toEqual({ url: "https://again", account: "uid-1" });
     });
 
-    it("keeps an identity whose sign-in worked when a link is cancelled", async () => {
-      const { gateway, calls } = mock([{ json: { status: "VALID" } }]);
+    it("removes an unused identity whatever its sign-in, because nothing here would pick it up, and takes one already gone as done", async () => {
+      const { gateway, calls } = mock([{ json: {} }]);
       await gateway.removeUnusedIdentity("uid-1");
-      expect(calls).toHaveLength(1);
+      expect(calls.map((c) => c.path)).toEqual(["/identities/uid-1"]);
+      await expect(mock([{ status: 404, json: { error_label: "WORKSPACE_IDENTITY_404_NOT_FOUND" } }]).gateway.removeUnusedIdentity("uid-1")).resolves.toBeUndefined();
     });
+
+    it("gives no answer for a list that comes back empty, since none allows a second invitation", async () => {
+      const impl = async () => new Response("", { status: 200 });
+      await expect(new EdgesGateway({ apiKey: "k", fetch: impl as never }).invitationStatus({ account: "u", member: MEMBER, since })).rejects.toMatchObject({ kind: "unknown" });
+    });
+  });
+});
+
+describe("the Edges vendor's sentences", () => {
+  const vendor = createEdgesVendor();
+  const asked = (status: number, label: string) => gatewayErrorFrom(new EdgesRequestError(status, label, "m"), 0);
+
+  it("blames the key only for a refused key, and a lost sign-in for a lost sign-in", () => {
+    expect(vendor.explain(asked(401, ""))).toMatch(/rejected the API key/);
+    expect(vendor.explainSyncFailure(asked(401, ""))).toMatch(/rejected the saved key/);
+    for (const lost of [asked(404, "WORKSPACE_IDENTITY_404_NOT_FOUND"), asked(424, "LK_BAD_COOKIE")]) {
+      expect(lost.code).toBe("auth");
+      expect(vendor.explain(lost)).toMatch(/no longer holds this LinkedIn sign-in/);
+      expect(vendor.explainSyncFailure(lost)).toMatch(/no longer holds this LinkedIn sign-in/);
+    }
   });
 });
 
@@ -179,7 +240,7 @@ describe("gatewayErrorFrom", () => {
   });
 
   it("disconnects only for a lost sign-in or a rejected key", () => {
-    for (const e of [error(424, "LK_BAD_COOKIE"), error(424, "INVALID_INTEGRATION"), error(401, "")]) expect(e.code).toBe("auth");
+    for (const e of [error(424, "LK_BAD_COOKIE"), error(424, "INVALID_INTEGRATION"), error(401, ""), error(404, "WORKSPACE_IDENTITY_404_NOT_FOUND")]) expect(e.code).toBe("auth");
     expect(error(402, "")).toMatchObject({ code: "rate_limited", retryAfterMs: 3_600_000 });
     expect(error(403, "NO_ACCESS").code).toBe("rate_limited");
     expect(error(424, "INVALID_INTEGRATION", "m", "TEMPORARILY_RESTRICTED").code).toBe("rate_limited");

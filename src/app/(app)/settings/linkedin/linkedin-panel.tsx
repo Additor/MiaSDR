@@ -33,6 +33,9 @@ import { hoursDraft, sameHours, toStoredHours, WorkingHoursFields, type StoredHo
 import { DailyCounters } from "./daily-counters";
 import type { ConnectResult } from "@/contexts/outreach/linkedin/application/linkedin-management";
 
+/** How long a link waits before the next check after one the vendor could not settle. Reading the profile can spend a credit. */
+const CONNECT_RETRY_MS = 60_000;
+
 interface Account {
   id: string;
   name: string | null;
@@ -43,6 +46,9 @@ interface Account {
   dailyMessageLimit: number;
   messagesToday: number;
   limitReachedUntil: string | null;
+  inboundReadAt: string | null;
+  /** This vendor's inbox is read, and no read finished lately, so the account sends nothing. */
+  inboxStale: boolean;
   invitesToday: number;
   workingHours: StoredHours | null;
   ownerUserId: string | null;
@@ -90,23 +96,49 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   const { isBusy, run } = useApiAction<"connect" | "link" | "sync" | "webhooks" | "setup">();
   const pending = isBusy("connect");
   const refresh = () => router.refresh();
-  const pendingLink = state?.vendor.pollsConnect ? state.links.find((link) => link.status === "pending")?.id : undefined;
+  const pendingLinks = state?.vendor.pollsConnect ? state.links.filter((link) => link.status === "pending").map((link) => link.id).join(",") : "";
   const [formVendor, setFormVendor] = useState<string | null>(null);
+  const checkingLinks = useRef(false);
 
   // This vendor's link does not report back, and its page does not return here: ask until the sign-in settles.
   useEffect(() => {
-    if (!pendingLink) return;
+    if (!pendingLinks) return;
+    // Every open link, since the person may finish any of them. One pass at a time, across a change of links too: a slow check reads the profile, which spends a credit.
+    const settled = new Set<string>();
+    const notBefore = new Map<string, number>();
+    let stopped = false;
     const timer = setInterval(() => {
+      if (checkingLinks.current) return;
+      checkingLinks.current = true;
       void (async () => {
-        const result = await runApiAction(callApi<{ status: string; error: string | null }>("/api/linkedin/accounts/connect-status", "POST", { linkId: pendingLink }), { expectData: true });
-        if (!result.ok || result.data.status === "pending") return;
-        if (result.data.status === "completed") toast.success("LinkedIn account connected.");
-        else toast.error(result.data.error ?? "LinkedIn did not connect the account.");
-        router.refresh();
+        try {
+          for (const linkId of pendingLinks.split(",")) {
+            if (stopped) return;
+            if (settled.has(linkId) || Date.now() < (notBefore.get(linkId) ?? 0)) continue;
+            const result = await runApiAction(callApi<{ status: string; error: string | null }>("/api/linkedin/accounts/connect-status", "POST", { linkId }), { expectData: true });
+            if (!result.ok) continue;
+            if (result.data.status === "pending") {
+              if (result.data.error) {
+                notBefore.set(linkId, Date.now() + CONNECT_RETRY_MS);
+                router.refresh();
+              }
+              continue;
+            }
+            settled.add(linkId);
+            if (result.data.status === "completed") toast.success("LinkedIn account connected.");
+            else toast.error(result.data.error ?? "LinkedIn did not connect the account.");
+            router.refresh();
+          }
+        } finally {
+          checkingLinks.current = false;
+        }
       })();
     }, 5000);
-    return () => clearInterval(timer);
-  }, [pendingLink, router]);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [pendingLinks, router]);
 
   // Back from the Unipile wizard: pull the new account in at once, then drop the query so a reload does not repeat it.
   useEffect(() => {
@@ -530,6 +562,19 @@ function AccountRow({
               <>
                 {" "}
                 LinkedIn reported a limit, so this account rests until <Time value={account.limitReachedUntil} />.
+              </>
+            )}
+            {account.status === "connected" && account.inboxStale && (
+              <>
+                {" "}
+                {account.inboundReadAt ? (
+                  <>
+                    The inbox was last read <Time value={account.inboundReadAt} />.
+                  </>
+                ) : (
+                  "The inbox has not been read yet."
+                )}{" "}
+                This account sends nothing until a read finishes, which happens inside its working hours.
               </>
             )}
           </p>

@@ -6,6 +6,8 @@ import { credentialCipher } from "@/contexts/integrations/infrastructure/credent
 import { db, type DbHandle } from "@/platform/db/client";
 import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
+import type { GatewayAccount } from "../application/linkedin-ports";
+import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 import { SEND_COUNTED } from "../../domain/send-status";
@@ -62,6 +64,13 @@ function parseCredentials(key: string, plaintext: string): LinkedInCredentials |
   }
 }
 
+/** What a listing means for an account's status. See `updateAccountStatuses`. */
+function listedStatus(listed: GatewayAccount, row: { status: string; username: string | null }): string {
+  if (listed.status !== "connected") return "disconnected";
+  if (!listed.username || !row.username) return row.status;
+  return normalizePublicSlug(listed.username) === normalizePublicSlug(row.username) ? "connected" : "disconnected";
+}
+
 /** The vendor connection lives in the shared integration tables, one row per organization, encrypted with INTEGRATION_CREDENTIALS_KEY. */
 export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
   async getCredentials(organizationId) {
@@ -86,6 +95,11 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
 
   connectedVendor: (organizationId) => connectedKey(db, organizationId),
 
+  async timeZone(organizationId) {
+    const zone = await organizationTimeZone(organizationId);
+    return zone === "UTC" ? null : zone;
+  },
+
   async accountRefs(organizationId, vendorKey) {
     const rows = await db
       .select({ ref: linkedinAccounts.providerAccountId })
@@ -99,14 +113,15 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
     let updated = 0;
     for (const account of accounts) {
       const [row] = await db
-        .select({ id: linkedinAccounts.id, status: linkedinAccounts.status })
+        .select({ id: linkedinAccounts.id, status: linkedinAccounts.status, username: linkedinAccounts.username })
         .from(linkedinAccounts)
         .where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.provider, vendorKey), eq(linkedinAccounts.providerAccountId, account.ref)));
       if (!row) continue;
       updated += 1;
-      if (row.status === account.status) continue;
-      await db.update(linkedinAccounts).set({ status: account.status }).where(eq(linkedinAccounts.id, row.id));
-      changes.push({ ref: account.ref, from: row.status === "connected" ? "connected" : "disconnected", to: account.status });
+      const status = listedStatus(account, row);
+      if (row.status === status) continue;
+      await db.update(linkedinAccounts).set({ status }).where(eq(linkedinAccounts.id, row.id));
+      changes.push({ ref: account.ref, from: row.status === "connected" ? "connected" : "disconnected", to: status === "connected" ? "connected" : "disconnected" });
     }
     return { added: 0, updated, skipped: 0, skippedReasons: [], changes };
   },
@@ -252,6 +267,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
           name: row.name,
           username: row.username,
           status: row.status,
+          inboundReadAt: row.inboundReadAt,
           isPremium: row.isPremium,
           dailyInviteLimit: row.dailyInviteLimit,
           dailyMessageLimit: row.dailyMessageLimit,

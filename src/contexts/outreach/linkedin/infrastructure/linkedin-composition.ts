@@ -31,6 +31,7 @@ import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { drizzleLinkedInInboundPollStore } from "./drizzle-linkedin-inbound-read-store";
 import { EdgesGateway } from "./vendors/edges/edges-gateway";
+import { EdgesClient } from "./vendors/edges/edges-http";
 import { edgesEventKey, isEdgesDelivery, parseEdgesDelivery, readEdgesInbound, unreadableEdgesDelivery } from "./vendors/edges/edges-inbound";
 import { createEdgesVendor } from "./vendors/edges/edges-vendor";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
@@ -131,11 +132,11 @@ const edgesInboundSource: LinkedInInboundPollDeps["source"] = {
   async read({ organizationId, account, cursor, now }) {
     const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
     if (!credentials?.apiKey) throw new LinkedInGatewayError("Edges is not connected.", "definite", "unavailable");
-    return readEdgesInbound(new EdgesGateway({ apiKey: credentials.apiKey }).client, account, cursor, now);
+    return readEdgesInbound(new EdgesClient({ apiKey: credentials.apiKey }), account, cursor, now);
   },
 };
 
-/** LinkedIn jobs. They idle until an organization connects Unipile, so they are always registered. */
+/** LinkedIn jobs. They idle until an organization connects LinkedIn, so they are always registered. */
 export function linkedinJobs(inbox: InboxFiling): Job[] {
   const poll: LinkedInInboundPollDeps = { store: drizzleLinkedInInboundPollStore, source: edgesInboundSource, inbound: inboundDeps(inbox), clock: { now: () => new Date() } };
   return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll);

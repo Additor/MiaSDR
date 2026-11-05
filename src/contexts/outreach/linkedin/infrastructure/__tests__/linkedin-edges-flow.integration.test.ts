@@ -183,6 +183,26 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const rows = await sql`select provider, status from linkedin_accounts where organization_id = ${f.id} order by provider`;
       expect(rows).toEqual([{ provider: "edges", status: "disconnected" }, { provider: "unipile", status: "connected" }]);
     });
+
+    it("keeps an account disconnected when someone else is signed in to its identity, and brings its own sign-in back", async () => {
+      const f = await org();
+      const known = await account(f, "edges");
+      await sql`update linkedin_accounts set status = 'disconnected' where id = ${known.id}`;
+      const [{ username }] = await sql`select username from linkedin_accounts where id = ${known.id}`;
+      await accounts.saveCredentials(f.id, { apiKey: "k", notifySecret: "s" }, EDGES);
+      const deps = { accounts, vendors: [edgesVendor.createEdgesVendor()], appUrl: "https://app.test", now: () => new Date() } as never;
+      const signedInAs = (who: string | null) => ({ listAccounts: async () => [{ ref: known.ref, linkedinId: null, name: null, username: who, status: "connected" as const }] }) as never;
+      const statusNow = async () => (await sql`select status from linkedin_accounts where id = ${known.id}`)[0].status;
+
+      await mgmt.syncWith(deps, f.id, signedInAs("someone-else"));
+      expect(await statusNow()).toBe("disconnected");
+      await mgmt.syncWith(deps, f.id, signedInAs(null));
+      expect(await statusNow()).toBe("disconnected");
+      await mgmt.syncWith(deps, f.id, signedInAs(username));
+      expect(await statusNow()).toBe("connected");
+      await mgmt.syncWith(deps, f.id, signedInAs("someone-else"));
+      expect(await statusNow()).toBe("disconnected");
+    });
   });
 
   describe("reading the inbox", () => {
@@ -220,8 +240,53 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       const failing = (error: Error) => ({ ...pollDeps([]), source: { read: async ({ account: ref }: { account: string }) => { if (ref === a.ref) throw error; return { deliveries: [], cursor: {}, finishedRunStartedAt: new Date() }; } } });
       await poll.pollLinkedInInbound(failing(new LinkedInGatewayError("down", "unknown", "unavailable")), far());
       expect((await sql`select status, inbound_read_at from linkedin_accounts where id = ${a.id}`)[0]).toEqual({ status: "connected", inbound_read_at: null });
+      await sql`update linkedin_accounts set inbound_lease_until = null where id = ${a.id}`;
       await poll.pollLinkedInInbound(failing(new LinkedInGatewayError("signed out", "definite", "auth")), far());
       expect((await sql`select status from linkedin_accounts where id = ${a.id}`)[0].status).toBe("disconnected");
+    });
+
+    it("lets a failed read wait, so one account that hangs does not hold the queue, for as long as the vendor says", async () => {
+      const f = await org();
+      const bad = await account(f, "edges");
+      const limited = await account(f, "edges");
+      const { LinkedInGatewayError } = await import("../../application/linkedin-ports");
+      const asked: string[] = [];
+      const deps = {
+        ...pollDeps([]),
+        source: {
+          read: async ({ account: ref }: { account: string }) => {
+            asked.push(ref);
+            if (ref === bad.ref) throw new LinkedInGatewayError("timed out", "unknown", "unavailable");
+            if (ref === limited.ref) throw new LinkedInGatewayError("out of credits", "definite", "rate_limited", 3_600_000);
+            return { deliveries: [], cursor: {}, finishedRunStartedAt: new Date() };
+          },
+        },
+      };
+      await poll.pollLinkedInInbound(deps, far());
+      expect(asked).toEqual(expect.arrayContaining([bad.ref, limited.ref]));
+      const until = async (id: string) => (await sql`select inbound_lease_until from linkedin_accounts where id = ${id}`)[0].inbound_lease_until.getTime() - Date.now();
+      expect(await until(bad.id)).toBeGreaterThan(2 * 60_000);
+      expect(await until(bad.id)).toBeLessThanOrEqual(3 * 60_000);
+      expect(await until(limited.id)).toBeGreaterThan(50 * 60_000);
+      asked.length = 0;
+      await poll.pollLinkedInInbound(deps, far());
+      expect(asked).not.toContain(bad.ref);
+      expect(asked).not.toContain(limited.ref);
+    });
+
+    it("lets one worker at a time read an account, and frees it when the read ends", async () => {
+      const f = await org();
+      const a = await account(f, "edges");
+      const now = new Date();
+      const input = { readBefore: now, now, until: new Date(now.getTime() + 60_000) };
+      expect(await pollStore.claim(a.id, input)).toEqual({ cursor: null });
+      expect(await pollStore.claim(a.id, input)).toBeNull();
+      expect((await pollStore.listDue(now, now)).map((row) => row.id)).not.toContain(a.id);
+      expect(await pollStore.claim(a.id, { ...input, now: new Date(now.getTime() + 61_000), until: new Date(now.getTime() + 120_000) })).toEqual({ cursor: null });
+      await pollStore.release(a.id, null);
+      expect((await pollStore.listDue(now, now)).map((row) => row.id)).toContain(a.id);
+      await sql`update linkedin_accounts set inbound_read_at = ${now} where id = ${a.id}`;
+      expect(await pollStore.claim(a.id, input)).toBeNull();
     });
 
     it("takes a lead's polled reply through the ledger, which stops the sequence, once", async () => {
@@ -292,6 +357,45 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       expect((await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).status).toBe("completed");
     });
 
+    it("removes a new identity whose sign-in failed, so a second try is not refused for holding the same profile", async () => {
+      const t = await setup("failed", { member: "ACoAAx", slug: "x" });
+      expect((await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).status).toBe("failed");
+      expect(t.cancelled).toEqual([t.ref]);
+    });
+
+    it("keeps a reconnect open while the vendor still calls the old sign-in failed, and keeps the account's identity", async () => {
+      const t = await setup("failed", { member: "ACoAAx", slug: "x" });
+      await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, status) values (${t.f.id}, 'edges', ${t.ref}, ${"ACoAAold" + t.f.tag}, 'disconnected')`;
+      expect(await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).toEqual({ status: "pending", error: null });
+      expect(t.cancelled).toEqual([]);
+    });
+
+    it("gives an expired link's unused identity back when the next link is made, and keeps one an account uses", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      await sql`update linkedin_connect_links set expires_at = now() - interval '1 minute' where id = ${t.link.linkId}`;
+      await connect.createConnectLink(t.deps, t.actor);
+      expect(t.cancelled).toEqual([t.ref]);
+      expect((await sql`select status from linkedin_connect_links where id = ${t.link.linkId}`)[0].status).toBe("expired");
+
+      const used = await setup("pending", { member: "ACoAAy", slug: "y" });
+      await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, status) values (${used.f.id}, 'edges', ${used.ref}, ${"ACoAAy" + used.f.tag}, 'disconnected')`;
+      await sql`update linkedin_connect_links set expires_at = now() - interval '1 minute' where id = ${used.link.linkId}`;
+      await connect.createConnectLink(used.deps, used.actor);
+      expect(used.cancelled).toEqual([]);
+    });
+
+    it("passes the organization's zone to a new link, and none to a reconnect", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      await sql`update organizations set timezone = 'Asia/Seoul' where id = ${t.f.id}`;
+      const seen: Array<string | null> = [];
+      const inner = (t.deps as unknown as { vendors: Array<{ gatewayFor: () => { createConnectLink: (input: { timeZone: string | null }) => Promise<unknown> } }> }).vendors[0].gatewayFor();
+      inner.createConnectLink = async (input) => (seen.push(input.timeZone), { url: "https://login", account: t.ref });
+      await connect.createConnectLink(t.deps, t.actor);
+      const [{ id }] = await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, status) values (${t.f.id}, 'edges', ${t.ref}, ${"ACoAAz" + t.f.tag}, 'disconnected') returning id`;
+      await connect.createConnectLink(t.deps, t.actor, { reconnectAccountId: id });
+      expect(seen).toEqual(["Asia/Seoul", null]);
+    });
+
     it("refuses a profile already on another vendor, and fails the link", async () => {
       const key = uniqueKey();
       const t = await setup("connected", { member: `ACoAAada${key}`, slug: `ada-${key}` });
@@ -300,6 +404,58 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       expect(state.status).toBe("failed");
       expect(state.error).toMatch(/another LinkedIn provider/);
       expect((await sql`select provider from linkedin_accounts where organization_id = ${t.f.id}`).map((r) => r.provider)).toEqual(["unipile"]);
+      // Signed in, refused, and no row uses it: left behind, it would hold a seat and the profile at the vendor.
+      expect(t.cancelled).toEqual([t.ref]);
+    });
+
+    it("keeps a reconnect open while someone else is signed in, so the right sign-in can still finish it", async () => {
+      const key = uniqueKey();
+      const t = await setup("connected", { member: `ACoAAother${key}`, slug: `other-${key}` });
+      await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, username, status) values (${t.f.id}, 'edges', ${t.ref}, ${`ACoAAowner${key}`}, ${`owner-${key}`}, 'connected')`;
+      const state = await connect.checkConnectLink(t.deps, t.actor, t.link.linkId);
+      expect(state).toEqual({ status: "pending", error: expect.stringMatching(/Someone else is signed in/) });
+      expect(t.cancelled).toEqual([]);
+      expect((await sql`select status from linkedin_accounts where provider_account_id = ${t.ref}`)[0].status).toBe("disconnected");
+      expect((await sql`select status, last_error from linkedin_connect_links where id = ${t.link.linkId}`)[0]).toMatchObject({ status: "pending", last_error: expect.stringMatching(/Someone else/) });
+
+      const inner = (t.deps as unknown as { vendors: Array<{ gatewayFor: () => FakeLinkedInGateway }> }).vendors[0].gatewayFor();
+      inner.getOwnProfile = async () => ({ member: `ACoAAowner${key}`, publicSlug: `owner-${key}`, firstName: "Ada", lastName: "L", headline: null, location: null, pictureUrl: null, networkDistance: "unknown", isPremium: true });
+      expect(await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).toEqual({ status: "completed", error: null });
+      expect((await sql`select status from linkedin_accounts where provider_account_id = ${t.ref}`)[0].status).toBe("connected");
+    });
+
+    it("says what went wrong when the profile cannot be read, so the page can wait before spending another credit", async () => {
+      const t = await setup("connected", { member: "ACoAAx", slug: "x" });
+      const inner = (t.deps as unknown as { vendors: Array<{ gatewayFor: () => FakeLinkedInGateway }> }).vendors[0].gatewayFor();
+      const { LinkedInGatewayError } = await import("../../application/linkedin-ports");
+      inner.getOwnProfile = async () => {
+        throw new LinkedInGatewayError("no id", "definite", "rejected");
+      };
+      expect(await connect.checkConnectLink(t.deps, t.actor, t.link.linkId)).toEqual({ status: "pending", error: "Edges refused the request. Check your Edges workspace." });
+    });
+
+    it("gives an expired link's identity back on the hourly sync, with no new link made", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      await sql`update linkedin_connect_links set expires_at = now() - interval '1 minute' where id = ${t.link.linkId}`;
+      const { createLinkedInJobs } = await import("../../application/linkedin-jobs");
+      const base = t.deps as unknown as { accounts: typeof accounts };
+      const management = { ...(t.deps as object), accounts: { ...base.accounts, listCredentialedOrganizations: async () => [t.f.id] } };
+      const slots = { claim: async () => ({ organizationId: t.f.id }), finish: async () => undefined };
+      const [sync] = createLinkedInJobs({} as never, {} as never, {} as never, management as never, slots as never);
+      await sync.run({ deadline: Date.now() + 60_000, now: () => new Date() });
+      expect(t.cancelled).toEqual([t.ref]);
+      expect((await sql`select status from linkedin_connect_links where id = ${t.link.linkId}`)[0].status).toBe("expired");
+    });
+
+    it("lists open links first, so one is still asked about however many links came after it", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      for (let i = 0; i < 5; i++) {
+        await sql`insert into linkedin_connect_links (organization_id, provider_name, secret_hash, status, expires_at, created_at) values (${t.f.id}, ${"later-" + uniqueKey()}, ${"0".repeat(64)}, 'failed', now() + interval '1 hour', now() + interval '1 minute')`;
+      }
+      const { drizzleLinkedInConnectStore } = await import("../drizzle-linkedin-connect-store");
+      const listed = await drizzleLinkedInConnectStore.listRecent(t.f.id, 5, new Date());
+      expect(listed).toHaveLength(5);
+      expect(listed[0]).toMatchObject({ id: t.link.linkId, status: "pending" });
     });
 
     it("removes a new identity on cancel, and keeps one an account uses", async () => {
@@ -312,6 +468,14 @@ describeDb("LinkedIn accounts on a second vendor", () => {
       await sql`insert into linkedin_accounts (organization_id, provider, provider_account_id, linkedin_id, status) values (${used.f.id}, 'edges', ${used.ref}, ${"ACoAAy" + used.f.tag}, 'disconnected')`;
       await connect.cancelConnectLink(used.deps, used.actor, used.link.linkId);
       expect(used.cancelled).toEqual([]);
+    });
+
+    it("leaves the identity of a link a check completed a moment before the cancel", async () => {
+      const t = await setup("pending", { member: "ACoAAx", slug: "x" });
+      const closing = t.deps as unknown as { connectLinks: { fail: (id: string, error: string) => Promise<boolean> } };
+      const deps = { ...(t.deps as object), connectLinks: { ...closing.connectLinks, fail: async () => false } };
+      await connect.cancelConnectLink(deps as never, t.actor, t.link.linkId);
+      expect(t.cancelled).toEqual([]);
     });
 
     it("refuses to reconnect an account left from another vendor", async () => {

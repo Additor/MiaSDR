@@ -101,6 +101,8 @@ export const linkedinAccounts = pgTable(
     inboundCursor: jsonb("inbound_cursor"),
     /** When a full read of the inbox last started. A claim refuses such an account when this is old: a stop request may be waiting unread. */
     inboundReadAt: tstz("inbound_read_at"),
+    /** No read of this inbox starts before this: a worker holds it, or its last read failed and waits its turn. */
+    inboundLeaseUntil: tstz("inbound_lease_until"),
     /**
      * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
      * sync or before owners existed, until an admin picks one. An agent's search uses only accounts its token's person

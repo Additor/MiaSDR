@@ -79,7 +79,8 @@ export class EdgesClient {
     try {
       parsed = text ? JSON.parse(text) : null;
     } catch {
-      parsed = null;
+      // A garbled success is no answer: a read must not take it for an empty list.
+      if (response.ok) throw new EdgesRequestError(0, "unreadable", "Edges answered something other than JSON.");
     }
     if (!response.ok) throw errorFrom(response.status, parsed);
     return { parsed, headers: response.headers };

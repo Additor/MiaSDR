@@ -308,7 +308,7 @@ describe("error classification", () => {
     await expect(gateway.sendInvitation({ account: "u", member: "m", note: null })).rejects.toMatchObject({ kind: "definite", code: "rate_limited" });
   });
 
-  const link = { name: "mia-abc", expiresAt: new Date("2026-10-15T10:15:00Z"), successRedirectUrl: "https://app.test/ok", failureRedirectUrl: "https://app.test/no", notifyUrl: "https://app.test/notify?link=1&secret=s" as string | null, reconnectAccount: null as string | null };
+  const link = { name: "mia-abc", expiresAt: new Date("2026-10-15T10:15:00Z"), successRedirectUrl: "https://app.test/ok", failureRedirectUrl: "https://app.test/no", notifyUrl: "https://app.test/notify?link=1&secret=s" as string | null, reconnectAccount: null as string | null, timeZone: null };
 
   it("creates a hosted-auth link for a new LinkedIn account", async () => {
     const { gateway, calls } = mock([{ status: 201, json: { object: "HostedAuthURL", url: "https://account.unipile.com/x" } }]);

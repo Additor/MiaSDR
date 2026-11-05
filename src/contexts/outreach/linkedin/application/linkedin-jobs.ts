@@ -1,5 +1,6 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { Job, TickContext, SlotPort } from "@/platform/jobs/types";
+import { expireConnectLinks } from "./linkedin-connect";
 import { replayLinkedInEvents } from "./linkedin-inbound";
 import { syncAndRecord, syncErrorText, vendorOf, type LinkedInManagementDeps } from "./linkedin-management";
 import type { LinkedInEngineDeps, LinkedInInboundDeps, LinkedInInboundPollDeps } from "./linkedin-ports";
@@ -37,6 +38,8 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           detail.organizations += 1;
           try {
             const result = await syncAndRecord(management, organizationId, () => vendor.gatewayFor(credentials));
+            // A link nobody finished holds an account at this vendor, which costs a seat, whether or not anyone makes another link.
+            if (vendor.connectSession) await expireConnectLinks(management, organizationId, vendor, credentials, ctx.now());
             await slots.finish(claim, { status: "succeeded" }, ctx.now());
             detail.added += result.added;
             // A new account is `added`, not a status change.
