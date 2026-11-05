@@ -6,7 +6,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isUuid } from "@/shared/uuid";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { MIA_MAX_INPUT_CHARS, MIA_RUN_TOKENS } from "../domain/mia-run";
-import { backgroundTokenLimit, nextUtcMidnight, parseMiaSettingsPatch, type MiaSettings } from "../domain/mia-settings";
+import { backgroundTokenLimit, MIN_DAILY_TOKENS_FOR_A_JOB, nextUtcMidnight, parseMiaSettingsPatch, type MiaSettings } from "../domain/mia-settings";
 import { parsePageUrl } from "../domain/page-url";
 import { checkConfirmed, suggestionRows, type SuggestionRow } from "../domain/suggestion";
 import type { MiaBrainPort, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunRow } from "./mia-ports";
@@ -35,6 +35,9 @@ async function assertCanStart(deps: MiaDeps, actor: Actor): Promise<void> {
   const reason = await miaUnavailable(deps, actor);
   if (reason) throw new ConflictError(reason, { code: "mia_off" });
   const settings = await deps.settings.read(actor.organizationId);
+  if (settings.dailyTokenLimit < MIN_DAILY_TOKENS_FOR_A_JOB) {
+    throw new ConflictError(`The daily limit is too low for one job. An owner or admin raises it to at least ${MIN_DAILY_TOKENS_FOR_A_JOB.toLocaleString("en-US")} under Settings, Organization.`, { code: "mia_daily_limit" });
+  }
   const now = deps.now();
   // A run that could not finish inside what is left would stop halfway, so it waits for a person to try again tomorrow.
   if ((await deps.runs.usedToday(actor.organizationId, now)) + MIA_RUN_TOKENS > backgroundTokenLimit(settings)) {
@@ -98,6 +101,9 @@ export interface SuggestionView {
   fields: BrainFields;
   createdAt: Date;
 }
+
+/** How many wait for a person, for a view that shows the number and not the list. */
+export const openSuggestionCount = (deps: Pick<MiaDeps, "suggestions">, actor: Actor): Promise<number> => deps.suggestions.countOpen(actor.organizationId);
 
 /** Open suggestions with what each would change. A suggestion whose kind this install no longer has stays out. */
 export async function openSuggestions(deps: Pick<MiaDeps, "suggestions" | "brain">, actor: Actor): Promise<{ rows: SuggestionView[]; total: number }> {

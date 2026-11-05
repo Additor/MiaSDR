@@ -15,55 +15,73 @@ const plan = [
 
 describe("reviewSuggestion", () => {
   it("takes values whose sentence is in the source, and nests dotted keys", () => {
-    const { fields, merged } = reviewSuggestion("price_book", plan, {}, sources);
-    expect(merged).toEqual({ entryName: "Starter", pricing: { currency: "USD" }, monthlyPrice: 99 });
+    const { fields, parsed } = reviewSuggestion("price_book", plan, sources);
+    expect(parsed).toEqual({ entryName: "Starter", pricing: { currency: "USD" }, monthlyPrice: 99 });
     expect(Object.values(fields).every((f) => !f.unverified && f.sourceUrl === PAGE)).toBe(true);
   });
 
   it("marks a number its sentence does not contain, even when the sentence is real", () => {
-    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], {}, sources);
+    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], sources);
     expect(fields.monthlyPrice.unverified).toBe(true);
     expect(fields.entryName.unverified).toBe(false);
   });
 
   it("reads 1,000 and 1000 as one number", () => {
-    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { key: "annualPrice", value: 1000, quote: "or $1,000 per year", source: PAGE }], {}, sources);
+    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { key: "annualPrice", value: 1000, quote: "or $1,000 per year", source: PAGE }], sources);
     expect(fields.annualPrice.unverified).toBe(false);
   });
 
+  it("reads 99.00 and 99 as one number, and keeps 1.000 apart from 1", () => {
+    const priced = new Map([[PAGE, "Pay $99.00 per month, or $9.50 per seat, or €1.000 per year."]]);
+    const price = (value: number, quote: string) => reviewSuggestion("price_book", [{ key: "entryName", value: "Starter", quote: "Pay", source: PAGE }, { key: "pricing.currency", value: "USD", quote: "Pay $99.00", source: PAGE }, { key: "monthlyPrice", value, quote, source: PAGE }], priced).fields.monthlyPrice.unverified;
+    expect(price(99, "$99.00 per month")).toBe(false);
+    expect(price(9.5, "$9.50 per seat")).toBe(false);
+    expect(price(1, "€1.000 per year")).toBe(true);
+  });
+
   it("marks a currency the sentence does not show", () => {
-    const { fields } = reviewSuggestion("price_book", [plan[0], { ...plan[1], value: "EUR" }, plan[2]], {}, sources);
+    const { fields } = reviewSuggestion("price_book", [plan[0], { ...plan[1], value: "EUR" }, plan[2]], sources);
     expect(fields["pricing.currency"].unverified).toBe(true);
   });
 
+  it("reads a currency code only as a whole word", () => {
+    const words = new Map([[PAGE, "Sold across Europe. The plan costs 99 EUR."]]);
+    const currency = (quote: string) => reviewSuggestion("price_book", [{ key: "entryName", value: "Starter", quote: "The plan", source: PAGE }, { key: "pricing.currency", value: "EUR", quote, source: PAGE }], words).fields["pricing.currency"].unverified;
+    expect(currency("Sold across Europe")).toBe(true);
+    expect(currency("costs 99 EUR")).toBe(false);
+  });
+
+  it("marks an address written without a scheme, and a mail address, unless the sentence holds it", () => {
+    const made = (value: string, quote: string) => reviewSuggestion("product", [{ key: "productName", value: "Booker", quote: "the fastest", source: INPUT_SOURCE }, { key: "overview", value, quote, source: INPUT_SOURCE }], new Map([[INPUT_SOURCE, "the fastest way to book meetings, at book.acme.test."]])).fields.overview.unverified;
+    expect(made("Book at evil.test/now", "the fastest way")).toBe(true);
+    expect(made("Write to sales@evil.test", "the fastest way")).toBe(true);
+    expect(made("Book at book.acme.test", "at book.acme.test")).toBe(false);
+    expect(made("Books meetings quickly", "the fastest way")).toBe(false);
+  });
+
   it("marks an address its sentence does not contain, but accepts the site's own address", () => {
-    const made = (value: string, quote: string) => reviewSuggestion("company_profile", [{ key: "companyName", value: "Acme", quote: "The Starter plan", source: PAGE }, { key: "website", value, quote, source: PAGE }], {}, sources);
+    const made = (value: string, quote: string) => reviewSuggestion("company_profile", [{ key: "companyName", value: "Acme", quote: "The Starter plan", source: PAGE }, { key: "website", value, quote, source: PAGE }], sources);
     expect(made("https://evil.test/x", "The Starter plan").fields.website.unverified).toBe(true);
     expect(made("https://www.acme.test", "The Starter plan").fields.website.unverified).toBe(false);
   });
 
   it("refuses a sentence no source contains, and a source Mia did not read", () => {
-    expect(() => reviewSuggestion("price_book", [{ ...plan[0], quote: "The Starter plan is free" }], {}, sources)).toThrow(/not in the source/);
-    expect(() => reviewSuggestion("price_book", [{ ...plan[0], source: "https://acme.test/never-read" }], {}, sources)).toThrow(/not a source you read/);
-    expect(() => reviewSuggestion("price_book", [{ ...plan[0], quote: " " }], {}, sources)).toThrow(/needs the sentence/);
+    expect(() => reviewSuggestion("price_book", [{ ...plan[0], quote: "The Starter plan is free" }], sources)).toThrow(/not in the source/);
+    expect(() => reviewSuggestion("price_book", [{ ...plan[0], source: "https://acme.test/never-read" }], sources)).toThrow(/not a source you read/);
+    expect(() => reviewSuggestion("price_book", [{ ...plan[0], quote: " " }], sources)).toThrow(/needs the sentence/);
   });
 
   it("matches a sentence across line breaks and case", () => {
-    expect(reviewSuggestion("price_book", [{ ...plan[0], quote: "per year.  SEE https://acme.test/terms" }], {}, sources).fields.entryName.unverified).toBe(false);
+    expect(reviewSuggestion("price_book", [{ ...plan[0], quote: "per year.  SEE https://acme.test/terms" }], sources).fields.entryName.unverified).toBe(false);
   });
 
-  it("applies the kind's own rules to the whole item", () => {
-    expect(() => reviewSuggestion("price_book", [plan[0], plan[2]], {}, sources)).toThrow(/Currency is required/);
-    expect(() => reviewSuggestion("product", [{ key: "overview", value: "Books meetings", quote: "the fastest way to book meetings", source: INPUT_SOURCE }], {}, sources)).toThrow(/Product name is required/);
-  });
-
-  it("keeps the fields an item already has when a suggestion names only some", () => {
-    const { merged } = reviewSuggestion("product", [{ key: "overview", value: "Books meetings", quote: "the fastest way to book meetings", source: INPUT_SOURCE }], { productName: "Booker", useCases: "Sales" }, sources);
-    expect(merged).toEqual({ productName: "Booker", overview: "Books meetings", useCases: "Sales" });
+  it("applies the kind's own rules to what the model sent", () => {
+    expect(() => reviewSuggestion("price_book", [plan[0], plan[2]], sources)).toThrow(/Currency is required/);
+    expect(() => reviewSuggestion("product", [{ key: "overview", value: "Books meetings", quote: "the fastest way to book meetings", source: INPUT_SOURCE }], sources)).toThrow(/Product name is required/);
   });
 
   it("refuses a field the kind does not have", () => {
-    expect(() => reviewSuggestion("product", [{ key: "secret", value: "x", quote: "the fastest", source: INPUT_SOURCE }], {}, sources)).toThrow(/Unknown field/);
+    expect(() => reviewSuggestion("product", [{ key: "secret", value: "x", quote: "the fastest", source: INPUT_SOURCE }], sources)).toThrow(/Unknown field/);
   });
 
   it("asks no sentence for a choice between fixed options", () => {
@@ -74,7 +92,6 @@ describe("reviewSuggestion", () => {
         { key: "objection", value: "Too slow", quote: "the fastest", source: INPUT_SOURCE },
         { key: "responseStrategy", value: "Speed", quote: "the fastest", source: INPUT_SOURCE },
       ],
-      {},
       sources,
     );
     expect(made.fields.category).toEqual({ value: "price", quote: null, sourceUrl: null, unverified: false });
@@ -83,20 +100,22 @@ describe("reviewSuggestion", () => {
 
 describe("suggestionRows", () => {
   it("sets each suggested field beside what the item holds now, and leaves other fields out", () => {
-    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], {}, sources);
+    const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], sources);
     const rows = suggestionRows("price_book", { fields, sorting: false }, { entryName: "Starter", pricing: { currency: "USD" }, monthlyPrice: 79, notes: "Old" });
     expect(rows.map((r) => r.key)).toEqual(["entryName", "pricing.currency", "monthlyPrice"]);
     expect(rows[2]).toMatchObject({ current: "USD 79", proposed: "89", unverified: true });
+    // A priced plan shows its currency inside each price, so the row has to read the field itself.
+    expect(rows[1]).toMatchObject({ current: "USD" });
   });
 
   it("shows nothing as current on a new item", () => {
-    const { fields } = reviewSuggestion("price_book", plan, {}, sources);
+    const { fields } = reviewSuggestion("price_book", plan, sources);
     expect(suggestionRows("price_book", { fields, sorting: false }, null).every((r) => r.current === "")).toBe(true);
   });
 });
 
 describe("checkConfirmed", () => {
-  const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], {}, sources);
+  const { fields } = reviewSuggestion("price_book", [plan[0], plan[1], { ...plan[2], value: 89 }], sources);
   const payload = { fields, sorting: false };
   const saving = { entryName: "Starter", pricing: { currency: "USD" }, monthlyPrice: 89 };
 

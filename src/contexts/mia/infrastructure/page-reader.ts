@@ -56,14 +56,14 @@ function reason(error: unknown, url: URL): Error {
 /** Reads one page of a public site. Each redirect hop goes through the same checks as the first address. */
 export function createPageReader(net: SafeFetchDeps = {}): PageReader {
   return {
-    async read(address) {
+    async read(address, signal) {
       const start = parsePageUrl(address);
       if (!start) throw new Error("That is not a public https address.");
       let url = start;
       for (let hop = 0; ; hop++) {
         let response;
         try {
-          response = await safeRequestBytes(url, { method: "GET", headers: { accept: "text/html,text/plain;q=0.9", "user-agent": "MiaSDR" } }, MIA_PAGE_TIMEOUT_MS, net, { redirects: "return", overflow: "truncate" });
+          response = await safeRequestBytes(url, { method: "GET", headers: { accept: "text/html,text/plain;q=0.9", "user-agent": "MiaSDR" } }, MIA_PAGE_TIMEOUT_MS, net, { redirects: "return", overflow: "truncate", signal });
         } catch (error) {
           throw reason(error, url);
         }

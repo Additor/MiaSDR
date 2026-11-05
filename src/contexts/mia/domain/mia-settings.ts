@@ -1,5 +1,6 @@
 import { ValidationError } from "@/shared/errors";
 import type { AiUsage } from "@/contexts/ai/domain/generation";
+import { MIA_RUN_TOKENS } from "./mia-run";
 
 /** The organization's Mia settings, in its `mia` channel settings row. Each key falls back to its default on its own. */
 export const MIA_SETTINGS_CHANNEL = "mia";
@@ -42,6 +43,9 @@ export function parseMiaSettingsPatch(raw: { enabled?: unknown; dailyTokenLimit?
 export const BACKGROUND_SHARE = 0.8;
 
 export const backgroundTokenLimit = (settings: MiaSettings): number => Math.floor(settings.dailyTokenLimit * BACKGROUND_SHARE);
+
+/** The lowest daily limit under which one job can start: a job needs its whole budget free. */
+export const MIN_DAILY_TOKENS_FOR_A_JOB = Math.ceil(MIA_RUN_TOKENS / BACKGROUND_SHARE);
 
 /** What counts against a limit: fresh input, cache writes and output. A cache read costs a fraction and rewards staying in one run. */
 export const countedTokens = (usage: AiUsage): number => usage.inputTokens + (usage.cacheWriteTokens ?? 0) + usage.outputTokens;

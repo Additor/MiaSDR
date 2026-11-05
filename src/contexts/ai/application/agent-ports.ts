@@ -11,8 +11,11 @@ export interface AgentTool<I = unknown> {
   name: string;
   description: string;
   input: z.ZodType<I>;
-  /** The string goes back to the model. A throw also goes back to it, as the failed call's result. */
-  execute(input: I): Promise<string>;
+  /**
+   * The string goes back to the model. A throw also goes back to it, as the failed call's result. `signal` fires when the
+   * step's time is up: the step waits for its tools, so a tool that waits on the network has to stop with it.
+   */
+  execute(input: I, signal?: AbortSignal): Promise<string>;
 }
 
 export interface AgentStepRequest {

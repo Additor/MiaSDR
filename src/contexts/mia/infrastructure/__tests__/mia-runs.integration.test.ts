@@ -7,6 +7,7 @@ import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { pruneHistory, DEFAULT_RETENTION } from "@/platform/jobs/prune";
 import { type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { MIA_PAGE_CHARS } from "../../domain/mia-run";
 import type { PageReader } from "../../application/mia-ports";
 import { acceptSuggestion, cancelRun, dismissSuggestion, openSuggestions, recentRuns, startBrainFill, startSort, updateMiaSettings, type MiaDeps } from "../../application/mia-use-cases";
 import { createMiaRunJob } from "../../application/mia-worker";
@@ -214,6 +215,46 @@ describeDb("Mia runs", () => {
     expect(await suggestionsOf(actor.organizationId)).toHaveLength(1);
   });
 
+  it("measures the wait before a retry from when the step failed, so a slow failure does not retry at once", async () => {
+    const actor = await fixture();
+    const { id } = await startBrainFill(deps(), actor, { text: "Some text." });
+    let clock = Date.now();
+    let calls = 0;
+    const slow: AgentModel = {
+      provider: "fake",
+      model: "slow",
+      async step() {
+        calls += 1;
+        clock += 40_000;
+        throw new AiError("The AI request timed out.", "transient");
+      },
+    };
+    const models = { forOrganization: async () => slow, status: async () => ({ state: "on" }) as unknown as AiStatus };
+    await createMiaRunJob(miaWorkerDeps({ models, pages, kick: () => undefined, now: () => new Date(clock) })).run({ deadline: Date.now() + 120_000, now: () => new Date(clock) });
+    expect(calls).toBe(1);
+    const waiting = await runRow(id);
+    expect(waiting.status).toBe("queued");
+    expect(new Date(waiting.next_attempt_at).getTime()).toBeGreaterThan(clock);
+  });
+
+  it("stores a page that holds a NUL or a cut surrogate pair, instead of paying for the step again", async () => {
+    const actor = await fixture();
+    const { id } = await startBrainFill(deps(), actor, { url: SITE });
+    // The page reader cuts the text at MIA_PAGE_CHARS, which can fall inside an emoji.
+    const awkward: PageReader = { read: async (url) => ({ url, title: "Acme", text: `${PAGE_TEXT} a\u0000b ${"x".repeat(MIA_PAGE_CHARS - PAGE_TEXT.length - 6)}😀`, links: [] }) };
+    const { model, calls } = scripted([[FETCH], [plan(SITE)], [FINISH]]);
+    const models = { forOrganization: async () => model, status: async () => ({ state: "on" }) as unknown as AiStatus };
+    await createMiaRunJob(miaWorkerDeps({ models, pages: awkward, kick: () => undefined })).run({ deadline: Date.now() + 120_000, now: () => new Date() });
+    expect(await runRow(id)).toMatchObject({ status: "succeeded", step_count: 3, suggestion_count: 1, error: null });
+    expect(calls()).toBe(3);
+  });
+
+  it("stores pasted text that holds a NUL", async () => {
+    const actor = await fixture();
+    const { id } = await startBrainFill(deps(), actor, { text: "We sell\u0000 things." });
+    expect((await runRow(id)).input.text).toBe("We sell things.");
+  });
+
   it("ends a run on a failure no retry can fix", async () => {
     const actor = await fixture();
     const { id } = await startBrainFill(deps(), actor, { text: "Some text." });
@@ -266,6 +307,14 @@ describeDb("Mia runs", () => {
     expect(await runRow(id)).toMatchObject({ status: "failed", failure_kind: "no_tool_call" });
   });
 
+  it("keeps what a run found when the model stops using its tools", async () => {
+    const actor = await fixture();
+    const { id } = await startBrainFill(deps(), actor, { text: "We sell Widgets." });
+    const suggest = { tool: "suggest_item", input: { kind: "product", fields: [{ key: "productName", value: "Widgets", quote: "We sell Widgets.", source: "input" }] } };
+    await pass(scripted([[suggest], "text", "text"]).model);
+    expect(await runRow(id)).toMatchObject({ status: "succeeded", suggestion_count: 1, error: null });
+  });
+
   it("limits the last step, and keeps what a run found when it reaches its limit", async () => {
     const actor = await fixture();
     const { id } = await startBrainFill(deps(), actor, { text: "We sell Widgets." });
@@ -280,7 +329,8 @@ describeDb("Mia runs", () => {
   it("stops a job at the daily share and refuses a new one, leaving room for a person", async () => {
     const actor = await fixture("admin");
     await updateMiaSettings(deps(), actor, { dailyTokenLimit: 1000 });
-    await expect(startBrainFill(deps(), actor, { text: "Some text." })).rejects.toMatchObject({ details: { code: "mia_daily_limit" } });
+    // With nothing used yet, the message has to name the limit and not today's use.
+    await expect(startBrainFill(deps(), actor, { text: "Some text." })).rejects.toMatchObject({ details: { code: "mia_daily_limit" }, message: expect.stringContaining("too low") });
 
     await updateMiaSettings(deps(), actor, { dailyTokenLimit: 1_000_000 });
     const { id } = await startBrainFill(deps(), actor, { text: "Some text." });
@@ -444,6 +494,24 @@ describeDb("Mia runs", () => {
     const [old] = await sql`select content from knowledge_document_versions where document_id = ${doc} and version = 1`;
     expect(old.content).toBe(content);
     await expect(startSort(deps(), actor, doc)).rejects.toThrow(/sorted already/);
+  });
+
+  it("sorts the old company document into a company profile, though that kind's one item is the document itself", async () => {
+    const actor = await fixture();
+    const content = "Acme books sales meetings.";
+    const doc = await sql.begin(async (tx) => {
+      const [row] = await tx`insert into knowledge_documents (organization_id, title, kind) values (${actor.organizationId}, 'About us', 'company_profile') returning id`;
+      await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${actor.organizationId}, ${row.id}, 1, ${content})`;
+      return row.id as string;
+    });
+    await startSort(deps(), actor, doc);
+    const suggest = { tool: "suggest_item", input: { kind: "company_profile", fields: [{ key: "companyName", value: "Acme", quote: content, source: "input" }] } };
+    const { model, seen } = scripted([[suggest], [FINISH]]);
+    await pass(model);
+    expect(seen.errors).toEqual([]);
+    const { rows } = await openSuggestions(deps(), actor);
+    await acceptSuggestion(deps(), actor, rows[0].id, { fields: rows[0].fields, revision: rows[0].revision as number });
+    expect(await getBrainItem(drizzleBrainStore, actor, doc)).toMatchObject({ kind: "company_profile", legacy: false, title: "Acme" });
   });
 
   it("prunes finished runs and decided suggestions, and a suggestion still open survives its run", async () => {

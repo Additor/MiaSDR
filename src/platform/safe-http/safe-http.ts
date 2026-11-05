@@ -80,6 +80,8 @@ export interface SafeBodyOptions {
   redirects?: "refuse" | "return";
   /** `truncate` keeps the first bytes of a body past the cap. Default `fail`. */
   overflow?: "fail" | "truncate";
+  /** Ends the request before its timeout, and reads as a timeout. */
+  signal?: AbortSignal;
 }
 
 export interface SafeBytesResponse {
@@ -150,9 +152,10 @@ export async function safeRequestBytes(
     pinned = addresses[0];
   }
 
+  const signal = options.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), options.signal]) : AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await ((deps.fetch ?? pinnedFetch) as Transport)(url, { method: init.method, headers: init.headers, body: init.body, redirect: "manual", signal: AbortSignal.timeout(timeoutMs), cache: "no-store" }, pinned);
+    response = await ((deps.fetch ?? pinnedFetch) as Transport)(url, { method: init.method, headers: init.headers, body: init.body, redirect: "manual", signal, cache: "no-store" }, pinned);
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
     throw timedOut ? new SafeHttpError("timeout", true, hostname, timeoutMs) : new SafeHttpError("unreachable", true, hostname);

@@ -1,6 +1,7 @@
 import { BRAIN_FIELDS, brainFieldRows, brainFieldValue, parseBrainFields, sameBrainFields, writeBrainField, type BrainField, type BrainFields } from "@/contexts/brain/domain/brain-fields";
 import type { BrainItemKind } from "@/contexts/brain/domain/brain-kinds";
 import { ConflictError, ValidationError } from "@/shared/errors";
+import { isSameSite } from "./page-url";
 
 /**
  * A suggestion is what Mia offers a person for Brain. It holds each value with the sentence it came from. A person saves it,
@@ -43,12 +44,18 @@ export const INPUT_SOURCE = "input";
 
 const squeeze = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
-/** Digit groups as a person reads them: 1,000 and 1000 are one number. */
+/** Digit groups as a person reads them: 1,000 and 1000 are one number, and so are 99.00 and 99. */
 function numbersIn(text: string): string[] {
-  return (text.match(/\d[\d,.]*\d|\d/g) ?? []).map((n) => n.replace(/,/g, ""));
+  return (text.match(/\d[\d,.]*\d|\d/g) ?? []).map((n) => n.replace(/,/g, "").replace(/\.0{1,2}$/, "").replace(/(\.\d)0$/, "$1"));
 }
 
-const urlsIn = (text: string): string[] => text.match(/https?:\/\/[^\s)>"']+/gi) ?? [];
+/**
+ * Web addresses with or without a scheme, and the domain of a mail address. "Book at evil.test" written into a value is
+ * the mistake this check exists for. The lookbehind tries a name only from its start, so a long word costs one pass.
+ */
+const ADDRESS = /https?:\/\/[^\s)>"']+|(?<![a-z0-9-])(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#][^\s)>"']*)?/gi;
+
+const addressesIn = (text: string): string[] => text.match(ADDRESS) ?? [];
 
 const CURRENCY_SIGNS: Record<string, readonly string[]> = { USD: ["$"], EUR: ["€"], GBP: ["£"], JPY: ["¥", "円"], KRW: ["₩", "원"], CNY: ["¥", "元"] };
 
@@ -59,11 +66,12 @@ function valueIsInQuote(field: BrainField, value: unknown, quote: string, source
   const text = textOf(value);
   if (field.type === "currency") {
     const code = text.toUpperCase();
-    return quote.toUpperCase().includes(code) || (CURRENCY_SIGNS[code] ?? []).some((sign) => quote.includes(sign));
+    // Whole words, since "Europe" does not state EUR.
+    return quote.toUpperCase().split(/[^A-Z]+/).includes(code) || (CURRENCY_SIGNS[code] ?? []).some((sign) => quote.includes(sign));
   }
   if (field.type === "url" && sourceUrl) {
     try {
-      if (new URL(text).hostname.replace(/^www\./, "") === new URL(sourceUrl).hostname.replace(/^www\./, "")) return true;
+      if (isSameSite(new URL(text), new URL(sourceUrl))) return true;
     } catch {
       return false;
     }
@@ -71,31 +79,32 @@ function valueIsInQuote(field: BrainField, value: unknown, quote: string, source
   const quoted = new Set(numbersIn(quote));
   if (numbersIn(text).some((n) => !quoted.has(n))) return false;
   const low = quote.toLowerCase();
-  return urlsIn(text).every((url) => low.includes(url.toLowerCase()));
+  return addressesIn(text).every((address) => low.includes(address.toLowerCase()));
 }
 
 export interface ReviewedSuggestion {
   fields: Record<string, SuggestedField>;
-  /** The item's whole field values once this is applied, in `structured_data` form. */
-  merged: BrainFields;
+  /** What the model sent, in `structured_data` form. */
+  parsed: BrainFields;
 }
 
 /**
  * Checks what a model offered. A value with no sentence behind it, or a sentence no source contains, is refused and the
- * reason goes back to the model. A value its sentence does not fully support stays, marked for a person. `base` holds the
- * fields the item keeps, since a suggestion names only what it changes. `sources` maps each source to its text.
+ * reason goes back to the model. A value its sentence does not fully support stays, marked for a person. `sources` maps
+ * each source to its text. It reads only what the model sent and never what an item holds, so the answer a run gets says
+ * nothing about Brain, and a suggestion that changes an item restates that kind's required fields.
  */
-export function reviewSuggestion(kind: BrainItemKind, inputs: readonly FieldInput[], base: BrainFields, sources: ReadonlyMap<string, string>): ReviewedSuggestion {
+export function reviewSuggestion(kind: BrainItemKind, inputs: readonly FieldInput[], sources: ReadonlyMap<string, string>): ReviewedSuggestion {
   const definitions = new Map(BRAIN_FIELDS[kind].fields.map((field) => [field.key, field]));
   const fields: Record<string, SuggestedField> = {};
-  const merged: BrainFields = structuredClone(base);
+  const raw: BrainFields = {};
   if (inputs.length === 0) throw new ValidationError("Suggest at least one field.");
   for (const input of inputs) {
     const field = definitions.get(input.key);
     if (!field) throw new ValidationError(`Unknown field: ${input.key}.`);
     if (field.type === "enum") {
       fields[input.key] = { value: input.value, quote: null, sourceUrl: null, unverified: false };
-      writeBrainField(merged, input.key, input.value);
+      writeBrainField(raw, input.key, input.value);
       continue;
     }
     const source = sources.get(input.source);
@@ -105,9 +114,9 @@ export function reviewSuggestion(kind: BrainItemKind, inputs: readonly FieldInpu
     if (!squeeze(source).includes(squeeze(quote))) throw new ValidationError(`${field.label}: that sentence is not in the source. Quote it exactly.`);
     const sourceUrl = input.source === INPUT_SOURCE ? null : input.source;
     fields[input.key] = { value: input.value, quote, sourceUrl, unverified: !valueIsInQuote(field, input.value, quote, sourceUrl) };
-    writeBrainField(merged, input.key, input.value);
+    writeBrainField(raw, input.key, input.value);
   }
-  return { fields, merged: parseBrainFields(kind, merged) };
+  return { fields, parsed: parseBrainFields(kind, raw) };
 }
 
 export interface SuggestionRow {
@@ -128,7 +137,10 @@ export function suggestionRows(kind: BrainItemKind, payload: SuggestionPayload, 
   return BRAIN_FIELDS[kind].fields.flatMap((field) => {
     const suggested = payload.fields[field.key];
     if (!suggested) return [];
-    return [{ key: field.key, label: field.label, field, current: now.get(field.key) ?? "", proposed: textOf(suggested.value), quote: suggested.quote, sourceUrl: suggested.sourceUrl, unverified: suggested.unverified }];
+    // A priced plan shows its currency inside each price, so the currency has no row of its own.
+    const stored = current ? brainFieldValue(current, field.key) : undefined;
+    const holds = now.get(field.key) ?? (stored === undefined ? "" : textOf(stored));
+    return [{ key: field.key, label: field.label, field, current: holds, proposed: textOf(suggested.value), quote: suggested.quote, sourceUrl: suggested.sourceUrl, unverified: suggested.unverified }];
   });
 }
 

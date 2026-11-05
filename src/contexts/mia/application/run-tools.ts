@@ -63,7 +63,7 @@ function fetchPageTool(ctx: ToolContext) {
     name: "fetch_page",
     description: "Reads one page. It takes the address you were given, or a link listed in an earlier result.",
     input: z.object({ url: z.string() }),
-    async execute({ url }) {
+    async execute({ url }, signal) {
       if (!ctx.state.allowedUrls.includes(url)) throw new Error("That address was not given to you and is not a listed link.");
       if (ctx.state.pages.length >= MIA_MAX_PAGES) throw new Error(`You have read ${MIA_MAX_PAGES} pages. Suggest what you found and call finish.`);
       // Held before the await, so parallel calls in one step cannot pass the limit.
@@ -71,7 +71,7 @@ function fetchPageTool(ctx: ToolContext) {
       ctx.state.pages.push(slot);
       let page;
       try {
-        page = await ctx.pages.read(url);
+        page = await ctx.pages.read(url, signal);
       } catch (error) {
         ctx.state.pages.splice(ctx.state.pages.indexOf(slot), 1);
         throw error;
@@ -82,7 +82,10 @@ function fetchPageTool(ctx: ToolContext) {
       slot.url = page.url;
       ctx.sources.set(page.url, text);
       for (const link of page.links) if (!ctx.state.allowedUrls.includes(link)) ctx.state.allowedUrls.push(link);
-      return [`Address: ${page.url}`, `Title: ${page.title}`, fence("page", text, nonce()), `Links you may open:\n${page.links.join("\n") || "None."}`].join("\n\n");
+      // The page wrote its title and its links too, so they sit inside a fence like its text.
+      const fenceId = nonce();
+      const links = page.links.length > 0 ? fence("links", page.links.join("\n"), fenceId) : "None.";
+      return [`Address: ${page.url}`, ...(page.title ? [`Title:\n${fence("title", page.title, fenceId)}`] : []), fence("page", text, fenceId), `Links you may open:\n${links}`].join("\n\n");
     },
   });
 }
@@ -93,27 +96,31 @@ function suggestTool(ctx: ToolContext, pending: NewSuggestion[]) {
     description: "Offers one Brain item to a person, who reviews it before anything is saved.",
     input: SUGGEST,
     async execute(input) {
-      if (ctx.suggestionsSoFar + pending.length >= MIA_MAX_SUGGESTIONS) throw new Error("That is enough suggestions for one run. Call finish.");
       const { sorting } = ctx.state;
-      if (sorting && pending.length + ctx.suggestionsSoFar >= 1) throw new Error("This document takes one suggestion. Call finish.");
       const { kind } = input;
       const definition = BRAIN_FIELDS[kind];
       const titleInput = input.fields.find((f) => f.key === definition.titleField)?.value;
       const title = (definition.titleField ? String(titleInput ?? "") : (input.title ?? sorting?.title ?? "")).trim();
       if (title === "") throw new Error(definition.titleField ? `${definition.titleField} is required.` : "This kind needs a title.");
 
-      // The match happens here, so a run that reads the web learns nothing about what Brain holds.
-      const target = sorting ? null : await ctx.brain.findTarget(ctx.organizationId, kind, title);
-      if (sorting && kind === SINGLE_ITEM_KIND && (await ctx.brain.findTarget(ctx.organizationId, kind, title))) throw new Error("This organization already has a company profile. Pick another kind.");
-      const base = target?.fields ?? {};
+      // The match happens here and yields only an id, so a run that reads the web learns nothing about what Brain holds.
+      const match = await ctx.brain.findTarget(ctx.organizationId, kind, title);
+      const target = sorting ? null : match;
+      // The document being sorted can be the company profile itself, from when the kind was still `company`.
+      if (sorting && kind === SINGLE_ITEM_KIND && match && match.id !== sorting.id) throw new Error("This organization already has a company profile. Pick another kind.");
+
+      // After the await: the tools of one step run at once, so a check before it would let parallel calls pass the limit.
+      if (ctx.suggestionsSoFar + pending.length >= MIA_MAX_SUGGESTIONS) throw new Error("That is enough suggestions for one run. Call finish.");
+      if (sorting && pending.length + ctx.suggestionsSoFar >= 1) throw new Error("This document takes one suggestion. Call finish.");
+
       let reviewed;
       try {
-        reviewed = reviewSuggestion(kind, input.fields, base, ctx.sources);
+        reviewed = reviewSuggestion(kind, input.fields, ctx.sources);
       } catch (error) {
         if (error instanceof ValidationError) throw new Error(error.message);
         throw error;
       }
-      const finalTitle = definition.titleField ? String(brainFieldValue(reviewed.merged, definition.titleField)) : title;
+      const finalTitle = definition.titleField ? String(brainFieldValue(reviewed.parsed, definition.titleField)) : title;
       const seen = `${kind}:${finalTitle.toLowerCase()}`;
       if (ctx.state.suggested.includes(seen)) throw new Error("You already suggested this item.");
       ctx.state.suggested.push(seen);

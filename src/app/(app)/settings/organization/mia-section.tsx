@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
-import { BACKGROUND_SHARE, MAX_DAILY_TOKENS } from "@/contexts/mia/domain/mia-settings";
+import { BACKGROUND_SHARE, MAX_DAILY_TOKENS, MIN_DAILY_TOKENS_FOR_A_JOB } from "@/contexts/mia/domain/mia-settings";
 import { SettingsSection } from "../settings-section";
 
 /** Whether Mia runs here and how many tokens of your AI provider it may use. An owner or admin changes it; members see it. */
@@ -48,7 +48,7 @@ export function MiaSection({ settings, usedToday, installEnabled, canManage }: {
               <FieldLabel htmlFor="mia-limit">Tokens per day</FieldLabel>
               <Input id="mia-limit" name="limit" type="number" min={0} max={MAX_DAILY_TOKENS} step={1} required defaultValue={settings.dailyTokenLimit} />
               <FieldDescription>
-                {usedToday.toLocaleString("en-US")} used today. Jobs stop at {Math.round(BACKGROUND_SHARE * 100)}% of this and continue after midnight UTC.
+                {usedToday.toLocaleString("en-US")} used today. Jobs stop at {Math.round(BACKGROUND_SHARE * 100)}% of this and continue after midnight UTC. A job needs a limit of at least {MIN_DAILY_TOKENS_FOR_A_JOB.toLocaleString("en-US")} to start.
               </FieldDescription>
             </Field>
             {error && <FieldError>{error}</FieldError>}

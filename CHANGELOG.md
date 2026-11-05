@@ -10,7 +10,7 @@ Mia is a new AI inside the app that fills Brain. Fill with Mia on the Brain page
 
 - Mia uses your existing AI connection through the AI SDK, and sends the pages and text it reads to that provider.
 - New settings: `MIA_ENABLED`, `RETENTION_MIA_RUNS_DAYS`, and a switch and daily token limit under Settings, Organization.
-- Migration `0006` adds `mia_runs`, `mia_suggestions` and `mia_usage_daily`.
+- Migration `0007` adds `mia_runs`, `mia_suggestions` and `mia_usage_daily`.
 
 ### Brain
 

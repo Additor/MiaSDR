@@ -21,10 +21,7 @@ const models: AgentModelResolver = {
 };
 
 const brainPort: MiaBrainPort = {
-  async findTarget(organizationId, kind, title) {
-    const item = await brainStore.findActive(organizationId, kind, title);
-    return item && { id: item.id, fields: item.structuredData };
-  },
+  findTarget: (organizationId, kind, title) => brainStore.findActive(organizationId, kind, title),
 
   async legacyDocument(organizationId, id) {
     const item = await brainStore.get(organizationId, id);

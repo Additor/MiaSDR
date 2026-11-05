@@ -69,6 +69,32 @@ describe("SdkAgentModel", () => {
     expect(JSON.stringify(result.messages)).toContain("nope");
   });
 
+  it("marks only the call that failed when a tool runs twice in one step", async () => {
+    const once: AgentTool<{ name: string }> = {
+      ...lookup,
+      execute: async ({ name }) => {
+        if (name === "bad") throw new Error("nope");
+        return "ok";
+      },
+    };
+    const model = modelWith(async () => answer([{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"good"}' }, { type: "tool-call", toolCallId: "c2", toolName: "lookup", input: '{"name":"bad"}' }], "tool-calls"));
+    const result = await model.step({ ...request, tools: [once as unknown as AgentTool<never>] });
+    expect(result.toolCalls).toEqual([{ name: "lookup", failed: false }, { name: "lookup", failed: true }]);
+  });
+
+  it("ends a tool's wait when the step's time is up, so the step cannot outlast its timeout", async () => {
+    const waits: AgentTool<{ name: string }> = {
+      ...lookup,
+      execute: (_input, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("stopped")));
+        }),
+    };
+    const model = modelWith(async () => answer([{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"x"}' }], "tool-calls"));
+    const result = await model.step({ ...request, tools: [waits as unknown as AgentTool<never>], timeoutMs: 20 });
+    expect(result.toolCalls).toEqual([{ name: "lookup", failed: true }]);
+  });
+
   it.each([
     [401, "permanent", /rejected the API key/],
     [402, "permanent", /billing/],

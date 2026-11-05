@@ -4,6 +4,7 @@ import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { violatedConstraint } from "@/platform/db/errors";
 import { channelSettings, miaRuns, miaSuggestions, miaUsageDaily } from "@/platform/db/schema";
 import { brainStoreIn } from "@/contexts/brain/infrastructure/composition";
+import { cleanJson, cleanString } from "@/contexts/grid/domain/cell-values";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-settings";
 import { ConflictError } from "@/shared/errors";
@@ -59,7 +60,7 @@ async function endWithFailure(run: ClaimedRun, failure: RunFailure, set: Partial
   return db.transaction(async (tx) => {
     const updated = await tx
       .update(miaRuns)
-      .set({ ...set, error: failure.error, failureKind: failure.failureKind, usedTokens: run.usedTokens + (failure.chargedTokens ?? 0) })
+      .set({ ...set, error: cleanString(failure.error), failureKind: failure.failureKind, usedTokens: run.usedTokens + (failure.chargedTokens ?? 0) })
       .where(held(run))
       .returning({ id: miaRuns.id });
     if (updated.length === 0) return false;
@@ -86,7 +87,7 @@ export const drizzleMiaRunStore: MiaRunStore = {
   async create(organizationId, run) {
     try {
       return await db.transaction(async (tx) => {
-        const [row] = await tx.insert(miaRuns).values({ organizationId, capability: run.capability, requestedBy: run.requestedBy, input: run.input }).returning({ id: miaRuns.id });
+        const [row] = await tx.insert(miaRuns).values({ organizationId, capability: run.capability, requestedBy: run.requestedBy, input: cleanJson(run.input) }).returning({ id: miaRuns.id });
         await recordAudit(tx, { organizationId, actorUserId: run.requestedBy, action: "mia.run_started", entityType: "mia_run", entityId: row.id, meta: { capability: run.capability } });
         return row;
       });
@@ -146,6 +147,7 @@ export const drizzleMiaRunStore: MiaRunStore = {
     return rows.length > 0;
   },
 
+  // Web pages can hold \u0000 and a cut can leave half a surrogate pair. Postgres rejects both in jsonb, and a rejected write here repeats a paid call.
   async saveStep(run, step) {
     return db.transaction(async (tx) => {
       const [row] = await tx
@@ -159,13 +161,13 @@ export const drizzleMiaRunStore: MiaRunStore = {
           failures: 0,
           error: null,
           failureKind: null,
-          ...(step.finished ? { ...ENDED, status: "succeeded" as const, finishedAt: step.now } : { checkpoint: step.checkpoint, leaseExpiresAt: new Date(step.now.getTime() + step.leaseMs) }),
+          ...(step.finished ? { ...ENDED, status: "succeeded" as const, finishedAt: step.now } : { checkpoint: cleanJson(step.checkpoint), leaseExpiresAt: new Date(step.now.getTime() + step.leaseMs) }),
         })
         .where(held(run))
         .returning({ stepCount: miaRuns.stepCount });
       if (!row) return false;
       if (step.suggestions.length > 0) {
-        await tx.insert(miaSuggestions).values(step.suggestions.map((s) => ({ organizationId: run.organizationId, runId: run.id, stepCount: row.stepCount, ordinal: s.ordinal, type: s.type, targetItemId: s.targetItemId, kind: s.kind, title: s.title, payload: s.payload })));
+        await tx.insert(miaSuggestions).values(step.suggestions.map((s) => ({ organizationId: run.organizationId, runId: run.id, stepCount: row.stepCount, ordinal: s.ordinal, type: s.type, targetItemId: s.targetItemId, kind: s.kind, title: cleanString(s.title), payload: cleanJson(s.payload) })));
       }
       await addUsage(tx, run.organizationId, step.now, step.usage);
       return true;

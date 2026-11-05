@@ -49,7 +49,8 @@ async function firstState(deps: MiaWorkerDeps, run: ClaimedRun): Promise<RunStat
   }
   const doc = await deps.brain.legacyDocument(run.organizationId, String(run.input.itemId));
   if (!doc) return null;
-  return { ...empty, inputText: doc.content, sorting: { id: doc.id, title: doc.title }, messages: [{ role: "user", content: `Sort this document, titled ${JSON.stringify(doc.title)}:\n${fence("text", doc.content, nonce())}` }] };
+  const fenceId = nonce();
+  return { ...empty, inputText: doc.content, sorting: { id: doc.id, title: doc.title }, messages: [{ role: "user", content: `Sort this document. Its title:\n${fence("title", doc.title, fenceId)}\nIts text:\n${fence("text", doc.content, fenceId)}` }] };
 }
 
 /** One model call and what follows from it. "continue" means the run holds its claim and has more to do. */
@@ -59,8 +60,16 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
     await deps.runs.cancelled(run, now);
     return "ended";
   }
-  const fail = async (error: string, failureKind: string) => {
-    await deps.runs.fail(run, { error, failureKind, now });
+  const fail = async (error: string, failureKind: string, chargedTokens?: number) => {
+    await deps.runs.fail(run, { error, failureKind, now, ...(chargedTokens === undefined ? {} : { chargedTokens }) });
+    return "ended" as const;
+  };
+  /** Measured from now, not from the start of the step: a step that timed out has already used more than the first wait. */
+  const retryAt = () => new Date(deps.now().getTime() + miaRetryDelayMs(run.failures + 1));
+  /** A run that stops early keeps what it found. Only one with nothing to show has failed. */
+  const stopWithFindings = async (error: string, failureKind: string) => {
+    if (run.suggestionCount === 0) return fail(error, failureKind);
+    await deps.runs.succeed(run, deps.now());
     return "ended" as const;
   };
   if (run.failures >= MIA_MAX_FAILURES) return fail("Mia stopped after several failed tries. Start it again.", "attempts");
@@ -106,13 +115,13 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
     const permanent = error instanceof AiError && error.kind === "permanent";
     const failure = { error: message, failureKind: permanent ? "permanent" : "transient", chargedTokens: estimatedTokens(JSON.stringify(messages)), now };
     if (permanent || run.failures + 1 >= MIA_MAX_FAILURES) await deps.runs.fail(run, failure);
-    else await deps.runs.retryLater(run, new Date(now.getTime() + miaRetryDelayMs(run.failures + 1)), failure);
+    else await deps.runs.retryLater(run, retryAt(), failure);
     return "ended";
   }
 
-  if (result.stop === "refusal") return fail("The model declined this job.", "refused");
+  if (result.stop === "refusal") return fail("The model declined this job.", "refused", countedTokens(result.usage));
   if (result.stop === "max_tokens" && result.toolCalls.length === 0) {
-    await deps.runs.retryLater(run, new Date(now.getTime() + miaRetryDelayMs(run.failures + 1)), { error: "The model's answer was cut off.", failureKind: "transient", chargedTokens: countedTokens(result.usage), now });
+    await deps.runs.retryLater(run, retryAt(), { error: "The model's answer was cut off.", failureKind: "transient", chargedTokens: countedTokens(result.usage), now });
     return "ended";
   }
 
@@ -131,26 +140,20 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
   run.suggestionCount += step.pending.length;
   run.failures = 0;
 
-  if (wroteOnly && state.nudged) return fail("The model did not use its tools.", "no_tool_call");
-  if (run.stepCount >= MIA_MAX_STEPS || run.usedTokens >= MIA_RUN_TOKENS) {
-    if (run.suggestionCount > 0) {
-      await deps.runs.succeed(run, deps.now());
-      return "ended";
-    }
-    return fail("Mia reached its limit for one job before it found anything to suggest.", "limit");
-  }
+  if (wroteOnly && state.nudged) return stopWithFindings("The model did not use its tools.", "no_tool_call");
+  if (run.stepCount >= MIA_MAX_STEPS || run.usedTokens >= MIA_RUN_TOKENS) return stopWithFindings("Mia reached its limit for one job before it found anything to suggest.", "limit");
   return "continue";
 }
 
 /** Carries one run as far as the budget allows, so its next call stays inside the provider's prompt cache. */
 async function driveRun(deps: MiaWorkerDeps, run: ClaimedRun, deadline: number, count: (key: string) => void): Promise<boolean> {
   for (;;) {
-    if (deadline - Date.now() < MIA_MIN_STEP_ROOM_MS) {
-      await deps.runs.release(run, deps.now(), "queued");
-      return true;
-    }
     let outcome: StepOutcome;
     try {
+      if (deadline - Date.now() < MIA_MIN_STEP_ROOM_MS) {
+        await deps.runs.release(run, deps.now(), "queued");
+        return true;
+      }
       outcome = await runStep(deps, run);
     } catch (error) {
       // A bug or a dropped connection must not strand the run until its lease expires.

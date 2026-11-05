@@ -44,7 +44,7 @@ function toolSet(tools: readonly AgentTool<never>[]): ToolSet {
       tool({
         description: t.description,
         inputSchema: t.input as never,
-        execute: (input: never) => t.execute(input),
+        execute: (input: never, options: { abortSignal?: AbortSignal }) => t.execute(input, options.abortSignal),
       }),
     ]),
   ) as ToolSet;
@@ -85,11 +85,11 @@ export class SdkAgentModel implements AgentModel {
     } catch (error) {
       throw this.failure(error);
     }
-    const content = result.content as ReadonlyArray<{ type: string; toolName?: string }>;
-    const failedTools = new Set(content.filter((part) => part.type === "tool-error").map((part) => part.toolName));
+    const content = result.content as ReadonlyArray<{ type: string; toolCallId?: string }>;
+    const failedCalls = new Set(content.filter((part) => part.type === "tool-error").map((part) => part.toolCallId));
     return {
       messages: [...request.messages, ...(result.response.messages as unknown as AgentMessage[])],
-      toolCalls: result.toolCalls.map((call) => ({ name: call.toolName, failed: failedTools.has(call.toolName) })),
+      toolCalls: result.toolCalls.map((call) => ({ name: call.toolName, failed: failedCalls.has(call.toolCallId) })),
       stop: STOP[result.finishReason] ?? "other",
       usage: usageOf(result),
     };

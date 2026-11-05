@@ -129,17 +129,18 @@ function lineOf(run: MiaRunLine): string {
   return `${what}: ${run.error ?? "it failed."}`;
 }
 
-/** What Mia is doing now and what just ended. The page refreshes while a job runs, since the job lives on the server. */
+/** What Mia is doing now and what ended a moment ago. The page refreshes while a job runs, since the job lives on the server. */
 export function MiaRunLines({ runs }: { runs: MiaRunLine[] }) {
   const router = useRouter();
   const { isBusy, run } = useApiAction();
   const [error, setError] = useState<string | null>(null);
-  const active = runs.some((r) => isActiveRun(r.status));
+  // A job waiting for tomorrow's tokens changes nothing until then, so it is no reason to keep asking.
+  const moving = runs.some((r) => r.status === "queued" || r.status === "running");
   useEffect(() => {
-    if (!active) return;
+    if (!moving) return;
     const timer = setInterval(() => router.refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [active, router]);
+  }, [moving, router]);
 
   if (runs.length === 0) return null;
   const stop = (id: string) =>

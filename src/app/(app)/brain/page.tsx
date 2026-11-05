@@ -19,7 +19,7 @@ import { brainHasActiveCompanyProfile, listBrainItems, type BrainView } from "@/
 import { BRAIN_GROUP_LABELS, BRAIN_KIND_LABELS, type BrainGroup } from "@/contexts/brain/domain/brain-kinds";
 import { brainStore } from "@/contexts/brain/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { miaUnavailable, openSuggestions, recentRuns } from "@/contexts/mia/application/mia-use-cases";
+import { miaUnavailable, openSuggestionCount, openSuggestions, recentRuns } from "@/contexts/mia/application/mia-use-cases";
 import { miaDeps } from "@/contexts/mia/infrastructure/composition";
 import { parsePageParam } from "@/shared/page-param";
 import { AddBrainItemButton } from "./_components/brain-buttons";
@@ -101,7 +101,8 @@ async function BrainList({ searchParams }: { searchParams: PageProps<"/brain">["
   const [{ rows, total, page, pageSize, needsSorting }, hasCompanyProfile, suggestions, runs, unavailable] = await Promise.all([
     listBrainItems(brainStore, actor, { view, q, archived, page: parsePageParam(first(params.page)) }),
     hasCompanyProfileNow(),
-    openSuggestions(deps, actor),
+    // Building the list reads each item a suggestion changes, and the page refreshes while a job runs. The other views show only the number.
+    picked === "suggestions" ? openSuggestions(deps, actor) : openSuggestionCount(deps, actor).then((total) => ({ rows: [], total })),
     recentRuns(deps, actor),
     miaUnavailableNow(),
   ]);

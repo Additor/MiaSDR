@@ -35,6 +35,8 @@ function ReviewDialog({ view, open, onOpenChange }: { view: SuggestionView; open
   const [values, setValues] = useState(start);
   const [title, setTitle] = useState(view.title);
   const [confirmed, setConfirmed] = useState<string[]>([]);
+  // The revision the form opened on. A refresh brings a newer one in `view`, and sending that would undo the edit it stands for.
+  const [revision, setRevision] = useState(view.revision);
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
@@ -42,6 +44,7 @@ function ReviewDialog({ view, open, onOpenChange }: { view: SuggestionView; open
       setValues(start());
       setTitle(view.title);
       setConfirmed([]);
+      setRevision(view.revision);
     }
   }
 
@@ -49,7 +52,7 @@ function ReviewDialog({ view, open, onOpenChange }: { view: SuggestionView; open
   const unchecked = view.rows.filter((row) => row.unverified && values[row.key] === original[row.key] && !confirmed.includes(row.key));
 
   async function save() {
-    const body = { fields: fieldsOf(view.kind, values), confirmed, ...(needsTitle ? { title } : {}), ...(view.revision === null ? {} : { revision: view.revision }) };
+    const body = { fields: fieldsOf(view.kind, values), confirmed, ...(needsTitle ? { title } : {}), ...(revision === null ? {} : { revision }) };
     orThrow(await runApiAction(callApi(`/api/mia/suggestions/${view.id}/accept`, "POST", body), { refresh: () => router.refresh() }));
     toast.success(`${view.title} saved to Brain.`);
   }

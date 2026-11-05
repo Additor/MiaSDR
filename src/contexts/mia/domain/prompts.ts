@@ -52,4 +52,4 @@ export const SORT_SYSTEM = [
 
 export const NUDGE_MESSAGE = "Use a tool. Call `suggest_item` for what you found, then call `finish`.";
 
-export const LAST_STEP_MESSAGE = "This is your last step. Call `finish` now.";
+export const LAST_STEP_MESSAGE = "This is your last step. Call `suggest_item` for anything you have not suggested yet, then call `finish`.";

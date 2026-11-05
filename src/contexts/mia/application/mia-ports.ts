@@ -120,7 +120,7 @@ export interface MiaSuggestionStore {
 /** What a run needs from Brain, and no more: a web run reads nothing through it but whether an item of that name exists. */
 export interface MiaBrainPort {
   /** The active item a suggestion of this kind and title would change, if any. */
-  findTarget(organizationId: string, kind: BrainKind, title: string): Promise<{ id: string; fields: BrainFields | null } | null>;
+  findTarget(organizationId: string, kind: BrainKind, title: string): Promise<{ id: string } | null>;
   /** A document from before the kinds existed. Null when it is gone, or already sorted. */
   legacyDocument(organizationId: string, id: string): Promise<{ id: string; title: string; content: string } | null>;
   /** What the item holds now, to compare a suggestion with. */
@@ -136,8 +136,8 @@ export interface ReadPage {
 }
 
 export interface PageReader {
-  /** Throws an `Error` whose message the model may read, for a page it could not get. */
-  read(url: string): Promise<ReadPage>;
+  /** Throws an `Error` whose message the model may read, for a page it could not get. `signal` ends the wait early. */
+  read(url: string, signal?: AbortSignal): Promise<ReadPage>;
 }
 
 export interface MiaSettingsStore {

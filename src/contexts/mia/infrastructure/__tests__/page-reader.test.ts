@@ -101,6 +101,16 @@ describe("createPageReader", () => {
     await expect(reader(() => new Response("nope", { status: 404, headers: { "content-type": "text/html" } })).read("https://acme.com/")).rejects.toThrow(/status 404/);
   });
 
+  it("stops waiting for a page when the caller's signal fires", async () => {
+    const controller = new AbortController();
+    const fetch = (async (_url: URL, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+        controller.abort();
+      })) as unknown as typeof globalThis.fetch;
+    await expect(createPageReader({ fetch, resolve }).read("https://acme.com/", controller.signal)).rejects.toThrow(/did not answer in time/);
+  });
+
   it("refuses an address that is not public https before any request", async () => {
     const { read, asked } = reader(() => html("<p>x</p>"));
     await expect(read("https://localhost/")).rejects.toThrow(/public https/);

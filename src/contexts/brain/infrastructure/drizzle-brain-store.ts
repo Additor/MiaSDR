@@ -98,9 +98,8 @@ export const brainStoreIn = (handle: DbHandle): BrainStore => ({
   async findActive(organizationId, kind, title) {
     const sameItem = kind === SINGLE_ITEM_KIND ? undefined : sql`lower(${knowledgeDocuments.title}) = lower(${title})`;
     const [row] = await db
-      .select({ id: knowledgeDocuments.id, revision: knowledgeDocuments.revision, structuredData: knowledgeDocumentVersions.structuredData })
+      .select({ id: knowledgeDocuments.id })
       .from(knowledgeDocuments)
-      .innerJoin(knowledgeDocumentVersions, latestVersion)
       .where(and(eq(knowledgeDocuments.organizationId, organizationId), eq(knowledgeDocuments.kind, kind), eq(knowledgeDocuments.active, true), sameItem))
       .limit(1);
     return row ?? null;
