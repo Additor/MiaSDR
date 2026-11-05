@@ -34,7 +34,7 @@ export async function pollLinkedInInbound(deps: LinkedInInboundPollDeps, deadlin
     let retryAt: Date | null = null;
     try {
       while (Date.now() < deadline) {
-        const read = await deps.source.read({ organizationId: account.organizationId, account: account.providerAccountId, cursor, now: deps.clock.now() });
+        const read = await deps.source.read({ organizationId: account.organizationId, provider: account.provider, account: account.providerAccountId, cursor, now: deps.clock.now() });
         for (const payload of read.deliveries) {
           await receiveLinkedInWebhook(deps.inbound, { organizationId: account.organizationId, provider: account.provider, payload });
           report.deliveries += 1;

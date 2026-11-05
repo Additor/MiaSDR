@@ -56,6 +56,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const ownerUserId = input.reconnectAccountId ? null : (input.ownerUserId ?? null);
   if (ownerUserId && !(await deps.members?.isMember(actor.organizationId, ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
   const vendor = await vendorOf(deps, actor.organizationId);
+  if (vendor.connectLinkMinutes === null) throw new ConflictError(`Connect the account in ${vendor.name}, then choose Sync accounts.`);
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (!credentials) throw new ConflictError(`Connect ${vendor.name} first.`);
   const gateway = vendor.gatewayFor(credentials);
@@ -85,7 +86,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const urls = vendor.connectCallback?.urls({ appUrl: deps.appUrl, linkId: id, secret }) ?? null;
   const notify = urls !== null && !isLocalOrigin(deps.appUrl);
   try {
-    const { url, account } = await gateway.createConnectLink({
+    const { url, account } = await gateway.createConnectLink!({
       name: providerName,
       expiresAt,
       successRedirectUrl: urls?.success ?? deps.appUrl,

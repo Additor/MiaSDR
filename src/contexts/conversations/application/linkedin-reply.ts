@@ -105,7 +105,7 @@ export async function sendLinkedInReply(
   }
 
   try {
-    const sent = await deps.sender.send({ ...addressOf(send), text: send.text });
+    const sent = await deps.sender.send({ ...addressOf(send), text: send.text, sendKey: send.attempt.id, unlessRepliedAfter: send.draftWrittenAt });
     await deps.store.markSent(send, { providerMessageId: sent.messageId }, deps.now());
     return { status: "sent", attemptId: send.attempt.id, replayed: false };
   } catch (error) {
@@ -155,7 +155,7 @@ export async function reconcileLinkedInReplies(deps: LinkedInReplyDeps, limit = 
     let found: { messageId: string | null } | null;
     try {
       if (!(await deps.sender.available({ organizationId: send.organizationId, accountId: send.accountId }))) throw new Error("LinkedIn is not connected");
-      found = await deps.sender.findSent({ ...addressOf(send), text: send.text, since: new Date(item.startedAt.getTime() - 60_000) });
+      found = await deps.sender.findSent({ ...addressOf(send), text: send.text, since: new Date(item.startedAt.getTime() - 60_000), sendKey: send.attempt.id });
     } catch {
       if (overdue) {
         await deps.store.markUncertain(send, "The send never reported an outcome and LinkedIn could not be checked.");

@@ -41,6 +41,8 @@ export type LinkedInCredentials = VendorCredentials & { notifySecret: string };
 
 export interface LinkedInAccountRecord {
   id: string;
+  /** The vendor this account belongs to. */
+  provider: string;
   providerAccountId: string;
   linkedinId: string;
   name: string | null;
@@ -50,6 +52,8 @@ export interface LinkedInAccountRecord {
   dailyInviteLimit: number;
   dailyMessageLimit: number;
   limitReachedUntil: Date | null;
+  /** A limit holds invitations and lookups alone until this moment. Null when none applies now. */
+  invitesPausedUntil: Date | null;
   /** When a read of the inbox last started, for a vendor with no webhook for messages. */
   inboundReadAt: Date | null;
   /** This account's vendor sends no webhook for messages, so its inbox is read on a schedule. */
@@ -149,8 +153,10 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null },
+    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null, connectLinks: vendor.connectLinkMinutes !== null },
     vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
+    // After a disconnect the way back is the vendor of the newest account, whatever the default is.
+    formVendor: credentials ? vendor.key : (accounts.at(-1)?.provider ?? vendor.key),
     connectedTo: vendor.connectedTo(credentials),
     webhooks,
     sync,
@@ -250,7 +256,7 @@ async function registerWebhooks(deps: LinkedInManagementDeps, organizationId: st
       console.error(`LinkedIn webhooks: could not save the registration status for organization ${organizationId}: ${error instanceof Error ? error.name : "unknown error"}`);
     }
   };
-  if (!vendor.webhooks) return { status: "skipped", detail: `${vendor.name} has no webhooks to register. Replies and acceptances are read from the account about every 10 minutes.` };
+  if (!vendor.webhooks) return { status: "skipped", detail: vendor.inboundNote ?? `${vendor.name} has no webhooks to register. Replies and acceptances are read from the account about every 10 minutes.` };
   if (isLocalOrigin(deps.appUrl)) {
     await persist([]);
     return { status: "skipped", detail: `APP_URL is a local or private address, so ${vendor.name} cannot reach it. Replies and acceptances are not delivered until the app has a public HTTPS URL.` };

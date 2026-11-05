@@ -139,7 +139,9 @@ async function resolve(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
       return { kind: "paused", reason: "disconnected" };
     }
     if (code === "rate_limited") {
-      await deps.store.pauseAccountForLookupLimit(claim, pausedUntil(error as LinkedInGatewayError, deps.clock.now()));
+      const limit = error as LinkedInGatewayError;
+      if (limit.limits === "invitations") await deps.store.pauseInvitationsForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
+      else await deps.store.pauseAccountForLookupLimit(claim, pausedUntil(limit, deps.clock.now()));
       return { kind: "paused", reason: "limit" };
     }
     // A lookup changes nothing at the provider, so every failure is safe to retry later.
@@ -173,7 +175,7 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
 
   try {
     if (claim.kind === "invitation") {
-      const sent = await gateway.sendInvitation({ account: claim.account.providerAccountId, member: claim.providerId, note: text === "" ? null : text });
+      const sent = await gateway.sendInvitation({ account: claim.account.providerAccountId, member: claim.providerId, note: text === "" ? null : text, sendKey: claim.sendId });
       await deps.store.markSent(claim, { providerMessageId: sent.invitationId, chatId: null }, deps.clock.now());
       return { kind: "sent", what: "invitation" };
     }
@@ -186,7 +188,7 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
 }
 
 async function sendMessage(gateway: LinkedInGateway, claim: LinkedInSendClaim, text: string) {
-  const sent = await gateway.sendMessage({ account: claim.account.providerAccountId, to: { chat: claim.chatId, member: claim.providerId, slug: claim.slug }, text });
+  const sent = await gateway.sendMessage({ account: claim.account.providerAccountId, to: { chat: claim.chatId, member: claim.providerId, slug: claim.slug }, text, sendKey: claim.sendId, unlessRepliedAfter: claim.outreachStartedAt });
   return { providerMessageId: sent.messageId, chatId: sent.chat };
 }
 
@@ -199,8 +201,16 @@ async function handleSendError(deps: LinkedInEngineDeps, claim: LinkedInSendClai
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {
     switch (error.code) {
       case "rate_limited":
-        await deps.store.pauseAccountForLimit(claim, pausedUntil(error, now));
+        if (error.limits === "recipient") {
+          await deps.store.holdRecipient(claim, pausedUntil(error, now), message, now);
+          return { kind: "blocked", reason: "recipient_held" };
+        }
+        if (error.limits === "invitations") await deps.store.pauseInvitationsForLimit(claim, pausedUntil(error, now));
+        else await deps.store.pauseAccountForLimit(claim, pausedUntil(error, now));
         return { kind: "paused", reason: "limit" };
+      case "replied":
+        await deps.stopForReply(claim, now);
+        return { kind: "blocked", reason: "replied" };
       case "auth":
         await deps.store.disconnectAccount(claim.account.id, message);
         await deps.store.release(claim);
@@ -266,7 +276,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
     try {
       if (send.stepNumber === 1) {
         if (!send.providerId) throw new Error("no provider id");
-        const status = await gateway.invitationStatus({ account: send.account.providerAccountId, member: send.providerId, since: send.claimedAt });
+        const status = await gateway.invitationStatus({ account: send.account.providerAccountId, member: send.providerId, since: send.claimedAt, sendKey: send.sendId });
         if (status !== "none") {
           await deps.store.resolveUncertainAsSent(send, { providerMessageId: null, accepted: status === "accepted" }, now);
           report.foundSent += 1;
@@ -274,7 +284,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
         }
       } else {
         const to = { chat: send.chatId, member: send.providerId, slug: send.slug };
-        const found = send.body ? await gateway.findSentMessage({ account: send.account.providerAccountId, to, text: send.body, since: new Date(send.claimedAt.getTime() - 60_000) }) : null;
+        const found = send.body ? await gateway.findSentMessage({ account: send.account.providerAccountId, to, text: send.body, since: new Date(send.claimedAt.getTime() - 60_000), sendKey: send.sendId }) : null;
         if (found) {
           await deps.store.resolveUncertainAsSent(send, { providerMessageId: found.messageId, accepted: false }, now);
           report.foundSent += 1;

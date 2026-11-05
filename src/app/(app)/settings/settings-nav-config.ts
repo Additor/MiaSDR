@@ -35,7 +35,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     label: "Sending",
     items: [
       { href: "/settings/mailboxes", title: "Mailboxes", summary: "Connect the addresses campaigns send from, set their limits, hours and signatures, and the pace between sends." },
-      { href: "/settings/linkedin", title: "LinkedIn", summary: "Connect LinkedIn accounts through Unipile or Edges and set their daily limits." },
+      { href: "/settings/linkedin", title: "LinkedIn", summary: "Connect LinkedIn accounts through Unipile, Edges or gtm-api and set their daily limits." },
       { href: "/settings/suppression", title: "Suppression list", summary: "Addresses no campaign or reply ever emails: unsubscribes, bounces and addresses you add." },
     ],
   },

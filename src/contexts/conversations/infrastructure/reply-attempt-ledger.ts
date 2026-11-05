@@ -22,6 +22,8 @@ export interface LinkedInSnapshot {
   /** Absent on an attempt begun before these were kept. */
   member?: string | null;
   slug?: string | null;
+  /** When an agent's draft was last written, for a vendor that can check whether the person wrote since. */
+  draftWrittenAt?: string | null;
   accountId: string;
   providerAccountId: string;
   threadId: string;

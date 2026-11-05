@@ -332,6 +332,25 @@ describeDb("linkedin search queue", () => {
     expect(await row(id)).toMatchObject({ status: "completed", leads_fetched: 25 });
   });
 
+  it("holds only the search on a budget that leaves the account free, and resumes on its own cursor", async () => {
+    const f = await fixture();
+    const id = await create(f);
+    await page(f);
+    const before = await row(id);
+    const searchPeople = f.gateway.searchPeople.bind(f.gateway);
+    f.gateway.searchPeople = async () => Promise.reject(new LinkedInGatewayError("Budget.", "definite", "rate_limited", 3_600_000, "invitations"));
+    advance(3600);
+    expect((await engine.runNextSearchPage(f.deps)).kind).toBe("paused");
+    const [account] = await sql`select limit_reached_until, search_lease_until from linkedin_accounts where id = ${f.accounts[0].id}`;
+    expect(account).toEqual({ limit_reached_until: null, search_lease_until: null });
+    expect(await row(id)).toMatchObject({ cursor: before.cursor, status: "running", failures: 0, last_error: "LinkedIn limited searches on this account. The search continues when the limit ends." });
+    f.gateway.searchPeople = searchPeople;
+    expect((await engine.runNextSearchPage(f.deps)).kind).toBe("idle");
+    advance(3601);
+    await runAll(f);
+    expect(await row(id)).toMatchObject({ status: "completed", leads_fetched: 25 });
+  });
+
   it("marks an account disconnected on an auth refusal and moves the search to another", async () => {
     const f = await fixture({ accounts: 2 });
     const id = await create(f);
@@ -558,7 +577,7 @@ describeDb("linkedin search queue", () => {
   it("runs as a job and stops when no search is due", async () => {
     const f = await fixture();
     await create(f);
-    const job = jobs.createLinkedInJobs({ store: {} as never, gateways: f.gateway, clock, random: () => 0 }, {} as never, f.deps, {} as never, {} as never).find((j) => j.name === "linkedin.search");
+    const job = jobs.createLinkedInJobs({ store: {} as never, stopForReply: async () => undefined, gateways: f.gateway, clock, random: () => 0 }, {} as never, f.deps, {} as never, {} as never).find((j) => j.name === "linkedin.search");
     const result = await job?.run({ deadline: Date.now() + 5000, now: () => current });
     // One page per claim: the pacing gap stops a second page in the same tick.
     expect(result).toMatchObject({ processed: 1, more: false, detail: { page: 1 } });

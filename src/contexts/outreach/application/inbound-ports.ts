@@ -63,9 +63,13 @@ export interface InboxLinkedInMessage {
  */
 export type OutreachStopTarget = { organizationId: string; personId: string; senderEmail?: string | null } | { organizationId: string; email: string };
 
-/** The stops outreach raises. A reply arrives with the mailbox and message, so a replayed message that is already filed stops nothing. */
+/**
+ * The stops outreach raises. A reply arrives with the mailbox and message, so a replayed message that is already filed stops nothing.
+ * A LinkedIn reply comes with no message when a vendor refused a send because the person wrote: the inbox read files it later.
+ */
 export type OutreachStopTrigger =
   | { kind: "reply"; channel: "email"; unlessFiled: { accountRef: string; providerMessageId: string }; now: Date }
+  | { kind: "reply"; channel: "linkedin"; now: Date }
   | { kind: "bounce" | "unsubscribe" | "suppression"; note?: string; addedInSettings?: boolean; now: Date };
 
 /**

@@ -10,7 +10,7 @@ export function createLinkedInSentFinder(gateways: LinkedInGatewayProvider): Lin
     async findSent(input) {
       const gateway = await gateways.forAccount(input);
       if (!gateway) throw new Error("LinkedIn is not connected");
-      return gateway.findSentMessage({ account: input.account, to: { chat: input.chat, member: input.member, slug: input.slug }, text: input.text, since: input.since });
+      return gateway.findSentMessage({ account: input.account, to: { chat: input.chat, member: input.member, slug: input.slug }, text: input.text, since: input.since, sendKey: input.sendKey });
     },
   };
 }

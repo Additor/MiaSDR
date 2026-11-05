@@ -64,12 +64,12 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
   async resetDailyCounters(organizationId, now, audit) {
     return db.transaction(async (tx) => {
       const accounts = await tx
-        .select({ id: linkedinAccounts.id, paused: sql<boolean>`${linkedinAccounts.limitReachedUntil} is not null and ${linkedinAccounts.limitReachedUntil} > ${now.toISOString()}::timestamptz`, search: linkedinAccounts.searchLeadsToday })
+        .select({ id: linkedinAccounts.id, paused: sql<boolean>`coalesce(${linkedinAccounts.limitReachedUntil} > ${now.toISOString()}::timestamptz or ${linkedinAccounts.invitesPausedUntil} > ${now.toISOString()}::timestamptz, false)`, search: linkedinAccounts.searchLeadsToday })
         .from(linkedinAccounts)
         .where(eq(linkedinAccounts.organizationId, organizationId))
         .for("update");
       if (accounts.length > 0) {
-        await tx.update(linkedinAccounts).set({ limitReachedUntil: null, searchLeadsToday: 0 }).where(eq(linkedinAccounts.organizationId, organizationId));
+        await tx.update(linkedinAccounts).set({ limitReachedUntil: null, invitesPausedUntil: null, searchLeadsToday: 0 }).where(eq(linkedinAccounts.organizationId, organizationId));
       }
       const outcome = { accounts: accounts.length, pausesCleared: accounts.filter((a) => a.paused).length, searchCountersCleared: accounts.filter((a) => a.search > 0).length };
       await recordAudit(tx, audit(outcome));

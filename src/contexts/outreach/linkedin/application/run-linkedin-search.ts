@@ -97,7 +97,10 @@ async function handleError(deps: LinkedInSearchEngineDeps, claim: SearchPageClai
   const message = errorText(error);
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {
     if (error.code === "rate_limited") {
-      await deps.store.pauseAccountForLimit(claim, new Date(now.getTime() + (error.retryAfterMs ?? LIMIT_PAUSE_HOURS * 3_600_000)));
+      const until = new Date(now.getTime() + (error.retryAfterMs ?? LIMIT_PAUSE_HOURS * 3_600_000));
+      // This budget leaves the account's messages and replies free, so only the search waits.
+      if (error.limits === "invitations") await deps.store.release(claim, { error: "LinkedIn limited searches on this account. The search continues when the limit ends.", retryAt: until, unknownFailure: false });
+      else await deps.store.pauseAccountForLimit(claim, until);
       return { kind: "paused", reason: "limit" };
     }
     if (error.code === "auth") {

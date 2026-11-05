@@ -5,7 +5,7 @@ import { claimSlot, finishSlot } from "@/platform/jobs/slots";
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
-import type { InboxFiling } from "../../application/inbound-ports";
+import type { ContactStop, InboxFiling } from "../../application/inbound-ports";
 import { createLinkedInJobs } from "../application/linkedin-jobs";
 import { receiveLinkedInWebhook, type WebhookResult } from "../application/linkedin-inbound";
 import type { LinkedInOperationsDeps } from "../application/linkedin-operations";
@@ -13,6 +13,7 @@ import type { LinkedInCampaignDeps } from "../application/linkedin-campaigns";
 import type { LinkedInManagementDeps } from "../application/linkedin-management";
 import type { LinkedInSearchBatchDeps, LinkedInSearchCapacityDeps, LinkedInSearchDeps, LinkedInSearchEngineDeps } from "../application/linkedin-search-ports";
 import { LinkedInGatewayError, type LinkedInEngineDeps, type LinkedInGateway, type LinkedInGatewayProvider, type LinkedInInboundDeps, type LinkedInInboundPollDeps } from "../application/linkedin-ports";
+import type { LinkedInInboundEvent } from "../domain/linkedin";
 import type { NoticeDeps } from "../application/linkedin-enroll-notices";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enrollment-admin";
@@ -26,7 +27,7 @@ import { createDrizzleLinkedInInboundStore } from "./drizzle-linkedin-inbound-st
 import { drizzleLinkedInSearchBatchStore } from "./drizzle-linkedin-search-batch-store";
 import { drizzleLinkedInSearchCapacityStore } from "./drizzle-linkedin-search-capacity";
 import { drizzleLinkedInSearchEngineStore, drizzleLinkedInSearchStore } from "./drizzle-linkedin-search-store";
-import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
+import { createLinkedInReplyStop, drizzleLinkedInStore } from "./drizzle-linkedin-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { drizzleLinkedInInboundPollStore } from "./drizzle-linkedin-inbound-read-store";
@@ -34,6 +35,10 @@ import { EdgesGateway } from "./vendors/edges/edges-gateway";
 import { EdgesClient } from "./vendors/edges/edges-http";
 import { edgesEventKey, isEdgesDelivery, parseEdgesDelivery, readEdgesInbound, unreadableEdgesDelivery } from "./vendors/edges/edges-inbound";
 import { createEdgesVendor } from "./vendors/edges/edges-vendor";
+import { GtmGateway } from "./vendors/gtmapi/gtm-gateway";
+import { GtmClient } from "./vendors/gtmapi/gtm-http";
+import { gtmEventKey, isGtmDelivery, parseGtmDelivery, readGtmInbound, unreadableGtmDelivery, unreadableGtmKey } from "./vendors/gtmapi/gtm-inbound";
+import { createGtmVendor } from "./vendors/gtmapi/gtm-vendor";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
 import { storedConnection, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
 import { createUnipileVendor } from "./vendors/unipile/unipile-vendor";
@@ -68,6 +73,7 @@ async function storedGateway(organizationId: string, accountId: string, policy: 
   const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
   if (!credentials) return null;
   if (vendorKey === "edges") return new EdgesGateway({ apiKey: credentials.apiKey ?? "" });
+  if (vendorKey === "gtmapi") return new GtmGateway({ apiKey: credentials.apiKey ?? "" });
   const connection = storedConnection(credentials, policy);
   return connection ? new UnipileGateway(connection) : null;
 }
@@ -81,7 +87,7 @@ export function linkedinGateways(options: { allowLoopback?: boolean } = {}): Lin
 export function linkedinManagementDeps(): LinkedInManagementDeps {
   return {
     accounts: drizzleLinkedInAccountStore,
-    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }), ...(fakeMode() ? [] : [createEdgesVendor()])],
+    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }), ...(fakeMode() ? [] : [createEdgesVendor(), createGtmVendor()])],
     appUrl: env().APP_URL,
     now: () => new Date(),
     audit: auditSink,
@@ -114,32 +120,40 @@ function searchEngineDeps(): LinkedInSearchEngineDeps {
   return { store: drizzleLinkedInSearchEngineStore, gateways: linkedinGateways(), sink: searchLeadSink, clock: { now: () => new Date() }, random: Math.random };
 }
 
-function engineDeps(): LinkedInEngineDeps {
-  return { store: drizzleLinkedInStore, gateways: linkedinGateways(), clock: { now: () => new Date() }, random: Math.random };
+function engineDeps(stop: ContactStop): LinkedInEngineDeps {
+  return { store: drizzleLinkedInStore, stopForReply: createLinkedInReplyStop(stop), gateways: linkedinGateways(), clock: { now: () => new Date() }, random: Math.random };
 }
 
-/** A delivery says which vendor's it is: polled ones carry Edges' tag, and webhook ones are Unipile's. */
-const parseLinkedInPayload = (payload: unknown) => (isEdgesDelivery(payload) ? parseEdgesDelivery(payload) : parseUnipilePayload(payload));
-const unreadableLinkedInPayload = (payload: unknown) => (isEdgesDelivery(payload) ? unreadableEdgesDelivery(payload) : unreadablePayloadEvent(payload));
-const linkedInEventKey: LinkedInInboundDeps["eventKey"] = (event, organizationId, payload) => (isEdgesDelivery(payload) ? edgesEventKey(event, organizationId) : unipileEventKey(event, organizationId));
+/** A delivery says which vendor's it is: polled ones carry a tag, and webhook ones, including rows from before tags, are Unipile's. */
+function readerOf(payload: unknown): Pick<LinkedInInboundDeps, "parse" | "unreadable"> & { eventKey: (event: LinkedInInboundEvent, organizationId: string) => string | null; unreadableKey?: (organizationId: string) => string | null } {
+  if (isEdgesDelivery(payload)) return { parse: () => parseEdgesDelivery(payload), unreadable: () => unreadableEdgesDelivery(payload), eventKey: edgesEventKey };
+  if (isGtmDelivery(payload)) return { parse: () => parseGtmDelivery(payload), unreadable: () => unreadableGtmDelivery(payload), eventKey: gtmEventKey, unreadableKey: (organizationId) => unreadableGtmKey(payload, organizationId) };
+  return { parse: parseUnipilePayload, unreadable: unreadablePayloadEvent, eventKey: (event, organizationId) => unipileEventKey(event, organizationId) };
+}
+
+const parseLinkedInPayload = (payload: unknown) => readerOf(payload).parse(payload);
+const unreadableLinkedInPayload = (payload: unknown) => readerOf(payload).unreadable?.(payload) ?? null;
+const unreadableLinkedInKey = (payload: unknown, organizationId: string) => readerOf(payload).unreadableKey?.(organizationId) ?? null;
+const linkedInEventKey: LinkedInInboundDeps["eventKey"] = (event, organizationId, payload) => readerOf(payload).eventKey(event, organizationId);
 
 function inboundDeps(inbox: InboxFiling): LinkedInInboundDeps {
-  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseLinkedInPayload, unreadable: unreadableLinkedInPayload, eventKey: linkedInEventKey };
+  return { store: createDrizzleLinkedInInboundStore(inbox), clock: { now: () => new Date() }, parse: parseLinkedInPayload, unreadable: unreadableLinkedInPayload, unreadableKey: unreadableLinkedInKey, eventKey: linkedInEventKey };
 }
 
-/** Edges is the one vendor read by polling. */
-const edgesInboundSource: LinkedInInboundPollDeps["source"] = {
-  async read({ organizationId, account, cursor, now }) {
+/** The vendors read by polling, each with its own reader. */
+const polledInboundSource: LinkedInInboundPollDeps["source"] = {
+  async read({ organizationId, provider, account, cursor, now }) {
     const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
-    if (!credentials?.apiKey) throw new LinkedInGatewayError("Edges is not connected.", "definite", "unavailable");
+    if (!credentials?.apiKey) throw new LinkedInGatewayError("LinkedIn is not connected.", "definite", "unavailable");
+    if (provider === "gtmapi") return readGtmInbound(new GtmClient({ apiKey: credentials.apiKey }), account, cursor, now);
     return readEdgesInbound(new EdgesClient({ apiKey: credentials.apiKey }), account, cursor, now);
   },
 };
 
 /** LinkedIn jobs. They idle until an organization connects LinkedIn, so they are always registered. */
-export function linkedinJobs(inbox: InboxFiling): Job[] {
-  const poll: LinkedInInboundPollDeps = { store: drizzleLinkedInInboundPollStore, source: edgesInboundSource, inbound: inboundDeps(inbox), clock: { now: () => new Date() } };
-  return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll);
+export function linkedinJobs(inbox: InboxFiling, stop: ContactStop): Job[] {
+  const poll: LinkedInInboundPollDeps = { store: drizzleLinkedInInboundPollStore, source: polledInboundSource, inbound: inboundDeps(inbox), clock: { now: () => new Date() } };
+  return createLinkedInJobs(engineDeps(stop), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot }, poll);
 }
 
 export type UnipileDelivery = { status: 401 } | { status: 200; result: WebhookResult };

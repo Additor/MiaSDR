@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
@@ -35,7 +35,19 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     member: snap.member ?? null,
     slug: snap.slug ?? null,
     text: snap.text,
+    draftWrittenAt: snap.draftWrittenAt ? new Date(snap.draftWrittenAt) : null,
   };
+}
+
+/** When this revision's text was written. Every write to a draft moves `updated_at`, a failed attempt included, so a retry reads the moment the first attempt recorded. */
+async function draftWrittenMoment(tx: Tx, draft: typeof drafts.$inferSelect): Promise<string> {
+  const [first] = await tx
+    .select({ request: sendAttempts.request })
+    .from(sendAttempts)
+    .where(and(eq(sendAttempts.draftId, draft.id), sql`(${sendAttempts.request}->>'revision')::int = ${draft.revision}`))
+    .orderBy(asc(sendAttempts.createdAt))
+    .limit(1);
+  return (first?.request as LinkedInSnapshot | undefined)?.draftWrittenAt ?? draft.updatedAt.toISOString();
 }
 
 async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
@@ -157,9 +169,11 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             .for("update");
       let draftId: string;
       let revision: number;
+      let draftWrittenAt: string | null = null;
       if (input.via && target) {
         draftId = target.id;
         revision = target.revision;
+        draftWrittenAt = await draftWrittenMoment(tx, target);
       } else if (open) {
         // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
         const [updated] = await tx
@@ -193,6 +207,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         chat,
         member: conv.member,
         slug: (await tx.select({ slug: people.linkedinSlug }).from(people).where(eq(people.id, conversation.personId)))[0]?.slug ?? null,
+        draftWrittenAt,
         accountId: account.id,
         providerAccountId: account.providerAccountId,
         threadId: conv.id,
