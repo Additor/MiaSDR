@@ -66,7 +66,7 @@ interface State {
   /** The connected vendor, or the default one. */
   vendor: { key: string; name: string; pollsConnect: boolean };
   vendors: Array<{ key: string; name: string }>;
-  dsn: string | null;
+  connectedTo: string | null;
   accounts: Account[];
   links: ConnectLinkRow[];
   /** Null: this vendor has no webhooks to register. */
@@ -241,7 +241,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
               Preview
             </Badge>
             A full campaign has not run on a real LinkedIn account yet.{" "}
-            {state.connected ? (state.dsn ? `Connected to ${state.dsn}.` : `Connected to ${vendor.name}.`) : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
+            {state.connected ? (state.connectedTo ? `Connected to ${state.connectedTo}.` : `Connected to ${vendor.name}.`) : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
           </>
         }
       >

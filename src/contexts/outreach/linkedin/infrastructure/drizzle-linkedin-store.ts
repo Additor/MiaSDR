@@ -47,7 +47,8 @@ import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isLinkedinBlockedBySuppression } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
-import { disconnectLinkedInAccount, pauseLinkedInAccount, VENDORS_READ_BY_POLL } from "./linkedin-account-state";
+import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
+import { VENDORS_READ_BY_POLL } from "./linkedin-vendor-facts";
 
 type Tx = DbTx;
 

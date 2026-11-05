@@ -52,6 +52,8 @@ export interface LinkedInAccountRecord {
   limitReachedUntil: Date | null;
   /** When a read of the inbox last started, for a vendor with no webhook for messages. */
   inboundReadAt: Date | null;
+  /** This account's vendor sends no webhook for messages, so its inbox is read on a schedule. */
+  inboxReadByPoll: boolean;
   workingHours: WorkingHours | null;
   invitesToday: number;
   messagesToday: number;
@@ -149,10 +151,10 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
     connected: credentials !== null,
     vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null },
     vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
-    ...vendor.describe(credentials),
+    connectedTo: vendor.connectedTo(credentials),
     webhooks,
     sync,
-    accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account), inboxStale: vendor.webhooks === null && inboundIsStale(now, account.inboundReadAt) })),
+    accounts: accounts.map((account) => ({ ...account, warnings: limitWarnings(account), inboxStale: account.inboxReadByPoll && inboundIsStale(now, account.inboundReadAt) })),
     links,
     limits: { invites: INVITE_LIMIT_RULE, messages: MESSAGE_LIMIT_RULE },
     defaults: { invitesPerDayPremium: DEFAULT_LINKEDIN_RULES.invitesPerDayPremium, invitesPerDayFree: DEFAULT_LINKEDIN_RULES.invitesPerDayFree },

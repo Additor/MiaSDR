@@ -158,7 +158,13 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
 
     async apply(organizationId, delivered, now) {
       const outcome = await db.transaction(async (tx): Promise<{ done: { result: InboundResult; note: string | null } } | { reply: ReplyContext }> => {
-        const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.providerAccountId, delivered.account)));
+        // A reconnect can bring a new id, and a delivery from before it still names the old one. The current id wins.
+        const [account] = await tx
+          .select()
+          .from(linkedinAccounts)
+          .where(and(eq(linkedinAccounts.organizationId, organizationId), or(eq(linkedinAccounts.providerAccountId, delivered.account), sql`${delivered.account} = any(${linkedinAccounts.formerProviderAccountIds})`)))
+          .orderBy(sql`${linkedinAccounts.providerAccountId} = ${delivered.account} desc`, asc(linkedinAccounts.createdAt))
+          .limit(1);
         // The lookup is scoped to the organization the secret belongs to, so another tenant's account never resolves.
         if (!account) return { done: { result: "skipped" as const, note: "Unknown account for this organization." } };
 

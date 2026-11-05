@@ -461,6 +461,7 @@ Invitation counts are windows over `sends`, so nothing needs a daily reset. The 
 
 - `POST /api/webhooks/unipile?org=<organization id>` with header `x-unipile-secret`, compared in constant time (401 otherwise).
 - Every delivery writes an `inbound_events` row first, keyed `unipile:message_received:v2:<org>:<account>:<message id>` or `unipile:new_relation:v2:<org>:<account>:<member>`. The organization is in the key because `inbound_events` is unique on (provider, key) across tenants. Replay reads the stored payload, so v1 rows still replay.
+- An account keeps the ids a reconnect replaced in `former_provider_account_ids`, so a late or replayed delivery still reaches it. The account holding the id now wins over one that used to, and the lookup stays inside the organization.
 - Processing runs synchronously. A failure is logged on the row and answered 200; `linkedin.replay-events` retries with backoff from 5 seconds doubling to 15 minutes, 8 attempts.
 - Connect registers both hooks and stores the result in `integration_accounts.config.webhooks`; disconnect removes them at Unipile. A local or private `APP_URL` skips both. `POST /api/linkedin/webhooks/setup` (owner or admin, `no-store`) reveals the secret for manual setup and writes `integration.secret_viewed` first.
 

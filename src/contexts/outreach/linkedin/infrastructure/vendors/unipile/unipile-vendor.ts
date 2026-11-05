@@ -57,7 +57,7 @@ export function createUnipileVendor(options: UnipileVendorOptions = {}): LinkedI
 
     gatewayFor: stored,
 
-    describe: (credentials) => ({ dsn: credentials?.dsn ?? null }),
+    connectedTo: (credentials) => credentials?.dsn ?? null,
 
     explain,
 

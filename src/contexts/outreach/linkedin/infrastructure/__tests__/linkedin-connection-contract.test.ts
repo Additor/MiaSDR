@@ -127,8 +127,8 @@ describe("LinkedIn connection contract", () => {
     await mgmt.disconnectLinkedIn(f.deps, actor);
     expect(f.gateway.removeWebhooks).toHaveBeenCalledWith({ requestUrl });
 
-    expect((await mgmt.listLinkedInAccounts(f.deps, actor))).toMatchObject({ connected: true, dsn: "api1.unipile.com:13111", webhookUrl: requestUrl });
-    expect((await mgmt.listLinkedInAccounts(world({ stored: null }).deps, actor))).toMatchObject({ connected: false, dsn: null });
+    expect((await mgmt.listLinkedInAccounts(f.deps, actor))).toMatchObject({ connected: true, connectedTo: "api1.unipile.com:13111", webhookUrl: requestUrl });
+    expect((await mgmt.listLinkedInAccounts(world({ stored: null }).deps, actor))).toMatchObject({ connected: false, connectedTo: null });
   });
 
   it("words webhook registration outcomes the same way", async () => {

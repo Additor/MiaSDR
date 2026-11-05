@@ -77,6 +77,8 @@ export const linkedinAccounts = pgTable(
     provider: text("provider").notNull().default("unipile"),
     /** The vendor's account id used for API calls. */
     providerAccountId: text("provider_account_id").notNull().unique(),
+    /** Ids this account had before a reconnect brought a new one. Deliveries from before then still name them. */
+    formerProviderAccountIds: text("former_provider_account_ids").array().notNull().default(sql`'{}'::text[]`),
     /** The LinkedIn member id. Globally unique: webhooks resolve the organization through it. */
     linkedinId: text("linkedin_id").notNull().unique(),
     username: text("username"),

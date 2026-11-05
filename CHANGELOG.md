@@ -28,7 +28,9 @@ You can connect LinkedIn through [Edges](docs/setup/linkedin-edges.md) instead o
 - Replies and acceptances are read from each account about every 10 minutes, inside its working hours. An account sends nothing until a read finished in the last 15 minutes, and a message can still go out up to 15 minutes after a stop request.
 - `GET /api/linkedin` gains `vendor` and `vendors`, and `webhookUrl` can be null. Existing Unipile setups keep working unchanged.
 
-The database gains `linkedin_accounts.provider`, `inbound_cursor`, `inbound_read_at` and `inbound_lease_until`, and `inbound_events.provider` allows `edges`. The new constraint on `inbound_events` checks every row while it holds its lock, so stop old instances first on a large install (docs/operations.md).
+The database gains `linkedin_accounts.provider`, `inbound_cursor`, `inbound_read_at`, `inbound_lease_until` and `former_provider_account_ids`, and `inbound_events.provider` allows `edges`. The new constraint on `inbound_events` checks every row while it holds its lock, so stop old instances first on a large install (docs/operations.md).
+
+A LinkedIn delivery that names an account's id from before a reconnect now reaches that account, where it used to end `skipped` with "Unknown account for this organization." `GET /api/linkedin` returns `connectedTo` in place of `dsn`.
 
 ### Changed
 
