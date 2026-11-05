@@ -4,6 +4,14 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ## Unreleased
 
+### Brain
+
+Knowledge moved out of Settings into Brain, a sidebar place at `/brain`. `/settings/knowledge` redirects there. An item now has a kind and fields instead of pasted text, and these kinds match Brain in Withmia. Every member can add and change items, and each change lands in the audit log.
+
+- `POST /api/knowledge` and `PATCH /api/knowledge/{id}` became `/api/brain` and take `fields` instead of `content`.
+- Migration `0005` moves old kinds to the new ones. `faq`, `scheduling` and `custom` documents, and all but the newest active `company` document of an organization, become `unsorted` and show under Needs sorting. They stay in AI prompts.
+- ICPs, competitors, testimonials and qualification rules do not reach AI prompts yet.
+
 ### Database
 
 The migrations are now one baseline, `drizzle/0000_baseline.sql`. An install from an earlier version fails on it with `already exists`, so start from an empty database.

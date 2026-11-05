@@ -98,7 +98,7 @@ Triggers freeze the rows that other rows point at by value or by version. Each r
 
 - `threads`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status` and `updated_at` stay writable.
 - `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. The app writes the other columns only when it seeds a set: name, description, guidance, the type rules (`reply_draft`, `follow_ups`) and `sort_order`.
-- `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
+- `knowledge_document_versions`: append-only. An edit of a Brain item's fields inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
 - `follow_up_versions` and `follow_up_steps`: `organization_id`, `flow_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a flow, which cascades.
 
 To change a frozen value, insert a new row (a new knowledge version, a new draft version of a flow). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
@@ -131,9 +131,9 @@ These columns and tables back add, merge and delete ("Contacts and Companies CRU
 
 `identity_exceptions_resolution_ck` lets a `resolved` row keep its status with a null `resolved_person_id`, so deleting a person who resolved an unmatched sender succeeds. Indexes cover the foreign keys a contact delete deletes through (`conversations.latest_inbound_message_id`, `drafts.reply_for_message_id`, `drafts.thread_id`, `lead_ccs.source_message_id`, `follow_up_runs.trigger_message_id`, `follow_up_runs.thread_id`, `follow_up_step_runs.sent_message_id`).
 
-## Knowledge versions
+## Brain item versions
 
-`knowledge_documents_latest_version_fk` is a foreign key from `(id, latest_version)` to `knowledge_document_versions (document_id, version)`. It is `DEFERRABLE INITIALLY DEFERRED`, so the check runs at commit. Insert a document and its first version in one transaction. A document that commits without the version row, or a `latest_version` that names a missing version, fails with the constraint name.
+`knowledge_documents_latest_version_fk` is a foreign key from `(id, latest_version)` to `knowledge_document_versions (document_id, version)`. It is `DEFERRABLE INITIALLY DEFERRED`, so the check runs at commit. Insert an item and its first version in one transaction. An item that commits without the version row, or a `latest_version` that names a missing version, fails with the constraint name.
 
 ## Messages update trigger
 
@@ -177,7 +177,8 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - agent-access: `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
-- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `ai_jobs`, `notes`, `tasks`
+- brain: `knowledge_documents`, `knowledge_document_versions` (Brain items; the tables keep their older name)
+- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `ai_jobs`, `notes`, `tasks`
 - conversations, follow-ups (`follow-ups-schema.ts`): `follow_up_flows`, `follow_up_versions`, `follow_up_steps`, `follow_up_runs`, `follow_up_step_runs`
 - deals: `deal_stages`, `deals`
 - grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`
