@@ -17,11 +17,12 @@ step() { printf '\n=== %s ===\n' "$*"; }
 
 step "start postgres:17 on port ${port}"
 docker run -d --name "$name" -e POSTGRES_PASSWORD=test -e POSTGRES_DB=miasdr_test -p "127.0.0.1:${port}:5432" postgres:17 >/dev/null
+# Over TCP: while the image initializes, a temporary server answers on the unix socket alone and then stops.
 for _ in $(seq 1 60); do
-  docker exec "$name" pg_isready -U postgres -d miasdr_test >/dev/null 2>&1 && break
+  docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -d miasdr_test >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec "$name" pg_isready -U postgres -d miasdr_test >/dev/null
+docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -d miasdr_test >/dev/null
 
 export TEST_DATABASE_URL="postgres://postgres:test@127.0.0.1:${port}/miasdr_test"
 export E2E_PG_URL="postgres://postgres:test@127.0.0.1:${port}/postgres"
