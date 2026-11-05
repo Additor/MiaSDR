@@ -514,7 +514,7 @@ export const inboundEvents = pgTable(
     id: pk(),
     /** Resolved from the account or mailbox at ingest. Null until resolved. */
     organizationId: uuid("organization_id"),
-    /** gmail | unipile | edges */
+    /** gmail | unipile | edges | gtmapi */
     provider: text("provider").notNull(),
     /** Idempotency key from the provider. */
     providerEventKey: text("provider_event_key"),

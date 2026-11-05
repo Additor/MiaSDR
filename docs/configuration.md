@@ -46,7 +46,7 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `LINKEDIN_PROVIDER` | none | `unipile` (default behavior) or `fake` for demos. Each organization saves its own Unipile credentials. |
+| `LINKEDIN_PROVIDER` | none | `unipile` (default behavior) or `fake` for demos. Each organization chooses Unipile, Edges or gtm-api and saves its own credentials in Settings, LinkedIn. |
 | `LINKEDIN_DSN_ALLOWED_HOSTS` | none | Extra Unipile hosts besides `*.unipile.com`, comma list (`host`, `host:port` or `*.domain`). |
 | `AI_PROVIDER` | none | `fake` answers with a keyword classifier and template drafts (demos only). |
 | `AI_MODEL` | `claude-sonnet-5-5` | Model on a direct Anthropic connection when an organization has not picked one. Vercel AI Gateway and OpenRouter have no default: the organization picks a model. An owner or admin picks the model in Settings, Integrations, AI model; the pick is checked against the live model list of the saved key and wins over this variable. |

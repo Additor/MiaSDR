@@ -263,6 +263,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
         const messagesToday = await countMessagesToday(row, now);
         return {
           id: row.id,
+          provider: row.provider,
           providerAccountId: row.providerAccountId,
           linkedinId: row.linkedinId,
           name: row.name,

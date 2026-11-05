@@ -317,6 +317,16 @@ describeDb("LinkedIn accounts on gtm-api", () => {
       expect((await sql`select provider, daily_invite_limit from linkedin_accounts where provider_account_id = ${ref}`)[0]).toMatchObject({ provider: "gtmapi", daily_invite_limit: 20 });
     });
 
+    it("offers an account's own vendor in the form after a disconnect", async () => {
+      const id = await org();
+      await account(id);
+      const { listLinkedInAccounts } = await import("../../application/linkedin-management");
+      const state = await listLinkedInAccounts(composition.linkedinManagementDeps(), { organizationId: id, userId: "u", role: "admin" } as never);
+      expect(state.connected).toBe(false);
+      expect(state.vendor.key).toBe("unipile");
+      expect(state.formVendor).toBe("gtmapi");
+    });
+
     it("gives an account the gateway of its vendor, and refuses a connect link", async () => {
       const id = await org();
       const seller = await account(id);

@@ -67,6 +67,8 @@ interface State {
   /** The connected vendor, or the default one. */
   vendor: { key: string; name: string; pollsConnect: boolean; connectLinks: boolean };
   vendors: Array<{ key: string; name: string }>;
+  /** The vendor the connect form starts on: the connected one, or the one the accounts came through. */
+  formVendor: string;
   connectedTo: string | null;
   accounts: Account[];
   links: ConnectLinkRow[];
@@ -160,7 +162,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   }, [params, router]);
 
   if (!canManage || !state) return <AdminNotice action="connect or change LinkedIn" replacesPage />;
-  const vendor = state.connected ? state.vendor : (state.vendors.find((item) => item.key === formVendor) ?? state.vendor);
+  const vendor = state.connected ? state.vendor : (state.vendors.find((item) => item.key === (formVendor ?? state.formVendor)) ?? state.vendor);
   const hasWebhooks = state.connected ? state.webhookUrl !== null : vendor.key === "unipile";
   const asksDsn = vendor.key === "unipile";
   const syncsTeam = vendor.key === "gtmapi";

@@ -41,6 +41,8 @@ export type LinkedInCredentials = VendorCredentials & { notifySecret: string };
 
 export interface LinkedInAccountRecord {
   id: string;
+  /** The vendor this account belongs to. */
+  provider: string;
   providerAccountId: string;
   linkedinId: string;
   name: string | null;
@@ -153,6 +155,8 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
     connected: credentials !== null,
     vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null, connectLinks: vendor.connectLinkMinutes !== null },
     vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
+    // After a disconnect the way back is the vendor of the newest account, whatever the default is.
+    formVendor: credentials ? vendor.key : (accounts.at(-1)?.provider ?? vendor.key),
     connectedTo: vendor.connectedTo(credentials),
     webhooks,
     sync,
