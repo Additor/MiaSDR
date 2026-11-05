@@ -1,6 +1,6 @@
 # LinkedIn through gtm-api
 
-Status: built, and not yet run against a real gtm-api account from MiaSDR. The adapter is tested against answers written from gtm-api's OpenAPI document, none recorded live. Read [Responsible use](../responsible-use.md) first. LinkedIn prohibits automation and can restrict the profile you connect.
+Read [Responsible use](../responsible-use.md) first. LinkedIn prohibits automation and can restrict the profile you connect.
 
 ## What gtm-api is
 

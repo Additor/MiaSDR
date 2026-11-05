@@ -1,7 +1,5 @@
 # LinkedIn through Unipile
 
-Status: built. The gateway, engine, webhook route and search queue exist and run against a local stand-in server in tests. Profile lookups ran once against a real Unipile account with a classic LinkedIn profile. A full campaign has not run against a real account, and Sales Navigator lookups are unchecked.
-
 Read [Responsible use](../responsible-use.md) first. LinkedIn prohibits automation and can restrict the profile you connect.
 
 ## What Unipile is

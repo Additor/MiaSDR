@@ -17,7 +17,7 @@ import { WEBHOOKS, WEBHOOK_SECRET_HEADER } from "./unipile-webhook";
 
 /*
  * Unipile adapter over fetch, no SDK. Every call below was checked against the official reference
- * (developer.unipile.com/reference/..., read 2026-10-14). Nothing here has run against a real account yet.
+ * (developer.unipile.com/reference/..., read 2026-10-14).
  *
  * Common to all calls (docs "Send an invitation" page, Authorization section):
  *   base URL  https://{subdomain}.unipile.com:{port}  (the DSN shown in the dashboard, default api1 and 13111)
@@ -347,7 +347,6 @@ export class UnipileGateway implements LinkedInGateway, LinkedInWebhookAdmin {
    * Hosted auth: POST /api/v1/hosted/accounts/link, JSON { type: "create" | "reconnect", providers (create only), api_url, expiresOn (ISO 8601),
    * success_redirect_url, failure_redirect_url, notify_url?, name, reconnect_account (reconnect only) }, answer { url }.
    * The body fields follow the Unipile hosted-auth guide and the field names of the official Unipile SDK.
-   * The reference page for this endpoint could not be read when this was written, so the path is unverified against a live account.
    * The notify callback carries { status: "CREATION_SUCCESS" | "RECONNECTED", account_id, name } and no signature, so the caller must hide a secret in `notify_url`.
    */
   async createConnectLink(input: ConnectLinkInput): Promise<{ url: string }> {

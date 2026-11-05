@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { listLinkedInAccounts, type LinkedInAccountRecord, type LinkedInManagementDeps } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { createEdgesVendor } from "@/contexts/outreach/linkedin/infrastructure/vendors/edges/edges-vendor";
 import { createGtmVendor } from "@/contexts/outreach/linkedin/infrastructure/vendors/gtmapi/gtm-vendor";
+import { createLinkedApiVendor } from "@/contexts/outreach/linkedin/infrastructure/vendors/linkedapi/linkedapi-vendor";
 import { createUnipileVendor } from "@/contexts/outreach/linkedin/infrastructure/vendors/unipile/unipile-vendor";
 
 vi.mock("next/navigation", () => ({
@@ -21,7 +22,7 @@ import { LinkedInPanel } from "./linkedin-panel";
 
 const ORG = "00000000-0000-4000-8000-000000000001";
 const actor = { userId: "00000000-0000-4000-8000-000000000003", organizationId: ORG, role: "owner" as const };
-const CREDENTIALS = { unipile: { dsn: "api1.unipile.com:13111", apiKey: "k", notifySecret: "n" }, edges: { apiKey: "k", notifySecret: "n" }, gtmapi: { apiKey: "k", notifySecret: "n" } };
+const CREDENTIALS = { unipile: { dsn: "api1.unipile.com:13111", apiKey: "k", notifySecret: "n" }, edges: { apiKey: "k", notifySecret: "n" }, gtmapi: { apiKey: "k", notifySecret: "n" }, linkedapi: { apiKey: "k", notifySecret: "n" } };
 
 const account = (provider: string, over: Partial<LinkedInAccountRecord> = {}): LinkedInAccountRecord =>
   ({
@@ -49,7 +50,7 @@ const account = (provider: string, over: Partial<LinkedInAccountRecord> = {}): L
 async function render(options: { connected: keyof typeof CREDENTIALS | null; accounts?: LinkedInAccountRecord[] }) {
   const { connected, accounts = [] } = options;
   const deps = {
-    vendors: [createUnipileVendor({ gatewayFor: () => ({}) as never }), createEdgesVendor(), createGtmVendor()],
+    vendors: [createUnipileVendor({ gatewayFor: () => ({}) as never }), createEdgesVendor(), createGtmVendor(), createLinkedApiVendor()],
     accounts: {
       connectedVendor: async () => connected,
       getCredentials: async () => (connected ? CREDENTIALS[connected] : null),
@@ -80,6 +81,7 @@ describe("the LinkedIn settings panel", () => {
     it.each([
       ["edges", "Edges connection", "Settings, Developers"],
       ["gtmapi", "gtm-api connection", "every LinkedIn account in the key&#x27;s team"],
+      ["linkedapi", "Linked API connection", "with the policy on Run anyway"],
     ])("starts on the vendor the accounts of %s came through, and asks for a key alone", async (provider, heading, sentence) => {
       const html = await render({ connected: null, accounts: [account(provider)] });
       expect(html).toContain(heading);
@@ -118,6 +120,18 @@ describe("the LinkedIn settings panel", () => {
       expect(html).toContain("Connected to Edges.");
       expect(html).toContain("Connect a LinkedIn account");
       expect(html).toContain("Reconnect");
+    });
+  });
+
+  describe("connected to Linked API", () => {
+    it("says a send can take minutes, and offers its own link", async () => {
+      const html = await render({ connected: "linkedapi", accounts: [account("linkedapi")] });
+      expect(html).toContain("A send can take minutes");
+      expect(html).toContain("Connect a LinkedIn account");
+    });
+
+    it("offers a reconnect on a signed-out account", async () => {
+      expect(await render({ connected: "linkedapi", accounts: [account("linkedapi", { status: "disconnected" })] })).toContain("Reconnect");
     });
   });
 

@@ -153,7 +153,7 @@ export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: 
   ]);
   return {
     connected: credentials !== null,
-    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null, connectLinks: vendor.connectLinkMinutes !== null },
+    vendor: { key: vendor.key, name: vendor.name, pollsConnect: vendor.connectSession !== null, connectLinks: vendor.connectLinkMinutes !== null, connectLinkMinutes: vendor.connectLinkMinutes },
     vendors: deps.vendors.map(({ key, name }) => ({ key, name })),
     // After a disconnect the way back is the vendor of the newest account, whatever the default is.
     formVendor: credentials ? vendor.key : (accounts.at(-1)?.provider ?? vendor.key),

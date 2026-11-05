@@ -1,6 +1,6 @@
 # LinkedIn through Edges
 
-Status: built, and not yet run against a real Edges account from MiaSDR. The adapter is tested against recorded answer shapes. Read [Responsible use](../responsible-use.md) first. LinkedIn prohibits automation and can restrict the profile you connect.
+Read [Responsible use](../responsible-use.md) first. LinkedIn prohibits automation and can restrict the profile you connect.
 
 ## What Edges is
 

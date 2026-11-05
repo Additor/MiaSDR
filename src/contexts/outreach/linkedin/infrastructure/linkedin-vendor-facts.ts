@@ -4,6 +4,7 @@ const VENDOR_FACTS: Record<string, { credentialFields: readonly string[]; readBy
   edges: { credentialFields: ["apiKey"], readByPoll: true },
   // gtm-api's own daily budget for invitations is 25 on a paid account, and each refusal holds invitations until it refills.
   gtmapi: { credentialFields: ["apiKey"], readByPoll: true, inviteLimitCap: 20 },
+  linkedapi: { credentialFields: ["apiKey"], readByPoll: true, capturesOnlyLaterEvents: true },
 };
 
 /** The vendors' rows in the integration tables. */

@@ -188,8 +188,8 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
             status,
             ...(account.headline ? { headline: account.headline } : {}),
             ...(account.isPremium !== null ? { isPremium: account.isPremium } : {}),
-            // What happened while the old id was signed out was never captured. The gate stays shut until the new id's first read, and each lead's thread is read before its next message.
-            ...(existing && existing.providerAccountId !== account.ref && capturesOnlyLaterEvents(vendorKey) ? { inboxGapUntil: new Date(), inboundReadAt: null } : {}),
+            // What happened while it was signed out was never captured, whether or not the reconnect brought a new id. The gate stays shut until the next read, and each lead's thread is read before its next message.
+            ...(existing && capturesOnlyLaterEvents(vendorKey) && status === "connected" && (existing.providerAccountId !== account.ref || existing.status !== "connected") ? { inboxGapUntil: new Date(), inboundReadAt: null } : {}),
           };
           if (existing) {
             await tx.update(linkedinAccounts).set(fields).where(eq(linkedinAccounts.id, existing.id));
