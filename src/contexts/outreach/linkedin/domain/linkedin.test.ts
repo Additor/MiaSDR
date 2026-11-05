@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_RESOLVE_ATTEMPTS,
   accountBlock,
+  afterResolveFailure,
+  afterStep,
   dailyInviteLimit,
   describeLinkedInProgress,
   DEFAULT_LINKEDIN_RULES,
   eventRetrySeconds,
   INVITE_NOTE_MAX,
+  invitationsHeld,
   inviteBlock,
+  lookupBacklogFull,
+  withKnownOwner,
   inviteNoteLength,
   inviteNoteProblem,
   linkedinRules,
@@ -156,5 +162,50 @@ describe("describeLinkedInProgress", () => {
     expect(describeLinkedInProgress({ ...base, status: "completed", stopReason: "invite_not_accepted" }).label).toBe("Not accepted");
     expect(describeLinkedInProgress({ ...base, status: "completed", connectionState: "connected", currentStep: 3 }).label).toBe("Finished");
     expect(describeLinkedInProgress({ ...base, status: "failed", stopReason: "send_failed: x" })).toMatchObject({ label: "Failed", tone: "bad", detail: "send_failed: x" });
+  });
+});
+
+describe("the rules around a claim", () => {
+  const now = new Date("2026-11-05T10:00:00Z");
+
+  it("holds invitations only while the hold lasts", () => {
+    expect(invitationsHeld({ invitesPausedUntil: null }, now)).toBe(false);
+    expect(invitationsHeld({ invitesPausedUntil: new Date(now.getTime() + 1) }, now)).toBe(true);
+    expect(invitationsHeld({ invitesPausedUntil: now }, now)).toBe(false);
+  });
+
+  it("stops lookups at twice the daily invitation limit, and at no fewer than 10 waiting", () => {
+    expect(lookupBacklogFull(9, 2)).toBe(false);
+    expect(lookupBacklogFull(10, 2)).toBe(true);
+    expect(lookupBacklogFull(39, 20)).toBe(false);
+    expect(lookupBacklogFull(40, 20)).toBe(true);
+  });
+
+  it("gives up on a lookup when it is fatal or out of attempts, else names the next try", () => {
+    expect(afterResolveFailure(1, true, now)).toEqual({ exhausted: true, nextAttemptAt: null });
+    expect(afterResolveFailure(MAX_RESOLVE_ATTEMPTS, false, now)).toEqual({ exhausted: true, nextAttemptAt: null });
+    const retry = afterResolveFailure(1, false, now);
+    expect(retry.exhausted).toBe(false);
+    expect(retry.nextAttemptAt?.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it("finishes after the last step, and otherwise schedules the next", () => {
+    expect(afterStep(null, now)).toEqual({ status: "completed", nextSendAt: null });
+    expect(afterStep(2, now)).toEqual({ status: "active", nextSendAt: new Date("2026-11-07T10:00:00Z") });
+    expect(afterStep(0, now)).toEqual({ status: "active", nextSendAt: now });
+  });
+});
+
+describe("withKnownOwner", () => {
+  const reply = { type: "message_received", fromAccountOwner: false, counterparty: "ACo-owner", attendees: ["ACo-owner", "ACo-lead"], counterpartyName: "Sam", counterpartyProfileUrl: "https://x" } as never;
+
+  it("marks the owner's own message as an echo, and names the other person", () => {
+    expect(withKnownOwner(reply, "ACo-owner")).toMatchObject({ fromAccountOwner: true, counterparty: "ACo-lead", counterpartyName: null, counterpartyProfileUrl: null });
+  });
+
+  it("leaves a message from anyone else, and other events, as they came", () => {
+    expect(withKnownOwner(reply, "ACo-someone-else")).toBe(reply);
+    const accepted = { type: "new_relation" } as never;
+    expect(withKnownOwner(accepted, "ACo-owner")).toBe(accepted);
   });
 });

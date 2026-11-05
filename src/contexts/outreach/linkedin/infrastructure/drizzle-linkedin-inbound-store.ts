@@ -4,8 +4,8 @@ import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { campaignEnrollments, campaigns, inboundEvents, linkedinAccounts, linkedinConnections, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { InboxFiling } from "../../application/inbound-ports";
 import type { InboundResult, LedgerEvent, LinkedInInboundStore } from "../application/linkedin-ports";
-import { MAX_EVENT_ATTEMPTS, linkedinSlug, type LinkedInInboundEvent } from "../domain/linkedin";
-import { applyAcceptance } from "./drizzle-linkedin-store";
+import { MAX_EVENT_ATTEMPTS, linkedinSlug, withKnownOwner, type LinkedInInboundEvent } from "../domain/linkedin";
+import { applyAcceptance } from "./linkedin-enrollment-progress";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { SEND_COUNTED } from "../../domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
@@ -245,12 +245,6 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
 }
 
 type ReplyEvent = Extract<LinkedInInboundEvent, { type: "message_received" }>;
-
-/** A payload may not say who the account owner is. The sender matching the stored owner still marks an echo, not a lead's reply. */
-function withKnownOwner(event: LinkedInInboundEvent, ownerId: string): LinkedInInboundEvent {
-  if (event.type !== "message_received" || event.fromAccountOwner || event.counterparty !== ownerId) return event;
-  return { ...event, fromAccountOwner: true, counterparty: event.attendees?.find((id) => id !== ownerId) ?? null, counterpartyName: null, counterpartyProfileUrl: null };
-}
 
 interface ReplyContext {
   accountId: string;
