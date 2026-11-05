@@ -65,7 +65,7 @@ interface ConnectLinkRow {
 interface State {
   connected: boolean;
   /** The connected vendor, or the default one. */
-  vendor: { key: string; name: string; pollsConnect: boolean; connectLinks: boolean };
+  vendor: { key: string; name: string; pollsConnect: boolean; connectLinks: boolean; connectLinkMinutes: number | null };
   vendors: Array<{ key: string; name: string }>;
   /** The vendor the connect form starts on: the connected one, or the one the accounts came through. */
   formVendor: string;
@@ -166,6 +166,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
   const hasWebhooks = state.connected ? state.webhookUrl !== null : vendor.key === "unipile";
   const asksDsn = vendor.key === "unipile";
   const syncsTeam = vendor.key === "gtmapi";
+  const runsLater = vendor.key === "linkedapi";
   const syncAccounts = () => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."));
 
   function connect(event: FormEvent<HTMLFormElement>) {
@@ -242,11 +243,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
         title={`${vendor.name} connection`}
         description={
           <>
-            <Badge variant="outline" className="mr-2">
-              Preview
-            </Badge>
-            A full campaign has not run on a real LinkedIn account yet.{" "}
-            {state.connected ? `${state.connectedTo ? `Connected to ${state.connectedTo}.` : `Connected to ${vendor.name}.`}${syncsTeam ? " Every LinkedIn account in this key's team is read here, including its messages." : ""}` : syncsTeam ? "Create an API key in gtm-api. MiaSDR checks it, saves it encrypted, and adds every LinkedIn account in the key's team, including its messages. Set how often gtm-api syncs each account there: replies and acceptances arrive only that fast, and an account sends nothing while its sync has stalled." : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
+            {state.connected ? `${state.connectedTo ? `Connected to ${state.connectedTo}.` : `Connected to ${vendor.name}.`}${syncsTeam ? " Every LinkedIn account in this key's team is read here, including its messages." : ""}${runsLater ? " Every LinkedIn account on this token is read here. A send can take minutes, because Linked API runs each account's actions one at a time." : ""}` : runsLater ? "Create a token in Linked API. MiaSDR checks it, saves it encrypted, and adds every LinkedIn account on it. In Linked API, set each account's working hours over MiaSDR's, with the policy on Run anyway." : syncsTeam ? "Create an API key in gtm-api. MiaSDR checks it, saves it encrypted, and adds every LinkedIn account in the key's team, including its messages. Set how often gtm-api syncs each account there: replies and acceptances arrive only that fast, and an account sends nothing while its sync has stalled." : !asksDsn ? `Create an API key in ${vendor.name}, Settings, Developers. MiaSDR checks it and saves it encrypted. Replies and acceptances are read from each account about every 10 minutes, and an account sends nothing while those reads fail.` : "Find the DSN and an access token in your Unipile dashboard. MiaSDR checks them, saves the key encrypted, and finds your LinkedIn accounts."}
           </>
         }
       >
@@ -283,7 +280,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
                 </Field>
               )}
               <Field>
-                <FieldLabel htmlFor="apiKey">API key</FieldLabel>
+                <FieldLabel htmlFor="apiKey">{runsLater ? "Token" : "API key"}</FieldLabel>
                 <Input id="apiKey" name="apiKey" type="password" required autoComplete="off" />
               </Field>
               {state.connected && <p className="text-sm text-muted-foreground sm:col-span-2">Enter new values to replace the saved key.</p>}
@@ -413,7 +410,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
               Recent connection links <Count value={formatCount(state.links.length)} className="font-normal" />
             </summary>
             <div className="stack-field pt-2 text-sm">
-              <p className="text-muted-foreground">{state.vendor.pollsConnect ? `A link lasts 48 hours. It completes when you finish signing in at ${vendor.name}, in the tab it opened. Keep this page open, or come back to it.` : `A link lasts 15 minutes. It completes when ${vendor.name} reports the new account.`}</p>
+              <p className="text-muted-foreground">{state.vendor.pollsConnect ? `A link lasts ${linkLifetime(state.vendor.connectLinkMinutes)}. It completes when you finish signing in at ${vendor.name}, in the tab it opened. Keep this page open, or come back to it.` : `A link lasts 15 minutes. It completes when ${vendor.name} reports the new account.`}</p>
               {state.links.map((link) => (
                 <div key={link.id} className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={link.status} />
@@ -499,6 +496,9 @@ function WebhookBadge({ webhooks }: { webhooks: StoredWebhookStatus | null }) {
 }
 
 /** The owner select's value for an account nobody owns. */
+/** How long a link lasts, in words. */
+const linkLifetime = (minutes: number | null) => (minutes !== null && minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes ?? 15} minutes`);
+
 const NO_OWNER = "none";
 
 const ownerChoices = (members: Array<{ userId: string; name: string }>) => [{ value: NO_OWNER, label: "No owner" }, ...members.map((m) => ({ value: m.userId, label: m.name }))];

@@ -3,6 +3,7 @@ import { LinkedInGatewayError, type LinkedInGateway } from "../../application/li
 import { FakeLinkedInGateway } from "../fake-linkedin-gateway";
 import { EdgesGateway } from "../vendors/edges/edges-gateway";
 import { GtmGateway } from "../vendors/gtmapi/gtm-gateway";
+import { LinkedApiGateway } from "../vendors/linkedapi/linkedapi-gateway";
 import { UnipileGateway } from "../vendors/unipile/unipile-gateway";
 
 /*
@@ -24,6 +25,13 @@ function scripted(answer: Answer) {
 
 const refusal = (body: unknown, status: number): Answer => ({ status, text: JSON.stringify(body) });
 
+/** A send on Linked API first reads the account's token, and that read is not what these cases are about. */
+const withListing = (fetcher: typeof fetch) =>
+  (async (url: string | URL, init?: RequestInit) =>
+    String(url).endsWith("/admin/accounts.getAll") ? new Response(JSON.stringify({ success: true, result: { accounts: [{ id: "acct", identificationToken: "t" }] } })) : fetcher(url, init)) as unknown as typeof fetch;
+
+let linkedApiKey = 0;
+
 const VENDORS: Array<{ name: string; make: (fetcher: typeof fetch) => LinkedInGateway; unauthorized: Answer; limited: Answer }> = [
   {
     name: "Unipile",
@@ -42,6 +50,12 @@ const VENDORS: Array<{ name: string; make: (fetcher: typeof fetch) => LinkedInGa
     make: (fetcher) => new GtmGateway({ apiKey: "k", fetch: fetcher }),
     unauthorized: refusal({ success: false, error: { code: "unauthorized", message: "No." } }, 401),
     limited: refusal({ success: false, error: { code: "rate_limited", message: "Slow down." } }, 429),
+  },
+  {
+    name: "Linked API",
+    make: (fetcher) => new LinkedApiGateway({ apiKey: `contract-${(linkedApiKey += 1)}`, fetch: withListing(fetcher) }),
+    unauthorized: refusal({ success: false, error: { type: "invalidLinkedApiToken", message: "No." } }, 401),
+    limited: refusal({ success: false, error: { type: "tooManyRequests", message: "Slow down." } }, 429),
   },
 ];
 
@@ -64,7 +78,7 @@ const failure = async (call: Promise<unknown>) => {
   return outcome as LinkedInGatewayError;
 };
 
-describe.each(VENDORS)("the LinkedIn gateway port, on $name", ({ make, unauthorized, limited }) => {
+describe.each(VENDORS)("the LinkedIn gateway port, on $name", ({ name, make, unauthorized, limited }) => {
   const gateway = (answer: Answer) => {
     const { fetcher, calls } = scripted(answer);
     return { gateway: make(fetcher), calls };
@@ -93,7 +107,8 @@ describe.each(VENDORS)("the LinkedIn gateway port, on $name", ({ make, unauthori
     ["a gateway page", GATEWAY_PAGE],
   ])("throws from a reconcile check on %s", async (_, answer) => {
     expect(await failure(gateway(answer).gateway.findSentMessage({ ...message, since }))).toMatchObject({ kind: "unknown" });
-    expect(await failure(gateway(answer).gateway.invitationStatus({ ...invitation, since }))).toMatchObject({ kind: "unknown" });
+    // Linked API answers without looking, and a repeat is refused at LinkedIn: see `invitationStatus` there.
+    if (name !== "Linked API") expect(await failure(gateway(answer).gateway.invitationStatus({ ...invitation, since }))).toMatchObject({ kind: "unknown" });
   });
 
   it("calls a lookup with no answer unknown, so the lead keeps its retries", async () => {

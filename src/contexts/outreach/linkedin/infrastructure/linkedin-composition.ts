@@ -41,6 +41,10 @@ import { GtmGateway } from "./vendors/gtmapi/gtm-gateway";
 import { GtmClient } from "./vendors/gtmapi/gtm-http";
 import { gtmEventKey, isGtmDelivery, parseGtmDelivery, readGtmInbound, unreadableGtmDelivery, unreadableGtmKey } from "./vendors/gtmapi/gtm-inbound";
 import { createGtmVendor } from "./vendors/gtmapi/gtm-vendor";
+import { LinkedApiGateway } from "./vendors/linkedapi/linkedapi-gateway";
+import { LinkedApiClient } from "./vendors/linkedapi/linkedapi-http";
+import { isLinkedApiDelivery, linkedApiEventKey, parseLinkedApiDelivery, readLinkedApiInbound, unreadableLinkedApiDelivery, unreadableLinkedApiKey } from "./vendors/linkedapi/linkedapi-inbound";
+import { createLinkedApiVendor } from "./vendors/linkedapi/linkedapi-vendor";
 import { UnipileGateway } from "./vendors/unipile/unipile-gateway";
 import { storedConnection, type DsnPolicy } from "./vendors/unipile/unipile-dsn";
 import { createUnipileVendor } from "./vendors/unipile/unipile-vendor";
@@ -76,6 +80,7 @@ async function storedGateway(organizationId: string, accountId: string, policy: 
   if (!credentials) return null;
   if (vendorKey === "edges") return new EdgesGateway({ apiKey: credentials.apiKey ?? "" });
   if (vendorKey === "gtmapi") return new GtmGateway({ apiKey: credentials.apiKey ?? "" });
+  if (vendorKey === "linkedapi") return new LinkedApiGateway({ apiKey: credentials.apiKey ?? "" });
   const connection = storedConnection(credentials, policy);
   return connection ? new UnipileGateway(connection) : null;
 }
@@ -89,7 +94,7 @@ export function linkedinGateways(options: { allowLoopback?: boolean } = {}): Lin
 export function linkedinManagementDeps(): LinkedInManagementDeps {
   return {
     accounts: drizzleLinkedInAccountStore,
-    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }), ...(fakeMode() ? [] : [createEdgesVendor(), createGtmVendor()])],
+    vendors: [createUnipileVendor({ dsnPolicy: dsnPolicy(), gatewayFor: (connection) => (fakeMode() ? fakeGateway() : new UnipileGateway(connection)) }), ...(fakeMode() ? [] : [createEdgesVendor(), createGtmVendor(), createLinkedApiVendor()])],
     appUrl: env().APP_URL,
     now: () => new Date(),
     audit: auditSink,
@@ -130,6 +135,7 @@ function engineDeps(stop: ContactStop): LinkedInEngineDeps {
 function readerOf(payload: unknown): Pick<LinkedInInboundDeps, "parse" | "unreadable"> & { eventKey: (event: LinkedInInboundEvent, organizationId: string) => string | null; unreadableKey?: (organizationId: string) => string | null } {
   if (isEdgesDelivery(payload)) return { parse: () => parseEdgesDelivery(payload), unreadable: () => unreadableEdgesDelivery(payload), eventKey: edgesEventKey };
   if (isGtmDelivery(payload)) return { parse: () => parseGtmDelivery(payload), unreadable: () => unreadableGtmDelivery(payload), eventKey: gtmEventKey, unreadableKey: (organizationId) => unreadableGtmKey(payload, organizationId) };
+  if (isLinkedApiDelivery(payload)) return { parse: () => parseLinkedApiDelivery(payload), unreadable: () => unreadableLinkedApiDelivery(payload), eventKey: (event, organizationId) => linkedApiEventKey(event, organizationId, payload), unreadableKey: (organizationId) => unreadableLinkedApiKey(payload, organizationId) };
   return { parse: parseUnipilePayload, unreadable: unreadablePayloadEvent, eventKey: (event, organizationId) => unipileEventKey(event, organizationId) };
 }
 
@@ -147,6 +153,7 @@ const polledInboundSource: LinkedInInboundPollDeps["source"] = {
   async read({ organizationId, provider, account, cursor, now }) {
     const credentials = await drizzleLinkedInAccountStore.getCredentials(organizationId);
     if (!credentials?.apiKey) throw new LinkedInGatewayError("LinkedIn is not connected.", "definite", "unavailable");
+    if (provider === "linkedapi") return readLinkedApiInbound(new LinkedApiClient({ apiKey: credentials.apiKey }), account, cursor, now);
     if (provider === "gtmapi") return readGtmInbound(new GtmClient({ apiKey: credentials.apiKey }), account, cursor, now);
     return readEdgesInbound(new EdgesClient({ apiKey: credentials.apiKey }), account, cursor, now);
   },

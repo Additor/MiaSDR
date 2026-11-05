@@ -28,9 +28,22 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### LinkedIn through Linked API
+
+You can connect LinkedIn through [Linked API](docs/setup/linkedin-linkedapi.md).
+
+- Linked API runs each action later, so a send shows as sending until it finishes. A reply answers `in_progress`, in the app and over MCP `send_reply`. The other providers answer as before.
+- Each account runs one action at a time. A search can hold an account for up to an hour, and a reply can wait behind it.
+- One search reads once, up to the account's search allowance for the day, and finishes there with a note. A higher allowance or narrower URLs reach the rest.
+- A message whose outcome stays unknown waits for a person. Nothing resends it.
+- After a reconnect, a lead's thread is read before its next campaign message, because a reply written while the account was gone is never captured.
+- The Linked API setup asks you to set each account's working hours over MiaSDR's, since nothing here can read them.
+
+The database gains `linkedin_open_operations`, `send_attempts.provider_operation_id` and `provider_operation_account`, `linkedin_enrollment_details.member_urn`, `resolve_next_api` and `reply_checked_at`, `linkedin_accounts.inbox_gap_until` and `linkedin_connect_links.reconnect_account_id`, and both provider constraints allow `linkedapi`. A LinkedIn lookup that finishes after its lead stopped no longer pins the lead to that account, on any provider.
+
 ### LinkedIn through gtm-api
 
-You can connect LinkedIn through [gtm-api](docs/setup/linkedin-gtm-api.md). It has not been run against a real gtm-api account from MiaSDR yet.
+You can connect LinkedIn through [gtm-api](docs/setup/linkedin-gtm-api.md).
 
 - Accounts connect in gtm-api's own app, and a sync brings every account in the key's team here, including its messages.
 - Replies and acceptances are read from gtm-api's store about every 10 minutes. An account sends nothing while gtm-api's sync has stalled.
@@ -41,7 +54,7 @@ The database gains `linkedin_accounts.invites_paused_until`, and both provider c
 
 ### LinkedIn through Edges
 
-You can connect LinkedIn through [Edges](docs/setup/linkedin-edges.md) instead of Unipile. It has not been run against a real Edges account from MiaSDR yet.
+You can connect LinkedIn through [Edges](docs/setup/linkedin-edges.md) instead of Unipile.
 
 - An organization connects one provider at a time. A profile already connected through Unipile cannot move to Edges.
 - Replies and acceptances are read from each account about every 10 minutes, inside its working hours. An account sends nothing until a read finished in the last 15 minutes, and a message can still go out up to 15 minutes after a stop request.

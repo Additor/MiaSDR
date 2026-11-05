@@ -6,7 +6,7 @@ import { GtmRequestError } from "../gtm-http";
 
 type Answer = { status?: number; body: unknown };
 
-/** Answers calls in order and records what was asked. Shapes follow gtm-api's OpenAPI document; nothing here was recorded live. */
+/** Answers calls in order and records what was asked. Shapes follow gtm-api's OpenAPI document. */
 function gateway(...answers: Answer[]) {
   const calls: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
   const fetcher = (async (url: string, init: RequestInit) => {

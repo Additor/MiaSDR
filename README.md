@@ -11,7 +11,7 @@ An AI SDR for email and LinkedIn that your agents can run. It lives on your serv
 - **A reply anywhere stops everything.** Someone answers on LinkedIn and their email sequence stops too. If they ask you to stop, agents can't write to them and no campaign can add them until a person reviews it.
 - **Your leads stay yours.** Leads, conversations and deals live in your Postgres, not a vendor's.
 
-Free to run on your own server. You pay only for your AI provider's usage (Anthropic, Vercel AI Gateway or OpenRouter), plus Unipile, Edges or gtm-api if you use LinkedIn.
+Free to run on your own server. You pay only for your AI provider's usage (Anthropic, Vercel AI Gateway or OpenRouter), plus Unipile, Edges, gtm-api or Linked API if you use LinkedIn.
 
 ## Built for agents
 
@@ -65,13 +65,11 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 <p align="center"><img src="docs/images/features.jpg" alt="MiaSDR screens grouped as Reach out, Handle every reply, Close the deal, Research and Learn what works" width="100%"></p>
 
 - **Leads**: import CSV or XLSX, or turn a LinkedIn search into a lead list.
-- **Campaigns**: email from your Google Workspace mailboxes, LinkedIn invitations and messages through [Unipile](docs/setup/linkedin-unipile.md), [Edges](docs/setup/linkedin-edges.md) or [gtm-api](docs/setup/linkedin-gtm-api.md), inside the working hours and daily limits you set. When a mailbox loses access, its leads wait and carry on from the same step once access returns.
+- **Campaigns**: email from your Google Workspace mailboxes, LinkedIn invitations and messages through [Unipile](docs/setup/linkedin-unipile.md), [Edges](docs/setup/linkedin-edges.md), [gtm-api](docs/setup/linkedin-gtm-api.md) or [Linked API](docs/setup/linkedin-linkedapi.md), inside the working hours and daily limits you set. When a mailbox loses access, its leads wait and carry on from the same step once access returns.
 - **Inbox and Actions**: every conversation in one list, and one queue for replies to approve, follow-ups due and tasks.
 - **CRM**: a pipeline board of deals. A lead becomes a contact when you create a deal from it, and leaves its campaigns.
 - **Tables**: AI columns that write a field for every row and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
-
-**In preview:** LinkedIn outreach and the enrichment vendors. Tests run them against local stand-ins and live key checks, but no full LinkedIn campaign has run on a real account and no vendor has run with a paid key. Start small and watch the results.
 
 <p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft or lets an agent send it" width="100%"></p>
 
@@ -87,7 +85,7 @@ Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Sel
 | Start here | Set up | Run it |
 |---|---|---|
 | [Quick start guide](docs/guides/quick-start.md) | [Gmail](docs/setup/gmail.md) | [Self-hosting](docs/deploy/self-host.md) |
-| [AI agents (MCP)](docs/guides/mcp.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md), [Edges](docs/setup/linkedin-edges.md), [gtm-api](docs/setup/linkedin-gtm-api.md) | [Configuration](docs/configuration.md) |
+| [AI agents (MCP)](docs/guides/mcp.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md), [Edges](docs/setup/linkedin-edges.md), [gtm-api](docs/setup/linkedin-gtm-api.md), [Linked API](docs/setup/linkedin-linkedapi.md) | [Configuration](docs/configuration.md) |
 | [How MiaSDR works](docs/guides/how-it-works.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
 | [Responsible use](docs/responsible-use.md) | [Sender DNS: SPF, DKIM, DMARC](docs/guides/sender-dns.md) | |
 
