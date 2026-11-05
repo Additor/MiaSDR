@@ -534,6 +534,18 @@ describeDb("LinkedIn conversation replies", () => {
       expect((await one("select meta from events where organization_id = $1 and event_type = 'draft.sent'", [f.org])).meta).toMatchObject({ via: { tokenName: "Agent laptop" } });
     });
 
+    it("checks a retried draft against when it was written, not when the last attempt failed", async () => {
+      const f = await agentFixture({ reached: true });
+      const sendDraft = () => app.sendLinkedInReply(f.deps, f.agent, f.threadId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
+      f.fake.messageBehavior = () => ({ refuse: "rejected" });
+      expect((await sendDraft()).status).toBe("failed");
+      f.fake.messageBehavior = () => "ok";
+      expect((await sendDraft()).status).toBe("sent");
+      const attempts = await sql`select request->>'draftWrittenAt' as written from send_attempts where draft_id = ${f.draft.draftId} order by created_at`;
+      expect(attempts).toHaveLength(2);
+      expect(attempts[1].written).toBe(attempts[0].written);
+    });
+
     it("refuses a key that already sent another draft of the conversation", async () => {
       const f = await agentFixture({ reached: true });
       const k = key();

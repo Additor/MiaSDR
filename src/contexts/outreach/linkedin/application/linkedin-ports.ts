@@ -30,8 +30,11 @@ export class LinkedInGatewayError extends Error {
     readonly code: GatewayErrorCode,
     /** For `rate_limited`: how long the limit lasts, when the provider says. Without it the account stops for the full pause. */
     readonly retryAfterMs: number | null = null,
-    /** For `rate_limited`: what the limit stops. `invitations` also covers profile lookups, which only lead to invitations. */
-    readonly limits: "account" | "invitations" = "account",
+    /**
+     * For `rate_limited`: what the limit stops. `invitations` also covers profile lookups, which only lead to invitations, and
+     * a search that hits it waits alone. `recipient`: the refusal is about this person's thread, so the next lead can still go.
+     */
+    readonly limits: "account" | "invitations" | "recipient" = "account",
   ) {
     super(message);
   }
@@ -310,6 +313,8 @@ export interface LinkedInOutreachStore {
   pauseInvitationsForLimit(claim: LinkedInSendClaim, until: Date): Promise<void>;
   /** LinkedIn refused a profile lookup for a limit that stops invitations alone. The lead keeps its retries. */
   pauseInvitationsForLookupLimit(claim: LinkedInResolveClaim, until: Date): Promise<void>;
+  /** The vendor refused a send for a reason about this person's thread: give the attempt back and try this lead again at `until`. The account goes on. */
+  holdRecipient(claim: LinkedInSendClaim, until: Date, error: string, now: Date): Promise<void>;
   /** The provider rejected the credentials or the account: give the attempt back and mark the account disconnected. */
   disconnectAccount(accountId: string, error: string): Promise<void>;
 

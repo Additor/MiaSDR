@@ -147,6 +147,25 @@ describeDb("LinkedIn accounts on gtm-api", () => {
     });
   });
 
+  describe("a refusal about one person's thread", () => {
+    it("holds that lead with its attempt back, and the account goes on to the next", async () => {
+      const id = await org();
+      const seller = await account(id);
+      const held = await connectedLead(id, seller.id, { acceptedAt: new Date() });
+      const busy = new LinkedInGatewayError("Busy.", "definite", "rate_limited", 3_600_000, "recipient");
+      const outcome = await engine.runNextLinkedInAction(engineWith({ sendMessage: async () => Promise.reject(busy) }), seller.id);
+      expect(outcome).toEqual({ kind: "blocked", reason: "recipient_held" });
+      expect((await sql`select limit_reached_until from linkedin_accounts where id = ${seller.id}`)[0].limit_reached_until).toBeNull();
+      expect((await sql`select status, attempt, error from sends where enrollment_id = ${held.enrollment} and step_number = 2`)[0]).toMatchObject({ status: "failed", attempt: 0, error: "Busy." });
+      expect((await sql`select status, next_send_at from campaign_enrollments where id = ${held.enrollment}`)[0].status).toBe("active");
+
+      await sql`update linkedin_accounts set next_allowed_run_at = null where id = ${seller.id}`;
+      expect(await claim(seller.id)).toBeNull();
+      const next = await connectedLead(id, seller.id, { acceptedAt: new Date() });
+      expect(await claim(seller.id)).toMatchObject({ kind: "message", enrollmentId: next.enrollment });
+    });
+  });
+
   describe("a limit that stops invitations alone", () => {
     const limit = (ms: number) => new LinkedInGatewayError("Budget.", "definite", "rate_limited", ms, "invitations");
 
@@ -178,6 +197,20 @@ describeDb("LinkedIn accounts on gtm-api", () => {
       await sql`update linkedin_accounts set next_allowed_run_at = null, invites_paused_until = now() - interval '1 second' where id = ${seller.id}`;
       await sql`update linkedin_enrollment_details set resolve_next_attempt_at = null where organization_id = ${id}`;
       expect(await claim(seller.id)).toMatchObject({ kind: "resolve" });
+    });
+
+    it("shows the hold on the account, and a counters reset clears it", async () => {
+      const id = await org();
+      const seller = await account(id);
+      await pendingLead(id, seller.id, "ACoAAinvitee003");
+      await engine.runNextLinkedInAction(engineWith({ sendInvitation: async () => Promise.reject(limit(3_600_000)) }), seller.id);
+      const listed = await accounts.list(id, new Date());
+      expect(listed[0].invitesPausedUntil).not.toBeNull();
+      expect(listed[0].limitReachedUntil).toBeNull();
+      const { drizzleLinkedInOperationsStore } = await import("../drizzle-linkedin-operations-store");
+      const outcome = await drizzleLinkedInOperationsStore.resetDailyCounters(id, new Date(), (result) => ({ organizationId: id, actorUserId: null, action: "linkedin.daily_counters_reset", entityType: "organization", meta: result }) as never);
+      expect(outcome.pausesCleared).toBe(1);
+      expect((await accounts.list(id, new Date()))[0].invitesPausedUntil).toBeNull();
     });
 
     it("leaves a limit that stops the account as it was", async () => {

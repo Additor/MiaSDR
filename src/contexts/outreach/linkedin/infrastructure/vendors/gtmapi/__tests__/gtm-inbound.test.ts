@@ -62,9 +62,17 @@ describe("reading gtm-api's store", () => {
     expect((calls.find((call) => call.path === MESSAGES)?.body.filter as Record<string, unknown>).sent_at).toEqual({ gte: NOW.toISOString() });
   });
 
-  it("starts over on another account sid", async () => {
-    const { cursor } = await readAll(healthy(), { account: "ln_ac_old", floor: "2020-01-01T00:00:00.000Z", messagesSyncedAt: "2020-01-01T00:00:00.000Z" });
-    expect(cursor).toMatchObject({ account: ACCOUNT, floor: NOW.toISOString() });
+  it("starts a new account sid from where the old one stopped, so a reply written meanwhile still stops outreach", async () => {
+    const { cursor, calls } = await readAll(healthy(), { account: "ln_ac_old", floor: "2020-01-01T00:00:00.000Z", messagesSyncedAt: "2026-11-01T00:00:00.000Z" });
+    expect(cursor).toMatchObject({ account: ACCOUNT, floor: "2026-10-31T23:00:00.000Z" });
+    const filter = calls.find((call) => call.path === MESSAGES)?.body.filter as Record<string, unknown>;
+    expect(filter.sent_at).toEqual({ gte: "2026-10-31T23:00:00.000Z" });
+    expect(filter.created_at).toBeUndefined();
+  });
+
+  it("keeps the first floor on a new sid when the old one never finished a read", async () => {
+    const { cursor } = await readAll(healthy(), { account: "ln_ac_old", floor: "2026-11-04T00:00:00.000Z" });
+    expect(cursor.floor).toBe("2026-11-04T00:00:00.000Z");
   });
 
   it("moves the cursor to the sync run's start, not to this read's time, so a message stored late stays ahead of it", async () => {
@@ -121,6 +129,11 @@ describe("reading gtm-api's store", () => {
     expect(await refusal(answers)).toMatchObject({ kind: "definite", code: "unavailable" });
   });
 
+  it("does not fail on a wait reason a finished run still carries", async () => {
+    const { finishedAt } = await readAll({ ...healthy(), [RUNS]: [runs(run("conversations", { wait_reason: "limit:daily" }), run("connection_requests"))] });
+    expect(finishedAt).toEqual(NOW);
+  });
+
   it("does not fail for a closed sync window on its own", async () => {
     const { finishedAt } = await readAll({ ...healthy(), [RUNS]: [runs(run("conversations", { status: "pending", wait_reason: "schedule:closed" }), run("conversations"), run("connection_requests"))] });
     expect(finishedAt).toEqual(NOW);
@@ -136,6 +149,17 @@ describe("reading gtm-api's store", () => {
   it("fails before a first sync has finished", async () => {
     expect(await refusal({ [ACCOUNTS]: [accountPage()], [RUNS]: [page([])] })).toMatchObject({ kind: "definite", code: "unavailable" });
     expect(await refusal({ [ACCOUNTS]: [accountPage()], [RUNS]: [runs(run("conversations"))] })).toMatchObject({ kind: "definite", code: "unavailable" });
+  });
+
+  it("keeps the invitations cursor when frequent inbox runs push the last invitations run off the page", async () => {
+    const stored = { account: ACCOUNT, floor: "2026-11-01T00:00:00.000Z", messagesSyncedAt: "2026-11-05T09:00:00Z", acceptancesSyncedAt: "2026-11-05T01:00:00Z" };
+    const { cursor } = await readAll({ ...healthy(), [RUNS]: [runs(run("conversations"))] }, stored);
+    expect(cursor).toMatchObject({ messagesSyncedAt: "2026-11-05T09:30:00Z", acceptancesSyncedAt: "2026-11-05T01:00:00Z" });
+  });
+
+  it("skips a finished run whose start does not read as a time, so it cannot stay in the cursor", async () => {
+    const answers = { [ACCOUNTS]: [accountPage()], [RUNS]: [runs(run("conversations", { started_at: "soon" }), run("connection_requests"))] };
+    expect(await refusal(answers)).toMatchObject({ kind: "definite", code: "unavailable" });
   });
 
   it("starts a stopped read over once its page cursor may have expired", async () => {

@@ -275,6 +275,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
           dailyMessageLimit: row.dailyMessageLimit,
           // Only a pause that still applies is worth showing.
           limitReachedUntil: row.limitReachedUntil && row.limitReachedUntil.getTime() > now.getTime() ? row.limitReachedUntil : null,
+          invitesPausedUntil: row.invitesPausedUntil && row.invitesPausedUntil.getTime() > now.getTime() ? row.invitesPausedUntil : null,
           workingHours: hours,
           invitesToday: n,
           messagesToday,

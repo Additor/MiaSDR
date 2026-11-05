@@ -1,5 +1,6 @@
 import { LinkedInGatewayError, type GatewayAccount, type GatewayProfile, type LinkedInGateway, type LinkedInRecipient, type NetworkDistance, type SearchItem, type SearchPage } from "../../../application/linkedin-ports";
-import { normalizePublicSlug } from "../../../domain/linkedin-identity";
+import { linkedinSlug } from "../../../domain/linkedin";
+import { isBareProviderId, normalizePublicSlug } from "../../../domain/linkedin-identity";
 import { gatewayErrorFrom, type GtmErrorContext } from "./gtm-errors";
 import { GtmClient, GtmRequestError, type GtmClientOptions } from "./gtm-http";
 import { accountReadiness, itemsOf, memberIdOf, obj, str, type Row } from "./gtm-rows";
@@ -17,12 +18,10 @@ const LOOKUP: GtmErrorContext = { limits: "invitations" };
 const DISTANCE: Record<string, NetworkDistance> = { "1st": "first", "2nd": "second", "3rd": "third", "3rd+": "out_of_network", "4_plus": "out_of_network" };
 const distanceOf = (value: unknown): NetworkDistance => DISTANCE[str(value) ?? ""] ?? "unknown";
 
-const isMemberId = (value: string) => /^AC[a-zA-Z0-9_-]{6,}$/.test(value);
-
 /** A public slug, never a member id: a slug is what tells two accounts apart on a later sync. */
 function slugOf(nickname: unknown): string | null {
   const slug = str(nickname);
-  return slug && !isMemberId(slug) ? normalizePublicSlug(slug) : null;
+  return slug && !isBareProviderId(slug) ? normalizePublicSlug(slug) : null;
 }
 
 const splitName = (full: string | null) => {
@@ -94,7 +93,8 @@ export class GtmGateway implements LinkedInGateway {
   getProfile(input: { account: string; identifier: string; linkedinApi?: "sales_navigator" | "recruiter" }): Promise<GatewayProfile> {
     return this.attempt(async () => {
       if (input.linkedinApi === "recruiter") throw new LinkedInGatewayError("gtm-api Recruiter members are not supported here.", "definite", "insufficient_privileges");
-      const target = isMemberId(input.identifier) || input.linkedinApi ? { profile_id: input.identifier } : { public_identifier: input.identifier };
+      // A lead with no stored slug arrives here as its profile URL.
+      const target = isBareProviderId(input.identifier) || input.linkedinApi ? { profile_id: input.identifier } : { public_identifier: linkedinSlug(input.identifier) ?? input.identifier };
       const answer = await this.client.read("/api/linkedin-enrichment/person-lite-profile", { ...target, linkedin_account_sid: input.account });
       const profile = obj(obj(answer.result).profile);
       const member = memberIdOf(profile.ln_id);

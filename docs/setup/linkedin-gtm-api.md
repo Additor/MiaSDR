@@ -41,7 +41,7 @@ Realtime delivery, which stores a reply in about 8 seconds while the account's b
 
 MiaSDR's own limits apply, and new premium accounts start at 20 invitations a day. gtm-api's smart limits stay on, and MiaSDR does not change them. Its warm-up starts a new account below its usual budgets (25 invitations and 50 messages a day on a paid plan, 5 and 10 on the free plan).
 
-When gtm-api refuses an invitation or a profile lookup for a limit, MiaSDR holds invitations and lookups until the time gtm-api names. Messages and replies go on. When it refuses a message for a limit, the account pauses until that time.
+When gtm-api refuses an invitation or a profile lookup for a limit, MiaSDR holds invitations and lookups until the time gtm-api names, and the page shows that on the account. Messages and replies go on. Reset daily counters clears the hold. A search that gtm-api refuses for a limit waits until that time, and nothing else stops. When it refuses a message for a limit, the account pauses until that time. When the refusal is about one person's thread, that lead tries again later and the account goes on.
 
 ## Disconnect
 

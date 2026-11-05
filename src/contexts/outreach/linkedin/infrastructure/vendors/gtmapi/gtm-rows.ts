@@ -1,8 +1,8 @@
-import { GtmRequestError } from "./gtm-http";
+import { GtmRequestError, obj } from "./gtm-http";
 
+export { obj };
 export type Row = Record<string, unknown>;
 
-export const obj = (value: unknown): Row => (value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : {});
 export const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
 
 /** An ACoAA or ACwAA member id, which every match here needs. */

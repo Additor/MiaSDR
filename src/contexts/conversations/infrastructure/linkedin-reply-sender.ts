@@ -17,7 +17,8 @@ export function createLinkedInReplySender(gateways: LinkedInGatewayProvider): Li
       } catch (error) {
         if (error instanceof LinkedInGatewayError) {
           if (error.code === "replied") throw new LinkedInReplyError("The person wrote again after this draft. Read their message, then write the reply again.", "definite", "other");
-          const code = error.code === "rate_limited" ? "rate_limited" : error.code === "auth" ? "auth" : "other";
+          // A refusal about this person's thread says nothing about the account, so it pauses nothing.
+          const code = error.code === "rate_limited" && error.limits !== "recipient" ? "rate_limited" : error.code === "auth" ? "auth" : "other";
           throw new LinkedInReplyError(error.message, error.kind, code, error.retryAfterMs);
         }
         throw error;

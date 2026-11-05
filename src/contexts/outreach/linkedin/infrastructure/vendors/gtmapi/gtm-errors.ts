@@ -3,16 +3,19 @@ import { GtmRequestError } from "./gtm-http";
 
 /** Nothing went out and the account comes back by itself, so no attempt is used up. gtm-api names when to retry. */
 const COMES_BACK = new Set([
-  "concurrent_send_in_flight",
   "browser_starting",
   "browser_unavailable",
   "browser_unreachable",
   "plugin_unavailable",
   "infrastructure_maintenance",
-  "reply_check_unavailable",
   "client_rate_limited",
   "initial_sync_pending",
 ]);
+/**
+ * Nothing went out, and the refusal is about this person's thread. How the reply check behaves for someone with no thread is
+ * not documented, so pausing the account could stop it for good: this lead would stay at the front of the queue, and its attempt comes back each time.
+ */
+const THREAD_BUSY = new Set(["concurrent_send_in_flight", "reply_check_unavailable"]);
 /** The account cannot act until someone signs in or changes something at gtm-api. */
 const ACCOUNT_LOST = new Set(["browser_logged_out", "subscription_required", "account_shared_out", "sender_not_ready"]);
 /** A daily or per-action budget, or LinkedIn's own quota. */
@@ -48,13 +51,14 @@ export function gatewayErrorFrom(error: unknown, context: GtmErrorContext = {}):
   if (!(error instanceof GtmRequestError)) return new LinkedInGatewayError(`gtm-api call failed: ${error instanceof Error ? error.name : "unknown error"}`, "unknown", "unavailable");
   const now = context.now ?? Date.now();
   const text = `gtm-api: ${error.message} (${error.reason || error.code || `HTTP_${error.status}`})`;
-  const definite = (code: GatewayErrorCode, retryMs: number | null = null, limits: "account" | "invitations" = "account") => new LinkedInGatewayError(text, "definite", code, retryMs, limits);
+  const definite = (code: GatewayErrorCode, retryMs: number | null = null, limits: LinkedInGatewayError["limits"] = "account") => new LinkedInGatewayError(text, "definite", code, retryMs, limits);
   const lost = () => new LinkedInGatewayError(text, "unknown", "unavailable");
   const { status, code, reason, sendOutcome } = error;
   const retry = retryAfterMs(error.retryAfter, now);
 
   if (!error.enveloped) return lost();
   if (reason === "replied") return definite("replied");
+  if (THREAD_BUSY.has(reason)) return definite("rate_limited", retry ?? HOLD_MS, "recipient");
   if (COMES_BACK.has(reason)) return definite("rate_limited", retry ?? HOLD_MS);
   if (LIMITS.has(reason) || code === "limit_exceeded" || code === "payment_required") return definite("rate_limited", retry ?? BUDGET_HOLD_MS, context.limits ?? "account");
   if (sendOutcome && sendOutcome !== "not_sent") return lost();

@@ -30,7 +30,7 @@ interface Run {
 }
 
 export interface GtmCursor {
-  /** The account this cursor is about. A new sid starts over, so what it loads is history. */
+  /** The account this cursor is about. A new sid loads the inbox again, so a read of it starts over from where the old sid stopped. */
   account?: string;
   /** What was sent before this is history and stops nobody. */
   floor?: string;
@@ -51,7 +51,7 @@ export const isGtmDelivery = (payload: unknown): payload is Polled => obj(payloa
 const signedOut = () => new LinkedInGatewayError("gtm-api says this account is gone or signed out of LinkedIn.", "definite", "auth");
 
 /** The latest finished run of each kind that matters, or a read failure when the sync is not keeping up. */
-async function syncState(client: GtmClient, account: string, now: Date): Promise<{ messagesSyncedAt: string; acceptancesSyncedAt: string }> {
+async function syncState(client: GtmClient, account: string, cursor: GtmCursor, now: Date): Promise<{ messagesSyncedAt: string; acceptancesSyncedAt: string }> {
   const answer = await client.read("/api/linkedin-account-sync-runs/search", {
     filter: { linkedin_account_sid: { eq: account }, sync_type: { in: ["conversations", "connection_requests"] } },
     sort: { field: "created_at", direction: "desc" },
@@ -59,31 +59,39 @@ async function syncState(client: GtmClient, account: string, now: Date): Promise
   });
   const runs = itemsOf(answer).map(({ item }) => item);
   const latestConversations = runs.find((run) => run.sync_type === "conversations");
-  const wait = str(latestConversations?.wait_reason);
+  const wait = latestConversations?.status === "completed" ? null : str(latestConversations?.wait_reason);
   if (wait && STALLED_WAIT.test(wait)) throw new LinkedInGatewayError(`gtm-api's sync of this account is waiting: ${wait}.`, "definite", "unavailable");
-  const finished = (type: string) => runs.find((run) => run.sync_type === type && run.status === "completed" && str(run.started_at));
+  // A start that does not read as a time would stay in the cursor and fail every later read.
+  const finished = (type: string) => runs.find((run) => run.sync_type === type && run.status === "completed" && !Number.isNaN(Date.parse(str(run.started_at) ?? "")));
   const messages = finished("conversations");
-  const acceptances = finished("connection_requests");
-  if (!messages || !acceptances) throw new LinkedInGatewayError("gtm-api has not finished syncing this account yet.", "definite", "unavailable");
+  // One page holds both kinds, so a frequent inbox sync can push the last invitations run off it. The cursor still knows that run.
+  const acceptancesSyncedAt = str(finished("connection_requests")?.started_at) ?? cursor.acceptancesSyncedAt;
+  if (!messages || !acceptancesSyncedAt) throw new LinkedInGatewayError("gtm-api has not finished syncing this account yet.", "definite", "unavailable");
   const ended = Date.parse(str(messages.finished_at) ?? "");
   if (Number.isNaN(ended) || now.getTime() - ended > SYNC_STALE_MS) throw new LinkedInGatewayError("gtm-api has not synced this account's inbox in over a day.", "definite", "unavailable");
-  return { messagesSyncedAt: messages.started_at as string, acceptancesSyncedAt: acceptances.started_at as string };
+  return { messagesSyncedAt: messages.started_at as string, acceptancesSyncedAt };
 }
 
 async function startRun(client: GtmClient, account: string, cursor: GtmCursor, now: Date): Promise<Run> {
   const accounts = itemsOf(await client.read("/api/linkedin-accounts/search", { filter: { sid: { eq: account } }, include: ["antidetect_browser"], page_size: 1 }));
   if (accounts.length === 0 || accountReadiness(accounts[0].item, accounts[0].included) !== "connected") throw signedOut();
-  return { startedAt: now.toISOString(), phase: "messages", page: null, ...(await syncState(client, account, now)) };
+  return { startedAt: now.toISOString(), phase: "messages", page: null, ...(await syncState(client, account, cursor, now)) };
 }
 
 const earlier = (at: string) => new Date(Date.parse(at) - OVERLAP_MS).toISOString();
+
+/**
+ * Where a read of a new cursor starts. On a brand new account nothing has gone out, since a claim waits for the first read, so
+ * what the first sync loaded is history. A reconnect can bring a new sid to an account with outreach behind it: a reply written
+ * since the last read must still stop that outreach.
+ */
+const startingFloor = (held: GtmCursor, now: Date) => (held.messagesSyncedAt ? earlier(held.messagesSyncedAt) : (held.floor ?? now.toISOString()));
 
 /** One step of reading an account. */
 export async function readGtmInbound(client: GtmClient, account: string, stored: unknown, now: Date): Promise<LinkedInInboundRead> {
   try {
     const held = obj(stored) as GtmCursor;
-    // Nothing goes out before the first read finishes, so no reply to us can be in what the first sync loaded.
-    const cursor: GtmCursor = held.account === account && held.floor ? held : { account, floor: now.toISOString() };
+    const cursor: GtmCursor = held.account === account && held.floor ? held : { account, floor: startingFloor(held, now) };
     const run = cursor.run && now.getTime() - Date.parse(cursor.run.startedAt) < RUN_MAX_AGE_MS ? cursor.run : await startRun(client, account, cursor, now);
     return run.phase === "messages" ? await readMessages(client, account, cursor, run) : await readAcceptances(client, account, cursor, run);
   } catch (error) {

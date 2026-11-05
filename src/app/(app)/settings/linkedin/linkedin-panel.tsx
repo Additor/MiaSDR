@@ -46,6 +46,7 @@ interface Account {
   dailyMessageLimit: number;
   messagesToday: number;
   limitReachedUntil: string | null;
+  invitesPausedUntil: string | null;
   inboundReadAt: string | null;
   /** This vendor's inbox is read, and no read finished lately, so the account sends nothing. */
   inboxStale: boolean;
@@ -442,7 +443,7 @@ export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect
           ) : (
             <ul className={RULED_LIST}>
               {state.accounts.map((account) => (
-                <AccountRow key={account.id} signInAt={state.vendor.connectLinks ? null : vendor.name} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} members={members} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
+                <AccountRow key={account.id} vendorConnected={state.connected} signInAt={state.vendor.connectLinks ? null : vendor.name} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} members={members} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
               ))}
             </ul>
           )}
@@ -508,6 +509,7 @@ function AccountRow({
   reconnecting,
   linkOpening,
   onReconnect,
+  vendorConnected,
   signInAt,
   onChanged,
 }: {
@@ -519,6 +521,8 @@ function AccountRow({
   /** True while any connection link opens; one opens at a time. */
   linkOpening: boolean;
   onReconnect: () => void;
+  /** False after a disconnect: the form above is the way back, and a link has no key to use. */
+  vendorConnected: boolean;
   /** The vendor whose own app signs an account back in, when this app has no link for it. */
   signInAt: string | null;
   onChanged: () => void;
@@ -577,6 +581,12 @@ function AccountRow({
                 LinkedIn reported a limit, so this account rests until <Time value={account.limitReachedUntil} />.
               </>
             )}
+            {account.invitesPausedUntil && (
+              <>
+                {" "}
+                LinkedIn reported a limit on invitations, so invitations and lookups wait until <Time value={account.invitesPausedUntil} />. Messages and replies go on.
+              </>
+            )}
             {account.status === "connected" && account.inboxStale && (
               <>
                 {" "}
@@ -593,6 +603,7 @@ function AccountRow({
           </p>
         </div>
         {account.status !== "connected" &&
+          vendorConnected &&
           (signInAt ? (
             <p className="text-sm text-muted-foreground">Sign in again in {signInAt}, then choose Sync accounts.</p>
           ) : (

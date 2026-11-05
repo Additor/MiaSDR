@@ -27,22 +27,22 @@ export class GtmRequestError extends Error {
   }
 }
 
-const asObject = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
+export const obj = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
 const asString = (value: unknown) => (typeof value === "string" ? value : "");
 
 function firstRule(fieldErrors: unknown): string {
-  for (const rules of Object.values(asObject(fieldErrors))) {
-    const rule = Array.isArray(rules) ? asString(asObject(rules[0]).rule) : "";
+  for (const rules of Object.values(obj(fieldErrors))) {
+    const rule = Array.isArray(rules) ? asString(obj(rules[0]).rule) : "";
     if (rule) return rule;
   }
   return "";
 }
 
 function errorFrom(status: number, parsed: unknown): GtmRequestError {
-  const error = asObject(asObject(parsed).error);
+  const error = obj(obj(parsed).error);
   const code = asString(error.code);
   if (!code) return new GtmRequestError(status, `gtm-api answered ${status}`);
-  const context = asObject(error.context);
+  const context = obj(error.context);
   const outcome = asString(context.send_outcome);
   return new GtmRequestError(
     status,
@@ -90,7 +90,7 @@ export class GtmClient {
       if (response.ok) throw new GtmRequestError(0, "gtm-api answered something other than JSON.");
     }
     if (!response.ok) throw errorFrom(response.status, parsed);
-    return asObject(parsed);
+    return obj(parsed);
   }
 
   read(path: string, body: unknown = {}): Promise<Record<string, unknown>> {

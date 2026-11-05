@@ -50,6 +50,8 @@ export interface LinkedInAccountRecord {
   dailyInviteLimit: number;
   dailyMessageLimit: number;
   limitReachedUntil: Date | null;
+  /** A limit holds invitations and lookups alone until this moment. Null when none applies now. */
+  invitesPausedUntil: Date | null;
   /** When a read of the inbox last started, for a vendor with no webhook for messages. */
   inboundReadAt: Date | null;
   /** This account's vendor sends no webhook for messages, so its inbox is read on a schedule. */

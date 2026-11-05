@@ -201,6 +201,10 @@ async function handleSendError(deps: LinkedInEngineDeps, claim: LinkedInSendClai
   if (error instanceof LinkedInGatewayError && error.kind === "definite") {
     switch (error.code) {
       case "rate_limited":
+        if (error.limits === "recipient") {
+          await deps.store.holdRecipient(claim, pausedUntil(error, now), message, now);
+          return { kind: "blocked", reason: "recipient_held" };
+        }
         if (error.limits === "invitations") await deps.store.pauseInvitationsForLimit(claim, pausedUntil(error, now));
         else await deps.store.pauseAccountForLimit(claim, pausedUntil(error, now));
         return { kind: "paused", reason: "limit" };

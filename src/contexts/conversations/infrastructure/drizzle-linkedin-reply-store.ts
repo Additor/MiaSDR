@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { channelSettings, threads, drafts, linkedinAccounts, mcpTokens, people, conversations, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
@@ -37,6 +37,17 @@ function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyCon
     text: snap.text,
     draftWrittenAt: snap.draftWrittenAt ? new Date(snap.draftWrittenAt) : null,
   };
+}
+
+/** When this revision's text was written. Every write to a draft moves `updated_at`, a failed attempt included, so a retry reads the moment the first attempt recorded. */
+async function draftWrittenMoment(tx: Tx, draft: typeof drafts.$inferSelect): Promise<string> {
+  const [first] = await tx
+    .select({ request: sendAttempts.request })
+    .from(sendAttempts)
+    .where(and(eq(sendAttempts.draftId, draft.id), sql`(${sendAttempts.request}->>'revision')::int = ${draft.revision}`))
+    .orderBy(asc(sendAttempts.createdAt))
+    .limit(1);
+  return (first?.request as LinkedInSnapshot | undefined)?.draftWrittenAt ?? draft.updatedAt.toISOString();
 }
 
 async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
@@ -162,7 +173,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (input.via && target) {
         draftId = target.id;
         revision = target.revision;
-        draftWrittenAt = target.updatedAt.toISOString();
+        draftWrittenAt = await draftWrittenMoment(tx, target);
       } else if (open) {
         // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
         const [updated] = await tx

@@ -249,6 +249,8 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       if (message) return message;
 
       // 2. An invitation, inside the daily and weekly limits (claims in flight and unknown outcomes count).
+      // A limit that stops invitations alone holds lookups too: a lookup only leads to an invitation.
+      if (account.invitesPausedUntil && account.invitesPausedUntil.getTime() > options.now.getTime()) return null;
       const startOfDay = startOfLocalDay(options.now, workingHours.timeZone).toISOString();
       const weekAgo = new Date(options.now.getTime() - 7 * DAY_MS).toISOString();
       const [{ today, week }] = await tx
@@ -259,8 +261,6 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .from(sends)
         .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, SEND_COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
       const limit = dailyInviteLimit({ dailyInviteLimit: account.dailyInviteLimit, isPremium: account.isPremium }, rules);
-      // A limit that stops invitations alone holds lookups too: a lookup only leads to an invitation.
-      if (account.invitesPausedUntil && account.invitesPausedUntil.getTime() > options.now.getTime()) return null;
       if (!inviteBlock({ today, week }, limit, rules.invitesPerWeek)) {
         const invitation = await claimSend("invitation", pickMinutes(rules.inviteGapMinutes, options.random), async (exclude) =>
           (await tx.execute(sql`
@@ -424,6 +424,14 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async pauseInvitationsForLookupLimit(claim, until) {
     await db.update(linkedinAccounts).set({ invitesPausedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
+  },
+
+  async holdRecipient(claim, until, error, now) {
+    await db.transaction(async (tx) => {
+      const moved = await giveBackAttempt(tx, claim, error);
+      if (moved.length === 0) return;
+      await tx.update(campaignEnrollments).set({ nextSendAt: until, updatedAt: now }).where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+    });
   },
 
   async disconnectAccount(accountId, error) {
@@ -598,6 +606,7 @@ async function buildSendClaim(
       ...enrollmentVariableColumns,
       steps: campaigns.steps,
       providerId: linkedinEnrollmentDetails.providerId,
+      acceptedAt: linkedinEnrollmentDetails.acceptedAt,
       slug: people.linkedinSlug,
     })
     .from(campaignEnrollments)
@@ -636,12 +645,15 @@ async function buildSendClaim(
     .from(linkedinConnections)
     .where(and(eq(linkedinConnections.linkedinAccountId, account.id), eq(linkedinConnections.providerId, row.providerId as string)));
 
-  const [started] = await tx
-    .select({ at: sql<Date | null>`min(${sends.claimedAt})` })
-    .from(sends)
-    .where(and(eq(sends.enrollmentId, candidate.id), lt(sends.stepNumber, input.stepNumber), inArray(sends.status, SEND_COUNTED)));
-  const [details] = await tx.select({ acceptedAt: linkedinEnrollmentDetails.acceptedAt }).from(linkedinEnrollmentDetails).where(eq(linkedinEnrollmentDetails.enrollmentId, candidate.id));
-  const outreachStartedAt = started?.at ? new Date(started.at) : (details?.acceptedAt ?? null);
+  // Only a message checks the thread, and an invitation has no earlier step.
+  const [started] =
+    input.kind === "message"
+      ? await tx
+          .select({ at: sql<Date | null>`min(${sends.claimedAt})` })
+          .from(sends)
+          .where(and(eq(sends.enrollmentId, candidate.id), lt(sends.stepNumber, input.stepNumber), inArray(sends.status, SEND_COUNTED)))
+      : [];
+  const outreachStartedAt = started?.at ? new Date(started.at) : row.acceptedAt;
 
   const step = row.steps[input.stepNumber - 1];
   const next = row.steps[input.stepNumber];

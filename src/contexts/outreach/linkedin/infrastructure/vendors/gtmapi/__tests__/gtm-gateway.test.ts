@@ -23,6 +23,8 @@ const refused = async (call: Promise<unknown>) => (await call.then(() => null, (
 const page = (items: unknown[], next: string | null = null) => ({ success: true, items, pagination: { next_cursor: next, has_more: next !== null, total_count: items.length } });
 const account = (over: Record<string, unknown> = {}, browser: string | null = "idle") => ({ item: { sid: "ln_ac_1", status: "active", ln_id: "ACoAAowner1", nickname: "seller-one", full_name: "Sam Seller", has_premium: true, ...over }, included: browser ? { antidetect_browser: { status: browser } } : {} });
 const message = { to: { chat: "member:ACoAAlead11", member: "ACoAAlead11", slug: "lead" }, text: "Hi", sendKey: "send-1", unlessRepliedAfter: null };
+/** A member id at its real length. A shorter token that starts the same way can be a public slug. */
+const LONG_ID = "ACoAAowner4xxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 
 describe("gtm-api errors", () => {
   const map = (error: GtmRequestError, context = {}) => gatewayErrorFrom(error, context);
@@ -33,12 +35,17 @@ describe("gtm-api errors", () => {
   });
 
   it("reads the reason before the outcome: a place block answers not_sent and asks for the same request later", () => {
-    expect(map(named(409, "conflict", "concurrent_send_in_flight", "not_sent"))).toMatchObject({ kind: "definite", code: "rate_limited" });
+    expect(map(named(409, "conflict", "concurrent_send_in_flight", "not_sent"))).toMatchObject({ kind: "definite", code: "rate_limited", limits: "recipient" });
   });
 
-  it.each(["browser_starting", "browser_unavailable", "browser_unreachable", "plugin_unavailable", "infrastructure_maintenance", "reply_check_unavailable", "client_rate_limited", "initial_sync_pending"])("gives the attempt back on %s", (reason) => {
+  it.each(["browser_starting", "browser_unavailable", "browser_unreachable", "plugin_unavailable", "infrastructure_maintenance", "client_rate_limited", "initial_sync_pending"])("gives the attempt back on %s", (reason) => {
     const error = map(named(503, "service_unavailable", reason, null), { write: true });
     expect(error).toMatchObject({ kind: "definite", code: "rate_limited", retryAfterMs: 300_000, limits: "account" });
+  });
+
+  it.each(["concurrent_send_in_flight", "reply_check_unavailable"])("holds only this person on %s, so one thread cannot stop the account", (reason) => {
+    const error = map(named(503, "service_unavailable", reason, null), { write: true });
+    expect(error).toMatchObject({ kind: "definite", code: "rate_limited", retryAfterMs: 300_000, limits: "recipient" });
   });
 
   it.each(["sent", "in_flight", "unknown"] as const)("keeps %s unknown, even on a 4xx", (outcome) => {
@@ -98,7 +105,7 @@ describe("gtm-api gateway", () => {
           account(),
           account({ sid: "ln_ac_2", status: "initial_syncing", ln_id: "ACoAAowner2" }),
           account({ sid: "ln_ac_3", ln_id: null }),
-          account({ sid: "ln_ac_4", ln_id: "ACoAAowner4", nickname: "ACoAAowner4" }, "login_issue"),
+          account({ sid: "ln_ac_4", ln_id: "ACoAAowner4", nickname: LONG_ID }, "login_issue"),
           account({ sid: "ln_ac_5", ln_id: "ACoAAowner5", nickname: "five", status: "subscription_required" }),
           account({ sid: "ln_ac_6", ln_id: "ACoAAowner6", nickname: "six" }, null),
         ],
@@ -112,6 +119,11 @@ describe("gtm-api gateway", () => {
       { ref: "ln_ac_6", linkedinId: "ACoAAowner6", name: "Sam Seller", username: "six", status: "connected" },
       { ref: "ln_ac_7", linkedinId: "ACoAAowner7", name: "Sam Seller", username: "seven", status: "disconnected" },
     ]);
+  });
+
+  it("keeps a public slug that only looks like a member id", async () => {
+    const { gtm } = gateway({ body: page([account({ nickname: "ACostaMaria" })]) });
+    expect((await gtm.listAccounts())[0].username).toBe("acostamaria");
   });
 
   it("answers its own profile from the listing, with no call that spends a budget", async () => {
@@ -129,9 +141,15 @@ describe("gtm-api gateway", () => {
   it("looks a person up by slug or by member id, pinned to the account", async () => {
     const { gtm, calls } = gateway({ body: { success: true, result: { profile: { ln_id: "ACoAAlead11", nickname: "lead", full_name: "Ada Byron", network_distance: "2nd" } } } }, { body: { success: true, result: { profile: { ln_id: "ACoAAlead11" } } } });
     expect(await gtm.getProfile({ account: "ln_ac_1", identifier: "lead" })).toMatchObject({ member: "ACoAAlead11", publicSlug: "lead", firstName: "Ada", networkDistance: "second" });
-    await gtm.getProfile({ account: "ln_ac_1", identifier: "ACoAAlead11" });
+    await gtm.getProfile({ account: "ln_ac_1", identifier: LONG_ID });
     expect(calls[0].body).toEqual({ public_identifier: "lead", linkedin_account_sid: "ln_ac_1" });
-    expect(calls[1].body).toEqual({ profile_id: "ACoAAlead11", linkedin_account_sid: "ln_ac_1" });
+    expect(calls[1].body).toEqual({ profile_id: LONG_ID, linkedin_account_sid: "ln_ac_1" });
+  });
+
+  it("looks a lead with no stored slug up by the slug in its profile URL", async () => {
+    const { gtm, calls } = gateway({ body: { success: true, result: { profile: { ln_id: "ACoAAlead11" } } } });
+    await gtm.getProfile({ account: "ln_ac_1", identifier: "https://www.linkedin.com/in/ada-lovelace/" });
+    expect(calls[0].body).toEqual({ public_identifier: "ada-lovelace", linkedin_account_sid: "ln_ac_1" });
   });
 
   it("holds invitations alone when a lookup runs out of budget", async () => {

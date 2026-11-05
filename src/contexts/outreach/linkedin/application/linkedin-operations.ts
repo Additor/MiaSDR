@@ -50,7 +50,7 @@ export interface LinkedInOperationsStore {
    */
   requeueFailedWebhooks(organizationId: string, now: Date, limit: number): Promise<number>;
   /**
-   * Clears the pause LinkedIn imposed (`limit_reached_until`) and the search lead counter of every account of the organization.
+   * Clears the pauses LinkedIn imposed (`limit_reached_until`, `invites_paused_until`) and the search lead counter of every account of the organization.
    * The invitation and message counts come from `sends` and stay: they are the safety limit, not a flag.
    */
   /** Clears the counters and writes `audit` in one transaction. */

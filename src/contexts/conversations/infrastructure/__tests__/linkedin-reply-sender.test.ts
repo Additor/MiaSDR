@@ -21,6 +21,14 @@ describe("the LinkedIn reply sender", () => {
     expect(error).toMatchObject({ message: "The person wrote again after this draft. Read their message, then write the reply again.", kind: "definite", code: "other" });
   });
 
+  it("pauses nothing on a refusal about this person's thread", async () => {
+    const refusal = new LinkedInGatewayError("gtm-api: busy (reply_check_unavailable)", "definite", "rate_limited", 300_000, "recipient");
+    const error = await sender({ sendMessage: async () => Promise.reject(refusal) })
+      .send({ ...address, text: "Hi", sendKey: "k", unlessRepliedAfter: null })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ kind: "definite", code: "other" });
+  });
+
   it("looks for a sent reply by its key", async () => {
     const seen: unknown[] = [];
     await sender({ findSentMessage: async (input) => (seen.push(input), null) }).findSent({ ...address, text: "Hi", since: new Date(), sendKey: "attempt-1" });

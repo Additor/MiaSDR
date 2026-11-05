@@ -58,7 +58,7 @@ export interface LinkedInReplyContext {
   member: string | null;
   slug: string | null;
   text: string;
-  /** When an agent's draft was last written. Null: a person is sending what they just read and typed. */
+  /** When an agent's draft was last written. Null: a person is sending what they read and typed. */
   draftWrittenAt: Date | null;
 }
 
