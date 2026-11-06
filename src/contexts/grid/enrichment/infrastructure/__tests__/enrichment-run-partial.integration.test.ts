@@ -28,7 +28,7 @@ describeDb("partial grid runs: first N rows and one cell", () => {
     };
   }
 
-  /** A table of `rowCount` rows with a find-email enrichment column (source key `findEmail`) and an `email` output column. */
+  /** A table of `rowCount` rows with a find-work-email enrichment column (source key `findWorkEmail`) and an `email` output column. */
   async function setup(rowCount: number) {
     const d = deps();
     const { organizationId: org, actor } = await gridOrg(sql, orgs, "owner", "Grid");
@@ -40,14 +40,14 @@ describeDb("partial grid runs: first N rows and one cell", () => {
     const values = Array.from({ length: rowCount }, (_, i) => ({ organization_id: org, table_id: table, position: i + 1, cells: sql.json({ name: `Person${i + 1} Test`, domain: "acme.com" } as never) }));
     for (let i = 0; i < values.length; i += 500) await sql`insert into grid_rows ${sql(values.slice(i, i + 500))}`;
     await m.providers.createProvider(d.providerDeps, actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
-    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
     return { d, org, actor, table };
   }
 
   /** Positions of the rows that have a queued job, ascending. */
   const queuedPositions = async (table: string) =>
     (await sql`select r.position from grid_jobs j join grid_rows r on r.id = j.row_id where j.table_id = ${table} order by r.position`).map((r) => r.position as number);
-  const fill = (table: string, from: number, to: number) => sql`update grid_rows set cells = cells || '{"findEmail":"known@acme.com"}'::jsonb where table_id = ${table} and position between ${from} and ${to}`;
+  const fill = (table: string, from: number, to: number) => sql`update grid_rows set cells = cells || '{"findWorkEmail":"known@acme.com"}'::jsonb where table_id = ${table} and position between ${from} and ${to}`;
   const rowAt = async (table: string, position: number) => (await sql`select id from grid_rows where table_id = ${table} and position = ${position}`)[0].id as string;
 
   useTestEnv();
@@ -143,11 +143,11 @@ describeDb("partial grid runs: first N rows and one cell", () => {
     const { d, actor, table } = await setup(10);
     await fill(table, 1, 10);
     const rowId = await rowAt(table, 4);
-    const report = await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findEmail", rowIds: [rowId], onlyEmpty: false, maxRows: 1 });
-    expect(report).toMatchObject({ queued: 1, rows: 1, columns: ["findEmail"] });
+    const report = await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findWorkEmail", rowIds: [rowId], onlyEmpty: false, maxRows: 1 });
+    expect(report).toMatchObject({ queued: 1, rows: 1, columns: ["findWorkEmail"] });
     expect(await queuedPositions(table)).toEqual([4]);
     // Pressing it twice leaves one job, because a cell has one job.
-    await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findEmail", rowIds: [rowId, rowId], onlyEmpty: false, maxRows: 1 });
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findWorkEmail", rowIds: [rowId, rowId], onlyEmpty: false, maxRows: 1 });
     expect(await queuedPositions(table)).toEqual([4]);
   });
 });

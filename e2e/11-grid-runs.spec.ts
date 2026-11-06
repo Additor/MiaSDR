@@ -23,7 +23,7 @@ test.describe("grid runs", () => {
       data: {
         kind: "enrichment",
         providerKey: "c2-fake",
-        actionKey: "find-email",
+        actionKey: "find-work-email",
         inputs: { fullName: keyOf("Full name"), companyDomain: keyOf("Domain") },
         selectedOutputs: ["email"],
         afterColumnId: columns[columns.length - 1].id,
@@ -45,7 +45,7 @@ test.describe("grid runs", () => {
     // One hit, one miss and one failure. The progress bar offers a retry of the failure.
     const progress = page.getByRole("status").filter({ hasText: "1 failed" });
     await expect(progress).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole("gridcell", { name: "Email: ann.lee@acme.test", exact: true })).toBeVisible();
+    await expect(page.getByRole("gridcell", { name: "Work email: ann.lee@acme.test", exact: true })).toBeVisible();
     // The failed cell carries the reason as its accessible description, and the mark shows it in a tip on the active cell.
     const failedCell = page.getByRole("gridcell").filter({ hasText: "The fake provider rejected this request." });
     await expect(failedCell).toHaveAccessibleDescription("The fake provider rejected this request.");
@@ -74,8 +74,8 @@ test.describe("grid runs", () => {
     await progress.getByRole("button", { name: "Retry failed" }).click();
     await expect(page.getByText("Retrying 1 failed cell.")).toBeVisible();
     await settle(page.request, tableId);
-    expect(await cellValue(page.request, tableId, "Full name", "Bob Ray", "Email")).toBe("bob.ray@beta.test");
-    await expect(page.getByRole("gridcell", { name: "Email: bob.ray@beta.test", exact: true })).toBeVisible({ timeout: 20_000 });
+    expect(await cellValue(page.request, tableId, "Full name", "Bob Ray", "Work email")).toBe("bob.ray@beta.test");
+    await expect(page.getByRole("gridcell", { name: "Work email: bob.ray@beta.test", exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("status").filter({ hasText: "failed" })).toHaveCount(0);
   });
 

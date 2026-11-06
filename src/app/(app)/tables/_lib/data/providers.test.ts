@@ -25,7 +25,7 @@ describe("turn off and disconnect confirmation", () => {
 describe("catalog groups", () => {
   const entry = (key: string, action: string | null, adapter: string | null = key, status: "available" | "catalog_only" = "available") => ({ key, name: key, description: "", status, adapter, credentialFields: [], actions: action ? [{ key: action, name: action, inputs: [], outputs: [], primaryOutput: "", defaultCostCents: 0 }] : [] });
   it("puts verifiers, finders and enrichers first, and Custom HTTP and the fake provider last", () => {
-    const groups = catalogGroups([entry("http", null, "http"), entry("fake", "find-email", "fake"), entry("hunter", "verify-email"), entry("prospeo", "find-work-email"), entry("apollo", "enrich-person"), entry("zerobounce", "verify-email")]);
+    const groups = catalogGroups([entry("http", null, "http"), entry("fake", "find-work-email", "fake"), entry("hunter", "verify-email"), entry("prospeo", "find-work-email"), entry("apollo", "enrich-person"), entry("zerobounce", "verify-email")]);
     expect(groups.map((g) => [g.label, g.entries.map((e) => e.key)])).toEqual([
       ["Verify email", ["hunter", "zerobounce"]],
       ["Find work email", ["prospeo"]],

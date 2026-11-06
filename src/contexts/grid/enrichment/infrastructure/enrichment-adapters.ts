@@ -124,14 +124,24 @@ export class FakeEnrichmentProvider implements EnrichmentProvider {
     if (call.action === "verify-email") return fakeVerify(call);
     if (call.action === "enrich-person") return fakePerson(call);
     if (call.action === "enrich-company") return fakeCompany(call);
-    const name = String(call.inputs.fullName ?? "").toLowerCase();
-    const domain = String(call.inputs.companyDomain ?? "");
-    if (name.includes("nohit")) return { outcome: "miss", primary: null, outputs: { email: null, confidence: null }, request: { inputs: call.inputs }, response: { found: false } };
-    if (name.includes("boom")) throw new ProviderError("The fake provider rejected this request.", false, { request: { inputs: call.inputs } });
-    const [first, ...rest] = name.split(/\s+/).filter(Boolean);
-    const email = `${first}.${rest.join("") || "x"}@${domain}`;
-    return { outcome: "hit", primary: email, outputs: { email, confidence: 90 }, request: { inputs: call.inputs }, response: { email, confidence: 90, echoedKey: call.credentials.apiKey ?? null } };
+    return fakeFind(call);
   }
+}
+
+/**
+ * first.last at the company's domain. With no domain, the company name lowercased with ".com" stands in, as the
+ * contract matches on a name when a row has no domain. A name with "nohit" finds nobody, and "boom" fails.
+ */
+function fakeFind(call: ProviderCall): ProviderAnswer {
+  const name = String(call.inputs.fullName ?? "").toLowerCase();
+  const companyName = String(call.inputs.companyName ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const domain = String(call.inputs.companyDomain || (companyName ? `${companyName}.com` : ""));
+  if (name.includes("nohit")) return { outcome: "miss", primary: null, outputs: { email: null, confidence: null, verificationStatus: null }, request: { inputs: call.inputs }, response: { found: false } };
+  if (name.includes("boom")) throw new ProviderError("The fake provider rejected this request.", false, { request: { inputs: call.inputs } });
+  const [first, ...rest] = name.split(/\s+/).filter(Boolean);
+  const email = `${first}.${rest.join("") || "x"}@${domain}`;
+  const outputs = { email, confidence: 90, verificationStatus: "valid" };
+  return { outcome: "hit", primary: email, outputs, request: { inputs: call.inputs }, response: { ...outputs, echoedKey: call.credentials.apiKey ?? null } };
 }
 
 /** A verdict from the address itself: "invalid", "catchall", "unknown" or "disposable" in it picks that verdict, "boom" fails. */

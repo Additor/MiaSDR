@@ -53,16 +53,17 @@ describeDb("MCP agent enrichment", () => {
     const [{ id }] = await sql<{ id: string }[]>`insert into grid_tables (organization_id, workbook_id, name, position) values (${org.organizationId}, ${workbook}, 't', 1) returning id`;
     for (const [i, key] of ["name", "domain"].entries()) await sql`insert into grid_columns (organization_id, table_id, key, name, type, position) values (${org.organizationId}, ${id}, ${key}, ${key}, 'text', ${i + 1})`;
     await sql`insert into grid_rows (organization_id, table_id, position, cells) select ${org.organizationId}, ${id}, g, ${sql.json({ name: "Ada Lovelace", domain: "acme.com" } as never)} from generate_series(1, ${rowCount}) g`;
-    await m.columns.createEnrichmentColumns(m.composition.gridColumnDeps(), owner, id, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    // Every row asks the same, so reuse would answer from an earlier call. These tests count each call.
+    await m.columns.createEnrichmentColumns(m.composition.gridColumnDeps(), owner, id, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"], reuseDays: 0 });
     const rows = (await sql<{ id: string }[]>`select id from grid_rows where table_id = ${id} order by position`).map((r) => r.id);
     return { id, rows };
   }
 
   /** A second provider column that reads the email the first one finds, and runs by itself. */
-  const addVerifier = (tableId: string) => m.columns.createEnrichmentColumns(m.composition.gridColumnDeps(), owner, tableId, { providerKey: "fake", actionKey: "verify-email", inputs: { email: "email" }, selectedOutputs: ["status"], autoRun: true } as never);
+  const addVerifier = (tableId: string) => m.columns.createEnrichmentColumns(m.composition.gridColumnDeps(), owner, tableId, { providerKey: "fake", actionKey: "verify-email", inputs: { email: "workEmail" }, selectedOutputs: ["status"], autoRun: true, reuseDays: 0 } as never);
 
-  const dry = (tableId: string, extra: Record<string, unknown> = { firstN: 2 }) => agent.tool("run_enrichment", { tableId, columnKey: "findEmail", dryRun: true, ...extra });
-  const run = (tableId: string, actionToken: string, extra: Record<string, unknown> = { firstN: 2 }) => agent.tool("run_enrichment", { tableId, columnKey: "findEmail", actionToken, ...extra });
+  const dry = (tableId: string, extra: Record<string, unknown> = { firstN: 2 }) => agent.tool("run_enrichment", { tableId, columnKey: "findWorkEmail", dryRun: true, ...extra });
+  const run = (tableId: string, actionToken: string, extra: Record<string, unknown> = { firstN: 2 }) => agent.tool("run_enrichment", { tableId, columnKey: "findWorkEmail", actionToken, ...extra });
   const tokenFor = async (tableId: string, extra?: Record<string, unknown>) => {
     const seen = await dry(tableId, extra);
     expect(seen.isError, seen.text).toBe(false);
@@ -113,7 +114,7 @@ describeDb("MCP agent enrichment", () => {
     expect((listed.structured.tables as Array<{ tableId: string }>).map((x) => x.tableId)).toContain(t.id);
     const got = await reader.tool("get_table", { tableId: t.id });
     expect(got.isError, got.text).toBe(false);
-    expect((got.structured.columns as Array<{ key: string; runnable: boolean }>).find((c) => c.key === "findEmail")?.runnable).toBe(true);
+    expect((got.structured.columns as Array<{ key: string; runnable: boolean }>).find((c) => c.key === "findWorkEmail")?.runnable).toBe(true);
     const [row] = got.structured.rows as Array<{ cells: Record<string, string> }>;
     expect(row.cells.name).toMatch(/^<untrusted_field_/);
     const names = ((await callMcp(POST, { era: "modern", token: reader.token, method: "tools/list" })).body as { result: { tools: Array<{ name: string }> } }).result.tools.map((x) => x.name);
@@ -175,12 +176,12 @@ describeDb("MCP agent enrichment", () => {
   it("refuses an input the strict schema does not know, such as fresh or onlyEmpty", async () => {
     const t = await table(1);
     for (const extra of [{ fresh: true }, { onlyEmpty: false }]) {
-      const answer = await callMcp(POST, { era: "modern", token: agent.token, method: "tools/call", params: { name: "run_enrichment", arguments: { tableId: t.id, columnKey: "findEmail", firstN: 1, dryRun: true, ...extra } } });
+      const answer = await callMcp(POST, { era: "modern", token: agent.token, method: "tools/call", params: { name: "run_enrichment", arguments: { tableId: t.id, columnKey: "findWorkEmail", firstN: 1, dryRun: true, ...extra } } });
       const body = answer.body as { error?: unknown; result?: { isError?: boolean } };
       expect(body.error ?? body.result?.isError).toBeTruthy();
     }
-    expect(codeOf(await agent.tool("run_enrichment", { tableId: t.id, columnKey: "findEmail", dryRun: true }))).toBe("validation");
-    expect(codeOf(await agent.tool("run_enrichment", { tableId: t.id, columnKey: "findEmail", firstN: 1, rowIds: t.rows, dryRun: true }))).toBe("validation");
+    expect(codeOf(await agent.tool("run_enrichment", { tableId: t.id, columnKey: "findWorkEmail", dryRun: true }))).toBe("validation");
+    expect(codeOf(await agent.tool("run_enrichment", { tableId: t.id, columnKey: "findWorkEmail", firstN: 1, rowIds: t.rows, dryRun: true }))).toBe("validation");
   });
 
   it("counts the auto-run columns a run sets off, and they fit what it reserved", async () => {
@@ -204,7 +205,7 @@ describeDb("MCP agent enrichment", () => {
           values (${org.organizationId}, ${t.id}, ${key}, ${key}, 'ai', ${sql.json({ prompt: "Hi {{name}}", outputs: [{ key: "line", type: "text" }], outputColumns: {} } as never)}, ${dependsOn}, 50, ${autoRun})`;
     await addAi("opener", ["name"], false);
     expect(await agent.tool("run_enrichment", { tableId: t.id, columnKey: "opener", firstN: 1, dryRun: true })).toMatchObject({ structured: { refusals: [expect.objectContaining({ code: "agent_ai_column" })], actionToken: null } });
-    await addAi("summary", ["email"], true);
+    await addAi("summary", ["workEmail"], true);
     expect((await dry(t.id)).structured.refusals).toEqual([expect.objectContaining({ code: "agent_ai_column" })]);
     expect(codeOf(await run(t.id, "at1.anything"))).toBe("agent_ai_column");
     expect(await queuedJobs(t.id)).toBe(0);
@@ -226,14 +227,14 @@ describeDb("MCP agent enrichment", () => {
     await unpriced();
     const t = await table(1);
     await m.columns.createEnrichmentColumns(m.composition.gridColumnDeps(), owner, t.id, { providerKey: "free", actionKey: "find", inputs: { fullName: "name" }, selectedOutputs: ["title"] });
-    const [{ key }] = await sql<{ key: string }[]>`select key from grid_columns where table_id = ${t.id} and type = 'enrichment' and key <> 'findEmail'`;
+    const [{ key }] = await sql<{ key: string }[]>`select key from grid_columns where table_id = ${t.id} and type = 'enrichment' and key <> 'findWorkEmail'`;
     const seen = await agent.tool("run_enrichment", { tableId: t.id, columnKey: key, firstN: 1, dryRun: true });
     expect(seen.structured.refusals).toEqual([expect.objectContaining({ code: "agent_price_unset", message: expect.stringContaining("Free") })]);
     expect(codeOf(await agent.tool("run_enrichment", { tableId: t.id, columnKey: key, firstN: 1, actionToken: "at1.x" }))).toBe("agent_price_unset");
     expect(await queuedJobs(t.id)).toBe(0);
 
     // The priced column sets the free one off once it reads what the first one finds.
-    await sql`update grid_columns set depends_on = ${["email"]}, auto_run = true where table_id = ${t.id} and key = ${key}`;
+    await sql`update grid_columns set depends_on = ${["workEmail"]}, auto_run = true where table_id = ${t.id} and key = ${key}`;
     expect((await dry(t.id, { firstN: 1 })).structured.refusals).toEqual([expect.objectContaining({ code: "agent_price_unset" })]);
   });
 
@@ -241,7 +242,7 @@ describeDb("MCP agent enrichment", () => {
     await unpriced();
     const t = await table(1);
     await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position)
-              values (${org.organizationId}, ${t.id}, 'fall', 'Fall', 'waterfall', ${sql.json({ inputs: { fullName: "name", companyDomain: "domain" }, steps: [{ providerKey: "fake", actionKey: "find-email" }, { providerKey: "free", actionKey: "find" }] } as never)}, ${["name", "domain"]}, 60)`;
+              values (${org.organizationId}, ${t.id}, 'fall', 'Fall', 'waterfall', ${sql.json({ inputs: { fullName: "name", companyDomain: "domain" }, steps: [{ providerKey: "fake", actionKey: "find-work-email" }, { providerKey: "free", actionKey: "find" }] } as never)}, ${["name", "domain"]}, 60)`;
     const seen = await agent.tool("run_enrichment", { tableId: t.id, columnKey: "fall", firstN: 1, dryRun: true });
     expect((seen.structured.refusals as Array<{ code: string; message: string }>)[0]).toMatchObject({ code: "agent_price_unset", message: expect.stringContaining("Free") });
   });
@@ -310,8 +311,8 @@ describeDb("MCP agent enrichment", () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     // The first cell waits mid-call, so the column lands while the run is under way.
     fake.handler = async (call) => {
-      if (call.action === "find-email") await gate;
-      return { outcome: "hit", primary: "a@acme.com", outputs: call.action === "find-email" ? { email: "a@acme.com", confidence: 90 } : { status: "valid" }, request: {}, response: {} };
+      if (call.action === "find-work-email") await gate;
+      return { outcome: "hit", primary: "a@acme.com", outputs: call.action === "find-work-email" ? { email: "a@acme.com", confidence: 90 } : { status: "valid" }, request: {}, response: {} };
     };
     await run(t.id, await tokenFor(t.id, { firstN: 1 }), { firstN: 1 });
     const draining = drain(t.id);
@@ -321,7 +322,7 @@ describeDb("MCP agent enrichment", () => {
     await draining;
     await vi.waitFor(async () => {
       if ((await queuedJobs(t.id)) > 0) await drain(t.id);
-      expect(fake.calls.map((c) => c.action).sort()).toEqual(["find-email", "verify-email"]);
+      expect(fake.calls.map((c) => c.action).sort()).toEqual(["find-work-email", "verify-email"]);
     }, { timeout: 10_000 });
     expect(await reserved()).toBe(30);
   });
@@ -354,7 +355,7 @@ describeDb("MCP agent enrichment", () => {
   it("lets a person's run go on as before, with no reservation", async () => {
     const { requestRun } = await import("@/contexts/grid/enrichment/application/enrichment-run");
     const t = await table(1);
-    await requestRun(m.composition.gridRunDeps(), owner, t.id, { columnKey: "findEmail" });
+    await requestRun(m.composition.gridRunDeps(), owner, t.id, { columnKey: "findWorkEmail" });
     expect(await reserved()).toBe(0);
     const [row] = await sql<{ response: unknown }[]>`select count(*) as response from grid_jobs where table_id = ${t.id}`;
     expect(Number(row.response)).toBe(1);

@@ -82,7 +82,7 @@ describeDb("grid enrichment runs", () => {
   }
 
   const findColumn = (d: ReturnType<typeof deps>, actor: Actor, table: string, providerKey = "fake") =>
-    m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey, actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey, actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
 
   const tick = (job: import("@/platform/jobs/types").Job) => job.run({ deadline: Date.now() + 30_000, now: () => new Date() });
   const jobs = async (table: string) => (await sql`select status, count(*)::int as n from grid_jobs where table_id = ${table} group by status`).reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {} as Record<string, number>);
@@ -204,8 +204,8 @@ describeDb("grid enrichment runs", () => {
     const [{ n }] = await sql`select count(*)::int as n from grid_cell_runs where table_id = ${table} and outcome = 'hit'`;
     expect(n).toBe(24);
     const row = await cells(rows[0]);
-    expect(row.cells).toMatchObject({ findEmail: expect.stringContaining("@acme.com"), email: expect.stringContaining("@acme.com") });
-    expect(row.cell_meta.email).toMatchObject({ status: "success", outcome: "hit", provider: "fake", costCents: 1 });
+    expect(row.cells).toMatchObject({ findWorkEmail: expect.stringContaining("@acme.com"), workEmail: expect.stringContaining("@acme.com") });
+    expect(row.cell_meta.workEmail).toMatchObject({ status: "success", outcome: "hit", provider: "fake", costCents: 1 });
   });
 
   it("queues a cell once however often a run is requested, and onlyEmpty skips filled cells", async () => {
@@ -232,11 +232,11 @@ describeDb("grid enrichment runs", () => {
     await addFake(d, actor);
     await findColumn(d, actor, table);
     await m.run.requestRun(d.runDeps, actor, table);
-    expect((await cells(rows[0])).cell_meta.findEmail).toEqual({ status: "queued" });
+    expect((await cells(rows[0])).cell_meta.findWorkEmail).toEqual({ status: "queued" });
     const result = await m.run.cancelRun(d.runDeps, actor, table);
     expect(result.cancelled).toBe(3);
     expect(await jobs(table)).toEqual({});
-    expect((await cells(rows[0])).cell_meta.findEmail).toBeUndefined();
+    expect((await cells(rows[0])).cell_meta.findWorkEmail).toBeUndefined();
     expect((await sql`select count(*)::int as n from grid_cell_runs where table_id = ${table} and outcome = 'cancelled'`)[0].n).toBe(3);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     expect(f.calls).toHaveLength(0);
@@ -270,8 +270,8 @@ describeDb("grid enrichment runs", () => {
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     expect(await jobs(table)).toEqual({ succeeded: 2, failed: 1 });
     const failedRow = await cells(rows[1]);
-    expect(failedRow.cell_meta.findEmail).toMatchObject({ status: "error", error: expect.stringContaining("rejected") });
-    expect((await cells(rows[2])).cells.findEmail).toBe("Not found");
+    expect(failedRow.cell_meta.findWorkEmail).toMatchObject({ status: "error", error: expect.stringContaining("rejected") });
+    expect((await cells(rows[2])).cells.findWorkEmail).toBe("Not found");
     const callsBefore = f.calls.length;
 
     // The person fixes the input, then retries.
@@ -283,7 +283,7 @@ describeDb("grid enrichment runs", () => {
     expect(f.calls.length).toBe(callsBefore + 1);
     expect(f.calls.at(-1)?.inputs.fullName).toBe("Fixed Two");
     expect(await jobs(table)).toEqual({ succeeded: 3 });
-    expect((await cells(rows[1])).cells.findEmail).toBe("fixed.two@acme.com");
+    expect((await cells(rows[1])).cells.findWorkEmail).toBe("fixed.two@acme.com");
   });
 
   it("retries the failed cells of the column it names and leaves another column's failures alone", async () => {
@@ -318,19 +318,19 @@ describeDb("grid enrichment runs", () => {
     };
     await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
       inputs: { fullName: "name", companyDomain: "domain" },
-      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }, { providerKey: "fake-c", actionKey: "find-email" }],
+      steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }, { providerKey: "fake-b", actionKey: "find-work-email" }, { providerKey: "fake-c", actionKey: "find-work-email" }],
       selectedOutputs: ["email"],
     });
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
 
     expect(f.calls.map((c) => `${c.provider.key}:${c.inputs.fullName}`).sort()).toEqual(["fake-a:Ada Lovelace", "fake-a:Grace Hopper", "fake-b:Grace Hopper"]);
-    expect((await cells(rows[0])).cells.email).toBe("fake-a:Ada Lovelace");
-    expect((await cells(rows[1])).cells.email).toBe("fake-b:Grace Hopper");
+    expect((await cells(rows[0])).cells.workEmail).toBe("fake-a:Ada Lovelace");
+    expect((await cells(rows[1])).cells.workEmail).toBe("fake-b:Grace Hopper");
     const ledger = await sql`select provider, outcome, cost_cents::float as cost, response from grid_cell_runs where row_id = ${rows[1]} order by created_at, id`;
     expect(ledger.map((r) => [r.provider, r.outcome])).toEqual([["fake-a", "miss"], ["fake-b", "hit"]]);
     // A miss costs the provider's price too: 2 + 3.
-    expect((await cells(rows[1])).cell_meta.email).toMatchObject({ provider: "fake-b", costCents: 5 });
+    expect((await cells(rows[1])).cell_meta.workEmail).toMatchObject({ provider: "fake-b", costCents: 5 });
     // The key the vendor echoed back never reaches the ledger.
     expect(JSON.stringify(ledger)).not.toContain(SECRET);
     expect(JSON.stringify(ledger)).toContain("[redacted]");
@@ -348,15 +348,15 @@ describeDb("grid enrichment runs", () => {
         : { outcome: "miss", primary: null, outputs: { email: null, confidence: null } };
     await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
       inputs: { fullName: "name", companyDomain: "domain" },
-      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }, { providerKey: "fake-b", actionKey: "find-work-email" }],
       selectedOutputs: ["email", "confidence"],
     });
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
 
     const row = await cells(rows[0]);
-    const main = Object.keys(row.cells).find((k) => !["name", "domain", "email", "confidence"].includes(k))!;
-    expect(row.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com", confidence: 40 });
+    const main = Object.keys(row.cells).find((k) => !["name", "domain", "workEmail", "confidence"].includes(k))!;
+    expect(row.cells).toMatchObject({ [main]: "catch_all", workEmail: "ada@acme.com", confidence: 40 });
     // fake-a billed nothing; fake-b's miss costs its price.
     expect(row.cell_meta[main]).toMatchObject({ outcome: "miss", provider: "fake-a", costCents: 3 });
     const ledger = await sql`select provider, outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
@@ -377,7 +377,7 @@ describeDb("grid enrichment runs", () => {
     // fake-a spends 2 of the 4 cents. fake-b would bring the cell to 5, so it is skipped. fake-c fits at 3.
     await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
       inputs: { fullName: "name", companyDomain: "domain" },
-      steps: ["fake-a", "fake-b", "fake-c"].map((providerKey) => ({ providerKey, actionKey: "find-email" })),
+      steps: ["fake-a", "fake-b", "fake-c"].map((providerKey) => ({ providerKey, actionKey: "find-work-email" })),
       selectedOutputs: ["email"],
       maxCostCents: 4,
     });
@@ -387,7 +387,7 @@ describeDb("grid enrichment runs", () => {
     expect(f.calls.map((c) => c.provider.key)).toEqual(["fake-a", "fake-c"]);
     const ledger = await sql`select provider, outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
     expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([["fake-a", "miss", 2], ["fake-b", "skipped", 0], ["fake-c", "hit", 1]]);
-    expect((await cells(rows[0])).cells.email).toBe("ada@acme.com");
+    expect((await cells(rows[0])).cells.workEmail).toBe("ada@acme.com");
   });
 
   it("skips a waterfall step whose vendor credits would pass the column's credit cap, without calling it", async () => {
@@ -486,13 +486,13 @@ describeDb("grid enrichment runs", () => {
     };
     await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
       inputs: { fullName: "name", companyDomain: "domain" },
-      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }, { providerKey: "fake-b", actionKey: "find-work-email" }],
       selectedOutputs: ["email", "confidence"],
     });
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const [job] = await sql`select status, provider_state from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
-    expect(job).toMatchObject({ status: "queued", provider_state: { missed: ["fake-b/find-email"], fallback: { primary: "catch_all" }, spentCents: 3 } });
+    expect(job).toMatchObject({ status: "queued", provider_state: { missed: ["fake-b/find-work-email"], fallback: { primary: "catch_all" }, spentCents: 3 } });
     // The waiting cell says why and until when.
     const waiting = (await cells(rows[0])).cell_meta;
     expect(Object.values(waiting).find((m) => (m as { status?: string }).status === "queued")).toMatchObject({ reason: "upstream 503", runAfter: expect.any(String) });
@@ -500,8 +500,8 @@ describeDb("grid enrichment runs", () => {
     await sql`update grid_jobs set run_after = now() - interval '1 minute' where table_id = ${table}`;
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const row = await cells(rows[0]);
-    const main = Object.keys(row.cells).find((k) => !["name", "domain", "email", "confidence"].includes(k))!;
-    expect(row.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com", confidence: 40 });
+    const main = Object.keys(row.cells).find((k) => !["name", "domain", "workEmail", "confidence"].includes(k))!;
+    expect(row.cells).toMatchObject({ [main]: "catch_all", workEmail: "ada@acme.com", confidence: 40 });
     expect(row.cell_meta[main]).toMatchObject({ outcome: "miss", provider: "fake-b", costCents: 5 });
 
     // A cell whose last attempt fails still keeps the verdict it paid for.
@@ -516,7 +516,7 @@ describeDb("grid enrichment runs", () => {
     const [last] = await sql`select status from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
     expect(last.status).toBe("succeeded");
     const saved = await cells(rows[0]);
-    expect(saved.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com" });
+    expect(saved.cells).toMatchObject({ [main]: "catch_all", workEmail: "ada@acme.com" });
     // The miss names the step that never answered.
     expect(saved.cell_meta[main]).toMatchObject({ outcome: "miss", unanswered: ["fake-a: upstream 503"] });
   });
@@ -586,14 +586,14 @@ describeDb("grid enrichment runs", () => {
     };
     await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
       inputs: { fullName: "name", companyDomain: "domain" },
-      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }, { providerKey: "fake-b", actionKey: "find-work-email" }],
       selectedOutputs: ["email"],
       autoRun: false,
     });
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const [before] = await sql`select provider_state, run_after from grid_jobs where row_id = ${rows[0]}`;
-    expect(before.provider_state).toMatchObject({ missed: ["fake-b/find-email"], spentCents: 3 });
+    expect(before.provider_state).toMatchObject({ missed: ["fake-b/find-work-email"], spentCents: 3 });
 
     // Run again while the cell waits: the state and the later run_after stay.
     await m.run.requestRun(d.runDeps, actor, table);
@@ -641,9 +641,9 @@ describeDb("grid enrichment runs", () => {
     const { actor, table } = await fixture([{ name: "Ada Lovelace", domain: "acme.com" }, { name: "Bob Ray", domain: "" }]);
     const d = deps(fake());
     await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
-    const preview = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-email" }], inputs: { fullName: "name", companyDomain: "domain", ghost: "no_such_column" } });
+    const preview = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }], inputs: { fullName: "name", companyDomain: "domain", ghost: "no_such_column" } });
     expect(preview).toMatchObject({ rows: 2, ready: 1, more: false, samples: { name: "Ada Lovelace", domain: "acme.com" }, perCell: { cents: 2 } });
-    const unmapped = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-email" }], inputs: {} });
+    const unmapped = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-work-email" }], inputs: {} });
     expect(unmapped.ready).toBe(0);
     expect(await jobs(table)).toEqual({});
   });
@@ -653,14 +653,14 @@ describeDb("grid enrichment runs", () => {
     const d = deps(fake());
     const a = await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
     const b = await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
-    const found = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-a", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"], autoRun: false });
+    const found = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-a", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"], autoRun: false });
     const emailKey = found.find((c) => c.type === "integration_output")!.key;
     await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-b", actionKey: "verify-email", inputs: { email: emailKey }, selectedOutputs: ["status"], autoRun: true });
 
     const dry = await m.run.requestRun(d.runDeps, actor, table, { dryRun: true });
     expect(dry).toMatchObject({ queued: 0, cells: 2, rows: 2, worstCaseCostCents: 10, dependents: [expect.stringMatching(/verify/i)] });
     expect(dry.providers).toEqual([
-      { key: "fake-a", name: "fake-a", calls: 2, credits: 0, cents: 4 },
+      { key: "fake-a", name: "fake-a", calls: 2, credits: 2, cents: 4 },
       { key: "fake-b", name: "fake-b", calls: 2, credits: 2, cents: 6 },
     ]);
     expect(await jobs(table)).toEqual({});
@@ -896,7 +896,7 @@ describeDb("grid enrichment runs", () => {
     await expect(m.run.requestRun(d.runDeps, a.actor, a.table)).rejects.toThrow(/Connect and enable/);
     await expect(m.run.requestRun(d.runDeps, b.actor, a.table)).rejects.toBeInstanceOf(NotFoundError);
     await expect(m.run.cancelRun(d.runDeps, b.actor, a.table)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(m.columns.createEnrichmentColumns(d.columnDeps, b.actor, b.table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] })).rejects.toThrow(/not connected/);
+    await expect(m.columns.createEnrichmentColumns(d.columnDeps, b.actor, b.table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] })).rejects.toThrow(/not connected/);
   });
 
   it("takes over a job whose lease expired, and the stale worker can no longer write", async () => {
@@ -914,10 +914,10 @@ describeDb("grid enrichment runs", () => {
     const [taken] = await store.claim(new Date(t0.getTime() + 61_000), 60_000, 5, "w2");
     expect(taken.id).toBe(stale.id);
     expect(taken.attempts).toBe(2);
-    expect(await store.succeed(stale, { cells: { findEmail: "stale@x.test" }, meta: {} }, [], false)).toBe(false);
-    expect((await cells(rows[0])).cells.findEmail).toBeUndefined();
-    expect(await store.succeed(taken, { cells: { findEmail: "fresh@x.test" }, meta: {} }, [], false)).toBe(true);
-    expect((await cells(rows[0])).cells.findEmail).toBe("fresh@x.test");
+    expect(await store.succeed(stale, { cells: { findWorkEmail: "stale@x.test" }, meta: {} }, [], false)).toBe(false);
+    expect((await cells(rows[0])).cells.findWorkEmail).toBeUndefined();
+    expect(await store.succeed(taken, { cells: { findWorkEmail: "fresh@x.test" }, meta: {} }, [], false)).toBe(true);
+    expect((await cells(rows[0])).cells.findWorkEmail).toBe("fresh@x.test");
   });
 
   it("stores outcome metadata when no output cell is left to write, and clears the spinner of a deleted column", async () => {
@@ -929,20 +929,20 @@ describeDb("grid enrichment runs", () => {
     await m.run.requestRun(d.runDeps, actor, table);
     const store = m.wstore.drizzleGridWorkerStore;
     const [job] = await store.claim(new Date(), 60_000, 5, "w1");
-    expect((await cells(rows[0])).cell_meta.findEmail.status).toBe("running");
+    expect((await cells(rows[0])).cell_meta.findWorkEmail.status).toBe("running");
     // Metadata only: the write carries no cell values.
     const outcome = { status: "success", outcome: "miss", costCents: 0, runAt: new Date().toISOString() };
-    expect(await store.succeed(job, { cells: {}, meta: { findEmail: outcome } }, [], { centsByColumn: {} })).toBe(true);
-    expect((await cells(rows[0])).cell_meta.findEmail).toMatchObject({ status: "success", outcome: "miss" });
+    expect(await store.succeed(job, { cells: {}, meta: { findWorkEmail: outcome } }, [], { centsByColumn: {} })).toBe(true);
+    expect((await cells(rows[0])).cell_meta.findWorkEmail).toMatchObject({ status: "success", outcome: "miss" });
 
     // The column is deleted while the job runs: the stale "running" mark goes away too.
     await m.run.requestRun(d.runDeps, actor, table);
     const [again] = await store.claim(new Date(), 60_000, 5, "w1");
-    await sql`delete from grid_columns where table_id = ${table} and key = 'findEmail'`;
-    expect(await store.succeed(again, { cells: { findEmail: "x@y.test" }, meta: { findEmail: outcome } }, [], { centsByColumn: {} })).toBe(true);
+    await sql`delete from grid_columns where table_id = ${table} and key = 'findWorkEmail'`;
+    expect(await store.succeed(again, { cells: { findWorkEmail: "x@y.test" }, meta: { findWorkEmail: outcome } }, [], { centsByColumn: {} })).toBe(true);
     const row = await cells(rows[0]);
-    expect(row.cell_meta.findEmail).toBeUndefined();
-    expect(row.cells.findEmail).toBeUndefined();
+    expect(row.cell_meta.findWorkEmail).toBeUndefined();
+    expect(row.cells.findWorkEmail).toBeUndefined();
   });
 
   it("fails a job whose lease expired on its last attempt instead of running it again", async () => {
@@ -954,7 +954,7 @@ describeDb("grid enrichment runs", () => {
     await sql`update grid_jobs set status = 'running', locked_at = now() - interval '1 hour', attempts = max_attempts where table_id = ${table}`;
     expect(await m.wstore.drizzleGridWorkerStore.claim(new Date(), 60_000, 5, "w1")).toEqual([]);
     expect(await jobs(table)).toEqual({ failed: 1 });
-    expect((await cells(rows[0])).cell_meta.findEmail).toMatchObject({ status: "error" });
+    expect((await cells(rows[0])).cell_meta.findWorkEmail).toMatchObject({ status: "error" });
   });
 
   it("retries transient failures with backoff and fails the cell after the last attempt", async () => {
@@ -988,16 +988,16 @@ describeDb("grid enrichment runs", () => {
     const ai = new m.fakeAi.FakeGridAi();
     const answerer = { answer: async (_org: string, input: Parameters<typeof ai.answer>[0]) => ({ ...(await ai.answer(input)), provider: ai.provider, model: ai.model }) };
     await findColumn(d, actor, table);
-    const [main] = await m.columns.createAiColumns(d.columnDeps, actor, table, { name: "Opener", prompt: "Write one line for {{name}} at {{email}} using {{about}}", outputs: [{ key: "line", type: "text" }] });
-    expect(main.dependsOn).toEqual(["name", "email", "about"]);
+    const [main] = await m.columns.createAiColumns(d.columnDeps, actor, table, { name: "Opener", prompt: "Write one line for {{name}} at {{workEmail}} using {{about}}", outputs: [{ key: "line", type: "text" }] });
+    expect(main.dependsOn).toEqual(["name", "workEmail", "about"]);
     await expect(m.columns.createAiColumns(d.columnDeps, actor, table, { prompt: "Use {{missing}}", outputs: [{ key: "x", type: "text" }] })).rejects.toThrow(/not a column/);
 
     // Running only the enrichment column cascades to the AI column once the email lands.
-    await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findEmail" });
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: "findWorkEmail" });
     const worker = m.worker.createGridRunJob(d.worker("w1", { ai: answerer }));
     await tick(worker);
     expect(ai.answerCalls).toBe(1);
-    expect(ai.lastAnswerInput?.cells.map((c) => c.key)).toEqual(["name", "email", "about"]);
+    expect(ai.lastAnswerInput?.cells.map((c) => c.key)).toEqual(["name", "workEmail", "about"]);
     const row = await cells(rows[0]);
     // The AI column shows its first field's answer.
     expect(row.cells.opener).toBe(row.cells.line);
@@ -1041,7 +1041,7 @@ describeDb("grid enrichment runs", () => {
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     expect(f.calls).toHaveLength(0);
     expect(await jobs(table)).toEqual({ succeeded: 1 });
-    expect((await cells(rows[0])).cell_meta.findEmail).toBeUndefined();
+    expect((await cells(rows[0])).cell_meta.findWorkEmail).toBeUndefined();
     const [run] = await sql`select outcome from grid_cell_runs where row_id = ${rows[0]}`;
     expect(run.outcome).toBe("skipped");
   });
@@ -1053,8 +1053,8 @@ describeDb("grid enrichment runs", () => {
     await findColumn(d, actor, table);
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
-    const result = await m.run.cellRuns(d.runDeps, actor, table, rows[0], "email");
-    expect(result.sourceColumnKey).toBe("findEmail");
+    const result = await m.run.cellRuns(d.runDeps, actor, table, rows[0], "workEmail");
+    expect(result.sourceColumnKey).toBe("findWorkEmail");
     expect(result.runs).toHaveLength(1);
     expect(result.runs[0]).toMatchObject({ provider: "fake", outcome: "hit", costCents: 1 });
     await expect(m.run.cellRuns(d.runDeps, actor, table, rows[0], "name")).rejects.toBeInstanceOf(NotFoundError);
