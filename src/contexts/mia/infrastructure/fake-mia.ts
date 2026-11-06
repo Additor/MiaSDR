@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentModel, AgentStepRequest, AgentStepResult, AgentTool } from "@/contexts/ai/application/agent-ports";
+import type { AgentChatRequest, AgentChatResult, AgentMessage, AgentModel, AgentStepRequest, AgentStepResult, AgentTool } from "@/contexts/ai/application/agent-ports";
 import type { PageReader } from "../application/mia-ports";
 
 /** Demos and tests (`AI_PROVIDER=fake`): a fixed path through the tools, and a fixed page, with no model and no network. */
@@ -33,9 +33,41 @@ const PLAN = (source: string) => ({
   ],
 });
 
+const RESULT = /<untrusted_tool_result_[^>]+>\n([\s\S]*?)\n<\/untrusted_tool_result_/;
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A chat answer with one search: "leads" lists the latest people, anything else searches its last word. A question
+ * with "slowly" in it writes for about ten seconds, so a test can press Stop.
+ */
+async function fakeChat(request: AgentChatRequest): Promise<AgentChatResult> {
+  const question = request.messages.at(-1)?.content ?? "";
+  const search = toolNamed(request.tools, "search_leads");
+  const query = /\bleads?\b/i.test(question) ? "" : (question.replace(/[?.!,]/g, "").trim().split(/\s+/).at(-1) ?? "");
+  let people: Array<{ name: string | null; path: string }> = [];
+  if (search) {
+    const result = String(await search.execute({ query }));
+    request.onToolCall({ id: "fake-call-1", name: "search_leads", failed: false });
+    people = (JSON.parse(RESULT.exec(result)?.[1] ?? "{}") as { people?: typeof people }).people ?? [];
+  }
+  const found = people.length === 0 ? "I found no one by that name." : `I found ${people.length}: ${people.map((p) => `[${p.name ?? "Unnamed"}](${p.path})`).join(", ")}.`;
+  const slow = /\bslowly\b/i.test(question);
+  const answer = slow ? `${found} ${"Here is more about them. ".repeat(25)}` : found;
+  let text = "";
+  for (const word of answer.split(/(?<= )/)) {
+    if (request.signal.aborted) return { text, stop: "stopped", usage: { inputTokens: 300, outputTokens: 10 }, steps: 1 };
+    text += word;
+    request.onText(word);
+    await pause(slow ? 400 : 15);
+  }
+  return { text, stop: "end", usage: { inputTokens: 300, outputTokens: 60, cacheReadTokens: 0, cacheWriteTokens: 0 }, steps: 2 };
+}
+
 export const fakeAgentModel: AgentModel = {
   provider: "fake",
   model: "fake-mia",
+  chat: fakeChat,
   async step(request: AgentStepRequest): Promise<AgentStepResult> {
     const step = stepsOf(request.messages);
     const opening = firstText(request.messages);

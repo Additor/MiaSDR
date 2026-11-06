@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
-import { check, date, foreignKey, index, integer, jsonb, numeric, pgTable, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import type { AiUsage } from "@/contexts/ai/domain/generation";
 import { knowledgeDocuments } from "@/contexts/brain/infrastructure/schema";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { inList } from "@/platform/db/sql-values";
+import { MIA_MESSAGE_ROLES, MIA_MESSAGE_STATUSES, type ChatPart, type MiaMessageRole, type MiaMessageStatus } from "../domain/mia-chat";
 import { MIA_CAPABILITIES, MIA_RUN_STATUSES, type MiaCapability, type MiaRunStatus } from "../domain/mia-run";
 import { MIA_SUGGESTION_STATUSES, MIA_SUGGESTION_TYPES, type MiaSuggestionStatus, type MiaSuggestionType, type SuggestionPayload } from "../domain/suggestion";
 
@@ -102,6 +104,95 @@ export const miaSuggestions = pgTable(
     foreignKey({ name: "mia_suggestions_target_fk", columns: [t.targetItemId, t.organizationId], foreignColumns: [knowledgeDocuments.id, knowledgeDocuments.organizationId] }).onDelete("set null"),
     foreignKey({ name: "mia_suggestions_created_item_fk", columns: [t.createdItemId, t.organizationId], foreignColumns: [knowledgeDocuments.id, knowledgeDocuments.organizationId] }).onDelete("set null"),
     index("mia_suggestions_org_status_idx").on(t.organizationId, t.status, t.createdAt.desc()),
+  ],
+);
+
+/** One person's chat with Mia. Only that person sees it; a member who leaves takes their chats with them. */
+export const miaThreads = pgTable(
+  "mia_threads",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The lead a person asked about from its page. Cleared when that person is deleted. */
+    personId: uuid("person_id"),
+    /** From the first question. Null until one is asked. */
+    title: text("title"),
+    /** The turn that is answering now. A second question waits for it, unless it has gone stale. */
+    turnToken: uuid("turn_token"),
+    turnStartedAt: tstz("turn_started_at"),
+    lastMessageAt: tstz("last_message_at").defaultNow().notNull(),
+    /** Set when a deleted person took part of the chat with them. */
+    purgedAt: tstz("purged_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("mia_threads_id_org_uq").on(t.id, t.organizationId),
+    check("mia_threads_title_ck", sql`${t.title} is null or length(${t.title}) between 1 and 200`),
+    index("mia_threads_org_user_idx").on(t.organizationId, t.userId, t.lastMessageAt.desc()),
+    // The migration writes `ON DELETE SET NULL (person_id)`: a plain SET NULL would clear `organization_id` too.
+    foreignKey({ name: "mia_threads_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("set null"),
+  ],
+);
+
+/** A question or an answer. An answer keeps its text and which tools it used, never what the tools returned. */
+export const miaMessages = pgTable(
+  "mia_messages",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    threadId: uuid("thread_id").notNull(),
+    /** The question and its answer share one. */
+    turnId: uuid("turn_id").notNull(),
+    role: text("role").$type<MiaMessageRole>().notNull(),
+    /** The browser's id for a question, so a second click sends nothing twice. */
+    clientId: text("client_id"),
+    status: text("status").$type<MiaMessageStatus>().notNull(),
+    parts: jsonb("parts").$type<ChatPart[]>().notNull(),
+    usage: jsonb("usage").$type<AiUsage>(),
+    provider: text("provider"),
+    model: text("model"),
+    /** Written for the person who asked. Never holds a key or what a tool returned. */
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check("mia_messages_role_ck", inList(t.role, MIA_MESSAGE_ROLES)),
+    check("mia_messages_status_ck", inList(t.status, MIA_MESSAGE_STATUSES)),
+    check("mia_messages_parts_size_ck", sql`octet_length(${t.parts}::text) <= 262144`),
+    check("mia_messages_client_ck", sql`(${t.role} = 'user') = (${t.clientId} is not null)`),
+    unique("mia_messages_client_uq").on(t.threadId, t.clientId),
+    index("mia_messages_org_thread_idx").on(t.organizationId, t.threadId, t.createdAt, t.id),
+    // Retention deletes by age, message by message.
+    index("mia_messages_org_created_idx").on(t.organizationId, t.createdAt),
+    foreignKey({ name: "mia_messages_thread_fk", columns: [t.threadId, t.organizationId], foreignColumns: [miaThreads.id, miaThreads.organizationId] }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * The people a chat read. Deleting a person deletes the chat from the turn that first read them, so what Mia said about
+ * them goes too. The person key has no cascade on purpose: a delete path that forgets the purge fails instead of leaving
+ * a copy behind.
+ */
+export const miaThreadPeople = pgTable(
+  "mia_thread_people",
+  {
+    threadId: uuid("thread_id").notNull(),
+    personId: uuid("person_id").notNull(),
+    organizationId: orgId(),
+    /** The turn that first read this person. Null when the chat started from their page. */
+    firstTurnId: uuid("first_turn_id"),
+    firstLinkedAt: tstz("first_linked_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "mia_thread_people_pk", columns: [t.threadId, t.personId] }),
+    index("mia_thread_people_org_person_idx").on(t.organizationId, t.personId),
+    foreignKey({ name: "mia_thread_people_thread_fk", columns: [t.threadId, t.organizationId], foreignColumns: [miaThreads.id, miaThreads.organizationId] }).onDelete("cascade"),
+    foreignKey({ name: "mia_thread_people_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }),
   ],
 );
 

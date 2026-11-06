@@ -25,7 +25,7 @@ export interface MiaDeps {
 }
 
 /** Why Mia cannot take new work here, in a person's words, or null when it can. */
-export async function miaUnavailable(deps: Pick<MiaDeps, "settings" | "aiStatus" | "installEnabled">, actor: Actor): Promise<string | null> {
+export async function miaUnavailable(deps: { settings: Pick<MiaSettingsStore, "read">; aiStatus: MiaDeps["aiStatus"]; installEnabled: () => boolean }, actor: Actor): Promise<string | null> {
   if (!deps.installEnabled()) return "Mia is off on this install. The server administrator turns it on with MIA_ENABLED.";
   const settings = await deps.settings.read(actor.organizationId);
   if (!settings.enabled) return isOwnerOrAdmin(actor.role) ? "Mia is off. Turn it on in Settings, Organization." : "Mia is off. An owner or admin turns it on in Settings, Organization.";

@@ -33,6 +33,8 @@ const FENCE_EXEMPT: Record<string, string> = {
     "A person stops a run. A running one only gets its stop mark, which its worker reads and acts on. One that no worker holds ends here, under the row lock.",
   "src/contexts/mia/infrastructure/drizzle-mia-store.ts#cancelFitBatch":
     "A person stops a batch of fit checks, as `requestCancel` stops one run: a running check gets its stop mark, and one that no worker holds ends here.",
+  "src/contexts/mia/infrastructure/drizzle-mia-chat-store.ts#releaseMiaOfMemberTx":
+    "A member leaves, so their runs stop as `requestCancel` stops one: a running run gets its stop mark, and one that no worker holds ends here.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#claimDue":
     "The expiry sweep before the claim: it fails steps whose lease ran out on the last attempt and clears their token. A worker still on that attempt finds the step no longer drafting, so its settles change nothing.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-follow-up-engine.ts#takeDueStep":

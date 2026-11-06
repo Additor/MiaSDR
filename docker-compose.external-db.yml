@@ -63,6 +63,7 @@ services:
       RETENTION_AI_JOBS_DAYS: ${RETENTION_AI_JOBS_DAYS:-}
       RETENTION_MCP_TOOL_CALLS_DAYS: ${RETENTION_MCP_TOOL_CALLS_DAYS:-}
       RETENTION_MIA_RUNS_DAYS: ${RETENTION_MIA_RUNS_DAYS:-}
+      RETENTION_MIA_MESSAGES_DAYS: ${RETENTION_MIA_MESSAGES_DAYS:-}
     # To use the file variant, uncomment and set GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google-service-account.json in .env.
     # volumes:
     #   - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro

@@ -1,5 +1,6 @@
 import { appendPersonEvent, lockPersonForDelete, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
+import { purgePeopleMiaTx } from "@/contexts/mia/infrastructure/drizzle-mia-chat-store";
 import { peopleWhoAskedToStop } from "@/contexts/conversations/stopping/infrastructure/stop-requested-sql";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
@@ -96,6 +97,7 @@ export const contactDeleteDeps: ContactDeleteDeps = {
     blockers: personOutreachBlockers,
     purge: purgePersonOutreach,
   },
+  mia: { purge: purgePeopleMiaTx },
   agentProtected,
   audit: drizzleLeadsAudit,
   transaction: personTransaction,
@@ -107,6 +109,7 @@ export const leadDeleteDeps: LeadDeleteDeps = {
   people: leadDeleteStore,
   outreach: { lockEnrollments: lockEnrollmentsOfPeopleTx, blockers: leadOutreachBlockers, purge: purgeUnsentEnrollments },
   handling: { peopleWithHistory },
+  mia: { purge: purgePeopleMiaTx },
   agentProtected,
   audit: drizzleLeadsAudit,
   transaction: personTransaction,

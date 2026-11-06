@@ -17,6 +17,14 @@ Mia also checks how leads fit your ICP. Select leads and press Check fit, or use
 - `POST /api/mia/fit-batches` takes up to 200 leads, and `POST /api/mia/fit-batches/{id}/cancel` stops a batch. `POST /api/leads/delete` accepts `fit` in its filter.
 - Migration `0008` adds `lead_fit_assessments` and the lead and batch of a run to `mia_runs`.
 
+You can now ask Mia questions. Mia in the sidebar opens a chat that reads your leads, contacts, companies, conversations and Brain, answers with links to what it read, and changes nothing: it cannot send, edit or open the web. Ask Mia about this lead on a lead page starts a chat about that lead. An answer keeps going when you leave the page, Stop keeps what it wrote, and Retry answers again. Each chat is visible only to the person who started it.
+
+- Deleting a lead or a contact deletes what a chat said about them, from the first turn that read them.
+- A member who is removed loses their chats, and the Mia jobs they started stop.
+- `GET` and `POST /api/mia/threads`, `GET`, `PATCH` and `DELETE /api/mia/threads/{id}`, and `POST /api/mia/threads/{id}/messages`, `/stop` and `/retry`. Messages and retry answer as a stream of JSON lines.
+- New setting: `RETENTION_MIA_MESSAGES_DAYS` (90).
+- Migration `0009` adds `mia_threads`, `mia_messages` and `mia_thread_people`.
+
 ### Brain
 
 Knowledge moved out of Settings into Brain, a sidebar place at `/brain`. `/settings/knowledge` redirects there. An item now has a kind and fields instead of pasted text, and these kinds match Brain in Withmia. Every member can add and change items, and each change lands in the audit log.

@@ -45,11 +45,41 @@ export interface AgentStepResult {
   usage: AiUsage;
 }
 
+export interface AgentChatRequest {
+  task: AiTaskKey;
+  system: PromptSegment[];
+  /** The conversation so far as plain text turns, oldest first, ending with the person's question. */
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  tools: readonly AgentTool<never>[];
+  /** The last step gets no tools, so the answer comes in it at the latest. */
+  maxSteps: number;
+  /** Output tokens per step. */
+  maxTokens: number;
+  /** The turn stops after the step that passes this many counted tokens. */
+  turnTokens: number;
+  /** The whole answer, its tools included. */
+  timeoutMs: number;
+  /** A person's Stop, or a deleted chat. The answer so far stays. */
+  signal: AbortSignal;
+  onText(delta: string): void;
+  onToolCall(call: AgentToolCall & { id: string }): void;
+}
+
+export interface AgentChatResult {
+  text: string;
+  /** `stopped` is the caller's signal; `limit` is the steps or tokens running out before the model ended. */
+  stop: "end" | "max_tokens" | "refusal" | "limit" | "stopped" | "other";
+  usage: AiUsage;
+  steps: number;
+}
+
 /** One configured model that can call tools. The caller stores the messages between steps, so a run survives a restart. */
 export interface AgentModel {
   readonly provider: string;
   readonly model: string;
   step(request: AgentStepRequest): Promise<AgentStepResult>;
+  /** A streamed answer to a person, its tool steps run in one call. Throws an `AiError` when no answer could start. */
+  chat(request: AgentChatRequest): Promise<AgentChatResult>;
 }
 
 /** The organization's configured model for agent work. Null means AI is not configured there. */

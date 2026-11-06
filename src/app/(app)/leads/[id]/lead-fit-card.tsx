@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Time } from "@/components/shell/time";
 import { fitRoom, fitUnavailable } from "@/contexts/mia/application/mia-use-cases";
 import { miaDeps } from "@/contexts/mia/infrastructure/composition";
@@ -63,6 +64,9 @@ export async function LeadFitCard({ actor, personId }: { actor: Actor; personId:
           {fit.missing.length > 0 && <p className="text-muted-foreground">Still unknown: {fit.missing.join(", ")}.</p>}
         </div>
       )}
+      <Link href={`/mia?person=${personId}`} className="mt-3 inline-block text-sm underline underline-offset-2 focus-ring">
+        Ask Mia about this lead
+      </Link>
     </AsideSection>
   );
 }

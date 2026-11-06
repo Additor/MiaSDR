@@ -21,9 +21,10 @@ export interface RetentionDays {
   aiJobs: number;
   mcpToolCalls: number;
   miaRuns: number;
+  miaMessages: number;
 }
 
-export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30, mcpToolCalls: 90, miaRuns: 30 };
+export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30, mcpToolCalls: 90, miaRuns: 30, miaMessages: 90 };
 
 export function retentionFromEnv(): RetentionDays {
   const e = env();
@@ -34,6 +35,7 @@ export function retentionFromEnv(): RetentionDays {
     aiJobs: e.RETENTION_AI_JOBS_DAYS,
     mcpToolCalls: e.RETENTION_MCP_TOOL_CALLS_DAYS,
     miaRuns: e.RETENTION_MIA_RUNS_DAYS,
+    miaMessages: e.RETENTION_MIA_MESSAGES_DAYS,
   };
 }
 
@@ -94,6 +96,9 @@ export async function pruneHistory(options: PruneOptions): Promise<PruneResult> 
     ["mcp_agent_usage", sql`day < ${before(AGENT_USAGE_DAYS)}::date`],
     ["mia_runs", sql`status in ('succeeded', 'failed', 'cancelled') and finished_at < ${before(retention.miaRuns)}::timestamptz`],
     ["mia_suggestions", sql`status in ('accepted', 'dismissed') and decided_at < ${before(retention.miaRuns)}::timestamptz`],
+    // Message by message: a chat in daily use loses its oldest turns. A chat with none left goes after them.
+    ["mia_messages", sql`status <> 'streaming' and created_at < ${before(retention.miaMessages)}::timestamptz`],
+    ["mia_threads", sql`turn_token is null and last_message_at < ${before(retention.miaMessages)}::timestamptz and not exists (select 1 from mia_messages m where m.thread_id = mia_threads.id)`],
     ["mia_usage_daily", sql`day < ${before(AGENT_USAGE_DAYS)}::date`],
     ["sessions", sql`expires_at < ${authCutoff}::timestamptz`],
     ["verifications", sql`expires_at < ${authCutoff}::timestamptz`],

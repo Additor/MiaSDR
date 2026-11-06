@@ -1,8 +1,8 @@
 import { APICallError } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { AgentTool } from "../../application/agent-ports";
+import type { AgentChatRequest, AgentTool } from "../../application/agent-ports";
 import { buildAgentModel, SdkAgentModel } from "../sdk-agent-model";
 import { AI_CONNECTIONS } from "@/contexts/integrations/domain/ai-connections";
 
@@ -117,6 +117,111 @@ describe("SdkAgentModel", () => {
     const model = new SdkAgentModel({ sdkModel: new MockLanguageModelV4({ doGenerate: doGenerate as never }), provider: "anthropic", model: "m", label: "Anthropic" });
     await expect(model.step(request)).rejects.toMatchObject({ kind: "transient", message: "The AI request timed out." });
     expect(doGenerate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SdkAgentModel.chat", () => {
+  const finish = (unified: string) => ({ type: "finish", finishReason: { unified, raw: undefined }, usage });
+  const streamed = (steps: unknown[][]) => {
+    let call = 0;
+    return new SdkAgentModel({
+      sdkModel: new MockLanguageModelV4({ doStream: (async () => ({ stream: convertArrayToReadableStream(steps[call++] ?? [finish("stop")]) })) as never }),
+      provider: "anthropic",
+      model: "m",
+      label: "Anthropic",
+    });
+  };
+  const chatRequest = (over: Partial<AgentChatRequest> = {}): AgentChatRequest => ({
+    task: "mia.chat",
+    system: [{ text: "Be careful." }],
+    messages: [{ role: "user", content: "Who is Ana?" }],
+    tools: [lookup as unknown as AgentTool<never>],
+    maxSteps: 6,
+    maxTokens: 1000,
+    turnTokens: 60_000,
+    timeoutMs: 5000,
+    signal: new AbortController().signal,
+    onText: () => undefined,
+    onToolCall: () => undefined,
+    ...over,
+  });
+
+  it("streams text, runs a tool step in between and adds up both steps' usage", async () => {
+    const model = streamed([
+      [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"ana"}' }, finish("tool-calls")],
+      [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Ana is " }, { type: "text-delta", id: "t", delta: "a VP." }, { type: "text-end", id: "t" }, finish("stop")],
+    ]);
+    const deltas: string[] = [];
+    const calls: string[] = [];
+    const result = await model.chat(chatRequest({ onText: (d) => void deltas.push(d), onToolCall: (c) => void calls.push(`${c.name}:${c.failed}`) }));
+    expect(deltas).toEqual(["Ana is ", "a VP."]);
+    expect(calls).toEqual(["lookup:false"]);
+    expect(called).toHaveBeenCalledWith({ name: "ana" }, expect.anything());
+    expect(result).toMatchObject({ text: "Ana is a VP.", stop: "end", steps: 2, usage: { inputTokens: 200, outputTokens: 80, cacheReadTokens: 40, cacheWriteTokens: 20 } });
+  });
+
+  it("gives the last step no tools, so the answer comes by then", async () => {
+    const seen: Array<string[]> = [];
+    const model = new SdkAgentModel({
+      sdkModel: new MockLanguageModelV4({
+        doStream: (async (options: { tools?: Array<{ name: string }> }) => {
+          seen.push((options.tools ?? []).map((t) => t.name));
+          return { stream: convertArrayToReadableStream<unknown>(seen.length < 2 ? [{ type: "tool-call", toolCallId: `c${seen.length}`, toolName: "lookup", input: '{"name":"x"}' }, finish("tool-calls")] : [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Done." }, { type: "text-end", id: "t" }, finish("stop")]) };
+        }) as never,
+      }),
+      provider: "anthropic",
+      model: "m",
+      label: "Anthropic",
+    });
+    await model.chat(chatRequest({ maxSteps: 2 }));
+    expect(seen).toEqual([["lookup"], []]);
+  });
+
+  it("counts the turn's tokens from the finished steps: near the limit the next step has no tools, past it the turn stops", async () => {
+    const seen: Array<string[]> = [];
+    const toolStep = [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"x"}' }, finish("tool-calls")];
+    const textStep = [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Done." }, { type: "text-end", id: "t" }, finish("stop")];
+    const model = new SdkAgentModel({
+      sdkModel: new MockLanguageModelV4({
+        doStream: (async (options: { tools?: Array<{ name: string }> }) => {
+          seen.push((options.tools ?? []).map((t) => t.name));
+          return { stream: convertArrayToReadableStream<unknown>((options.tools ?? []).length > 0 ? toolStep : textStep) };
+        }) as never,
+      }),
+      provider: "anthropic",
+      model: "m",
+      label: "Anthropic",
+    });
+    // One step counts 150: fresh input 100, cache writes 10, output 40.
+    const near = await model.chat(chatRequest({ turnTokens: 180 }));
+    expect(seen).toEqual([["lookup"], []]);
+    expect(near).toMatchObject({ text: "Done.", stop: "end", steps: 2 });
+    seen.length = 0;
+    const past = await model.chat(chatRequest({ turnTokens: 150 }));
+    expect(seen).toEqual([["lookup"]]);
+    expect(past).toMatchObject({ text: "", stop: "limit", steps: 1 });
+  });
+
+  it("keeps the text written before a Stop", async () => {
+    const controller = new AbortController();
+    const model = streamed([[{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Part" }, { type: "text-delta", id: "t", delta: " two" }, { type: "text-end", id: "t" }, finish("stop")]]);
+    const result = await model.chat(chatRequest({ signal: controller.signal, onText: () => controller.abort() }));
+    expect(result.stop).toBe("stopped");
+    expect(result.text.startsWith("Part")).toBe(true);
+  });
+
+  it("throws the provider's reason when no answer could start", async () => {
+    const model = new SdkAgentModel({
+      sdkModel: new MockLanguageModelV4({
+        doStream: (async () => {
+          throw new APICallError({ message: "bad key", url: "https://x.test", requestBodyValues: {}, statusCode: 401, isRetryable: false });
+        }) as never,
+      }),
+      provider: "anthropic",
+      model: "m",
+      label: "Anthropic",
+    });
+    await expect(model.chat(chatRequest())).rejects.toMatchObject({ kind: "permanent", message: expect.stringMatching(/rejected the API key/) });
   });
 });
 

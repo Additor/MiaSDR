@@ -1,8 +1,8 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { APICallError, generateText, tool, type LanguageModel as SdkModel, type ModelMessage, type ToolSet } from "ai";
+import { APICallError, generateText, stepCountIs, streamText, tool, type LanguageModel as SdkModel, type ModelMessage, type ToolSet } from "ai";
 import type { AiConnectionSpec } from "@/contexts/integrations/domain/ai-connections";
-import type { AgentMessage, AgentModel, AgentStepRequest, AgentStepResult, AgentTool } from "../application/agent-ports";
+import type { AgentChatRequest, AgentChatResult, AgentMessage, AgentModel, AgentStepRequest, AgentStepResult, AgentTool } from "../application/agent-ports";
 import { AiError } from "../domain/ai-error";
 import type { AiUsage } from "../domain/generation";
 
@@ -23,7 +23,7 @@ interface SdkAgentOptions {
 
 const STOP: Record<string, AgentStepResult["stop"]> = { stop: "end", "tool-calls": "tools", length: "max_tokens", "content-filter": "refusal" };
 
-function usageOf(result: Awaited<ReturnType<typeof generateText>>): AiUsage {
+function usageOf(result: Pick<Awaited<ReturnType<typeof generateText>>, "usage" | "providerMetadata">): AiUsage {
   const { usage, providerMetadata } = result;
   const details = usage.inputTokenDetails;
   const cost = (providerMetadata?.openrouter as { usage?: { cost?: unknown } } | undefined)?.usage?.cost;
@@ -93,6 +93,69 @@ export class SdkAgentModel implements AgentModel {
       stop: STOP[result.finishReason] ?? "other",
       usage: usageOf(result),
     };
+  }
+
+  async chat(request: AgentChatRequest): Promise<AgentChatResult> {
+    const usage: AiUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    // The SDK's own record of the finished steps: the loop below reads the stream behind the SDK, so its sum can lag a step.
+    const spent = (steps: ReadonlyArray<Pick<Awaited<ReturnType<typeof generateText>>, "usage" | "providerMetadata">>) =>
+      steps.reduce((sum, step) => {
+        const counted = usageOf(step);
+        return sum + counted.inputTokens + (counted.cacheWriteTokens ?? 0) + counted.outputTokens;
+      }, 0);
+    // Near the end of the steps or the tokens, the model answers with what it read.
+    const answerNow = (stepNumber: number, used: number) => stepNumber >= request.maxSteps - 1 || used >= request.turnTokens * 0.8;
+    let text = "";
+    let steps = 0;
+    let finish: string | undefined;
+    let failed: unknown;
+    let aborted = false;
+    const result = streamText({
+      model: this.sdkModel,
+      instructions: request.system.map((segment) => ({
+        role: "system" as const,
+        content: segment.text,
+        ...(this.cacheProvider ? { providerOptions: { [this.cacheProvider]: { cacheControl: { type: "ephemeral" } } } } : {}),
+      })),
+      messages: request.messages as ModelMessage[],
+      tools: toolSet(request.tools),
+      maxOutputTokens: request.maxTokens,
+      maxRetries: 0,
+      abortSignal: request.signal,
+      timeout: { totalMs: request.timeoutMs },
+      stopWhen: [stepCountIs(request.maxSteps), ({ steps }) => spent(steps) >= request.turnTokens],
+      prepareStep: ({ stepNumber, steps }) => (answerNow(stepNumber, spent(steps)) ? { activeTools: [] } : undefined),
+    });
+    try {
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          text += part.text;
+          request.onText(part.text);
+        } else if (part.type === "tool-result" || part.type === "tool-error") {
+          request.onToolCall({ id: part.toolCallId, name: part.toolName, failed: part.type === "tool-error" });
+        } else if (part.type === "finish-step") {
+          steps += 1;
+          finish = part.finishReason;
+          const step = usageOf({ usage: part.usage, providerMetadata: part.providerMetadata } as never);
+          usage.inputTokens += step.inputTokens;
+          usage.outputTokens += step.outputTokens;
+          usage.cacheReadTokens = (usage.cacheReadTokens ?? 0) + (step.cacheReadTokens ?? 0);
+          usage.cacheWriteTokens = (usage.cacheWriteTokens ?? 0) + (step.cacheWriteTokens ?? 0);
+          if (step.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + step.costUsd;
+        } else if (part.type === "abort") aborted = true;
+        else if (part.type === "error") failed = part.error;
+      }
+    } catch (error) {
+      if (request.signal.aborted) aborted = true;
+      else failed = error;
+    }
+    if (aborted && request.signal.aborted) return { text, stop: "stopped", usage, steps };
+    // Nothing reached the person, so the turn has nothing to keep and the reason is the provider's.
+    if ((failed !== undefined || aborted) && text === "") throw this.failure(failed ?? Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+    if (failed !== undefined || aborted) return { text, stop: "other", usage, steps };
+    // A step that ended on tool calls means the steps or the tokens ran out first.
+    const stop = STOP[finish ?? ""] ?? "other";
+    return { text, stop: stop === "tools" ? "limit" : stop, usage, steps };
   }
 
   private failure(error: unknown): AiError {

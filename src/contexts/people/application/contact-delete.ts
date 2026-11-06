@@ -1,4 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
+import type { PersonAssistantCopies } from "./lead-ports";
 import { retryOnce, sqlState, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { AGENT_DELETE_PROTECTED, mergeContactBlockers } from "../domain/person-delete-policy";
@@ -116,6 +117,7 @@ export interface ContactDeleteDeps {
   handling: ContactDeleteHandling;
   deals: ContactDeleteDeals;
   outreach: ContactDeleteOutreach;
+  mia: PersonAssistantCopies;
   /** The people among `ids` an agent may not delete. With `lock`, holds their do not contact rows first. */
   agentProtected: AgentProtected;
   audit: LeadsAudit;
@@ -266,6 +268,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
         await deps.handling.purge(tx, organizationId, personId);
         await deps.deals.deleteClosed(tx, organizationId, personId);
         await deps.outreach.purge(tx, organizationId, personId);
+        await deps.mia.purge(tx, organizationId, [personId]);
         await deps.people.deletePerson(tx, organizationId, personId);
         // The stamp reads "no contact left", so it runs once the person is gone.
         if (person.companyId) await deps.people.stampCompaniesLeftByContacts(tx, organizationId, [person.companyId]);

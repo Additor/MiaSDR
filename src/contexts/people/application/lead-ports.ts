@@ -181,6 +181,12 @@ export interface LeadDeleteOutreach {
   purge(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
 }
 
+/** Mia: what its chats said about these people. `mia/infrastructure/drizzle-mia-chat-store.ts`. */
+export interface PersonAssistantCopies {
+  /** Deletes the chat turns that read these people, after the people are locked and before they are deleted. */
+  purge(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
+}
+
 /** Conversations: `person-handling.ts`. */
 export interface LeadDeleteHandling {
   /** The people among `ids` with a conversation or an event. */
@@ -193,6 +199,7 @@ export interface LeadDeleteDeps {
   people: LeadDeleteStore;
   outreach: LeadDeleteOutreach;
   handling: LeadDeleteHandling;
+  mia: PersonAssistantCopies;
   /** The people among `ids` an agent may not delete. With `lock`, holds their do not contact rows first. */
   agentProtected: AgentProtected;
   audit: LeadsAudit;

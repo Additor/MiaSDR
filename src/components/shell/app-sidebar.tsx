@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3Icon, BrainIcon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BarChart3Icon, BrainIcon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, MessageCircleIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -47,6 +47,7 @@ const NAV: NavItem[] = [
   { href: "/crm/pipeline", label: "Pipeline", group: "CRM", icon: KanbanIcon, also: ["/crm/deals"] },
   { href: "/crm/contacts", label: "Contacts", group: "CRM", icon: ContactRoundIcon },
   { href: "/crm/companies", label: "Companies", group: "CRM", icon: Building2Icon },
+  { href: "/mia", label: "Mia", group: "Insight", icon: MessageCircleIcon },
   { href: "/brain", label: "Brain", group: "Insight", icon: BrainIcon },
   { href: "/tables", label: "Tables", group: "Insight", icon: Table2Icon },
   { href: "/analytics", label: "Analytics", group: "Insight", icon: BarChart3Icon },

@@ -118,6 +118,7 @@ const schema = z.object({
   RETENTION_MCP_TOOL_CALLS_DAYS: z.coerce.number().int().min(1).default(90),
   /** Finished Mia runs, and suggestions a person already decided. */
   RETENTION_MIA_RUNS_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_MIA_MESSAGES_DAYS: z.coerce.number().int().min(1).default(90),
 
   /** Comma list of email domains an organization may connect as mailboxes. Unset allows any address. */
   MAILBOX_ALLOWED_DOMAINS: z.string().optional(),

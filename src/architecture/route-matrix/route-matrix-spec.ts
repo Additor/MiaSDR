@@ -202,6 +202,13 @@ export const ROUTES: Record<string, RouteSpec> = {
   // The id names no row: it is the batch the checks share. A lead that is not in the organization answers 404, or 409 with no ICP, before any check starts.
   "mia/fit-batches": { handlers: { POST: { valid: { personIds: ["00000000-0000-4000-8000-000000000000"] } } } },
   "mia/fit-batches/[id]/cancel": { ids: { id: { table: null, sample: "00000000-0000-4000-8000-000000000000" } }, handlers: { POST: { mayNotFindOwnRow: true } } },
+  // A chat is its user's alone, so an organization's seeded row would not be the caller's: the chat routes answer 404 for it,
+  // as they do for a colleague's chat. `mia-chat.integration.test.ts` covers the owner and the colleague.
+  "mia/threads": { handlers: { GET: ok(), POST: { valid: {} } } },
+  "mia/threads/[id]": { ids: { id: { table: null, sample: SAMPLE_UUID } }, handlers: { GET: { mayNotFindOwnRow: true }, PATCH: { valid: { title: "Matrix" }, mayNotFindOwnRow: true }, DELETE: { mayNotFindOwnRow: true } } },
+  "mia/threads/[id]/messages": { ids: { id: { table: null, sample: SAMPLE_UUID } }, handlers: { POST: { valid: { clientId: "matrix", text: "Hello" }, mayNotFindOwnRow: true } } },
+  "mia/threads/[id]/retry": { ids: { id: { table: null, sample: SAMPLE_UUID } }, handlers: { POST: { mayNotFindOwnRow: true } } },
+  "mia/threads/[id]/stop": { ids: { id: { table: null, sample: SAMPLE_UUID } }, handlers: { POST: { mayNotFindOwnRow: true } } },
 
   "leads/[id]": { ids: { id: "people" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "leads/[id]/convert": { ids: { id: "people" }, handlers: { POST: ok() } },
