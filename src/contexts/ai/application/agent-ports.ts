@@ -63,6 +63,8 @@ export interface AgentChatRequest {
   signal: AbortSignal;
   onText(delta: string): void;
   onToolCall(call: AgentToolCall & { id: string }): void;
+  /** Each finished step's usage, as it ends: a turn that stops or fails later still counts the steps before. */
+  onStepUsage(usage: AiUsage): void;
 }
 
 export interface AgentChatResult {

@@ -142,6 +142,7 @@ export class SdkAgentModel implements AgentModel {
           usage.cacheReadTokens = (usage.cacheReadTokens ?? 0) + (step.cacheReadTokens ?? 0);
           usage.cacheWriteTokens = (usage.cacheWriteTokens ?? 0) + (step.cacheWriteTokens ?? 0);
           if (step.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + step.costUsd;
+          request.onStepUsage(step);
         } else if (part.type === "abort") aborted = true;
         else if (part.type === "error") failed = part.error;
       }

@@ -51,10 +51,10 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
     end.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
-  /** Reads the saved chat until no answer is going. */
-  const reload = useCallback(async () => {
+  /** Reads the saved chat: whether an answer is going, or null when the chat could not be read. */
+  const reload = useCallback(async (): Promise<boolean | null> => {
     const res = await callApi<{ messages: ChatMessage[]; going: boolean }>(`/api/mia/threads/${threadId}`, "GET");
-    if (!res.ok || !res.data) return false;
+    if (!res.ok || !res.data) return null;
     setMessages(res.data.messages);
     return res.data.going;
   }, [threadId]);
@@ -148,7 +148,10 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
 
   async function stop() {
     const res = await runApiAction(callApi(`/api/mia/threads/${threadId}/stop`, "POST"));
-    if (!res.ok) toast.error(res.error);
+    if (res.ok) return;
+    // The answer ended a moment before Stop reached it: the saved answer is the result, not an error.
+    if (res.status === 404 && (await reload()) !== null) return;
+    toast.error(res.error);
   }
 
   function submit() {

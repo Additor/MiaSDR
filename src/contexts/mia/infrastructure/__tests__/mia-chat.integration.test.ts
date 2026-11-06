@@ -136,6 +136,44 @@ describeDb("Mia chat", () => {
     expect((await sql`select turn_token from mia_threads where id = ${id}`)[0].turn_token).toBeNull();
   });
 
+  it("charges the steps that finished before a failure, and an estimate for the step it cut off", async () => {
+    const actor = await fixture();
+    const failsLater: AgentModel = {
+      ...fakeAgentModel,
+      chat: async (r) => {
+        r.onStepUsage({ inputTokens: 20_000, outputTokens: 500 });
+        throw new AiError("The AI service is unavailable (status 529).", "transient");
+      },
+    };
+    const { id } = await newChat(deps(), actor, null);
+    await ask(actor, id, "Hello", deps(failsLater));
+    const [usage] = await sql`select input_tokens, output_tokens from mia_usage_daily where organization_id = ${actor.organizationId}`;
+    // The finished step as counted, plus the cut-off step's prompt by estimate.
+    expect(usage.input_tokens).toBeGreaterThan(20_000);
+    expect(usage.output_tokens).toBe(500);
+  });
+
+  it("says when an answer reached its length limit, and lets the person retry it", async () => {
+    const actor = await fixture();
+    const long: AgentModel = {
+      ...fakeAgentModel,
+      chat: async (r) => {
+        r.onText("The first part");
+        r.onStepUsage({ inputTokens: 100, outputTokens: 4000 });
+        return { text: "The first part", stop: "max_tokens", usage: { inputTokens: 100, outputTokens: 4000 }, steps: 1 };
+      },
+    };
+    const { id } = await newChat(deps(), actor, null);
+    await ask(actor, id, "Tell me everything", deps(long));
+    const answer = (await openChat(deps(), actor, id)).messages[1];
+    expect(answer).toMatchObject({ status: "failed", error: expect.stringContaining("length limit") });
+    expect(answer.parts).toEqual([{ type: "text", text: "The first part" }]);
+    const [usage] = await sql`select output_tokens from mia_usage_daily where organization_id = ${actor.organizationId}`;
+    expect(usage.output_tokens).toBe(4000);
+    await (await retryAnswer(deps(), actor, id, silent)).done;
+    expect((await openChat(deps(), actor, id)).messages[1].status).toBe("complete");
+  });
+
   it("keeps a chat to the person who started it", async () => {
     const actor = await fixture();
     const other = await colleague(actor);

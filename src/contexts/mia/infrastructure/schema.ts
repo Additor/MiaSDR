@@ -68,6 +68,8 @@ export const miaRuns = pgTable(
     index("mia_runs_org_batch_idx").on(t.organizationId, t.batchId).where(sql`${t.batchId} is not null`),
     check("mia_runs_fit_person_ck", sql`(${t.capability} = 'lead_fit') = (${t.personId} is not null and ${t.batchId} is not null)`),
     foreignKey({ name: "mia_runs_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
+    // Deleting a person finds its runs through this, not by reading every run.
+    index("mia_runs_person_idx").on(t.personId, t.organizationId).where(sql`${t.personId} is not null`),
   ],
 );
 
@@ -135,6 +137,8 @@ export const miaThreads = pgTable(
     index("mia_threads_org_user_idx").on(t.organizationId, t.userId, t.lastMessageAt.desc()),
     // The migration writes `ON DELETE SET NULL (person_id)`: a plain SET NULL would clear `organization_id` too.
     foreignKey({ name: "mia_threads_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("set null"),
+    // Deleting a person finds the chats about them through this, not by reading every chat.
+    index("mia_threads_person_idx").on(t.personId, t.organizationId).where(sql`${t.personId} is not null`),
   ],
 );
 

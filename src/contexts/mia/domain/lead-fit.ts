@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { fence, UNTRUSTED_DATA_RULES } from "@/contexts/ai/domain/prompt-fence";
+import { AI_TASKS } from "@/contexts/ai/domain/ai-tasks";
 import type { JsonSchema } from "@/contexts/ai/domain/generation";
 import { FIT_SOURCES, type FitCriterion, type FitSource, type FitVerdict } from "@/contexts/people/domain/lead-fit";
+import { FIT_RUN_TOKENS } from "./mia-run";
+import { estimatedTokens } from "./mia-settings";
 
 /**
  * Mia's fit check of one lead. The model lists criteria with the passage behind each; code checks each passage against
@@ -99,6 +102,42 @@ export function fitPrompt(brain: readonly FitBrainItem[], sources: FitSources, n
     `their_reply, newest first:\n${replies}`,
     `our_message, newest first:\n${ours}`,
   ].join("\n\n");
+}
+
+/** The most a fit prompt may hold, by `estimatedTokens`: a check's share of the day less the answer's room. */
+export const FIT_PROMPT_TOKENS = FIT_RUN_TOKENS - AI_TASKS["mia.lead_fit"].maxTokens;
+// At these lengths the smallest prompt (the profile, the company, one reply and one ICP, all in Korean) stays under
+// FIT_PROMPT_TOKENS, so the last step always ends inside it.
+const CUT_SOURCE_CHARS = 1_500;
+const CUT_ITEM_CHARS = 1_000;
+
+const cut = (text: string, chars: number) => (text.length > chars ? `${text.slice(0, chars)}…` : text);
+
+/**
+ * What one check sends, cut until the prompt fits `FIT_PROMPT_TOKENS`, so a check never costs more than the room a
+ * request reserved for it. It drops the oldest of our messages first, then the oldest replies down to one, then cuts the
+ * profile, the company and each Brain item, and last drops Brain items from the end while one ICP stays. The passages are
+ * checked against what was sent, so the model quotes nothing it did not see.
+ */
+export function fittedFitInputs(brain: readonly FitBrainItem[], sources: FitSources): { brain: FitBrainItem[]; sources: FitSources } {
+  // The worker's nonce is 12 hex characters, so a stand-in of that length measures the prompt the check sends.
+  const fits = (b: readonly FitBrainItem[], s: FitSources) => estimatedTokens(FIT_SYSTEM + fitPrompt(b, s, "0".repeat(12))) <= FIT_PROMPT_TOKENS;
+  let items = [...brain];
+  const s: FitSources = { ...sources, theirReplies: [...sources.theirReplies], ourMessages: [...sources.ourMessages] };
+  while (!fits(items, s) && s.ourMessages.length > 0) s.ourMessages.pop();
+  while (!fits(items, s) && s.theirReplies.length > 1) s.theirReplies.pop();
+  if (!fits(items, s)) {
+    s.profile = cut(s.profile, CUT_SOURCE_CHARS);
+    s.company = cut(s.company, CUT_SOURCE_CHARS);
+    s.theirReplies = s.theirReplies.map((text) => cut(text, CUT_SOURCE_CHARS));
+    items = items.map((item) => ({ ...item, text: cut(item.text, CUT_ITEM_CHARS) }));
+  }
+  while (!fits(items, s) && items.length > 1) {
+    const last = items.findLastIndex((item, i) => item.kind !== "icp" || items.slice(0, i).some((other) => other.kind === "icp"));
+    if (last < 0) break;
+    items.splice(last, 1);
+  }
+  return { brain: items, sources: s };
 }
 
 const squeeze = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();

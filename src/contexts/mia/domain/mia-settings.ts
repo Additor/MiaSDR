@@ -50,8 +50,20 @@ export const MIN_DAILY_TOKENS_FOR_A_JOB = Math.ceil(MIA_RUN_TOKENS / BACKGROUND_
 /** What counts against a limit: fresh input, cache writes and output. A cache read costs a fraction and rewards staying in one run. */
 export const countedTokens = (usage: AiUsage): number => usage.inputTokens + (usage.cacheWriteTokens ?? 0) + usage.outputTokens;
 
-/** A rough count for a call whose answer never came, so a failing provider still uses up the limit. */
-export const estimatedTokens = (text: string): number => Math.ceil(text.length / 4);
+/**
+ * A rough count for text no provider has counted: a call whose answer never came, or a prompt before it goes out. About
+ * four Latin characters make a token, but a Korean, Japanese or Chinese character is close to one on its own, so the
+ * count takes each character past Latin as a token. It errs high, since it guards the daily limit.
+ */
+export function estimatedTokens(text: string): number {
+  let latin = 0;
+  let other = 0;
+  for (const char of text) {
+    if (char.codePointAt(0)! < 0x0250) latin += 1;
+    else other += 1;
+  }
+  return Math.ceil(latin / 4) + other;
+}
 
 export const utcDay = (now: Date): string => now.toISOString().slice(0, 10);
 

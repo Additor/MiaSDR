@@ -24,6 +24,9 @@ You can now ask Mia questions. Mia in the sidebar opens a chat that reads your l
 - `GET` and `POST /api/mia/threads`, `GET`, `PATCH` and `DELETE /api/mia/threads/{id}`, and `POST /api/mia/threads/{id}/messages`, `/stop` and `/retry`. Messages and retry answer as a stream of JSON lines.
 - New setting: `RETENTION_MIA_MESSAGES_DAYS` (90).
 - Migration `0009` adds `mia_threads`, `mia_messages` and `mia_thread_people`.
+- An answer cut off at its length limit says so and offers Retry.
+- A fit check cuts what it sends to fit the tokens a request set aside for it, oldest messages first. A stopped or failed chat answer counts the tokens its finished steps used, plus an estimate for the step it cut off, against the daily limit. Korean, Japanese and Chinese text counts at about one token a character.
+- Migration `0010` adds indexes that let a lead's delete find its Mia runs and chats.
 
 ### Brain
 
