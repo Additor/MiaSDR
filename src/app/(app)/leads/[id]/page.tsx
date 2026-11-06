@@ -23,6 +23,7 @@ import { AddLeadToCampaign } from "../_components/add-to-campaign";
 import { CampaignsTable } from "@/app/(app)/_components/person/campaigns-table";
 import { SendHistoryTable } from "@/app/(app)/_components/person/send-history-table";
 import { LeadNav } from "./lead-header";
+import { LeadFitCard } from "./lead-fit-card";
 import { LeadMoreMenu } from "./lead-more-menu";
 import { backToListHref, neighborHref, parseListContext, LIST_PARAM } from "./list-context";
 import { SourceDataCard } from "@/app/(app)/_components/person/source-data-card";
@@ -169,6 +170,9 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
                 setAt={policy?.setAt?.toISOString() ?? null}
                 suppression={suppression ? { reason: suppression.reason, note: suppression.note, date: suppression.createdAt.toISOString() } : null}
               />
+              <Suspense fallback={null}>
+                <LeadFitCard actor={actor} personId={person.id} />
+              </Suspense>
             </>
           }
         />

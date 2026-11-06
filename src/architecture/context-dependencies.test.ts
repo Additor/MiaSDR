@@ -206,6 +206,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
   "people/infrastructure/inbound-leads",
   "people/infrastructure/linkedin-profile",
+  // The lead fit writer, which Mia calls inside the transaction that ends its run.
+  "people/infrastructure/lead-fit-store",
   // The enrollment outcome writers, which conversations' contact stop runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
   // Enrollment's gate on a stop request, which the table handoff to a campaign applies too.

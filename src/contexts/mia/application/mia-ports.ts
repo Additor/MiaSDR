@@ -2,6 +2,8 @@ import type { AiUsage } from "@/contexts/ai/domain/generation";
 import type { BrainStore } from "@/contexts/brain/application/brain-items";
 import type { BrainFields } from "@/contexts/brain/domain/brain-fields";
 import type { BrainKind } from "@/contexts/brain/domain/brain-kinds";
+import type { FitCriterion, FitInputs, FitVerdict } from "@/contexts/people/domain/lead-fit";
+import type { FitBrainItem, FitOutput, FitSources } from "../domain/lead-fit";
 import type { MiaCapability, MiaRunStatus } from "../domain/mia-run";
 import type { MiaSettings } from "../domain/mia-settings";
 import type { MiaSuggestionStatus, MiaSuggestionType, SuggestionPayload } from "../domain/suggestion";
@@ -16,6 +18,9 @@ export interface ClaimedRun {
   id: string;
   organizationId: string;
   capability: MiaCapability;
+  /** The lead a fit check reads. */
+  personId: string | null;
+  requestedBy: string | null;
   input: Record<string, unknown>;
   checkpoint: Record<string, unknown> | null;
   stepCount: number;
@@ -73,9 +78,52 @@ export interface MiaRunStore {
   cancelRequested(run: ClaimedRun): Promise<boolean>;
   /** Tokens counted against the organization's limit today. */
   usedToday(organizationId: string, now: Date): Promise<number>;
+  /** What the organization's runs that have not ended may still spend: each one's budget less what it used. */
+  reservedTokens(organizationId: string): Promise<number>;
   /** Stops a run. A running one stops at its next step. False when no such run is going. */
   requestCancel(organizationId: string, runId: string, actorUserId: string, now: Date): Promise<boolean>;
+  /** Brain jobs that are going or ended a moment ago. Fit checks show on Leads instead. */
   recent(organizationId: string, now: Date): Promise<RunRow[]>;
+  /** One queued fit check per person, under one batch. A person with a check already going is skipped. */
+  createFitRuns(organizationId: string, request: { requestedBy: string; personIds: readonly string[] }): Promise<{ batchId: string; queued: number; skipped: number }>;
+  /**
+   * Ends the run and stores its judgment in one transaction. False when the claim is gone; a person deleted meanwhile ends
+   * the run with nothing stored. The call was paid either way, so its tokens count against the day.
+   */
+  saveFit(run: ClaimedRun, fit: FitResult): Promise<boolean>;
+  /** The organization's latest fit batch, while it runs and for a while after. */
+  latestFitBatch(organizationId: string, now: Date): Promise<FitBatchRow | null>;
+  /** Stops every check of the batch that has not ended. False when none is going. */
+  cancelFitBatch(organizationId: string, batchId: string, actorUserId: string, now: Date): Promise<boolean>;
+}
+
+export interface FitResult {
+  verdict: FitVerdict;
+  icpItemId: string | null;
+  criteria: FitCriterion[];
+  missing: string[];
+  inputs: FitInputs;
+  usage: AiUsage;
+  provider: string;
+  model: string;
+  now: Date;
+}
+
+export interface FitBatchRow {
+  id: string;
+  total: number;
+  done: number;
+  failed: number;
+  cancelled: number;
+  /** Queued or running. */
+  going: number;
+  /** Waiting for tomorrow's tokens. */
+  waiting: number;
+  /** The people whose check failed, for a second try. */
+  failedPersonIds: string[];
+  /** The first failure's reason, for the line that reports the batch. */
+  firstError: string | null;
+  createdAt: Date;
 }
 
 export interface RunRow {
@@ -125,6 +173,29 @@ export interface MiaBrainPort {
   legacyDocument(organizationId: string, id: string): Promise<{ id: string; title: string; content: string } | null>;
   /** What the item holds now, to compare a suggestion with. */
   currentFields(organizationId: string, id: string): Promise<{ title: string; fields: BrainFields | null; revision: number } | null>;
+  /** The active ICP and qualification items, which a fit check reads and nothing else. */
+  fitItems(organizationId: string): Promise<FitBrainItem[]>;
+  /** Whether a fit check has an ICP to read, without reading the items. */
+  hasActiveIcp(organizationId: string): Promise<boolean>;
+}
+
+/** What a fit check reads of people. Only the one person it judges: a run never sees another lead. */
+export interface MiaLeadPort {
+  /** Null when the person is gone. */
+  fitInput(organizationId: string, personId: string): Promise<{ sources: FitSources; profileHash: string; latestInboundMessageId: string | null } | null>;
+  /** The ids among these that are people of the organization. */
+  existing(organizationId: string, ids: readonly string[]): Promise<string[]>;
+}
+
+/** One configured model, asked for a fit judgment. Built on the language model the replies use: a check calls no tool. */
+export interface LeadFitAssessor {
+  readonly provider: string;
+  readonly model: string;
+  assess(request: { system: string; prompt: string }): Promise<{ output: FitOutput; usage: AiUsage }>;
+}
+
+export interface LeadFitAssessorResolver {
+  forOrganization(organizationId: string): Promise<LeadFitAssessor | null>;
 }
 
 export interface ReadPage {

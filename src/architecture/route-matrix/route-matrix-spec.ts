@@ -199,6 +199,9 @@ export const ROUTES: Record<string, RouteSpec> = {
   "mia/suggestions/[id]/accept": { ids: { id: { table: "mia_suggestions", force: { type: "new_item", step_count: 1, ordinal: 0, kind: "product", title: "Route matrix", payload: { fields: {}, sorting: false } } } }, handlers: { POST: ok({ fields: { productName: "Route matrix" } }) } },
   "mia/suggestions/[id]/dismiss": { ids: { id: { table: "mia_suggestions", force: { type: "new_item", step_count: 1, ordinal: 0, kind: "product", title: "Route matrix", payload: { fields: {}, sorting: false } } } }, handlers: { POST: ok() } },
   "settings/mia": { handlers: { GET: ok(), PATCH: admin({ enabled: true }) } },
+  // The id names no row: it is the batch the checks share. A lead that is not in the organization answers 404, or 409 with no ICP, before any check starts.
+  "mia/fit-batches": { handlers: { POST: { valid: { personIds: ["00000000-0000-4000-8000-000000000000"] } } } },
+  "mia/fit-batches/[id]/cancel": { ids: { id: { table: null, sample: "00000000-0000-4000-8000-000000000000" } }, handlers: { POST: { mayNotFindOwnRow: true } } },
 
   "leads/[id]": { ids: { id: "people" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "leads/[id]/convert": { ids: { id: "people" }, handlers: { POST: ok() } },

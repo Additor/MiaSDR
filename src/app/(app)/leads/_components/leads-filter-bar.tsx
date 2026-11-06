@@ -4,6 +4,7 @@ import { FilterPopover } from "@/components/shell/filter-popover";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { SearchField } from "@/components/shell/search-field";
 import { lifecycleOf, type LeadFilter, type LeadSort } from "@/contexts/people/domain/lead-filter";
+import { FIT_FILTER_LABELS, FIT_FILTERS } from "@/contexts/people/domain/lead-fit";
 import { sourceLabel } from "@/contexts/people/domain/lead-labels";
 import { humanizeToken } from "@/shared/humanize";
 
@@ -13,6 +14,9 @@ const LIFECYCLE = [
   { value: "contact", label: "Contacts" },
   { value: "all", label: "Leads and contacts" },
 ];
+
+/** Mia's verdict on the lead, or no check yet. */
+const FIT_OPTIONS = [{ value: "", label: "Any fit" }, ...FIT_FILTERS.map((value) => ({ value, label: FIT_FILTER_LABELS[value] }))];
 
 /**
  * The people filters as a plain GET form: every control is a URL param, so the result can be bookmarked,
@@ -57,6 +61,7 @@ export function LeadsFilterBar(props: {
               <TristateField label="Replied" name="replied" value={filter.replied} />
               <TristateField label="Has conversation" name="hasConversation" value={filter.hasConversation} />
               <SelectField label="Reply group" name="replyGroup" defaultValue={filter.replyGroup ?? ""} options={[{ value: "", label: "Any group" }, ...options.replyGroups.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
+              <SelectField label="Fit" name="fit" defaultValue={filter.fit ?? ""} options={FIT_OPTIONS} />
             </FilterSection>
             <FilterSection title="Reachability">
               <TristateField label="Has email" name="email" value={filter.hasEmail} />

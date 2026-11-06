@@ -20,7 +20,11 @@ import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
 import { OffAction } from "@/app/(app)/_components/off-action";
+import { fitRoom, fitUnavailable, latestFitBatch } from "@/contexts/mia/application/mia-use-cases";
+import { miaDeps } from "@/contexts/mia/infrastructure/composition";
+import { leadFitBadges } from "@/read-models/lead-fit";
 import { AddToCampaign } from "./_components/add-to-campaign";
+import { FitBatchLine } from "./_components/check-fit";
 import { ColumnsMenu, LeadColumnsProvider } from "./_components/columns-menu";
 import { leadsHref } from "./_lib/list-url";
 import { activeFilterChips, panelFilterCount } from "./_lib/active-filters";
@@ -73,13 +77,17 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
   // The list never takes an explicit id selection from the URL; that is for the export link.
   filter.ids = undefined;
   const sort = parseLeadSort(first(params.sort), first(params.dir));
-  const [{ rows, total, page, pageCount, pageSize }, options, deals] = await Promise.all([
+  const mia = miaDeps();
+  const [{ rows, total, page, pageCount, pageSize }, options, deals, fitBlocked, room, batch] = await Promise.all([
     listLeads(actor, { filter, sort, page: Number(first(params.page)) || 1, pageSize: Number(first(params.size)) || undefined }),
     leadFilterOptions(organizationId),
     dealDialogData(actor),
+    fitUnavailable(mia, actor),
+    fitRoom(mia, actor),
+    latestFitBatch(mia, actor),
   ]);
   // The lead page reads the same function for its one id, so a row and its page show one state.
-  const activity = await readLeadActivity(leadActivityDeps(), organizationId, rows);
+  const [activity, fits] = await Promise.all([readLeadActivity(leadActivityDeps(), organizationId, rows), leadFitBadges(organizationId, rows.map((r) => r.id))]);
   const columns = parseColumns((await cookies()).get(columnsCookieName(userId))?.value);
   const now = new Date().toISOString();
   const active = isFilterActive(filter);
@@ -107,6 +115,7 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
           </>
         }
       />
+      {batch && <FitBatchLine batch={batch} />}
       <AppliedFilters chips={chips.map((chip) => ({ key: chip.key, name: chip.name, value: chip.value, href: leadsHref({ filter: chip.without, sort, size: pageSize }) }))} clear={{ href: leadsHref({ filter: {}, sort, size: pageSize }) }} />
 
       {total === 0 ? (
@@ -131,6 +140,7 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
               updatedAt: r.updatedAt.toISOString(),
               // `readLeadActivity` returns an entry for each row it was given.
               activity: activity.get(r.id)!,
+              fit: fits.get(r.id) ?? null,
             }))}
             userId={userId}
             now={now}
@@ -142,6 +152,7 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
             sort={sort}
             bulkActions={<AddToCampaign />}
             deals={{ stages: deals.stages, members: deals.members }}
+            fit={{ unavailable: fitBlocked, room }}
           />
         </SelectionProvider>
       )}

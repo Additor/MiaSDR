@@ -1,6 +1,6 @@
 /**
  * What the lead list's selection bar shows. A person who ticks rows mostly adds them to a campaign, so that action
- * leads; Create deals and the delete actions sit in one overflow menu, destructive items last. The bar never shows more than
+ * leads; Create deals, Check fit and the delete actions sit in one overflow menu, destructive items last. The bar never shows more than
  * `MAX_VISIBLE_CONTROLS` controls, whatever the filter or the selection.
  */
 
@@ -9,7 +9,7 @@ export const MAX_VISIBLE_CONTROLS = 4;
 export type BulkControlId = "addToCampaign" | "export" | "more" | "clear";
 import type { LifecycleFilter } from "@/contexts/people/domain/lead-filter";
 
-export type BulkMenuItemId = "selectAll" | "createDeals" | "deleteSelected" | "deleteMatching";
+export type BulkMenuItemId = "selectAll" | "createDeals" | "checkFit" | "deleteSelected" | "deleteMatching";
 
 export interface BulkMenuItem {
   id: BulkMenuItemId;
@@ -34,6 +34,8 @@ export function bulkActionModel(input: {
   canDelete?: boolean;
   /** Who the list shows. Absent means leads. */
   lifecycle?: LifecycleFilter;
+  /** True when the page offers Mia's fit check. */
+  canCheckFit?: boolean;
 }): BulkActionModel {
   const lifecycle = input.lifecycle ?? "lead";
   if (input.selectedCount === 0) return { visible: [], menu: [] };
@@ -41,6 +43,7 @@ export function bulkActionModel(input: {
   if (input.canSelectAll) menu.push({ id: "selectAll", destructive: false });
   // A contact already has its deals on the Contact page, so a list of contacts alone offers no Create deals.
   if (lifecycle !== "contact") menu.push({ id: "createDeals", destructive: false });
+  if (input.canCheckFit) menu.push({ id: "checkFit", destructive: false });
   if (input.canDelete !== false) {
     menu.push({ id: "deleteSelected", destructive: true });
     // Delete all matching needs a filter (the API refuses an empty one) and leads only: the API answers 422 for any other

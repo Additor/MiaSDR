@@ -61,8 +61,9 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Brain:** what an organization knows about itself and its market: its company profile, products, pricing, ICPs, competitors, case studies, testimonials, objections and qualification rules. It has its own place in the sidebar, and every member can change it. The code calls it `brain` and its tables `knowledge_documents` and `knowledge_document_versions`.
 - **Brain item:** one entry in Brain, such as one product or one plan. Its kind decides its fields.
 - **Needs sorting:** the Brain view of documents from before the kinds existed. AI drafts still read them until a person sorts each into a kind.
-- **Mia:** the AI inside MiaSDR that a person gives a job. Today it reads a website, pasted text or a document in Needs sorting and offers Suggestions for Brain. "Agent" still means an AI connected over MCP. The code calls it `mia` (`src/contexts/mia`, `/api/mia`, `mia_*` tables).
+- **Mia:** the AI inside MiaSDR that a person gives a job. It reads a website, pasted text or a document in Needs sorting and offers Suggestions for Brain, and it checks a lead's Fit. "Agent" still means an AI connected over MCP. The code calls it `mia` (`src/contexts/mia`, `/api/mia`, `mia_*` tables).
 - **Suggestion:** what Mia offers for Brain: a new item or a change to one, each value with the sentence it came from. Nothing reaches Brain until a person saves it. A number or address its sentence does not contain needs a person's tick or edit first.
+- **Fit:** Mia's verdict on how a lead matches the ICP: Fit, Partial, Not a fit or Unknown, with each criterion and the passage behind it. Code sets the verdict from those passages. A person reads it and decides; it changes nothing on the lead. Check again shows when what it read has changed.
 - **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
 - **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
 - **Table:** one tab of a workbook, with typed columns and rows.
@@ -82,8 +83,8 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - Stack: Next.js 16.4 (App Router), React 19, Tailwind CSS 4.
 - AI picks a reply type for each reply and drafts responses; a person approves before sending, unless an owner or admin turned on agent sending for MCP agents. A follow-up flow only writes drafts.
 - LinkedIn outreach is built and tested against a local stand-in. Profile lookups ran once against a real Unipile account; a full campaign has not.
-- WhatsApp, calls, domain qualification and teams are out of scope for the MVP.
-- Mia writes nothing to Brain and sends nothing. A person starts each job and saves each Suggestion.
+- WhatsApp, calls and teams are out of scope for the MVP. Mia's Fit is a verdict a person reads, never a qualification that moves a lead.
+- Mia writes nothing to Brain or to a lead, and sends nothing. A person starts each job, saves each Suggestion and decides what a Fit means.
 - `docs/decisions.md` records scope and design choices.
 
 ## Brand Commitments

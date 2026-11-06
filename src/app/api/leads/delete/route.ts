@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_DELETE_IDS, deleteLeads, summarizeDelete } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
+import { FIT_FILTERS } from "@/contexts/people/domain/lead-fit";
 import { leadDeleteDeps } from "@/composition/person-lifecycle";
 import { withActor } from "@/app/_lib/api";
 
@@ -22,6 +23,7 @@ const filterSchema = z
     createdFrom: z.string().max(10),
     createdTo: z.string().max(10),
     replyGroup: z.string().max(40),
+    fit: z.enum(FIT_FILTERS),
   })
   .partial()
   .strict();
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
       from: f.createdFrom,
       to: f.createdTo,
       replyGroup: f.replyGroup,
+      fit: f.fit,
     };
     const outcome = await deleteLeads(leadDeleteDeps, actor, { filter: parseLeadFilter((key) => raw[key]), confirmCount: body.confirmCount });
     return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };

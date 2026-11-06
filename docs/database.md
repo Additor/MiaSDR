@@ -175,7 +175,7 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - identity: `users`, `sessions`, `accounts`, `verifications`
 - tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
 - agent-access: `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`, `mcp_agent_usage`
-- people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
+- people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`, `lead_fit_assessments`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
 - brain: `knowledge_documents`, `knowledge_document_versions` (Brain items; the tables keep their older name)
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `conversations`, `threads`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `ai_jobs`, `notes`, `tasks`

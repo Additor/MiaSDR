@@ -30,8 +30,11 @@ import { CreateDealsBulkDialog } from "@/app/(app)/crm/_components/create-deal-d
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
+import { FitBadge } from "@/app/(app)/_components/person/fit-badge";
+import type { LeadFitBadge } from "@/read-models/lead-fit";
 import type { DealMemberOption, DealStageList } from "@/app/(app)/crm/_components/deal-form";
 import { bulkActionModel, clearsSelectionOnKey, type BulkMenuItemId } from "../_lib/bulk-actions";
+import { BulkFitDialog, type BulkFit } from "./check-fit";
 import { useLeadColumns } from "./columns-menu";
 import type { OptionalColumn } from "../_lib/list-columns";
 import { leadHref, listQueryOf } from "../[id]/list-context";
@@ -50,6 +53,8 @@ export interface LeadListRow {
   /** `contact` once a deal was created from the person. Only a list with `lifecycle=all` or `contact` holds one. */
   lifecycle: "lead" | "contact";
   activity: LeadRowActivity;
+  /** Mia's latest verdict. Null when the lead was never checked. */
+  fit: LeadFitBadge | null;
 }
 
 /** Status, reach and contact points from `readLeadActivity`, the read the lead page uses too. Dates cross to the client as Dates. */
@@ -89,6 +94,7 @@ const COLUMNS: Array<{ id: "name" | OptionalColumn; label: string; sortKey?: Lea
   { id: "contact", label: "Reach", status: true },
   { id: "campaign", label: "Status", status: true },
   { id: "lastContact", label: "Last contact", status: true },
+  { id: "fit", label: "Fit", status: true },
   { id: "email", label: "Email", sortKey: "email" },
   { id: "title", label: "Title", sortKey: "title" },
   { id: "company", label: "Company", sortKey: "company" },
@@ -110,8 +116,10 @@ export function LeadsTableView(props: {
   bulkActions?: ReactNode;
   /** Stages and owner choices for the bulk Create deals dialog. */
   deals: { stages: DealStageList; members: DealMemberOption[] };
+  /** Mia's fit check in the selection bar's menu. Absent leaves it out. */
+  fit?: BulkFit;
 }) {
-  const { rows, total, page, pageCount, pageSize, filter, sort, bulkActions, userId, now, deals } = props;
+  const { rows, total, page, pageCount, pageSize, filter, sort, bulkActions, userId, now, deals, fit } = props;
   const { columns } = useLeadColumns();
   const shows = (id: "name" | OptionalColumn) => id === "name" || columns.includes(id);
   const router = useRouter();
@@ -122,6 +130,7 @@ export function LeadsTableView(props: {
   const { error: gatherError, setError: setGatherError, begin } = useBulkStep(ids.length);
   // The ids the Create deals dialog works on, fixed when it opens: the dialog reloads its preview for a new array.
   const [dealIds, setDealIds] = useState<string[] | null>(null);
+  const [fitOpen, setFitOpen] = useState(false);
   const lifecycle = lifecycleOf(filter);
   const bar = useRef<HTMLDivElement>(null);
   useBarScrollPadding(bar, ids.length > 0);
@@ -137,19 +146,21 @@ export function LeadsTableView(props: {
   const exporting = selectionExport(ids);
   const exportCap = `An export covers up to ${formatCount(exporting.ids.length)} leads. Filter the list to export the rest.`;
   const exportSelected = `/api/leads/export?${new URLSearchParams({ ids: exporting.ids.join(",") }).toString()}`;
-  const model = bulkActionModel({ selectedCount: ids.length, total, filterActive: filtered, canSelectAll: matching.canSelectAll, lifecycle });
+  const model = bulkActionModel({ selectedCount: ids.length, total, filterActive: filtered, canSelectAll: matching.canSelectAll, lifecycle, canCheckFit: fit !== undefined });
   const menuLabels: Record<BulkMenuItemId, string> = {
     selectAll:
       matching.reach < total
         ? `Select the first ${formatCount(matching.reach)} of ${formatCount(total)}`
         : `Select all ${formatCount(total)} ${filtered ? "matching" : listNoun(lifecycle, total)}`,
     createDeals: "Create deals",
+    checkFit: "Check fit",
     deleteSelected: "Delete selected",
     deleteMatching: `Delete all ${formatCount(total)} matching`,
   };
   function runMenuItem(id: BulkMenuItemId) {
     if (id === "selectAll") void selectAllMatching();
     else if (id === "createDeals") setDealIds(ids);
+    else if (id === "checkFit") setFitOpen(true);
     else if (id === "deleteSelected") setPending({ kind: "selected", ids });
     else setPending({ kind: "filter" });
   }
@@ -298,6 +309,11 @@ export function LeadsTableView(props: {
                         ))}
                     </TableCell>
                   )}
+                  {shows("fit") && (
+                    <TableCell className="max-md:hidden">
+                      {lead.fit && <FitBadge fit={lead.fit} />}
+                    </TableCell>
+                  )}
                   {shows("email") && <TableCell>{lead.email ?? <span className="text-muted-foreground">LinkedIn only</span>}</TableCell>}
                   {shows("title") && <TableCell>{lead.title ?? ""}</TableCell>}
                   {shows("company") && (
@@ -419,6 +435,8 @@ export function LeadsTableView(props: {
         currentUserId={userId}
         onDone={clear}
       />
+
+      {fit && <BulkFitDialog open={fitOpen} onOpenChange={setFitOpen} fit={fit} />}
     </>
   );
 }

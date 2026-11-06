@@ -12,6 +12,8 @@ describe("Mia's tools", () => {
       brain_fill_url: ["fetch_page", "suggest_item", "finish"],
       brain_fill_text: ["suggest_item", "finish"],
       brain_sort: ["suggest_item", "finish"],
+      // Replies and a profile are outside text, and the lead and its ICP inside data, so a fit check gets no tool at all.
+      lead_fit: [],
     });
   });
 

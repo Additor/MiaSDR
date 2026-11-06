@@ -4,6 +4,8 @@
  * bookmarked and an export link reproduces what the screen shows.
  */
 
+import { isFitFilter, type FitFilter } from "./lead-fit";
+
 export interface LeadFilter {
   /** Free-text search over name, email, title, company, LinkedIn and phone. */
   query?: string;
@@ -33,6 +35,8 @@ export interface LeadFilter {
   createdTo?: string;
   /** Group key of the reply type of any of the lead's conversations. */
   replyGroup?: string;
+  /** Mia's latest fit verdict, or `none` for a lead never checked. */
+  fit?: FitFilter;
   /** Explicit selection. Used by the export of ticked rows. */
   ids?: string[];
 }
@@ -131,6 +135,8 @@ export function parseLeadFilter(read: Read): LeadFilter {
   if (to) filter.createdTo = to;
   const replyGroup = read("replyGroup");
   if (replyGroup && REPLY_GROUP.test(replyGroup)) filter.replyGroup = replyGroup;
+  const fit = read("fit");
+  if (isFitFilter(fit)) filter.fit = fit;
   const ids = (read("ids") ?? "")
     .split(",")
     .map((id) => id.trim())
@@ -160,6 +166,7 @@ export function isFilterActive(filter: LeadFilter): boolean {
     filter.createdFrom !== undefined ||
     filter.createdTo !== undefined ||
     filter.replyGroup !== undefined ||
+    filter.fit !== undefined ||
     (filter.ids?.length ?? 0) > 0
   );
 }
@@ -184,6 +191,7 @@ export function leadFilterParams(filter: LeadFilter): URLSearchParams {
   if (filter.createdFrom) params.set("from", filter.createdFrom);
   if (filter.createdTo) params.set("to", filter.createdTo);
   if (filter.replyGroup) params.set("replyGroup", filter.replyGroup);
+  if (filter.fit) params.set("fit", filter.fit);
   if (filter.ids?.length) params.set("ids", filter.ids.join(","));
   return params;
 }

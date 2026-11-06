@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, date, foreignKey, index, integer, jsonb, numeric, pgTable, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { knowledgeDocuments } from "@/contexts/brain/infrastructure/schema";
 import { users } from "@/contexts/identity/infrastructure/schema";
+import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { inList } from "@/platform/db/sql-values";
 import { MIA_CAPABILITIES, MIA_RUN_STATUSES, type MiaCapability, type MiaRunStatus } from "../domain/mia-run";
@@ -21,6 +22,10 @@ export const miaRuns = pgTable(
     input: jsonb("input").$type<Record<string, unknown>>().notNull(),
     /** The conversation with the model so far and the pages read, so a restart repeats no paid call. Emptied when the run ends. */
     checkpoint: jsonb("checkpoint").$type<Record<string, unknown>>(),
+    /** The lead a fit check judges. Deleting the person deletes its checks, so a running one finds its claim gone. */
+    personId: uuid("person_id"),
+    /** The request a fit check came in with, so a list can report the batch and stop it. */
+    batchId: uuid("batch_id"),
     stepCount: integer("step_count").notNull().default(0),
     /** Tokens this run used. */
     usedTokens: integer("used_tokens").notNull().default(0),
@@ -56,6 +61,11 @@ export const miaRuns = pgTable(
     // One site or text at a time per organization, and one run per document to sort.
     uniqueIndex("mia_runs_one_fill_uq").on(t.organizationId).where(sql`${t.capability} in ('brain_fill_url', 'brain_fill_text') and ${t.status} in ('queued', 'running', 'waiting_limit')`),
     uniqueIndex("mia_runs_one_sort_uq").on(t.organizationId, sql`(${t.input}->>'itemId')`).where(sql`${t.capability} = 'brain_sort' and ${t.status} in ('queued', 'running', 'waiting_limit')`),
+    // One fit check at a time per lead.
+    uniqueIndex("mia_runs_one_fit_uq").on(t.organizationId, t.personId).where(sql`${t.capability} = 'lead_fit' and ${t.status} in ('queued', 'running', 'waiting_limit')`),
+    index("mia_runs_org_batch_idx").on(t.organizationId, t.batchId).where(sql`${t.batchId} is not null`),
+    check("mia_runs_fit_person_ck", sql`(${t.capability} = 'lead_fit') = (${t.personId} is not null and ${t.batchId} is not null)`),
+    foreignKey({ name: "mia_runs_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
   ],
 );
 

@@ -85,10 +85,10 @@ test.describe("lead list selection bar", () => {
     expect(box!.y + box!.height).toBeLessThanOrEqual(720);
     expect(box!.y + box!.height).toBeGreaterThan(700);
 
-    // The menu lists the select-all item first, then Create deals, and the destructive items last, after a separator.
+    // The menu lists the select-all item first, then Create deals and Check fit, and the destructive items last, after a separator.
     await page.getByRole("button", { name: "More actions" }).click();
     const items = page.getByRole("menuitem");
-    await expect(items).toHaveText([/^Select all 60 matching$/, "Create deals", "Delete selected", /^Delete all 60 matching$/]);
+    await expect(items).toHaveText([/^Select all 60 matching$/, "Create deals", "Check fit", "Delete selected", /^Delete all 60 matching$/]);
     await expect(page.getByRole("separator")).toHaveCount(1);
 
     // Delete selected asks first, with the count, and Cancel keeps both leads.
