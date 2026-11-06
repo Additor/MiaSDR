@@ -18,7 +18,8 @@ test.describe("Mia fit", () => {
 
     await page.goto(`/leads?q=${tag}`);
     await page.getByRole("checkbox", { name: "Select all leads on this page" }).check();
-    await page.getByRole("button", { name: "Check fit" }).click();
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: "Check fit" }).click();
     const confirm = page.getByRole("dialog");
     await expect(confirm).toContainText("left today");
     await confirm.getByRole("button", { name: "Check 2 leads" }).click();

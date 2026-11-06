@@ -46,6 +46,13 @@ describe("bulkActionModel", () => {
     expect(bulkActionModel({ ...base, lifecycle: "contact" }).menu.map((item) => item.id)).not.toContain("createDeals");
   });
 
+  it("puts Check fit in the menu after Create deals when the page offers it, so the bar keeps its four controls", () => {
+    const model = bulkActionModel({ ...base, canCheckFit: true });
+    expect(model.menu.map((item) => item.id)).toEqual(["selectAll", "createDeals", "checkFit", "deleteSelected"]);
+    expect(model.visible.length).toBeLessThanOrEqual(MAX_VISIBLE_CONTROLS);
+    expect(bulkActionModel(base).menu.map((item) => item.id)).not.toContain("checkFit");
+  });
+
   it("offers Delete all matching only for a list of leads", () => {
     const ids = (lifecycle?: "lead" | "contact" | "all") => bulkActionModel({ ...base, filterActive: true, lifecycle }).menu.map((item) => item.id);
     expect(ids()).toContain("deleteMatching");

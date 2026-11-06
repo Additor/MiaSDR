@@ -35,8 +35,24 @@ function useStartFit() {
  * The confirm names what a check reads and sends, and what it may cost against today's tokens. It refuses more than
  * today covers before anything starts, so a batch never stops halfway for a limit the person was not shown.
  */
-function FitConfirm({ open, onOpenChange, count, room, onConfirm }: { open: boolean; onOpenChange: (open: boolean) => void; count: number; room: FitRoom; onConfirm: () => Promise<void> }) {
+function FitConfirm({
+  open,
+  onOpenChange,
+  count,
+  room,
+  refused = null,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  count: number;
+  room: FitRoom;
+  /** Why no check can start, shown in place of the token line's error. */
+  refused?: string | null;
+  onConfirm: () => Promise<void>;
+}) {
   const over = count > room.people;
+  const reason = refused ?? (over ? (room.people === 0 ? "Today's tokens cover no more checks. Try again after midnight UTC." : `Today's tokens cover ${leads(room.people)}. Pick fewer.`) : null);
   return (
     <ConfirmDialog
       open={open}
@@ -45,37 +61,40 @@ function FitConfirm({ open, onOpenChange, count, room, onConfirm }: { open: bool
       description={`Mia reads each lead's profile, company and latest messages with your ICP and qualification rules, and sends them to your AI provider. A person decides; nothing changes on the lead. Up to ${formatCount(count * room.perLead)} tokens, of ${formatCount(room.tokensLeft)} left today.`}
       confirmLabel={count === 1 ? "Check fit" : `Check ${leads(count)}`}
       pendingLabel="Starting…"
-      confirmDisabled={over}
+      confirmDisabled={reason !== null}
       onConfirm={onConfirm}
     >
-      {over && <FieldError>{room.people === 0 ? "Today's tokens cover no more checks. Try again after midnight UTC." : `Today's tokens cover ${leads(room.people)}. Pick fewer.`}</FieldError>}
+      {reason && <FieldError>{reason}</FieldError>}
     </ConfirmDialog>
   );
 }
 
-/** Bulk action of the lead list: checks the fit of the ticked leads, on any page. */
-export function CheckFit({ unavailable, room }: { unavailable: string | null; room: FitRoom }) {
+/** What the lead list's Check fit needs: why Mia cannot check now, if so, and what today's tokens cover. */
+export interface BulkFit {
+  unavailable: string | null;
+  room: FitRoom;
+}
+
+/**
+ * Check fit from the selection bar's menu: checks the ticked leads, on any page. The menu item always opens this, and
+ * a reason to refuse (Mia off, too many leads, today's tokens) shows here with Check turned off.
+ */
+export function BulkFitDialog({ open, onOpenChange, fit }: { open: boolean; onOpenChange: (open: boolean) => void; fit: BulkFit }) {
   const { selectedIds, clear } = useSelection();
-  const [open, setOpen] = useState(false);
   const start = useStartFit();
-  const tooMany = selectedIds.length > FIT_MAX_PEOPLE;
-  const reason = unavailable ?? (tooMany ? `Check up to ${FIT_MAX_PEOPLE} leads at a time.` : null);
+  const refused = fit.unavailable ?? (selectedIds.length > FIT_MAX_PEOPLE ? `Check up to ${FIT_MAX_PEOPLE} leads at a time.` : null);
   return (
-    <>
-      <Button variant="outline" disabled={reason !== null} title={reason ?? undefined} onClick={() => setOpen(true)}>
-        Check fit
-      </Button>
-      <FitConfirm
-        open={open}
-        onOpenChange={setOpen}
-        count={selectedIds.length}
-        room={room}
-        onConfirm={async () => {
-          await start(selectedIds);
-          clear();
-        }}
-      />
-    </>
+    <FitConfirm
+      open={open}
+      onOpenChange={onOpenChange}
+      count={selectedIds.length}
+      room={fit.room}
+      refused={refused}
+      onConfirm={async () => {
+        await start(selectedIds);
+        clear();
+      }}
+    />
   );
 }
 
