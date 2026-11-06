@@ -8,7 +8,7 @@ import { errorText } from "@/shared/error-text";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
 import { aboutPersonNote, CHAT_SYSTEM } from "../domain/chat-prompts";
-import { CHAT_MAX_STEPS, CHAT_MESSAGE_CHARS, CHAT_SAVE_MS, CHAT_THREADS_PAGE, CHAT_TIMEOUT_MS, CHAT_TITLE_CHARS, CHAT_TURN_TOKENS, CHAT_TURNS_PER_HOUR, shownStatus, type ChatPart, type MiaMessageStatus } from "../domain/mia-chat";
+import { CHAT_MAX_STEPS, CHAT_MESSAGE_CHARS, CHAT_SAVE_MS, CHAT_THREADS_PAGE, CHAT_TIMEOUT_MS, CHAT_TITLE_CHARS, CHAT_TURN_TOKENS, CHAT_TURNS_PER_HOUR, partsText, shownStatus, type ChatPart, type MiaMessageStatus } from "../domain/mia-chat";
 import { estimatedTokens, nextUtcMidnight } from "../domain/mia-settings";
 import type { ClaimedTurn, MessageRow, MiaChatReads, MiaChatStore, ThreadRow, TurnStart } from "./chat-ports";
 import { chatTools } from "./chat-tools";
@@ -139,7 +139,16 @@ const STOP_ERRORS = {
   refusal: "The model declined to answer.",
   other: "The answer was cut off. Try again.",
   limit: "Mia reached its limit for one answer, so this answer may be short.",
+  max_tokens: "This answer reached its length limit and ends early. Retry, or ask for a shorter answer.",
 } as const;
+
+const plus = (a: AiUsage, b: AiUsage): AiUsage => ({
+  inputTokens: a.inputTokens + b.inputTokens,
+  outputTokens: a.outputTokens + b.outputTokens,
+  cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
+  cacheWriteTokens: (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0),
+  ...(a.costUsd !== undefined || b.costUsd !== undefined ? { costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0) } : {}),
+});
 
 async function runTurn(deps: MiaChatDeps, model: AgentModel, turn: ClaimedTurn, listener: TurnListener): Promise<void> {
   const controller = new AbortController();
@@ -166,7 +175,9 @@ async function runTurn(deps: MiaChatDeps, model: AgentModel, turn: ClaimedTurn, 
 
   let status: "complete" | "stopped" | "failed" = "complete";
   let error: string | null = null;
-  let usage: AiUsage = { inputTokens: 0, outputTokens: 0 };
+  // What the provider counted for the steps that finished, and whether a step was cut off before it reported.
+  let finished: AiUsage = { inputTokens: 0, outputTokens: 0 };
+  let cutOff = false;
   try {
     const result = await model.chat({
       task: "mia.chat",
@@ -192,10 +203,11 @@ async function runTurn(deps: MiaChatDeps, model: AgentModel, turn: ClaimedTurn, 
         if (Date.now() - lastSave >= CHAT_SAVE_MS) save();
       },
       onToolCall: () => save(),
+      onStepUsage: (step) => void (finished = plus(finished, step)),
     });
-    usage = result.usage;
+    cutOff = result.stop === "stopped" || result.stop === "other";
     if (result.stop === "stopped") status = "stopped";
-    else if (result.stop === "refusal" || result.stop === "other") {
+    else if (result.stop === "refusal" || result.stop === "other" || result.stop === "max_tokens") {
       status = "failed";
       error = STOP_ERRORS[result.stop];
     } else if (result.stop === "limit" && result.text === "") {
@@ -204,13 +216,15 @@ async function runTurn(deps: MiaChatDeps, model: AgentModel, turn: ClaimedTurn, 
     }
   } catch (caught) {
     status = "failed";
+    cutOff = true;
     error = caught instanceof AiError ? caught.message : "Mia could not answer. Try again.";
-    // A call that failed returns no usage, so a failing provider still uses up the day by the length it was sent.
-    usage = { inputTokens: estimatedTokens(CHAT_SYSTEM + JSON.stringify(turn.history)), outputTokens: 0 };
     if (!(caught instanceof AiError)) console.error(`[mia] ${JSON.stringify({ event: "chat.turn_failed", answer: turn.answerId, error: errorText(caught) })}`);
   } finally {
     live.delete(turn.answerId);
   }
+  // A step cut off by Stop or an error reports no usage, but the provider bills it. Its prompt held at least the system
+  // text and the history, and its answer at most what was written, so the estimate adds both and errs high.
+  const usage = cutOff ? plus(finished, { inputTokens: estimatedTokens(CHAT_SYSTEM + JSON.stringify(turn.history)), outputTokens: estimatedTokens(partsText(parts)) }) : finished;
   try {
     await deps.chats.endTurn(turn, { status, parts, usage, provider: model.provider, model: model.model, error, now: deps.now() });
   } catch (caught) {

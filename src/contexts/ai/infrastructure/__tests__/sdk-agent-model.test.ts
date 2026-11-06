@@ -143,6 +143,7 @@ describe("SdkAgentModel.chat", () => {
     signal: new AbortController().signal,
     onText: () => undefined,
     onToolCall: () => undefined,
+    onStepUsage: () => undefined,
     ...over,
   });
 
@@ -200,6 +201,17 @@ describe("SdkAgentModel.chat", () => {
     const past = await model.chat(chatRequest({ turnTokens: 150 }));
     expect(seen).toEqual([["lookup"]]);
     expect(past).toMatchObject({ text: "", stop: "limit", steps: 1 });
+  });
+
+  it("reports each finished step's usage as it ends, so a later failure keeps the steps before it", async () => {
+    const model = streamed([
+      [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"ana"}' }, finish("tool-calls")],
+      [{ type: "error", error: new APICallError({ message: "overloaded", url: "https://x.test", requestBodyValues: {}, statusCode: 529, isRetryable: false }) }],
+    ]);
+    const steps: number[] = [];
+    await expect(model.chat(chatRequest({ onStepUsage: (u) => void steps.push(u.inputTokens + u.outputTokens) }))).rejects.toMatchObject({ kind: "transient" });
+    // The failed step reports an empty usage, which adds nothing.
+    expect(steps.reduce((a, b) => a + b, 0)).toBe(140);
   });
 
   it("keeps the text written before a Stop", async () => {

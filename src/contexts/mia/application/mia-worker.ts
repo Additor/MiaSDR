@@ -9,7 +9,7 @@ import { errorText } from "@/shared/error-text";
 import { MIA_CONCURRENCY, MIA_LEASE_MS, MIA_MAX_FAILURES, MIA_MAX_STEPS, MIA_MIN_STEP_ROOM_MS, MIA_RUN_TOKENS, MIA_STEP_TIMEOUT_MS, miaRetryDelayMs } from "../domain/mia-run";
 import { backgroundTokenLimit, countedTokens, estimatedTokens, nextUtcMidnight } from "../domain/mia-settings";
 import { FILL_TEXT_SYSTEM, FILL_URL_SYSTEM, LAST_STEP_MESSAGE, NUDGE_MESSAGE, SORT_SYSTEM } from "../domain/prompts";
-import { checkedCriteria, cleanMissing, FIT_SYSTEM, fitPrompt, fitVerdict, matchedIcp } from "../domain/lead-fit";
+import { checkedCriteria, cleanMissing, FIT_SYSTEM, fitPrompt, fittedFitInputs, fitVerdict, matchedIcp } from "../domain/lead-fit";
 import type { ClaimedRun, LeadFitAssessorResolver, MiaBrainPort, MiaLeadPort, MiaRunStore, MiaSettingsStore, PageReader } from "./mia-ports";
 import { runTools, sourcesOf, type RunState } from "./run-tools";
 
@@ -101,17 +101,19 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
     const [input, brain] = await Promise.all([run.personId ? deps.leads.fitInput(run.organizationId, run.personId) : null, deps.brain.fitItems(run.organizationId)]);
     if (!input) return fail("This lead was deleted.", "gone");
     if (!brain.some((item) => item.kind === "icp")) return fail("Brain has no active ICP to check against. Add one, then check again.", "no_icp");
-    const prompt = fitPrompt(brain, input.sources, nonce());
+    // Cut to the room the request reserved. The inputs still name every item read, so Check again compares like with like.
+    const sent = fittedFitInputs(brain, input.sources);
+    const prompt = fitPrompt(sent.brain, sent.sources, nonce());
     let answer;
     try {
       answer = await assessor.assess({ system: FIT_SYSTEM, prompt });
     } catch (error) {
       return failedCall(error, `${FIT_SYSTEM}${prompt}`);
     }
-    const criteria = checkedCriteria(answer.output, input.sources);
+    const criteria = checkedCriteria(answer.output, sent.sources);
     await deps.runs.saveFit(run, {
       verdict: fitVerdict(criteria),
-      icpItemId: matchedIcp(answer.output, brain),
+      icpItemId: matchedIcp(answer.output, sent.brain),
       criteria,
       missing: cleanMissing(answer.output),
       inputs: { profileHash: input.profileHash, latestInboundMessageId: input.latestInboundMessageId, brainRevisions: Object.fromEntries(brain.map((item) => [item.id, item.revision])) },

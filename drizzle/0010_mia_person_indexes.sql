@@ -1,0 +1,2 @@
+CREATE INDEX "mia_runs_person_idx" ON "mia_runs" USING btree ("person_id","organization_id") WHERE "mia_runs"."person_id" is not null;--> statement-breakpoint
+CREATE INDEX "mia_threads_person_idx" ON "mia_threads" USING btree ("person_id","organization_id") WHERE "mia_threads"."person_id" is not null;

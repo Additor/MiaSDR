@@ -49,6 +49,7 @@ async function fakeChat(request: AgentChatRequest): Promise<AgentChatResult> {
   if (search) {
     const result = String(await search.execute({ query }));
     request.onToolCall({ id: "fake-call-1", name: "search_leads", failed: false });
+    request.onStepUsage(SEARCH_STEP);
     people = (JSON.parse(RESULT.exec(result)?.[1] ?? "{}") as { people?: typeof people }).people ?? [];
   }
   const found = people.length === 0 ? "I found no one by that name." : `I found ${people.length}: ${people.map((p) => `[${p.name ?? "Unnamed"}](${p.path})`).join(", ")}.`;
@@ -56,13 +57,18 @@ async function fakeChat(request: AgentChatRequest): Promise<AgentChatResult> {
   const answer = slow ? `${found} ${"Here is more about them. ".repeat(25)}` : found;
   let text = "";
   for (const word of answer.split(/(?<= )/)) {
-    if (request.signal.aborted) return { text, stop: "stopped", usage: { inputTokens: 300, outputTokens: 10 }, steps: 1 };
+    if (request.signal.aborted) return { text, stop: "stopped", usage: search ? SEARCH_STEP : { inputTokens: 0, outputTokens: 0 }, steps: search ? 1 : 0 };
     text += word;
     request.onText(word);
     await pause(slow ? 400 : 15);
   }
+  request.onStepUsage(ANSWER_STEP);
   return { text, stop: "end", usage: { inputTokens: 300, outputTokens: 60, cacheReadTokens: 0, cacheWriteTokens: 0 }, steps: 2 };
 }
+
+/** What the fake's two steps report: the search, then the answer. Together they make the result's 300 in and 60 out. */
+const SEARCH_STEP = { inputTokens: 150, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 };
+const ANSWER_STEP = { inputTokens: 150, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
 export const fakeAgentModel: AgentModel = {
   provider: "fake",
