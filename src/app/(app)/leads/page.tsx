@@ -24,7 +24,7 @@ import { fitRoom, fitUnavailable, latestFitBatch } from "@/contexts/mia/applicat
 import { miaDeps } from "@/contexts/mia/infrastructure/composition";
 import { leadFitBadges } from "@/read-models/lead-fit";
 import { AddToCampaign } from "./_components/add-to-campaign";
-import { CheckFit, FitBatchLine } from "./_components/check-fit";
+import { FitBatchLine } from "./_components/check-fit";
 import { ColumnsMenu, LeadColumnsProvider } from "./_components/columns-menu";
 import { leadsHref } from "./_lib/list-url";
 import { activeFilterChips, panelFilterCount } from "./_lib/active-filters";
@@ -150,13 +150,9 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
             pageSize={pageSize}
             filter={filter}
             sort={sort}
-            bulkActions={
-              <>
-                <AddToCampaign />
-                <CheckFit unavailable={fitBlocked} room={room} />
-              </>
-            }
+            bulkActions={<AddToCampaign />}
             deals={{ stages: deals.stages, members: deals.members }}
+            fit={{ unavailable: fitBlocked, room }}
           />
         </SelectionProvider>
       )}
