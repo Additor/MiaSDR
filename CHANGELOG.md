@@ -139,6 +139,7 @@ Nothing used these, and the database baseline drops them, so start from an empty
 
 ### Fixed
 
+- With `GRID_PROVIDER=fake`, Find work emails now lists the fake provider as ready, and a work email waterfall can include it. Before, the fake offered its own Find email action, so the first outcome said "No provider connected yet". The fake finder also matches on a company name when a row has no domain. A column saved on the old Find email action no longer runs; add it again from Find work emails.
 - A send whose claim was lost between its checks and the provider call no longer goes out. Before, a worker that stalled for more than 10 minutes could send after a reconcile had taken the send, and a retry could send it again. This covers email, test emails and LinkedIn.
 - A reply stuck in `sending` now turns `delivery_uncertain` after 30 minutes even while Gmail or LinkedIn cannot be checked or its mailbox was removed, so a person can decide. Before, it blocked the next send in that conversation until the provider came back.
 - More than 25 unanswered uncertain replies no longer hide the newest from the provider check. Each pass reads the ones checked longest ago.

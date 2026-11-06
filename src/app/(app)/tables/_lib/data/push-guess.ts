@@ -29,7 +29,7 @@ export function guessField(field: CampaignField, columns: GridColumn[], taken: R
   return null;
 }
 
-const FINDS_EMAIL = new Set(["find-work-email", "enrich-person", "find-email"]);
+const FINDS_EMAIL = new Set(["find-work-email", "enrich-person"]);
 
 /**
  * The address a push should send to, when the table enriched one: the column a verification checked, else a work

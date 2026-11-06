@@ -138,13 +138,13 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       const f = fake();
       const d = deps(f);
       await m.providers.createProvider(d.providerDeps, actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" }, defaultCostCents: 30 });
-      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
       const changes = new Map(rows.map((id) => [id, ["name"]]));
       const report = await m.run.cascadeFromEdits(d.runDeps, actor.organizationId, table, changes);
       expect(report.queued).toBe(16);
       expect(report.skippedByCap).toBe(84);
       const meta = (await rowOf(rows[99])).cell_meta;
-      expect(meta.findEmail.status).toBe("skipped: cap");
+      expect(meta.findWorkEmail.status).toBe("skipped: cap");
     });
 
     it("applies the same caps to the cascade after a finished cell", async () => {
@@ -152,14 +152,14 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       const f = fake();
       const d = deps(f);
       await m.providers.createProvider(d.providerDeps, actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
-      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
       await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position, auto_run)
-        values (${org}, ${table}, 'opener', 'opener', 'ai', ${sql.json({ prompt: "Hi {{email}}", outputs: [{ key: "line", type: "text" }], outputColumns: {} } as never)}, ${["email"]}, 50, true)`;
+        values (${org}, ${table}, 'opener', 'opener', 'ai', ${sql.json({ prompt: "Hi {{workEmail}}", outputs: [{ key: "line", type: "text" }], outputColumns: {} } as never)}, ${["workEmail"]}, 50, true)`;
       const worker = m.wstore.drizzleGridWorkerStore;
-      await m.rstore.drizzleGridRunStore.enqueue(org, table, [{ rowId: rows[0], columnKey: "findEmail" }], { priority: 0, now: new Date() });
+      await m.rstore.drizzleGridRunStore.enqueue(org, table, [{ rowId: rows[0], columnKey: "findWorkEmail" }], { priority: 0, now: new Date() });
       const [job] = await worker.claim(new Date(), 60_000, 5, "w1");
       // The dependent costs more than the cascade cap, so it waits for a person.
-      const ok = await worker.succeed(job, { cells: { email: "a@acme.com" }, meta: { findEmail: { status: "success" } } }, [], { centsByColumn: { opener: 600 } });
+      const ok = await worker.succeed(job, { cells: { workEmail: "a@acme.com" }, meta: { findWorkEmail: { status: "success" } } }, [], { centsByColumn: { opener: 600 } });
       expect(ok).toBe(true);
       expect(await jobsOf(table)).toEqual({ succeeded: 1 });
       expect((await rowOf(rows[0])).cell_meta.opener).toMatchObject({ status: "skipped: cap" });
@@ -199,7 +199,7 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       const f = fake();
       const d = deps(f);
       await m.providers.createProvider(d.providerDeps, actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
-      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+      await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
       return { org, actor, table, rows, f, d };
     }
 
@@ -218,8 +218,8 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       expect(f.calls).toHaveLength(1);
       expect(await jobsOf(table)).toEqual({ succeeded: 1 });
       const row = await rowOf(rows[0]);
-      expect(row.cells.findEmail).toBe("ada@acme.com�");
-      expect(row.cells.email).toBe("ada@acme.com");
+      expect(row.cells.findWorkEmail).toBe("ada@acme.com�");
+      expect(row.cells.workEmail).toBe("ada@acme.com");
       const [run] = await sql`select outcome, cost_cents::float as cost, response from grid_cell_runs where row_id = ${rows[0]}`;
       expect(run).toMatchObject({ outcome: "hit", cost: 7 });
       expect(run.response).toEqual({ key: "v", nested: [{ x: "y�" }] });
@@ -263,8 +263,8 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       expect(job).toMatchObject({ status: "failed", attempts: 1 });
       expect(job.error).toMatch(/could not be saved/);
       const row = await rowOf(rows[0]);
-      expect(row.cell_meta.findEmail).toMatchObject({ status: "error" });
-      expect(row.cell_meta.findEmail.error).toMatch(/paid/);
+      expect(row.cell_meta.findWorkEmail).toMatchObject({ status: "error" });
+      expect(row.cell_meta.findWorkEmail.error).toMatch(/paid/);
       const runs = await sql`select outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]}`;
       expect(runs).toEqual([{ outcome: "hit", cost: 9 }]);
 

@@ -348,8 +348,14 @@ describe("fake adapter", () => {
   const fakeCall = (action: string, inputs: Record<string, unknown>): ProviderCall => ({ action, inputs, credentials: {}, provider: provider({ key: "fake", config: { adapter: "fake" } }), timeoutMs: 1000 });
   const fake = new FakeEnrichmentProvider();
 
-  it("offers every shared contract next to its own finder", () => {
-    expect(fake.actions().map((a) => a.key)).toEqual(["find-email", "verify-email", "enrich-person", "enrich-company"]);
+  it("offers every shared contract", () => {
+    expect(fake.actions().map((a) => a.key)).toEqual(["find-work-email", "verify-email", "enrich-person", "enrich-company"]);
+  });
+
+  it("finds a work email by domain, or by company name when the row has no domain", async () => {
+    expect(await fake.execute(fakeCall("find-work-email", { fullName: "Ada Lovelace", companyDomain: "acme.com" }))).toMatchObject({ outcome: "hit", primary: "ada.lovelace@acme.com", outputs: { confidence: 90, verificationStatus: "valid" } });
+    expect(await fake.execute(fakeCall("find-work-email", { fullName: "Ada Lovelace", companyName: "Acme Corp" }))).toMatchObject({ outcome: "hit", primary: "ada.lovelace@acmecorp.com" });
+    expect(await fake.execute(fakeCall("find-work-email", { fullName: "Nohit Person", companyDomain: "acme.com" }))).toMatchObject({ outcome: "miss", primary: null });
   });
 
   it.each([

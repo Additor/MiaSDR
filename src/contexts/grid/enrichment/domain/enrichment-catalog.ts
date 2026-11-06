@@ -138,21 +138,8 @@ export const PEOPLEDATALABS_ACTIONS: ActionSpec[] = [
 
 /** Deterministic provider for tests and demos. Never calls a network. */
 export const FAKE_ACTIONS: ActionSpec[] = [
-  {
-    key: "find-email",
-    name: "Find email",
-    inputs: [
-      { key: "fullName", name: "Full name", type: "text", required: true },
-      { key: "companyDomain", name: "Company domain", type: "domain", required: true },
-    ],
-    outputs: [
-      { key: "email", name: "Email", type: "email" },
-      { key: "confidence", name: "Confidence", type: "number" },
-    ],
-    primaryOutput: "email",
-    defaultCostCents: 1,
-  },
-  // The shared contracts too, so a waterfall, its presets and every result can be tried without a vendor key.
+  // Every shared contract, so each outcome, a waterfall on it and every result can be tried without a vendor key.
+  contractAction("find-work-email", { defaultCostCents: 1 }),
   contractAction("verify-email", { defaultCostCents: 1 }),
   contractAction("enrich-person", { defaultCostCents: 1 }),
   contractAction("enrich-company", { defaultCostCents: 1 }),

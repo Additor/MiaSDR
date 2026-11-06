@@ -148,7 +148,7 @@ test.describe("Filter and Sort popovers", () => {
 
 const PEOPLE = [["Full name", "Domain"], ...Array.from({ length: 12 }, (_, i) => [`Pat${i + 1} Lee`, `d${i + 1}.test`])];
 
-/** A 12-row table with a fake-provider find-email column. Returns the page ready to use. */
+/** A 12-row table with a fake-provider find-work-email column. Returns the page ready to use. */
 async function runnableTable(page: Page, name: string) {
   const { workbookId, tableId } = await newWorkbook(page.request, name);
   await importCsv(page.request, tableId, PEOPLE);
@@ -158,14 +158,14 @@ async function runnableTable(page: Page, name: string) {
   const { columns } = await gridPage(page.request, tableId);
   const keyOf = (n: string) => columns.find((c) => c.name === n)!.key;
   const added = await page.request.post(`/api/grid/tables/${tableId}/enrichments`, {
-    data: { kind: "enrichment", providerKey, actionKey: "find-email", inputs: { fullName: keyOf("Full name"), companyDomain: keyOf("Domain") }, selectedOutputs: ["email"], afterColumnId: columns[columns.length - 1].id },
+    data: { kind: "enrichment", providerKey, actionKey: "find-work-email", inputs: { fullName: keyOf("Full name"), companyDomain: keyOf("Domain") }, selectedOutputs: ["email"], afterColumnId: columns[columns.length - 1].id },
   });
   expect(added.status(), "add enrichment column").toBe(201);
   // Auto-run would queue every row on its own; the scenarios press Run themselves.
   const off = await page.request.patch(`/api/grid/tables/${tableId}`, { data: { autoRun: false } });
   expect(off.status(), "turn auto-run off").toBe(200);
   const after = (await gridPage(page.request, tableId)).columns;
-  const emailKey = after.find((c: GridColumnJson) => c.name === "Email")!.key;
+  const emailKey = after.find((c: GridColumnJson) => c.name === "Work email")!.key;
   const source = after.find((c: GridColumnJson) => c.type === "enrichment")!;
   const filled = async () => {
     const rows = (await gridPage(page.request, tableId)).rows;

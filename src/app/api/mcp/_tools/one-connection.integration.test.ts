@@ -91,11 +91,11 @@ describeDb("MCP calls on a one-connection pool", () => {
     const [{ id: tableId }] = await sql<{ id: string }[]>`insert into grid_tables (organization_id, workbook_id, name, position) values (${org.organizationId}, ${workbook}, 't', 1) returning id`;
     for (const [i, key] of ["name", "domain"].entries()) await sql`insert into grid_columns (organization_id, table_id, key, name, type, position) values (${org.organizationId}, ${tableId}, ${key}, ${key}, 'text', ${i + 1})`;
     await sql`insert into grid_rows (organization_id, table_id, position, cells) values (${org.organizationId}, ${tableId}, 1, ${sql.json({ name: "Ada", domain: "acme.com" })})`;
-    await createEnrichmentColumns(gridColumnDeps(), owner, tableId, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    await createEnrichmentColumns(gridColumnDeps(), owner, tableId, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
     for (const [name, args] of [["list_tables", {}], ["get_table", { tableId }]] as const) expect((await spender.tool(name, args)).isError).toBe(false);
-    const dry = await spender.tool("run_enrichment", { tableId, columnKey: "findEmail", firstN: 1, dryRun: true });
+    const dry = await spender.tool("run_enrichment", { tableId, columnKey: "findWorkEmail", firstN: 1, dryRun: true });
     expect(dry.structured.refusals, dry.text).toEqual([]);
-    const ran = await spender.tool("run_enrichment", { tableId, columnKey: "findEmail", firstN: 1, actionToken: dry.structured.actionToken });
+    const ran = await spender.tool("run_enrichment", { tableId, columnKey: "findWorkEmail", firstN: 1, actionToken: dry.structured.actionToken });
     expect(ran.isError, ran.text).toBe(false);
     expect((await spender.tool("stop_enrichment", { tableId })).isError).toBe(false);
   });

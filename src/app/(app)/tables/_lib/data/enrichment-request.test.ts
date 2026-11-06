@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CREDIT_CAP_ERROR, creditCapInvalid, editFormOf, SPEND_CAP_ERROR, spendCapInvalid, toCreateBody, toEditPatch, type EnrichmentEditValues } from "./enrichment-request";
 
-const find = { providerKey: "hunter", actionKey: "find-email" };
+const find = { providerKey: "hunter", actionKey: "find-work-email" };
 const verify = (providerKey: string) => ({ providerKey, actionKey: "verify-email" });
 const base = { inputs: { domain: "site", name: "" }, selectedOutputs: ["email"], afterColumnId: "c1", autoRun: false, delay: "2", reuseDays: "30" };
 

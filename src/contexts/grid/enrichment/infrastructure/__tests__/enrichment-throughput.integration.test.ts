@@ -68,7 +68,7 @@ describeDb("grid run throughput", () => {
     const d = deps(f, kick);
     const f1 = await fixture(rowCount);
     await m.providers.createProvider(d.providerDeps, f1.actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" }, defaultCostCents: cents });
-    await m.columns.createEnrichmentColumns(d.columnDeps, f1.actor, f1.table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    await m.columns.createEnrichmentColumns(d.columnDeps, f1.actor, f1.table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
     return { f, d, ...f1 };
   }
 
@@ -222,7 +222,7 @@ describeDb("grid run throughput", () => {
     // The kick runs inside requestRun, so a request that queued nothing has made no kick by the time it resolves.
     await m.run.cancelRun(d.runDeps, actor, table);
     kicks.length = 0;
-    await expect(m.run.requestRun(d.runDeps, actor, table, { columnKey: "findEmail", rowIds: [] })).resolves.toMatchObject({ queued: 0 });
+    await expect(m.run.requestRun(d.runDeps, actor, table, { columnKey: "findWorkEmail", rowIds: [] })).resolves.toMatchObject({ queued: 0 });
     expect(kicks).toEqual([]);
   });
 

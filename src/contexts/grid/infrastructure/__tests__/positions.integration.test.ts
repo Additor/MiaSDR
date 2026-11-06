@@ -148,7 +148,7 @@ describeDb("positions stay distinct and ordered", () => {
       { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters },
       actor,
       t.id,
-      { providerKey: "fake", actionKey: "find-email", inputs: { fullName: anchor.key, companyDomain: "domain" }, selectedOutputs: ["email"], afterColumnId: anchor.id },
+      { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: anchor.key, companyDomain: "domain" }, selectedOutputs: ["email"], afterColumnId: anchor.id },
     );
     const order = await columnOrder(t.id);
     expect(distinct(order)).toBe(true);

@@ -304,10 +304,10 @@ describeDb("AI columns: output types, editing and placement", () => {
       const d = deps();
       await m.providers.createProvider(d.providerDeps, f.actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
       await m.providers.createProvider(d.providerDeps, f.actor, { adapter: "fake", key: "fake2", name: "fake2", credentials: { apiKey: "sk-test-secret-0123456789" } });
-      const [main] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-email" }], selectedOutputs: ["email"] });
-      const updated = await m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, main.id, { steps: [{ providerKey: "fake", actionKey: "find-email" }, { providerKey: "fake2", actionKey: "find-email" }] });
+      const [main] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-work-email" }], selectedOutputs: ["email"] });
+      const updated = await m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, main.id, { steps: [{ providerKey: "fake", actionKey: "find-work-email" }, { providerKey: "fake2", actionKey: "find-work-email" }] });
       expect((updated.config as { steps: unknown[] }).steps).toHaveLength(2);
-      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, main.id, { steps: [{ providerKey: "nope", actionKey: "find-email" }] })).rejects.toThrow(/not connected/);
+      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, main.id, { steps: [{ providerKey: "nope", actionKey: "find-work-email" }] })).rejects.toThrow(/not connected/);
       await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, main.id, { steps: [] })).rejects.toThrow();
       const [stored] = await sql`select config from grid_columns where id = ${main.id}`;
       expect((stored.config as { steps: unknown[] }).steps).toHaveLength(2);
@@ -330,8 +330,8 @@ describeDb("AI columns: output types, editing and placement", () => {
       await m.providers.createProvider(d.providerDeps, f.actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
       const [ai] = await m.columns.createAiColumns(d.columnDeps, f.actor, f.table, { name: "P", prompt: "x {{name}}", outputs: [{ key: "a", type: "text" }] });
       await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, ai.id, { inputs: { fullName: "name" } })).rejects.toThrow(/no inputs to edit/);
-      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, ai.id, { steps: [{ providerKey: "fake", actionKey: "find-email" }] })).rejects.toThrow(/Only waterfall/);
-      const [wf] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-email" }], selectedOutputs: ["email"] });
+      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, ai.id, { steps: [{ providerKey: "fake", actionKey: "find-work-email" }] })).rejects.toThrow(/Only waterfall/);
+      const [wf] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-work-email" }], selectedOutputs: ["email"] });
       await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, wf.id, { prompt: "hi" })).rejects.toThrow(/Only AI columns have a prompt/);
     });
 
@@ -339,10 +339,10 @@ describeDb("AI columns: output types, editing and placement", () => {
       const f = await fixture();
       const d = deps();
       await m.providers.createProvider(d.providerDeps, f.actor, { adapter: "fake", key: "fake", name: "fake", credentials: { apiKey: "sk-test-secret-0123456789" } });
-      const [wf] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-email" }], selectedOutputs: ["email"] });
-      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, wf.id, { inputs: { fullName: "name" } })).rejects.toThrow(/Map the .* input/);
-      const [en] = await m.columns.createEnrichmentColumns(d.columnDeps, f.actor, f.table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "company" }, selectedOutputs: ["email"] });
-      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, en.id, { inputs: {} })).rejects.toThrow(/Map the .* input/);
+      const [wf] = await m.columns.createWaterfallColumns(d.columnDeps, f.actor, f.table, { inputs: { fullName: "name", companyDomain: "company" }, steps: [{ providerKey: "fake", actionKey: "find-work-email" }], selectedOutputs: ["email"] });
+      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, wf.id, { inputs: { fullName: "name" } })).rejects.toThrow(/^Map .* to (a column|columns)\./);
+      const [en] = await m.columns.createEnrichmentColumns(d.columnDeps, f.actor, f.table, { providerKey: "fake", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "company" }, selectedOutputs: ["email"] });
+      await expect(m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, en.id, { inputs: {} })).rejects.toThrow(/^Map .* to (a column|columns)\./);
       const ok = await m.columns.updateRunnableColumn(d.columnDeps, f.actor, f.table, en.id, { inputs: { fullName: "company", companyDomain: "name" } });
       expect((ok.config as { inputs: Record<string, string> }).inputs).toEqual({ fullName: "company", companyDomain: "name" });
     });
