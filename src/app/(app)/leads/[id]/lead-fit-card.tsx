@@ -17,10 +17,16 @@ const RESULT = { met: "met", not_met: "not met", unknown: "not known" } as const
  */
 export async function LeadFitCard({ actor, personId }: { actor: Actor; personId: string }) {
   const deps = miaDeps();
-  const [{ fit, checking }, unavailable, room] = await Promise.all([readLeadFit(actor.organizationId, personId), fitUnavailable(deps, actor), fitRoom(deps, actor)]);
+  const [{ fit, checking, waiting }, unavailable, room] = await Promise.all([readLeadFit(actor.organizationId, personId), fitUnavailable(deps, actor), fitRoom(deps, actor)]);
   return (
     <AsideSection title="Fit" testId="lead-fit" action={checking ? undefined : <CheckLeadFit personId={personId} unavailable={unavailable} room={room} checked={fit !== null} />}>
-      {checking && (
+      {/* A check that waits for tomorrow's tokens can wait for hours, so the page does not keep reloading for it. */}
+      {checking && waiting && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Mia checks this lead after midnight UTC, when today&apos;s tokens renew.
+        </p>
+      )}
+      {checking && !waiting && (
         <p className="text-sm text-muted-foreground" role="status">
           Mia is checking this lead.
           <FitRefresh />

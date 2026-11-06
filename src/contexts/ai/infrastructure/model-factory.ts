@@ -3,9 +3,15 @@ import type { LanguageModel } from "../application/ports";
 import { AnthropicMessagesModel } from "./anthropic-messages-model";
 import { OpenAiChatModel } from "./openai-chat-model";
 
+/** One call's time limit and retries, for a job whose lease is shorter than the defaults' worst case (`call-budget.ts`). */
+export interface CallLimits {
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
 /** The client for one connection: the protocol picks the adapter, the spec supplies the base URL. */
-export function buildLanguageModel(spec: AiConnectionSpec, credentials: { apiKey: string; model: string }): LanguageModel {
-  const common = { apiKey: credentials.apiKey, model: credentials.model, provider: spec.key, label: spec.label };
+export function buildLanguageModel(spec: AiConnectionSpec, credentials: { apiKey: string; model: string }, limits: CallLimits = {}): LanguageModel {
+  const common = { apiKey: credentials.apiKey, model: credentials.model, provider: spec.key, label: spec.label, ...limits };
   if (spec.protocol === "anthropic-messages") return new AnthropicMessagesModel({ ...common, baseURL: spec.baseUrl });
   return new OpenAiChatModel({ ...common, baseUrl: spec.baseUrl });
 }

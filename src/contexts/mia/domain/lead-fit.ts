@@ -28,7 +28,13 @@ export interface FitSources {
 
 const CRITERION = 200;
 const EVIDENCE = 500;
+const MAX_CRITERIA = 20;
+const MAX_MISSING = 10;
 
+/**
+ * The answer's shape. The counts are not part of it: the JSON schema only asks for them, so a model that lists 21
+ * criteria would fail every paid try. `checkedCriteria` and `cleanMissing` keep the first ones instead.
+ */
 export const fitOutputSchema = z.object({
   icpItemId: z.string().nullable(),
   criteria: z
@@ -40,9 +46,8 @@ export const fitOutputSchema = z.object({
         source: z.enum(FIT_SOURCES).nullable(),
         evidence: z.string().nullable(),
       }),
-    )
-    .max(20),
-  missing: z.array(z.string()).max(10),
+    ),
+  missing: z.array(z.string()),
 });
 
 export type FitOutput = z.infer<typeof fitOutputSchema>;
@@ -107,7 +112,7 @@ function sourceText(sources: FitSources, source: FitSource): string {
 
 /** Keeps a result only when its passage is in the source it names. A passage from a reply marked as the profile falls to unknown. */
 export function checkedCriteria(output: FitOutput, sources: FitSources): FitCriterion[] {
-  return output.criteria.map((raw) => {
+  return output.criteria.slice(0, MAX_CRITERIA).map((raw) => {
     const criterion = raw.criterion.trim().slice(0, CRITERION);
     const evidence = raw.evidence?.trim().slice(0, EVIDENCE) || null;
     if (raw.result === "unknown") return { criterion, type: raw.type, result: "unknown", source: null, evidence: null };
@@ -139,4 +144,4 @@ export const cleanMissing = (output: FitOutput): string[] =>
   output.missing
     .map((m) => m.trim().slice(0, CRITERION))
     .filter((m) => m !== "")
-    .slice(0, 10);
+    .slice(0, MAX_MISSING);

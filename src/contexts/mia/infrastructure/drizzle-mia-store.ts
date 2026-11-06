@@ -11,7 +11,7 @@ import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-settings";
 import { ConflictError } from "@/shared/errors";
 import type { AiUsage } from "@/contexts/ai/domain/generation";
-import { MIA_ACTIVE_STATUSES } from "../domain/mia-run";
+import { MIA_ACTIVE_STATUSES, runBudget } from "../domain/mia-run";
 import { countedTokens, MIA_SETTINGS_CHANNEL, readMiaSettings, utcDay } from "../domain/mia-settings";
 import type { ClaimedRun, FitBatchRow, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunFailure, RunRow, SuggestionRecord } from "../application/mia-ports";
 
@@ -216,6 +216,14 @@ export const drizzleMiaRunStore: MiaRunStore = {
     return row ? row.input + row.write + row.output : 0;
   },
 
+  async reservedTokens(organizationId) {
+    const rows = await db
+      .select({ capability: miaRuns.capability, usedTokens: miaRuns.usedTokens })
+      .from(miaRuns)
+      .where(and(eq(miaRuns.organizationId, organizationId), inArray(miaRuns.status, ACTIVE)));
+    return rows.reduce((sum, run) => sum + Math.max(0, runBudget(run.capability) - run.usedTokens), 0);
+  },
+
   async requestCancel(organizationId, runId, actorUserId, now) {
     return db.transaction(async (tx) => {
       const [run] = await tx
@@ -277,6 +285,8 @@ export const drizzleMiaRunStore: MiaRunStore = {
         .set({ ...ENDED, status: "succeeded", finishedAt: fit.now, stepCount: sql`${miaRuns.stepCount} + 1`, usedTokens: sql`${miaRuns.usedTokens} + ${countedTokens(fit.usage)}`, provider: fit.provider, model: fit.model, failures: 0, error: null, failureKind: null })
         .where(held(run))
         .returning({ id: miaRuns.id });
+      // The call was paid whether or not this worker still holds the run.
+      await addUsage(tx, run.organizationId, fit.now, fit.usage);
       if (!row) return false;
       await saveLeadFitTx(tx, {
         organizationId: run.organizationId,
@@ -292,7 +302,6 @@ export const drizzleMiaRunStore: MiaRunStore = {
         assessedBy: run.requestedBy,
         assessedAt: fit.now,
       });
-      await addUsage(tx, run.organizationId, fit.now, fit.usage);
       return true;
     });
   },
@@ -341,6 +350,8 @@ export const drizzleMiaRunStore: MiaRunStore = {
   async cancelFitBatch(organizationId, batchId, actorUserId, now) {
     return db.transaction(async (tx) => {
       const scope = and(eq(miaRuns.organizationId, organizationId), eq(miaRuns.batchId, batchId), eq(miaRuns.capability, "lead_fit"));
+      // The lock comes first, so a claim (which skips locked rows) cannot move a queued check to running between the two updates.
+      await tx.select({ id: miaRuns.id }).from(miaRuns).where(and(scope, inArray(miaRuns.status, ACTIVE))).for("update");
       // A running check is mid-call. It keeps what that paid call finds, and the mark stops one that waits for a retry.
       const running = await tx.update(miaRuns).set({ cancelRequestedAt: now }).where(and(scope, eq(miaRuns.status, "running"))).returning({ id: miaRuns.id });
       const waiting = await tx

@@ -29,7 +29,9 @@ export async function saveLeadFitTx(tx: DbTx, record: LeadFitRecord): Promise<bo
       (select k.id from knowledge_documents k where k.id = ${record.icpItemId}::uuid and k.organization_id = p.organization_id),
       ${JSON.stringify(record.criteria)}::jsonb, ${JSON.stringify(record.missing)}::jsonb,
       ${JSON.stringify(record.inputs.brainRevisions)}::jsonb, ${record.inputs.profileHash}, ${record.inputs.latestInboundMessageId}::uuid, ${record.runId}::uuid,
-      ${record.provider}, ${record.model}, ${record.assessedBy}::uuid, ${record.assessedAt.toISOString()}::timestamptz
+      ${record.provider}, ${record.model},
+      -- A person who started the check and left since is no key to keep either; a missing one would fail the write and repeat the paid call.
+      (select u.id from users u where u.id = ${record.assessedBy}::uuid), ${record.assessedAt.toISOString()}::timestamptz
     from people p
     where p.id = ${record.personId}::uuid and p.organization_id = ${record.organizationId}::uuid
     on conflict (person_id) do update set

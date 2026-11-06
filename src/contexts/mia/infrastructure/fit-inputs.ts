@@ -1,14 +1,18 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { companies, people } from "@/platform/db/schema";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { AUTOMATED_SENDER_PATTERN, AUTOMATED_SUBJECT_PATTERN } from "@/contexts/conversations/domain/inbox-filter";
 import { fitCompanyText, fitProfileText, type LeadFitProfile } from "@/contexts/people/domain/lead-fit";
 import { fitProfileHash } from "@/contexts/people/domain/lead-fit-hash";
 import { FIT_MESSAGE_CHARS, FIT_MESSAGES } from "../domain/mia-run";
 import type { MiaLeadPort } from "../application/mia-ports";
 
-/** Machine mail by sender or subject, as the inbox reads it. */
-const MACHINE = sql`(coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text)`;
+/**
+ * A reply the lead wrote: inbound with no auto-reply flag (`genuineInboundSql`, which also catches an out-of-office from
+ * their own address), and no machine mail by sender or subject, as the inbox reads it.
+ */
+const THEIR_REPLY = sql`(${genuineInboundSql("m")} and not (coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text))`;
 
 interface MessageRow {
   id: string;
@@ -17,7 +21,7 @@ interface MessageRow {
 }
 
 /**
- * The latest messages of one person, with machine mail (no-reply senders, bounces) left out. `src/read-models/lead-fit.ts`
+ * The latest messages of one person, with machine mail (auto-replies, no-reply senders, bounces) left out. `src/read-models/lead-fit.ts`
  * reads the newest inbound one with the same rule, so a bounce does not ask for a new check.
  */
 async function latestMessages(organizationId: string, personId: string): Promise<MessageRow[]> {
@@ -27,7 +31,7 @@ async function latestMessages(organizationId: string, personId: string): Promise
     join threads t on t.id = m.thread_id and t.organization_id = m.organization_id
     join conversations c on c.id = t.conversation_id and c.organization_id = t.organization_id
     where c.organization_id = ${organizationId}::uuid and c.person_id = ${personId}::uuid
-      and not (m.direction = 'inbound' and ${MACHINE})
+      and (m.direction = 'outbound' or ${THEIR_REPLY})
     order by m.sent_at desc, m.id desc
     limit ${FIT_MESSAGES}
   `)) as unknown as MessageRow[];
@@ -40,7 +44,7 @@ async function newestInbound(organizationId: string, personId: string): Promise<
     join threads t on t.id = m.thread_id and t.organization_id = m.organization_id
     join conversations c on c.id = t.conversation_id and c.organization_id = t.organization_id
     where c.organization_id = ${organizationId}::uuid and c.person_id = ${personId}::uuid
-      and m.direction = 'inbound' and not ${MACHINE}
+      and ${THEIR_REPLY}
     order by m.sent_at desc, m.id desc
     limit 1
   `)) as unknown as Array<{ id: string }>;

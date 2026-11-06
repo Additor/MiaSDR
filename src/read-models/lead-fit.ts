@@ -1,10 +1,11 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { knowledgeDocuments, miaRuns } from "@/platform/db/schema";
 import { AUTOMATED_SENDER_PATTERN, AUTOMATED_SUBJECT_PATTERN } from "@/contexts/conversations/domain/inbox-filter";
 import { fitChanged, type FitCriterion, type FitVerdict } from "@/contexts/people/domain/lead-fit";
 import { fitProfileHash } from "@/contexts/people/domain/lead-fit-hash";
-import { MIA_ACTIVE_STATUSES } from "@/contexts/mia/domain/mia-run";
+import { FIT_MAX_BRAIN_ITEMS, MIA_ACTIVE_STATUSES } from "@/contexts/mia/domain/mia-run";
 
 /**
  * A lead's fit as the Leads list and the lead page show it, with whether what the judgment read has changed since:
@@ -56,7 +57,7 @@ async function storedFits(organizationId: string, personIds: readonly string[]):
       (select m.id from messages m
         join threads t on t.id = m.thread_id and t.organization_id = m.organization_id
         join conversations cv on cv.id = t.conversation_id and cv.organization_id = t.organization_id
-        where cv.organization_id = a.organization_id and cv.person_id = a.person_id and m.direction = 'inbound'
+        where cv.organization_id = a.organization_id and cv.person_id = a.person_id and ${genuineInboundSql("m")}
           and not (coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text)
         order by m.sent_at desc, m.id desc limit 1) as newest_inbound
     from lead_fit_assessments a
@@ -67,12 +68,14 @@ async function storedFits(organizationId: string, personIds: readonly string[]):
   `)) as unknown as StoredRow[];
 }
 
-/** The ICP and qualification items a check would read now, by id, with their revision. */
+/** The ICP and qualification items a check would read now, by id, with their revision: the same first ones by title. */
 async function currentBrain(organizationId: string): Promise<Record<string, number>> {
   const rows = await db
     .select({ id: knowledgeDocuments.id, revision: knowledgeDocuments.revision })
     .from(knowledgeDocuments)
-    .where(and(eq(knowledgeDocuments.organizationId, organizationId), eq(knowledgeDocuments.active, true), inArray(knowledgeDocuments.kind, ["icp", "qualification"])));
+    .where(and(eq(knowledgeDocuments.organizationId, organizationId), eq(knowledgeDocuments.active, true), inArray(knowledgeDocuments.kind, ["icp", "qualification"])))
+    .orderBy(asc(knowledgeDocuments.title), asc(knowledgeDocuments.id))
+    .limit(FIT_MAX_BRAIN_ITEMS);
   return Object.fromEntries(rows.map((r) => [r.id, r.revision]));
 }
 
@@ -96,16 +99,16 @@ export async function leadFitBadges(organizationId: string, personIds: readonly 
   );
 }
 
-/** One lead's judgment, and whether a check is going for it now. */
-export async function readLeadFit(organizationId: string, personId: string): Promise<{ fit: LeadFitView | null; checking: boolean }> {
+/** One lead's judgment, whether a check is going for it now, and whether that check waits for tomorrow's tokens. */
+export async function readLeadFit(organizationId: string, personId: string): Promise<{ fit: LeadFitView | null; checking: boolean; waiting: boolean }> {
   const [rows, brain, going] = await Promise.all([
     storedFits(organizationId, [personId]),
     currentBrain(organizationId),
     db
-      .select({ id: miaRuns.id })
+      .select({ status: miaRuns.status })
       .from(miaRuns)
       .where(and(eq(miaRuns.organizationId, organizationId), eq(miaRuns.personId, personId), eq(miaRuns.capability, "lead_fit"), inArray(miaRuns.status, [...MIA_ACTIVE_STATUSES])))
       .limit(1),
   ]);
-  return { fit: rows[0] ? view(rows[0], brain) : null, checking: going.length > 0 };
+  return { fit: rows[0] ? view(rows[0], brain) : null, checking: going.length > 0, waiting: going[0]?.status === "waiting_limit" };
 }

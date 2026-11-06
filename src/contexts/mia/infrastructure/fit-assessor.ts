@@ -1,7 +1,8 @@
 import type { LanguageModel, LanguageModelResolver } from "@/contexts/ai/application/ports";
 import { generateStructured } from "@/contexts/ai/application/structured";
-import { aiFakeMode, languageModels } from "@/contexts/ai/infrastructure/composition";
+import { aiFakeMode, languageModelsWithin } from "@/contexts/ai/infrastructure/composition";
 import { fitJsonSchema, fitOutputSchema, type FitOutput } from "../domain/lead-fit";
+import { FIT_STEP_TIMEOUT_MS } from "../domain/mia-run";
 import type { LeadFitAssessor, LeadFitAssessorResolver } from "../application/mia-ports";
 
 export function createFitAssessor(model: LanguageModel): LeadFitAssessor {
@@ -46,7 +47,13 @@ export const fakeFitAssessor: LeadFitAssessor = {
   },
 };
 
-export function createFitAssessorResolver(models: LanguageModelResolver = languageModels): LeadFitAssessorResolver {
+/**
+ * One try within one step's time. The default retries and waits can outlast Mia's lease and the room a step starts with,
+ * which lets a second worker repeat the paid call. A failed try goes back to the run's own retry instead.
+ */
+const fitLanguageModels = (): LanguageModelResolver => languageModelsWithin({ timeoutMs: FIT_STEP_TIMEOUT_MS, maxRetries: 0 });
+
+export function createFitAssessorResolver(models: LanguageModelResolver = fitLanguageModels()): LeadFitAssessorResolver {
   return {
     async forOrganization(organizationId) {
       if (aiFakeMode()) return fakeFitAssessor;

@@ -205,17 +205,20 @@ export async function startFitCheck(deps: MiaDeps, actor: Actor, raw: unknown): 
 
 const NO_ICP = "Brain has no active ICP to check against. Add one under Brain, Market.";
 
-const hasIcp = async (deps: Pick<MiaDeps, "brain">, actor: Actor) => (await deps.brain.fitItems(actor.organizationId)).some((item) => item.kind === "icp");
+const hasIcp = (deps: Pick<MiaDeps, "brain">, actor: Actor) => deps.brain.hasActiveIcp(actor.organizationId);
 
 /** Why a fit check cannot start here, in a person's words, or null when it can. */
 export async function fitUnavailable(deps: Pick<MiaDeps, "settings" | "aiStatus" | "installEnabled" | "brain">, actor: Actor): Promise<string | null> {
   return (await miaUnavailable(deps, actor)) ?? ((await hasIcp(deps, actor)) ? null : NO_ICP);
 }
 
-/** How many fit checks today's tokens still cover, and what one check may cost. */
+/**
+ * How many fit checks today's tokens still cover, and what one check may cost. Checks and jobs that are queued or running
+ * hold their budget, so a second batch cannot spend what the first was shown.
+ */
 export async function fitRoom(deps: Pick<MiaDeps, "settings" | "runs" | "now">, actor: Actor): Promise<{ people: number; perLead: number; tokensLeft: number }> {
-  const settings = await deps.settings.read(actor.organizationId);
-  const tokensLeft = Math.max(0, backgroundTokenLimit(settings) - (await deps.runs.usedToday(actor.organizationId, deps.now())));
+  const [settings, used, reserved] = await Promise.all([deps.settings.read(actor.organizationId), deps.runs.usedToday(actor.organizationId, deps.now()), deps.runs.reservedTokens(actor.organizationId)]);
+  const tokensLeft = Math.max(0, backgroundTokenLimit(settings) - used - reserved);
   return { people: Math.min(FIT_MAX_PEOPLE, Math.floor(tokensLeft / FIT_RUN_TOKENS)), perLead: FIT_RUN_TOKENS, tokensLeft };
 }
 

@@ -7,7 +7,7 @@ const TEXT = "We sell Widgets and Gadgets. Our company is Acme.";
 
 const state = (over: Partial<RunState> = {}): RunState => ({ messages: [], pages: [], allowedUrls: [], suggested: [], nudged: false, inputText: TEXT, sorting: null, ...over });
 
-const noBrain: MiaBrainPort = { findTarget: async () => null, legacyDocument: async () => null, currentFields: async () => null, fitItems: async () => [] };
+const noBrain: MiaBrainPort = { findTarget: async () => null, legacyDocument: async () => null, currentFields: async () => null, fitItems: async () => [], hasActiveIcp: async () => false };
 
 const noPages: PageReader = {
   read: async () => {

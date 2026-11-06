@@ -40,15 +40,15 @@ describeDb("Mia fit checks", () => {
   }
 
   /** A reply from the lead, through the tables a real reply fills. */
-  async function reply(actor: Actor, personId: string, body: string, from = "lead@fit.test") {
+  async function reply(actor: Actor, personId: string, body: string, from = "lead@fit.test", raw: Record<string, unknown> = {}) {
     const org = actor.organizationId;
     const [set] = await sql`select id from reply_type_sets where organization_id = ${org} limit 1`;
     const setId = set?.id ?? (await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`)[0].id;
     const [conversation] = await sql`insert into conversations (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${setId}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
     const [thread] = await sql`insert into threads (organization_id, conversation_id, channel, account_ref) values (${org}, ${conversation.id}, 'email', 'me@fit.test') returning id`;
     const [message] = await sql`
-      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, from_address, body_text, sent_at)
-      values (${org}, ${thread.id}, 'email', 'me@fit.test', 'inbound', ${`k-${Math.random()}`}, ${from}, ${body}, now())
+      insert into messages (organization_id, thread_id, channel, account_ref, direction, idempotency_key, from_address, body_text, sent_at, raw)
+      values (${org}, ${thread.id}, 'email', 'me@fit.test', 'inbound', ${`k-${Math.random()}`}, ${from}, ${body}, now(), ${sql.json(raw as never)})
       returning id`;
     return message.id as string;
   }
@@ -133,6 +133,9 @@ describeDb("Mia fit checks", () => {
 
     await sql`update people set email = 'new-address@fit.test' where id = ${person}`;
     await reply(actor, person, "Out of office until Monday.", "no-reply@fit.test");
+    expect((await readLeadFit(actor.organizationId, person)).fit?.changed).toBe(false);
+    // An out-of-office from the lead's own address, which only the header marks.
+    await reply(actor, person, "I am away until Monday.", "lead@fit.test", { autoReply: true });
     expect((await readLeadFit(actor.organizationId, person)).fit?.changed).toBe(false);
 
     await sql`update people set title = 'Head of Sales' where id = ${person}`;
