@@ -1,6 +1,6 @@
 import { and, count, eq, ilike, inArray, isNotNull, isNull, or, sql, type Column, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { companies, contactPolicies, people } from "@/platform/db/schema";
+import { companies, contactPolicies, leadFitAssessments, people } from "@/platform/db/schema";
 import type { Actor } from "@/shared/errors";
 import { DEFAULT_LEAD_SORT, lifecycleOf, type LeadFilter, type LeadSort } from "../domain/lead-filter";
 import { normalizeLinkedinSlug } from "../domain/normalize";
@@ -73,7 +73,7 @@ export function leadSearchCondition(term: string | undefined): SQL | undefined {
  */
 export type ActivityCondition = (filter: LeadFilter) => SQL | undefined;
 
-/** The conditions of the filter on people's own tables (`people`, `companies`, `contact_policies`). */
+/** The conditions of the filter on people's own tables (`people`, `companies`, `contact_policies`, `lead_fit_assessments`). */
 function peopleCondition(filter: LeadFilter): SQL | undefined {
   const conditions: Array<SQL | undefined> = [leadSearchCondition(filter.query)];
   // The default is `lead`, so a caller that passes `{}` never lists a contact. The literal (not a bound parameter) lets a generic
@@ -93,6 +93,10 @@ function peopleCondition(filter: LeadFilter): SQL | undefined {
   if (filter.source) conditions.push(sql`(${people.source} = ${filter.source} or split_part(${people.source}, ':', 1) = ${filter.source})`);
   if (filter.createdFrom) conditions.push(sql`${people.createdAt} >= ${filter.createdFrom}::date::timestamp at time zone 'UTC'`);
   if (filter.createdTo) conditions.push(sql`${people.createdAt} < (${filter.createdTo}::date + 1)::timestamp at time zone 'UTC'`);
+  if (filter.fit) {
+    const judged = sql`select 1 from ${leadFitAssessments} where ${leadFitAssessments.personId} = ${people.id} and ${leadFitAssessments.organizationId} = ${people.organizationId}`;
+    conditions.push(filter.fit === "none" ? sql`not exists (${judged})` : sql`exists (${judged} and ${leadFitAssessments.verdict} = ${filter.fit})`);
+  }
   if (filter.ids && filter.ids.length > 0) conditions.push(inArray(people.id, filter.ids));
   return and(...conditions);
 }

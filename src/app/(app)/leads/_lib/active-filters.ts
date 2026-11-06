@@ -1,4 +1,5 @@
 import { DEFAULT_LIFECYCLE, type LeadFilter, type LifecycleFilter } from "@/contexts/people/domain/lead-filter";
+import { FIT_FILTER_LABELS } from "@/contexts/people/domain/lead-fit";
 import { sourceLabel } from "@/contexts/people/domain/lead-labels";
 import { humanizeToken } from "@/shared/humanize";
 
@@ -47,6 +48,7 @@ export function activeFilterChips(filter: LeadFilter, options: Options): FilterC
   if (filter.doNotContact !== undefined) add("dnc", "Do not contact", yesNo(filter.doNotContact), { doNotContact: undefined });
   if (filter.source) add("source", "Source", sourceLabel(filter.source), { source: undefined });
   if (filter.replyGroup) add("replyGroup", "Reply group", humanizeToken(filter.replyGroup), { replyGroup: undefined });
+  if (filter.fit) add("fit", "Fit", FIT_FILTER_LABELS[filter.fit], { fit: undefined });
   if (filter.createdFrom) add("from", "Added from", filter.createdFrom, { createdFrom: undefined });
   if (filter.createdTo) add("to", "Added to", filter.createdTo, { createdTo: undefined });
   return chips;

@@ -5,17 +5,19 @@ import { aiIsOn, aiOffMessage, type AiStatus } from "@/contexts/integrations/dom
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { MIA_MAX_INPUT_CHARS, MIA_RUN_TOKENS } from "../domain/mia-run";
+import { formatCount } from "@/shared/format-number";
+import { FIT_MAX_PEOPLE, FIT_RUN_TOKENS, MIA_MAX_INPUT_CHARS, MIA_RUN_TOKENS } from "../domain/mia-run";
 import { backgroundTokenLimit, MIN_DAILY_TOKENS_FOR_A_JOB, nextUtcMidnight, parseMiaSettingsPatch, type MiaSettings } from "../domain/mia-settings";
 import { parsePageUrl } from "../domain/page-url";
 import { checkConfirmed, suggestionRows, type SuggestionRow } from "../domain/suggestion";
-import type { MiaBrainPort, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunRow } from "./mia-ports";
+import type { FitBatchRow, MiaBrainPort, MiaLeadPort, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunRow } from "./mia-ports";
 
 export interface MiaDeps {
   runs: MiaRunStore;
   suggestions: MiaSuggestionStore;
   settings: MiaSettingsStore;
   brain: MiaBrainPort;
+  leads: Pick<MiaLeadPort, "existing">;
   aiStatus: (organizationId: string) => Promise<AiStatus>;
   installEnabled: () => boolean;
   now: () => Date;
@@ -176,4 +178,52 @@ export async function updateMiaSettings(deps: Pick<MiaDeps, "settings">, actor: 
   return deps.settings.save(actor.organizationId, actor.userId, parseMiaSettingsPatch(raw));
 }
 
-export const miaUsedToday = (deps: Pick<MiaDeps, "runs" | "now">, actor: Actor): Promise<number> => deps.runs.usedToday(actor.organizationId, deps.now());
+/**
+ * Queues a fit check for each of these leads, at most FIT_MAX_PEOPLE. It starts only when today's tokens cover every
+ * check, so a batch never stops halfway for the limit it was shown, and it says how many would fit.
+ */
+export async function startFitCheck(deps: MiaDeps, actor: Actor, raw: unknown): Promise<{ batchId: string; queued: number; skipped: number }> {
+  const ids = Array.isArray(raw) ? [...new Set(raw.filter((id): id is string => typeof id === "string" && isUuid(id)))] : [];
+  if (ids.length === 0) throw new ValidationError("Pick at least one lead.");
+  if (ids.length > FIT_MAX_PEOPLE) throw new ValidationError(`Check up to ${FIT_MAX_PEOPLE} leads at a time.`);
+  const reason = await miaUnavailable(deps, actor);
+  if (reason) throw new ConflictError(reason, { code: "mia_off" });
+  if (!(await hasIcp(deps, actor))) throw new ConflictError(NO_ICP, { code: "mia_no_icp" });
+  const personIds = await deps.leads.existing(actor.organizationId, ids);
+  if (personIds.length === 0) throw new NotFoundError("These leads are gone.");
+  const room = await fitRoom(deps, actor);
+  if (personIds.length > room.people) {
+    const now = deps.now();
+    const retryAfterSeconds = Math.ceil((nextUtcMidnight(now).getTime() - now.getTime()) / 1000);
+    const fits = room.people === 0 ? "no more checks today" : `${formatCount(room.people)} ${room.people === 1 ? "lead" : "leads"}`;
+    throw new ConflictError(`Today's tokens cover ${fits}. Pick fewer, or try again after midnight UTC.`, { code: "mia_daily_limit", retryAfterSeconds });
+  }
+  const created = await deps.runs.createFitRuns(actor.organizationId, { requestedBy: actor.userId, personIds });
+  deps.kick();
+  return created;
+}
+
+const NO_ICP = "Brain has no active ICP to check against. Add one under Brain, Market.";
+
+const hasIcp = async (deps: Pick<MiaDeps, "brain">, actor: Actor) => (await deps.brain.fitItems(actor.organizationId)).some((item) => item.kind === "icp");
+
+/** Why a fit check cannot start here, in a person's words, or null when it can. */
+export async function fitUnavailable(deps: Pick<MiaDeps, "settings" | "aiStatus" | "installEnabled" | "brain">, actor: Actor): Promise<string | null> {
+  return (await miaUnavailable(deps, actor)) ?? ((await hasIcp(deps, actor)) ? null : NO_ICP);
+}
+
+/** How many fit checks today's tokens still cover, and what one check may cost. */
+export async function fitRoom(deps: Pick<MiaDeps, "settings" | "runs" | "now">, actor: Actor): Promise<{ people: number; perLead: number; tokensLeft: number }> {
+  const settings = await deps.settings.read(actor.organizationId);
+  const tokensLeft = Math.max(0, backgroundTokenLimit(settings) - (await deps.runs.usedToday(actor.organizationId, deps.now())));
+  return { people: Math.min(FIT_MAX_PEOPLE, Math.floor(tokensLeft / FIT_RUN_TOKENS)), perLead: FIT_RUN_TOKENS, tokensLeft };
+}
+
+export const latestFitBatch = (deps: Pick<MiaDeps, "runs" | "now">, actor: Actor): Promise<FitBatchRow | null> => deps.runs.latestFitBatch(actor.organizationId, deps.now());
+
+export async function cancelFitBatch(deps: Pick<MiaDeps, "runs" | "now">, actor: Actor, batchId: string): Promise<void> {
+  const found = isUuid(batchId) && (await deps.runs.cancelFitBatch(actor.organizationId, batchId, actor.userId, deps.now()));
+  if (!found) throw new NotFoundError("This check already ended.");
+}
+
+export const miaUsedToday =(deps: Pick<MiaDeps, "runs" | "now">, actor: Actor): Promise<number> => deps.runs.usedToday(actor.organizationId, deps.now());

@@ -6,11 +6,16 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ### Mia
 
-Mia is a new AI inside the app that fills Brain. Fill with Mia on the Brain page reads your website or some text, and Sort with Mia reads a document in Needs sorting. Its suggestions wait under Suggestions, each value beside the sentence it came from. Nothing reaches Brain until a person saves it, and a number the sentence does not hold needs a tick or an edit first.
+Mia is a new AI inside the app. It fills Brain and checks how leads fit. Fill with Mia on the Brain page reads your website or some text, and Sort with Mia reads a document in Needs sorting. Its suggestions wait under Suggestions, each value beside the sentence it came from. Nothing reaches Brain until a person saves it, and a number the sentence does not hold needs a tick or an edit first.
 
 - Mia uses your existing AI connection through the AI SDK, and sends the pages and text it reads to that provider.
 - New settings: `MIA_ENABLED`, `RETENTION_MIA_RUNS_DAYS`, and a switch and daily token limit under Settings, Organization.
 - Migration `0007` adds `mia_runs`, `mia_suggestions` and `mia_usage_daily`.
+
+Mia also checks how leads fit your ICP. Select leads and press Check fit, or use Check fit on a lead page. Mia reads each lead's profile, company and latest messages with your ICP and qualification rules, and the lead page shows each criterion with the passage behind it. Code sets the verdict from those passages, so a reply that claims a fit cannot make one. A verdict changes nothing on the lead. The Leads list gains a Fit column and filter, and Check again shows when the profile, a reply or the ICP changed.
+
+- `POST /api/mia/fit-batches` takes up to 200 leads, and `POST /api/mia/fit-batches/{id}/cancel` stops a batch. `POST /api/leads/delete` accepts `fit` in its filter.
+- Migration `0008` adds `lead_fit_assessments` and the lead and batch of a run to `mia_runs`.
 
 ### Brain
 

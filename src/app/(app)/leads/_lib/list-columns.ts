@@ -4,13 +4,14 @@
  * user id, so two people on one browser keep their own sets.
  */
 
-export const OPTIONAL_COLUMNS = ["contact", "campaign", "lastContact", "email", "title", "company", "added"] as const;
+export const OPTIONAL_COLUMNS = ["contact", "campaign", "lastContact", "fit", "email", "title", "company", "added"] as const;
 export type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number];
 
 export const COLUMN_LABELS: Record<OptionalColumn, string> = {
   contact: "Reach",
   campaign: "Status",
   lastContact: "Last contact",
+  fit: "Fit",
   email: "Email",
   title: "Title",
   company: "Company",

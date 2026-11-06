@@ -30,6 +30,8 @@ import { CreateDealsBulkDialog } from "@/app/(app)/crm/_components/create-deal-d
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
+import { FitBadge } from "@/app/(app)/_components/person/fit-badge";
+import type { LeadFitBadge } from "@/read-models/lead-fit";
 import type { DealMemberOption, DealStageList } from "@/app/(app)/crm/_components/deal-form";
 import { bulkActionModel, clearsSelectionOnKey, type BulkMenuItemId } from "../_lib/bulk-actions";
 import { useLeadColumns } from "./columns-menu";
@@ -50,6 +52,8 @@ export interface LeadListRow {
   /** `contact` once a deal was created from the person. Only a list with `lifecycle=all` or `contact` holds one. */
   lifecycle: "lead" | "contact";
   activity: LeadRowActivity;
+  /** Mia's latest verdict. Null when the lead was never checked. */
+  fit: LeadFitBadge | null;
 }
 
 /** Status, reach and contact points from `readLeadActivity`, the read the lead page uses too. Dates cross to the client as Dates. */
@@ -89,6 +93,7 @@ const COLUMNS: Array<{ id: "name" | OptionalColumn; label: string; sortKey?: Lea
   { id: "contact", label: "Reach", status: true },
   { id: "campaign", label: "Status", status: true },
   { id: "lastContact", label: "Last contact", status: true },
+  { id: "fit", label: "Fit", status: true },
   { id: "email", label: "Email", sortKey: "email" },
   { id: "title", label: "Title", sortKey: "title" },
   { id: "company", label: "Company", sortKey: "company" },
@@ -296,6 +301,11 @@ export function LeadsTableView(props: {
                         ) : (
                           <span className="text-muted-foreground">{NOT_CONTACTED}</span>
                         ))}
+                    </TableCell>
+                  )}
+                  {shows("fit") && (
+                    <TableCell className="max-md:hidden">
+                      {lead.fit && <FitBadge fit={lead.fit} />}
                     </TableCell>
                   )}
                   {shows("email") && <TableCell>{lead.email ?? <span className="text-muted-foreground">LinkedIn only</span>}</TableCell>}

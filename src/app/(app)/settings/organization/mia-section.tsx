@@ -31,7 +31,7 @@ export function MiaSection({ settings, usedToday, installEnabled, canManage }: {
   }
 
   return (
-    <SettingsSection id="mia" title="Mia" description="Mia suggests Brain items from your website or text, using your AI provider. Each person starts each job, and nothing reaches Brain until someone reviews it.">
+    <SettingsSection id="mia" title="Mia" description="Mia suggests Brain items from your website or text, and checks how leads fit your ICP, using your AI provider. A person starts each job. Nothing reaches Brain until someone reviews it, and a fit verdict changes nothing on the lead.">
       {!installEnabled && (
         <p role="status" className="text-sm">
           This install turns Mia off. The server administrator turns it on with the <code className="font-mono text-xs">MIA_ENABLED</code> variable.

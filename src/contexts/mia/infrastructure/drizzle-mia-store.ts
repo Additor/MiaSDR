@@ -1,17 +1,19 @@
-import { and, asc, count, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { violatedConstraint } from "@/platform/db/errors";
 import { channelSettings, miaRuns, miaSuggestions, miaUsageDaily } from "@/platform/db/schema";
 import { brainStoreIn } from "@/contexts/brain/infrastructure/composition";
 import { cleanJson, cleanString } from "@/contexts/grid/domain/cell-values";
+import { saveLeadFitTx } from "@/contexts/people/infrastructure/lead-fit-store";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-settings";
 import { ConflictError } from "@/shared/errors";
 import type { AiUsage } from "@/contexts/ai/domain/generation";
 import { MIA_ACTIVE_STATUSES } from "../domain/mia-run";
 import { countedTokens, MIA_SETTINGS_CHANNEL, readMiaSettings, utcDay } from "../domain/mia-settings";
-import type { ClaimedRun, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunFailure, RunRow, SuggestionRecord } from "../application/mia-ports";
+import type { ClaimedRun, FitBatchRow, MiaRunStore, MiaSettingsStore, MiaSuggestionStore, RunFailure, RunRow, SuggestionRecord } from "../application/mia-ports";
 
 const ACTIVE = [...MIA_ACTIVE_STATUSES];
 /** How long a finished run stays on the Brain page. */
@@ -73,6 +75,8 @@ interface ClaimRow {
   id: string;
   organization_id: string;
   capability: ClaimedRun["capability"];
+  person_id: string | null;
+  requested_by: string | null;
   input: Record<string, unknown>;
   checkpoint: Record<string, unknown> | null;
   step_count: number;
@@ -119,12 +123,14 @@ export const drizzleMiaRunStore: MiaRunStore = {
         limit ${limit}
         for update skip locked
       )
-      returning id, organization_id, capability, input, checkpoint, step_count, used_tokens, suggestion_count, attempts, failures, claim_token
+      returning id, organization_id, capability, person_id, requested_by, input, checkpoint, step_count, used_tokens, suggestion_count, attempts, failures, claim_token
     `)) as unknown as ClaimRow[];
     return rows.map((r) => ({
       id: r.id,
       organizationId: r.organization_id,
       capability: r.capability,
+      personId: r.person_id,
+      requestedBy: r.requested_by,
       input: r.input,
       checkpoint: r.checkpoint,
       stepCount: r.step_count,
@@ -240,10 +246,112 @@ export const drizzleMiaRunStore: MiaRunStore = {
         createdAt: miaRuns.createdAt,
       })
       .from(miaRuns)
-      .where(and(eq(miaRuns.organizationId, organizationId), or(inArray(miaRuns.status, ACTIVE), gte(miaRuns.finishedAt, new Date(now.getTime() - RECENT_MS)))))
+      .where(and(eq(miaRuns.organizationId, organizationId), ne(miaRuns.capability, "lead_fit"), or(inArray(miaRuns.status, ACTIVE), gte(miaRuns.finishedAt, new Date(now.getTime() - RECENT_MS)))))
       .orderBy(desc(miaRuns.createdAt))
       .limit(10);
     return rows.map(({ url, cancelRequestedAt, ...row }): RunRow => ({ ...row, site: url ? new URL(url).hostname : null, cancelRequested: cancelRequestedAt !== null }));
+  },
+
+  async createFitRuns(organizationId, request) {
+    const batchId = randomUUID();
+    return db.transaction(async (tx) => {
+      // A lead with a check going keeps it: the partial unique index turns a second one into nothing.
+      const created = await tx
+        .insert(miaRuns)
+        .values(request.personIds.map((personId) => ({ organizationId, capability: "lead_fit" as const, requestedBy: request.requestedBy, personId, batchId, input: {} })))
+        .onConflictDoNothing()
+        .returning({ id: miaRuns.id });
+      if (created.length > 0) {
+        await recordAudit(tx, { organizationId, actorUserId: request.requestedBy, action: "mia.run_started", entityType: "mia_run", entityId: batchId, meta: { capability: "lead_fit", count: created.length } });
+      }
+      return { batchId, queued: created.length, skipped: request.personIds.length - created.length };
+    });
+  },
+
+  async saveFit(run, fit) {
+    if (!run.personId) return false;
+    const personId = run.personId;
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(miaRuns)
+        .set({ ...ENDED, status: "succeeded", finishedAt: fit.now, stepCount: sql`${miaRuns.stepCount} + 1`, usedTokens: sql`${miaRuns.usedTokens} + ${countedTokens(fit.usage)}`, provider: fit.provider, model: fit.model, failures: 0, error: null, failureKind: null })
+        .where(held(run))
+        .returning({ id: miaRuns.id });
+      if (!row) return false;
+      await saveLeadFitTx(tx, {
+        organizationId: run.organizationId,
+        personId,
+        verdict: fit.verdict,
+        icpItemId: fit.icpItemId,
+        criteria: cleanJson(fit.criteria),
+        missing: cleanJson(fit.missing),
+        inputs: fit.inputs,
+        runId: run.id,
+        provider: fit.provider,
+        model: fit.model,
+        assessedBy: run.requestedBy,
+        assessedAt: fit.now,
+      });
+      await addUsage(tx, run.organizationId, fit.now, fit.usage);
+      return true;
+    });
+  },
+
+  async latestFitBatch(organizationId, now) {
+    const [latest] = await db
+      .select({ batchId: miaRuns.batchId })
+      .from(miaRuns)
+      .where(and(eq(miaRuns.organizationId, organizationId), eq(miaRuns.capability, "lead_fit")))
+      .orderBy(desc(miaRuns.createdAt))
+      .limit(1);
+    if (!latest?.batchId) return null;
+    const [row] = (await db.execute(sql`
+      select
+        count(*)::int as total,
+        count(*) filter (where status = 'succeeded')::int as done,
+        count(*) filter (where status = 'failed')::int as failed,
+        count(*) filter (where status = 'cancelled')::int as cancelled,
+        count(*) filter (where status in ('queued', 'running'))::int as going,
+        count(*) filter (where status = 'waiting_limit')::int as waiting,
+        coalesce((array_agg(person_id order by created_at) filter (where status = 'failed'))[1:200], '{}') as failed_person_ids,
+        (array_agg(error order by finished_at) filter (where status = 'failed' and error is not null))[1] as first_error,
+        min(created_at) as created_at,
+        max(finished_at) as finished_at
+      from mia_runs
+      where organization_id = ${organizationId}::uuid and batch_id = ${latest.batchId}::uuid
+    `)) as unknown as Array<{ total: number; done: number; failed: number; cancelled: number; going: number; waiting: number; failed_person_ids: string[]; first_error: string | null; created_at: string; finished_at: string | null }>;
+    if (!row || row.total === 0) return null;
+    const active = row.going + row.waiting > 0;
+    // A finished batch stays on the page for a while, so its result does not vanish while a person looks away.
+    if (!active && row.finished_at && new Date(row.finished_at).getTime() < now.getTime() - RECENT_MS) return null;
+    return {
+      id: latest.batchId,
+      total: row.total,
+      done: row.done,
+      failed: row.failed,
+      cancelled: row.cancelled,
+      going: row.going,
+      waiting: row.waiting,
+      failedPersonIds: row.failed_person_ids,
+      firstError: row.first_error,
+      createdAt: new Date(row.created_at),
+    } satisfies FitBatchRow;
+  },
+
+  async cancelFitBatch(organizationId, batchId, actorUserId, now) {
+    return db.transaction(async (tx) => {
+      const scope = and(eq(miaRuns.organizationId, organizationId), eq(miaRuns.batchId, batchId), eq(miaRuns.capability, "lead_fit"));
+      // A running check is mid-call. It keeps what that paid call finds, and the mark stops one that waits for a retry.
+      const running = await tx.update(miaRuns).set({ cancelRequestedAt: now }).where(and(scope, eq(miaRuns.status, "running"))).returning({ id: miaRuns.id });
+      const waiting = await tx
+        .update(miaRuns)
+        .set({ ...ENDED, status: "cancelled", cancelRequestedAt: now, finishedAt: now })
+        .where(and(scope, inArray(miaRuns.status, ["queued", "waiting_limit"])))
+        .returning({ id: miaRuns.id });
+      if (running.length + waiting.length === 0) return false;
+      await recordAudit(tx, { organizationId, actorUserId, action: "mia.run_cancelled", entityType: "mia_run", entityId: batchId, meta: { capability: "lead_fit", count: running.length + waiting.length } });
+      return true;
+    });
   },
 };
 

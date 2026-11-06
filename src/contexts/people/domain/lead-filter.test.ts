@@ -21,6 +21,16 @@ describe("parseLeadFilter", () => {
     expect(isFilterActive(filter)).toBe(false);
   });
 
+  it("reads a fit verdict and no check, round-trips it and drops any other value", () => {
+    for (const fit of ["fit", "partial", "not_fit", "unknown", "none"] as const) {
+      const filter = parseLeadFilter(read({ fit }));
+      expect(filter).toEqual({ fit });
+      expect(isFilterActive(filter)).toBe(true);
+      expect(leadFilterParams(filter).get("fit")).toBe(fit);
+    }
+    expect(parseLeadFilter(read({ fit: "great" }))).toEqual({});
+  });
+
   it("accepts any and none for the campaign", () => {
     expect(parseLeadFilter(read({ campaign: "any" })).campaign).toBe("any");
     expect(parseLeadFilter(read({ campaign: "none" })).campaign).toBe("none");

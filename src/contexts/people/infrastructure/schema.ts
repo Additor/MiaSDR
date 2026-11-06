@@ -13,9 +13,12 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { knowledgeDocuments } from "@/contexts/brain/infrastructure/schema";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import { inList } from "@/platform/db/sql-values";
 import type { Lifecycle } from "../domain/lead-filter";
+import { FIT_VERDICTS, type FitCriterion, type FitVerdict } from "../domain/lead-fit";
 import type { SuppressionReason } from "../domain/reachability";
 
 /**
@@ -246,5 +249,39 @@ export const suppressionList = pgTable(
   (t) => [
     unique("suppression_org_email_uq").on(t.organizationId, t.email),
     check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual')`),
+  ],
+);
+
+/**
+ * A lead's latest fit judgment, one row per person. Mia writes it through `lead-fit-store.ts`; a person reads it and
+ * decides, and no automation reads it. `run_id` and `latest_inbound_message_id` name rows of higher layers, so they carry no key.
+ */
+export const leadFitAssessments = pgTable(
+  "lead_fit_assessments",
+  {
+    personId: uuid("person_id").primaryKey(),
+    organizationId: orgId(),
+    verdict: text("verdict").$type<FitVerdict>().notNull(),
+    /** The ICP the judgment matched against. Null once that item is deleted. */
+    icpItemId: uuid("icp_item_id"),
+    criteria: jsonb("criteria").$type<FitCriterion[]>().notNull(),
+    /** What the judgment could not find out. */
+    missing: jsonb("missing").$type<string[]>().notNull(),
+    brainRevisions: jsonb("brain_revisions").$type<Record<string, number>>().notNull(),
+    profileHash: text("profile_hash").notNull(),
+    latestInboundMessageId: uuid("latest_inbound_message_id"),
+    runId: uuid("run_id"),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    assessedBy: uuid("assessed_by").references(() => users.id, { onDelete: "set null" }),
+    assessedAt: tstz("assessed_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "lead_fit_assessments_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
+    // The migration writes `ON DELETE SET NULL (icp_item_id)`: a plain SET NULL would clear `organization_id` too.
+    foreignKey({ name: "lead_fit_assessments_icp_fk", columns: [t.icpItemId, t.organizationId], foreignColumns: [knowledgeDocuments.id, knowledgeDocuments.organizationId] }).onDelete("set null"),
+    check("lead_fit_assessments_verdict_ck", inList(t.verdict, FIT_VERDICTS)),
+    check("lead_fit_assessments_size_ck", sql`octet_length(${t.criteria}::text) + octet_length(${t.missing}::text) <= 65536`),
+    index("lead_fit_assessments_org_verdict_idx").on(t.organizationId, t.verdict),
   ],
 );

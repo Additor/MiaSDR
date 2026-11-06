@@ -9,7 +9,8 @@ import { errorText } from "@/shared/error-text";
 import { MIA_CONCURRENCY, MIA_LEASE_MS, MIA_MAX_FAILURES, MIA_MAX_STEPS, MIA_MIN_STEP_ROOM_MS, MIA_RUN_TOKENS, MIA_STEP_TIMEOUT_MS, miaRetryDelayMs } from "../domain/mia-run";
 import { backgroundTokenLimit, countedTokens, estimatedTokens, nextUtcMidnight } from "../domain/mia-settings";
 import { FILL_TEXT_SYSTEM, FILL_URL_SYSTEM, LAST_STEP_MESSAGE, NUDGE_MESSAGE, SORT_SYSTEM } from "../domain/prompts";
-import type { ClaimedRun, MiaBrainPort, MiaRunStore, MiaSettingsStore, PageReader } from "./mia-ports";
+import { checkedCriteria, cleanMissing, FIT_SYSTEM, fitPrompt, fitVerdict, matchedIcp } from "../domain/lead-fit";
+import type { ClaimedRun, LeadFitAssessorResolver, MiaBrainPort, MiaLeadPort, MiaRunStore, MiaSettingsStore, PageReader } from "./mia-ports";
 import { runTools, sourcesOf, type RunState } from "./run-tools";
 
 export const MIA_RUN_JOB = "mia.run";
@@ -21,6 +22,8 @@ export interface MiaWorkerDeps {
   models: AgentModelResolver;
   pages: PageReader;
   brain: MiaBrainPort;
+  leads: Pick<MiaLeadPort, "fitInput">;
+  fitModels: LeadFitAssessorResolver;
   settings: Pick<MiaSettingsStore, "read">;
   now: () => Date;
   /** Runs this job again soon, on its own lane. */
@@ -81,8 +84,47 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
     return "ended";
   }
 
+  /** A call that threw: a permanent error or the last try ends the run, anything else waits and tries again. */
+  const failedCall = async (error: unknown, sent: string): Promise<StepOutcome> => {
+    const message = error instanceof AiError ? error.message : "Mia could not finish that step.";
+    const permanent = error instanceof AiError && error.kind === "permanent";
+    const failure = { error: message, failureKind: permanent ? "permanent" : "transient", chargedTokens: estimatedTokens(sent), now };
+    if (permanent || run.failures + 1 >= MIA_MAX_FAILURES) await deps.runs.fail(run, failure);
+    else await deps.runs.retryLater(run, retryAt(), failure);
+    return "ended";
+  };
+  const aiOff = async () => fail(aiOffMessage(await deps.models.status(run.organizationId)) ?? "AI is off.", "off");
+
+  if (run.capability === "lead_fit") {
+    const assessor = await deps.fitModels.forOrganization(run.organizationId);
+    if (!assessor) return aiOff();
+    const [input, brain] = await Promise.all([run.personId ? deps.leads.fitInput(run.organizationId, run.personId) : null, deps.brain.fitItems(run.organizationId)]);
+    if (!input) return fail("This lead was deleted.", "gone");
+    if (!brain.some((item) => item.kind === "icp")) return fail("Brain has no active ICP to check against. Add one, then check again.", "no_icp");
+    const prompt = fitPrompt(brain, input.sources, nonce());
+    let answer;
+    try {
+      answer = await assessor.assess({ system: FIT_SYSTEM, prompt });
+    } catch (error) {
+      return failedCall(error, `${FIT_SYSTEM}${prompt}`);
+    }
+    const criteria = checkedCriteria(answer.output, input.sources);
+    await deps.runs.saveFit(run, {
+      verdict: fitVerdict(criteria),
+      icpItemId: matchedIcp(answer.output, brain),
+      criteria,
+      missing: cleanMissing(answer.output),
+      inputs: { profileHash: input.profileHash, latestInboundMessageId: input.latestInboundMessageId, brainRevisions: Object.fromEntries(brain.map((item) => [item.id, item.revision])) },
+      usage: answer.usage,
+      provider: assessor.provider,
+      model: assessor.model,
+      now: deps.now(),
+    });
+    return "ended";
+  }
+
   const model = await deps.models.forOrganization(run.organizationId);
-  if (!model) return fail(aiOffMessage(await deps.models.status(run.organizationId)) ?? "AI is off.", "off");
+  if (!model) return aiOff();
 
   const state = (run.checkpoint as RunState | null) ?? (await firstState(deps, run));
   if (!state) return fail("That document was sorted or removed.", "gone");
@@ -103,7 +145,7 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
   try {
     result = await model.step({
       task: "mia.brain_fill",
-      system: [{ text: SYSTEM[run.capability] }],
+      system: [{ text: SYSTEM[run.capability as keyof typeof SYSTEM] }],
       messages,
       tools: step.tools,
       ...(lastStep ? { activeTools: ["suggest_item", "finish"] } : {}),
@@ -111,12 +153,7 @@ async function runStep(deps: MiaWorkerDeps, run: ClaimedRun): Promise<StepOutcom
       timeoutMs: MIA_STEP_TIMEOUT_MS,
     });
   } catch (error) {
-    const message = error instanceof AiError ? error.message : "Mia could not finish that step.";
-    const permanent = error instanceof AiError && error.kind === "permanent";
-    const failure = { error: message, failureKind: permanent ? "permanent" : "transient", chargedTokens: estimatedTokens(JSON.stringify(messages)), now };
-    if (permanent || run.failures + 1 >= MIA_MAX_FAILURES) await deps.runs.fail(run, failure);
-    else await deps.runs.retryLater(run, retryAt(), failure);
-    return "ended";
+    return failedCall(error, JSON.stringify(messages));
   }
 
   if (result.stop === "refusal") return fail("The model declined this job.", "refused", countedTokens(result.usage));
