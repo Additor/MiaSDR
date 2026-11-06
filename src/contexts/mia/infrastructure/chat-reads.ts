@@ -1,12 +1,8 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { companies, leadFitAssessments, people } from "@/platform/db/schema";
-import { AUTOMATED_SENDER_PATTERN, AUTOMATED_SUBJECT_PATTERN } from "@/contexts/conversations/domain/inbox-filter";
 import type { ChatConversation, ChatPersonRow, MiaChatReads } from "../application/chat-ports";
-
-/** A reply the person wrote, by the rule a fit check reads them with (`fit-inputs.ts`). */
-const THEIR_REPLY = sql`(${genuineInboundSql("m")} and not (coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text))`;
+import { THEIR_REPLY } from "./fit-inputs";
 
 const likeText = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 

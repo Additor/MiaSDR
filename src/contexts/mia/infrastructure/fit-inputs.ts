@@ -10,9 +10,9 @@ import type { MiaLeadPort } from "../application/mia-ports";
 
 /**
  * A reply the lead wrote: inbound with no auto-reply flag (`genuineInboundSql`, which also catches an out-of-office from
- * their own address), and no machine mail by sender or subject, as the inbox reads it.
+ * their own address), and no machine mail by sender or subject, as the inbox reads it. A chat reads replies by it too.
  */
-const THEIR_REPLY = sql`(${genuineInboundSql("m")} and not (coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text))`;
+export const THEIR_REPLY =sql`(${genuineInboundSql("m")} and not (coalesce(m.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(m.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text))`;
 
 interface MessageRow {
   id: string;

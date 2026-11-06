@@ -7,7 +7,7 @@ MiaSDR supports **PostgreSQL 17 or newer**. The bundled Compose file runs Postgr
 Two schema features need PostgreSQL 15, so the schema itself would apply on 15 and 16. The floor is a support statement, and the startup check enforces it:
 
 - `UNIQUE NULLS NOT DISTINCT` on `job_runs_job_slot_org_uq`, added in PostgreSQL 15.
-- `ON DELETE SET NULL (column)` on twenty-one composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
+- `ON DELETE SET NULL (column)` on twenty-six composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
 
 On PostgreSQL 14 or older the first migration fails with a bare syntax error. The app reads `server_version_num` when the server starts. It prints the detected and required versions and exits with code 1 on a server older than 17. `src/platform/db/postgres-version.ts` holds the check. It runs before migrations and whether or not `RUN_MIGRATIONS` is on.
 

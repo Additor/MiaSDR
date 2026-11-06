@@ -79,8 +79,9 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
     };
   }, [polling, reload, router]);
 
+  /** Asks for an answer and streams it in. `accepted` runs once the server took the turn, before the answer streams. */
   const runTurn = useCallback(
-    async (url: string, body: unknown, question: string | null) => {
+    async (url: string, body: unknown, question: string | null, accepted?: () => void) => {
       setStreaming(true);
       const answerKey = `pending-${Date.now()}`;
       setMessages((list) => [
@@ -94,8 +95,9 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
         toast.error(started.error);
         if (started.code === "turn_running") setPolling(true);
         await reload();
-        return false;
+        return;
       }
+      accepted?.();
       const update = (fn: (m: ChatMessage) => ChatMessage) => setMessages((list) => list.map((m) => (m.id === answerKey ? fn(m) : m)));
       let ended = false;
       for await (const event of started.events) {
@@ -109,21 +111,16 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
       setStreaming(false);
       // The full answer for a screen reader, once: the stream itself is not read out word by word.
       setAnnounce("Mia answered.");
-      if (!ended) setPolling(true);
-      else {
-        await reload();
-        router.refresh();
-      }
-      return true;
+      // A dropped stream, or a question sent twice while its first answer still goes: the page reads what the answer saves.
+      if (!ended || (await reload())) setPolling(true);
+      else router.refresh();
     },
     [reload, router],
   );
 
+  // The box empties once the server took the question, so what a person types during the answer stays for the next one.
   const send = useCallback(
-    async (question: string, clientId: string) => {
-      const sent = await runTurn(`/api/mia/threads/${threadId}/messages`, { clientId, text: question }, question);
-      if (sent) setText("");
-    },
+    (question: string, clientId: string) => runTurn(`/api/mia/threads/${threadId}/messages`, { clientId, text: question }, question, () => setText("")),
     [runTurn, threadId],
   );
 
@@ -140,6 +137,8 @@ export function ChatView({ threadId, initial, going: initiallyGoing, unavailable
     if (!question) return;
     asked.current = true;
     if (ask) router.replace(`/mia/${threadId}`, { scroll: false });
+    // In the box until the server takes it, so a refusal (a limit, Mia turned off) leaves the question to send again.
+    setText(question);
     void send(question, `first-${threadId}`);
   }, [ask, initial.length, send, threadId, router]);
 

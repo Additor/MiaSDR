@@ -97,9 +97,14 @@ export class SdkAgentModel implements AgentModel {
 
   async chat(request: AgentChatRequest): Promise<AgentChatResult> {
     const usage: AiUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-    const counted = () => usage.inputTokens + (usage.cacheWriteTokens ?? 0) + usage.outputTokens;
+    // The SDK's own record of the finished steps: the loop below reads the stream behind the SDK, so its sum can lag a step.
+    const spent = (steps: ReadonlyArray<Pick<Awaited<ReturnType<typeof generateText>>, "usage" | "providerMetadata">>) =>
+      steps.reduce((sum, step) => {
+        const counted = usageOf(step);
+        return sum + counted.inputTokens + (counted.cacheWriteTokens ?? 0) + counted.outputTokens;
+      }, 0);
     // Near the end of the steps or the tokens, the model answers with what it read.
-    const answerNow = (stepNumber: number) => stepNumber >= request.maxSteps - 1 || counted() >= request.turnTokens * 0.8;
+    const answerNow = (stepNumber: number, used: number) => stepNumber >= request.maxSteps - 1 || used >= request.turnTokens * 0.8;
     let text = "";
     let steps = 0;
     let finish: string | undefined;
@@ -118,8 +123,8 @@ export class SdkAgentModel implements AgentModel {
       maxRetries: 0,
       abortSignal: request.signal,
       timeout: { totalMs: request.timeoutMs },
-      stopWhen: [stepCountIs(request.maxSteps), () => counted() >= request.turnTokens],
-      prepareStep: ({ stepNumber }) => (answerNow(stepNumber) ? { activeTools: [] } : undefined),
+      stopWhen: [stepCountIs(request.maxSteps), ({ steps }) => spent(steps) >= request.turnTokens],
+      prepareStep: ({ stepNumber, steps }) => (answerNow(stepNumber, spent(steps)) ? { activeTools: [] } : undefined),
     });
     try {
       for await (const part of result.fullStream) {
@@ -148,7 +153,8 @@ export class SdkAgentModel implements AgentModel {
     // Nothing reached the person, so the turn has nothing to keep and the reason is the provider's.
     if ((failed !== undefined || aborted) && text === "") throw this.failure(failed ?? Object.assign(new Error("timeout"), { name: "TimeoutError" }));
     if (failed !== undefined || aborted) return { text, stop: "other", usage, steps };
-    const stop = finish === "tool-calls" ? "limit" : (STOP[finish ?? ""] ?? "other");
+    // A step that ended on tool calls means the steps or the tokens ran out first.
+    const stop = STOP[finish ?? ""] ?? "other";
     return { text, stop: stop === "tools" ? "limit" : stop, usage, steps };
   }
 

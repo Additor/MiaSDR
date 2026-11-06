@@ -4,12 +4,12 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
 import { toActor } from "@/app/_lib/api";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { listChats } from "@/contexts/mia/application/chat-use-cases";
 import { miaUnavailable } from "@/contexts/mia/application/mia-use-cases";
 import { miaChatDeps } from "@/contexts/mia/infrastructure/composition";
 import { isUuid } from "@/shared/uuid";
 import { ChatList } from "./_components/chat-list";
 import { NewChat } from "./_components/new-chat";
+import { myChats } from "./_lib/chats";
 
 export const metadata: Metadata = { title: "Mia" };
 
@@ -34,8 +34,7 @@ async function Start({ searchParams }: { searchParams: PageProps<"/mia">["search
   const actor = toActor(await requireOrgContext());
   const raw = (await searchParams).person;
   const personId = typeof raw === "string" && isUuid(raw) ? raw : null;
-  const deps = miaChatDeps();
-  const [unavailable, threads] = await Promise.all([miaUnavailable(deps, actor), listChats(deps, actor)]);
+  const [unavailable, threads] = await Promise.all([miaUnavailable(miaChatDeps(), actor), myChats()]);
   return (
     <>
       <NewChat personId={personId} unavailable={unavailable} />

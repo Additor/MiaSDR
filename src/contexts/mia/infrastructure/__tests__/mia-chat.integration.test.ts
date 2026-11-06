@@ -9,7 +9,7 @@ import { releaseMiaOfMemberTx } from "../drizzle-mia-chat-store";
 import { db } from "@/platform/db/client";
 import { pruneHistory, DEFAULT_RETENTION } from "@/platform/jobs/prune";
 import type { Actor } from "@/shared/errors";
-import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { askMia, deleteChat, newChat, openChat, retryAnswer, stopAnswer, type MiaChatDeps, type TurnListener } from "../../application/chat-use-cases";
 import { miaChatDeps } from "../composition";
 import { fakeAgentModel } from "../fake-mia";
@@ -91,6 +91,15 @@ describeDb("Mia chat", () => {
     await expect(askMia(deps(), actor, id, { clientId: crypto.randomUUID(), text: "And now?" }, silent)).rejects.toMatchObject({ details: { code: "turn_running" } });
     await stopAnswer(deps(), actor, id);
     await slow.done;
+  });
+
+  it("names a chat from a question with a NUL in it", async () => {
+    const actor = await fixture();
+    const { id } = await newChat(deps(), actor, null);
+    await ask(actor, id, "Any\u0000 leads?");
+    const view = await openChat(deps(), actor, id);
+    expect(view.thread.title).toBe("Any leads?");
+    expect(view.messages[0].parts).toEqual([{ type: "text", text: "Any leads?" }]);
   });
 
   it("stops an answer and keeps what it wrote, then a retry answers the same question again", async () => {
@@ -180,6 +189,47 @@ describeDb("Mia chat", () => {
     expect(view.thread).toMatchObject({ title: null, purgedAt: expect.any(Date) });
     expect(JSON.stringify(view.messages)).not.toContain("Walrus");
     expect(await sql`select 1 from mia_thread_people where person_id = ${kim}`).toHaveLength(0);
+  });
+
+  it("deletes a turn that starts while the person's delete runs", async () => {
+    const actor = await fixture();
+    const kim = await person(actor, "Kim Seal");
+    const { id } = await newChat(deps(), actor, null);
+    await ask(actor, id, "Who is Seal?");
+
+    // A turn holds the chat's row while it writes its question, as `startTurn` does, and commits once the delete waits.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const turn = sql.begin(async (tx) => {
+      await tx`select id from mia_threads where id = ${id} for update`;
+      await tx`insert into mia_messages (organization_id, thread_id, turn_id, role, client_id, status, parts)
+        values (${actor.organizationId}, ${id}, ${crypto.randomUUID()}, 'user', 'late', 'complete', ${sql.json([{ type: "text", text: "And Seal's title?" }])})`;
+      held();
+      await gate;
+    });
+    await holding;
+    const deleting = deleteLeads(leadDeleteDeps, actor, { ids: [kim] });
+    await waitForLockWaiters(sql, 1);
+    release();
+    await turn;
+    expect((await deleting).deleted).toBe(1);
+    expect(await sql`select 1 from mia_messages where thread_id = ${id}`).toHaveLength(0);
+  });
+
+  it("forgets the people a removed turn read, so deleting them later keeps the turns before", async () => {
+    const actor = await fixture();
+    const kim = await person(actor, "Kim Otter");
+    const bob = await person(actor, "Bob Puffin");
+    const { id } = await newChat(deps(), actor, null);
+    await ask(actor, id, "Is anyone called Nobody here?");
+    await ask(actor, id, "Who is Otter?");
+    await ask(actor, id, "Who is Puffin?");
+    await deleteLeads(leadDeleteDeps, actor, { ids: [kim] });
+    expect(await sql`select 1 from mia_thread_people where thread_id = ${id}`).toHaveLength(0);
+    await deleteLeads(leadDeleteDeps, actor, { ids: [bob] });
+    expect((await openChat(deps(), actor, id)).messages).toHaveLength(2);
   });
 
   it("deletes a chat started from a contact's page with the contact", async () => {

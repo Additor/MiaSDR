@@ -134,13 +134,15 @@ export const drizzleMiaChatStore: MiaChatStore = {
         if (seen) return { kind: "duplicate", answerId: seen.id };
         if (busy(thread, question.now)) return { kind: "busy" };
         const turnToken = await claimTurn(tx, thread, question.now);
-        await tx.update(miaThreads).set({ title: sql`coalesce(${miaThreads.title}, ${threadTitle(question.text)})` }).where(eq(miaThreads.id, threadId));
+        // Postgres text holds no NUL, so the name and the question are cleaned before either is written.
+        const text = cleanString(question.text);
+        await tx.update(miaThreads).set({ title: sql`coalesce(${miaThreads.title}, ${threadTitle(text) || null})` }).where(eq(miaThreads.id, threadId));
         const turnId = randomUUID();
         const history = await historyBefore(tx, threadId, turnId);
-        await tx.insert(miaMessages).values({ organizationId, threadId, turnId, role: "user", clientId: question.clientId, status: "complete", parts: [{ type: "text", text: cleanString(question.text) }], createdAt: question.now });
+        await tx.insert(miaMessages).values({ organizationId, threadId, turnId, role: "user", clientId: question.clientId, status: "complete", parts: [{ type: "text", text }], createdAt: question.now });
         // A millisecond later, so the answer sorts after its question.
         const answerId = await newAnswer(tx, organizationId, threadId, turnId, new Date(question.now.getTime() + 1));
-        return { kind: "started", turn: { organizationId, userId, threadId, turnId, turnToken, answerId, personId: thread.person_id, history: [...history, { role: "user", content: question.text }] } };
+        return { kind: "started", turn: { organizationId, userId, threadId, turnId, turnToken, answerId, personId: thread.person_id, history: [...history, { role: "user", content: text }] } };
       });
     try {
       return await attempt();
@@ -184,6 +186,11 @@ export const drizzleMiaChatStore: MiaChatStore = {
 
   endTurn: (turn, end) =>
     db.transaction(async (tx) => {
+      // The chat's row before the answer's, in the order a turn and a person's delete take them, so neither waits on the other in a cycle.
+      await tx
+        .update(miaThreads)
+        .set({ turnToken: null, turnStartedAt: null, lastMessageAt: end.now })
+        .where(and(eq(miaThreads.id, turn.threadId), eq(miaThreads.turnToken, turn.turnToken)));
       const rows = await tx
         .update(miaMessages)
         .set({
@@ -197,10 +204,6 @@ export const drizzleMiaChatStore: MiaChatStore = {
         })
         .where(and(eq(miaMessages.id, turn.answerId), sql`${miaMessages.status} in ('streaming', 'stopped')`))
         .returning({ id: miaMessages.id });
-      await tx
-        .update(miaThreads)
-        .set({ turnToken: null, turnStartedAt: null, lastMessageAt: end.now })
-        .where(and(eq(miaThreads.id, turn.threadId), eq(miaThreads.turnToken, turn.turnToken)));
       // The provider charged for the call whatever happened to the answer since.
       if (countedTokens(end.usage) > 0 || (end.usage.cacheReadTokens ?? 0) > 0) await addUsage(tx, turn.organizationId, end.now, end.usage);
       return rows.length > 0;
@@ -248,8 +251,9 @@ export const drizzleMiaChatStore: MiaChatStore = {
 
 /**
  * Deleting people: each chat that read one loses the turns from the first that did, so nothing Mia said about them stays.
- * The chat itself stays, renamed, with a note. One statement, so a batch of 500 people costs one more. Runs inside the delete's transaction, after the people are locked and
- * before they are deleted; `mia_thread_people` has no cascade, so a delete path that skips this fails.
+ * The chat itself stays, renamed, with a note. Two statements, so a batch of 500 people costs two more. Runs inside the
+ * delete's transaction, after the people are locked and before they are deleted; `mia_thread_people` has no cascade, so a
+ * delete path that skips this fails.
  */
 export async function purgePeopleMiaTx(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<void> {
   if (personIds.length === 0) return;
@@ -257,6 +261,15 @@ export async function purgePeopleMiaTx(tx: DbHandle, organizationId: string, per
     [...personIds].map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+  // The chats first, in the order a turn takes them (`lockThread`, then its messages). A turn that was writing its question
+  // has committed by the time the delete below takes its snapshot, so that question goes too. FOR NO KEY UPDATE leaves
+  // the key share that a new link takes, so a tool that links meanwhile waits on the person's lock, not on this one.
+  await tx.execute(sql`
+    select t.id from mia_threads t
+    where t.organization_id = ${organizationId}::uuid
+      and t.id in (select tp.thread_id from mia_thread_people tp where tp.organization_id = ${organizationId}::uuid and tp.person_id in (${list}))
+    order by t.id
+    for no key update`);
   await tx.execute(sql`
     with links as (
       select tp.thread_id, tp.first_turn_id from mia_thread_people tp
@@ -268,11 +281,13 @@ export async function purgePeopleMiaTx(tx: DbHandle, organizationId: string, per
     ), dropped as (
       delete from mia_messages m using starts s
       where m.organization_id = ${organizationId}::uuid and m.thread_id = s.thread_id and m.created_at >= s.since
-      returning m.thread_id
+      returning m.thread_id, m.turn_id
     ), unlinked as (
-      -- Every part of this statement reads the same snapshot, so links above still sees these rows.
+      -- Every part of this statement reads the same snapshot, so links above still sees these rows. Another person first
+      -- read in a removed turn is no longer in the chat either, so their link goes too: deleting them later keeps the rest.
       delete from mia_thread_people tp
-      where tp.organization_id = ${organizationId}::uuid and tp.person_id in (${list})
+      where tp.organization_id = ${organizationId}::uuid
+        and (tp.person_id in (${list}) or (tp.thread_id, tp.first_turn_id) in (select d.thread_id, d.turn_id from dropped d))
       returning tp.thread_id
     )
     update mia_threads t set title = null, purged_at = now(), updated_at = now()

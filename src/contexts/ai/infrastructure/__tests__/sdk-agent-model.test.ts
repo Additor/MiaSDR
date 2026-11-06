@@ -177,6 +177,31 @@ describe("SdkAgentModel.chat", () => {
     expect(seen).toEqual([["lookup"], []]);
   });
 
+  it("counts the turn's tokens from the finished steps: near the limit the next step has no tools, past it the turn stops", async () => {
+    const seen: Array<string[]> = [];
+    const toolStep = [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: '{"name":"x"}' }, finish("tool-calls")];
+    const textStep = [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Done." }, { type: "text-end", id: "t" }, finish("stop")];
+    const model = new SdkAgentModel({
+      sdkModel: new MockLanguageModelV4({
+        doStream: (async (options: { tools?: Array<{ name: string }> }) => {
+          seen.push((options.tools ?? []).map((t) => t.name));
+          return { stream: convertArrayToReadableStream<unknown>((options.tools ?? []).length > 0 ? toolStep : textStep) };
+        }) as never,
+      }),
+      provider: "anthropic",
+      model: "m",
+      label: "Anthropic",
+    });
+    // One step counts 150: fresh input 100, cache writes 10, output 40.
+    const near = await model.chat(chatRequest({ turnTokens: 180 }));
+    expect(seen).toEqual([["lookup"], []]);
+    expect(near).toMatchObject({ text: "Done.", stop: "end", steps: 2 });
+    seen.length = 0;
+    const past = await model.chat(chatRequest({ turnTokens: 150 }));
+    expect(seen).toEqual([["lookup"]]);
+    expect(past).toMatchObject({ text: "", stop: "limit", steps: 1 });
+  });
+
   it("keeps the text written before a Stop", async () => {
     const controller = new AbortController();
     const model = streamed([[{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Part" }, { type: "text-delta", id: "t", delta: " two" }, { type: "text-end", id: "t" }, finish("stop")]]);

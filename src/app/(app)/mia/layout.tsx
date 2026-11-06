@@ -1,10 +1,7 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { toActor } from "@/app/_lib/api";
-import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { listChats } from "@/contexts/mia/application/chat-use-cases";
-import { miaChatDeps } from "@/contexts/mia/infrastructure/composition";
 import { ChatList } from "./_components/chat-list";
+import { myChats } from "./_lib/chats";
 
 /** Two columns on a desktop: the person's chats and the open one. A phone shows one at a time; the Mia page lists the chats there. */
 export default function MiaLayout({ children }: LayoutProps<"/mia">) {
@@ -22,6 +19,5 @@ export default function MiaLayout({ children }: LayoutProps<"/mia">) {
 
 async function Chats() {
   await connection();
-  const threads = await listChats(miaChatDeps(), toActor(await requireOrgContext()));
-  return <ChatList threads={threads} />;
+  return <ChatList threads={await myChats()} />;
 }
