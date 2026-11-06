@@ -13,6 +13,10 @@ import { fakeAgentModel, fakePageReader } from "./fake-mia";
 import { createFitAssessorResolver } from "./fit-assessor";
 import { drizzleMiaLeadPort } from "./fit-inputs";
 import { createPageReader } from "./page-reader";
+import type { MiaChatDeps } from "../application/chat-use-cases";
+import type { MiaChatReads } from "../application/chat-ports";
+import { drizzleMiaChatReads } from "./chat-reads";
+import { drizzleMiaChatStore } from "./drizzle-mia-chat-store";
 
 const FIT_KINDS = ["icp", "qualification"] as const;
 
@@ -75,6 +79,31 @@ export const miaWorkerDeps = (overrides: Partial<MiaWorkerDeps> = {}): MiaWorker
   now: () => new Date(),
   kick: kickMia,
   installEnabled,
+  ...overrides,
+});
+
+/** A chat reads Brain through Brain's store: active items only, and the text a person wrote in them. */
+const chatReads: MiaChatReads = {
+  ...drizzleMiaChatReads,
+  async brainItems(organizationId, kind, limit) {
+    const { rows } = await brainStore.list(organizationId, { kinds: kind ? [kind] : null, legacyOnly: false, q: "", active: true, limit, offset: 0 });
+    return rows.map((row) => ({ id: row.id, kind: row.kind, title: row.title }));
+  },
+  async brainItem(organizationId, id) {
+    const item = await brainStore.get(organizationId, id);
+    return item?.active ? { id: item.id, kind: item.kind, title: item.title, text: item.content } : null;
+  },
+};
+
+export const miaChatDeps = (overrides: Partial<MiaChatDeps> = {}): MiaChatDeps => ({
+  chats: drizzleMiaChatStore,
+  reads: chatReads,
+  models,
+  settings: drizzleMiaSettingsStore,
+  runs: drizzleMiaRunStore,
+  aiStatus: (organizationId) => models.status(organizationId),
+  installEnabled,
+  now: () => new Date(),
   ...overrides,
 });
 

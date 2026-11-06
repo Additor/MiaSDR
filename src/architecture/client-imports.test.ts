@@ -80,6 +80,7 @@ export function clientReach(entries: string[], reader: SourceReader): Record<str
 /** Files that call `fetch` themselves, each with its reason. Every other browser call goes through `callApi`. Shrink only. */
 const RAW_FETCH: Record<string, string> = {
   "src/app/_lib/api-client.ts": "`callApi` itself.",
+  "src/app/(app)/mia/_lib/read-turn.ts": "Mia's answer arrives as a stream of JSON lines, read as they come; `callApi` reads one JSON body.",
   "src/app/(app)/crm/contacts/_components/contacts-bulk-bar.tsx": "Export selected downloads the CSV as a blob; `callApi` reads JSON.",
   "src/app/(app)/tables/_components/table-workspace.tsx": "Export downloads the CSV as a blob; `callApi` reads JSON.",
 };

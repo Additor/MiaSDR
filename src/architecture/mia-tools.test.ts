@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { chatTools } from "@/contexts/mia/application/chat-tools";
+import { MIA_CHAT_TOOLS } from "@/contexts/mia/domain/mia-chat";
 import { MIA_RUN_TOOLS } from "@/contexts/mia/domain/mia-run";
 
 /**
@@ -22,6 +24,18 @@ describe("Mia's tools", () => {
     for (const tools of Object.values(MIA_RUN_TOOLS)) {
       if (tools.includes("fetch_page")) expect(tools.filter(readsInside)).toEqual([]);
     }
+  });
+
+  it("pins the chat's tools: each reads, and none opens the web, writes or suggests", () => {
+    // A chat holds replies and the organization's data together, so it must have no way out and nothing that changes a record.
+    expect(MIA_CHAT_TOOLS).toEqual(["search_leads", "read_lead", "read_company", "read_conversation", "read_fit", "list_brain_items", "read_brain_item"]);
+    expect(MIA_CHAT_TOOLS.filter((tool) => !/^(read|list|search)_/.test(tool))).toEqual([]);
+  });
+
+  it("builds a chat's tools from the pinned list and from nothing else", () => {
+    const turn = { organizationId: "o", userId: "u", threadId: "t", turnId: "r", turnToken: "k", answerId: "a", personId: null, history: [] };
+    const tools = chatTools({ turn, reads: {} as never, store: {} as never, onPart: () => undefined });
+    expect(tools.map((t) => t.name)).toEqual([...MIA_CHAT_TOOLS]);
   });
 
   it("offers no tool that sends, or that writes to Brain", () => {

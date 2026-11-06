@@ -29,7 +29,7 @@ const UNLOCK = { claimToken: null, leaseExpiresAt: null } as const;
 /** What a finished run keeps: not the person's text, the pages or the conversation. */
 const ENDED = { ...UNLOCK, checkpoint: null, input: {} } as const;
 
-async function addUsage(tx: DbTx, organizationId: string, now: Date, usage: AiUsage): Promise<void> {
+export async function addUsage(tx: DbTx, organizationId: string, now: Date, usage: AiUsage): Promise<void> {
   const values = {
     organizationId,
     day: utcDay(now),

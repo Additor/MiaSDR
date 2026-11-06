@@ -8,6 +8,7 @@ export const AI_TASKS = {
   "grid.answer": { maxTokens: 4000 },
   "mia.brain_fill": { maxTokens: 8000 },
   "mia.lead_fit": { maxTokens: 3000 },
+  "mia.chat": { maxTokens: 4000 },
 } as const satisfies Record<string, { maxTokens: number }>;
 
 export type AiTaskKey = keyof typeof AI_TASKS;

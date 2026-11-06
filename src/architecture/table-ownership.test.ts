@@ -30,6 +30,8 @@ const RETENTION_TABLES: Record<string, string> = {
   mia_runs: "Finished Mia runs. Their input and checkpoint are already empty.",
   mia_suggestions: "Suggestions a person already decided. What they accepted lives in Brain.",
   mia_usage_daily: "Daily Mia token counters; limits read today's row only.",
+  mia_messages: "Chat messages past their window. A chat keeps its newer turns.",
+  mia_threads: "Chats with no message left, once their window passed.",
   sessions: "Sessions past expiry.",
   verifications: "Verification tokens past expiry.",
   oauth_refresh_tokens: "Refresh tokens past expiry.",

@@ -31,6 +31,7 @@ function scripted(script: Script) {
   const model: AgentModel = {
     provider: "fake",
     model: "scripted",
+    chat: () => Promise.reject(new Error("no chat")),
     async step(request: AgentStepRequest): Promise<AgentStepResult> {
       seen.tools.push(request.tools.map((t) => t.name));
       seen.messages.push(request.messages);
@@ -223,6 +224,7 @@ describeDb("Mia runs", () => {
     const slow: AgentModel = {
       provider: "fake",
       model: "slow",
+      chat: () => Promise.reject(new Error("no chat")),
       async step() {
         calls += 1;
         clock += 40_000;

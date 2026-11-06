@@ -80,6 +80,7 @@ Only logs are pruned. Sends, messages, enrollments and suppression are kept.
 | `RETENTION_AI_JOBS_DAYS` | `30` | Days to keep finished AI jobs. |
 | `RETENTION_MCP_TOOL_CALLS_DAYS` | `90` | Days to keep the MCP agent activity log. |
 | `RETENTION_MIA_RUNS_DAYS` | `30` | Days to keep finished Mia jobs and the suggestions a person decided. |
+| `RETENTION_MIA_MESSAGES_DAYS` | `90` | Days to keep each Mia chat message. A chat whose messages are all gone is deleted too. |
 
 ## Compose-only variables
 
